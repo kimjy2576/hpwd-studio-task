@@ -3,1122 +3,1214 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>HPWD Studio — 세탁건조기 전용</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<title>HPWD Studio — Task (Washer-Dryer)</title>
+<script src="https://cdn.tailwindcss.com"></script>
 <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css" rel="stylesheet">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-  :root {
-    --bg: #fafaf7;
-    --bg-grid: #eeece2;
-    --panel: #ffffff;
-    --panel-soft: #f7f6f0;
-    --border: #dcd9cc;
-    --border-strong: #a8a596;
-    --text: #1a1a1a;
-    --text-mute: #76746a;
-    --text-dim: #a19e91;
-    --accent: #1f4b8a;
-    --accent-hover: #173878;
-    --refrig-hot: #b8293e;
-    --refrig-cold: #1f4b8a;
-    --air: #4f6b56;
-    --shared: #c68310;
-    --shared-bg: #fdf5de;
-    --shadow-sm: 0 1px 2px rgba(0,0,0,0.04);
-    --shadow-md: 0 4px 16px rgba(0,0,0,0.05);
-  }
-
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body { height: 100%; }
-
+  html, body, #root { height: 100%; margin: 0; }
   body {
-    font-family: 'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-    font-feature-settings: "ss01", "cv11";
-    background: var(--bg);
-    color: var(--text);
-    font-size: 14px;
-    line-height: 1.5;
-    -webkit-font-smoothing: antialiased;
+    font-family: 'Pretendard Variable', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    overflow: hidden;
+    color: #0f172a;
+    background: white;
   }
-
   .mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
 
-  /* ─── Top bar ─────────────────────────── */
-  .topbar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0 20px;
-    background: var(--panel);
-    border-bottom: 1px solid var(--border);
-    height: 56px;
-    position: relative;
-    z-index: 5;
+  /* ─── Schematic (engineering drawing style) ─── */
+  .canvas-bg {
+    background-color: #f8fafc;
+    background-image:
+      linear-gradient(rgba(15, 23, 42, 0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(15, 23, 42, 0.04) 1px, transparent 1px);
+    background-size: 20px 20px;
   }
-  .topbar h1 {
-    font-size: 15px;
-    font-weight: 700;
-    letter-spacing: -0.01em;
-    display: flex;
-    align-items: center;
-    gap: 10px;
+
+  /* Components */
+  .comp { cursor: pointer; transition: filter 0.15s; }
+  .comp:hover { filter: brightness(0.97); }
+  .comp .hit-frame {
+    fill: transparent;
+    stroke: transparent;
+    stroke-width: 2;
   }
-  .topbar h1 .emoji { font-size: 18px; }
-  .topbar h1 .tag {
-    padding: 3px 8px;
-    background: var(--accent);
-    color: white;
-    font-size: 10px;
+  .comp:hover .hit-frame { stroke: #0891b2; stroke-dasharray: 3 3; }
+  .comp.selected .hit-frame { stroke: #0284c7; stroke-dasharray: 0; stroke-width: 2.5; }
+  .comp-label-text {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9.5px;
     font-weight: 600;
-    letter-spacing: 0.08em;
-    border-radius: 3px;
-    font-family: 'JetBrains Mono', monospace;
-  }
-  .topbar .meta {
-    display: flex;
-    gap: 18px;
-    font-size: 11px;
-    color: var(--text-mute);
-    font-family: 'JetBrains Mono', monospace;
-    letter-spacing: 0.03em;
-  }
-  .topbar .meta .k { color: var(--text-dim); }
-  .topbar .meta .v { color: var(--text); font-weight: 500; }
-  .topbar .meta .status .dot {
-    display: inline-block;
-    width: 6px; height: 6px;
-    border-radius: 50%;
-    background: #1a873a;
-    margin-right: 5px;
-    box-shadow: 0 0 0 2px rgba(26, 135, 58, 0.15);
-  }
-
-  /* ─── Legend ──────────────────────────── */
-  .legend {
-    display: flex;
-    gap: 20px;
-    align-items: center;
-    padding: 8px 24px;
-    font-size: 11px;
-    color: var(--text-mute);
-    background: var(--panel-soft);
-    border-bottom: 1px solid var(--border);
-    font-family: 'JetBrains Mono', monospace;
-    letter-spacing: 0.02em;
-    flex-wrap: wrap;
-  }
-  .legend .item { display: flex; align-items: center; gap: 7px; }
-  .legend .swatch {
-    display: inline-block;
-    width: 22px; height: 3px;
-    border-radius: 1px;
-  }
-  .legend .swatch.hot { background: var(--refrig-hot); }
-  .legend .swatch.cold { background: var(--refrig-cold); }
-  .legend .swatch.air {
-    background: repeating-linear-gradient(90deg, var(--air) 0 5px, transparent 5px 9px);
-  }
-  .legend .swatch.shared {
-    width: 12px; height: 12px;
-    background: var(--shared-bg);
-    border: 1.5px solid var(--shared);
-  }
-
-  /* ─── Main layout ─────────────────────── */
-  .main {
-    display: grid;
-    grid-template-columns: 1fr 360px;
-    height: calc(100vh - 56px - 33px);
-    min-height: 0;
-  }
-
-  .workspace {
-    display: grid;
-    grid-template-rows: minmax(0, 1fr) 300px;
-    min-height: 0;
-    border-right: 1px solid var(--border);
-  }
-
-  /* ─── Schematic ───────────────────────── */
-  .schematic-wrap {
-    overflow: auto;
-    padding: 20px;
-    background:
-      linear-gradient(var(--bg-grid) 1px, transparent 1px) 0 0 / 24px 24px,
-      linear-gradient(90deg, var(--bg-grid) 1px, transparent 1px) 0 0 / 24px 24px,
-      var(--panel);
-    position: relative;
-  }
-  .schematic-wrap svg {
-    display: block;
-    margin: 0 auto;
-    background: transparent;
-  }
-
-  /* SVG component */
-  .comp { cursor: pointer; }
-  .comp > rect,
-  .comp > polygon,
-  .comp > circle {
-    fill: var(--panel);
-    stroke: var(--border-strong);
-    stroke-width: 1.6;
-    transition: all 0.15s ease;
-    filter: drop-shadow(0 1px 1.5px rgba(0,0,0,0.06));
-  }
-  .comp:hover > rect,
-  .comp:hover > polygon,
-  .comp:hover > circle {
-    fill: #f4f7fc;
-    stroke: var(--accent);
-  }
-  .comp.selected > rect,
-  .comp.selected > polygon,
-  .comp.selected > circle {
-    fill: #e9f0fb;
-    stroke: var(--accent);
-    stroke-width: 2.5;
-  }
-  .comp.shared > rect,
-  .comp.shared > polygon {
-    fill: var(--shared-bg);
-    stroke: var(--shared);
-  }
-  .comp.shared:hover > rect,
-  .comp.shared:hover > polygon { fill: #faecc4; }
-  .comp.shared.selected > rect,
-  .comp.shared.selected > polygon {
-    fill: #f6dfa3;
-    stroke: var(--shared);
-    stroke-width: 2.5;
-  }
-
-  .comp-label {
-    font-size: 12.5px;
-    font-weight: 600;
+    fill: #0f172a;
+    letter-spacing: 0.05em;
     pointer-events: none;
     text-anchor: middle;
-    dominant-baseline: middle;
-    fill: var(--text);
-    font-family: 'Pretendard Variable', sans-serif;
   }
-  .comp-sub {
-    font-size: 8.5px;
-    font-weight: 500;
-    pointer-events: none;
-    text-anchor: middle;
-    fill: var(--text-mute);
+  .comp-tag-text {
     font-family: 'JetBrains Mono', monospace;
+    font-size: 8px;
+    fill: #64748b;
     letter-spacing: 0.1em;
+    pointer-events: none;
+    text-anchor: middle;
     text-transform: uppercase;
   }
-  .icon-mark {
-    fill: none;
-    stroke: var(--text-mute);
-    stroke-width: 1.2;
+  .shared-badge {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 7px;
+    fill: #b45309;
+    font-weight: 600;
     pointer-events: none;
   }
-  .comp.shared .icon-mark { stroke: var(--shared); }
 
-  /* Pipes */
-  .pipe {
-    cursor: pointer;
-    fill: none;
-    stroke-width: 2.5;
-    transition: stroke-width 0.15s, filter 0.15s;
-  }
-  .pipe.refrigerant-hp { stroke: var(--refrig-hot); }
-  .pipe.refrigerant-lp { stroke: var(--refrig-cold); }
-  .pipe.air {
-    stroke: var(--air);
-    stroke-dasharray: 7 3;
-  }
-  .pipe:hover { stroke-width: 4; }
-  .pipe.selected {
-    stroke-width: 4;
-    filter: drop-shadow(0 0 4px currentColor);
-  }
+  /* Pipes (layered strokes for tubular look) */
+  .pipe-group { cursor: pointer; }
   .pipe-hit {
-    fill: none;
     stroke: transparent;
-    stroke-width: 18;
-    cursor: pointer;
+    stroke-width: 20;
+    fill: none;
+    pointer-events: stroke;
   }
+  .pipe-edge { fill: none; stroke-linejoin: round; stroke-linecap: round; }
+  .pipe-body { fill: none; stroke-linejoin: round; stroke-linecap: round; }
+  .pipe-highlight { fill: none; stroke-linejoin: round; stroke-linecap: round; opacity: 0.55; }
+
+  .pipe-group.selected .pipe-edge { stroke: #0284c7 !important; }
+  .pipe-group:hover .pipe-edge { filter: brightness(0.85); }
+
+  /* Duct: wider rectangular */
+  .duct-edge { fill: none; stroke-linejoin: miter; stroke-linecap: butt; }
+  .duct-body { fill: none; stroke-linejoin: miter; stroke-linecap: butt; }
+  .duct-center { fill: none; stroke-linejoin: miter; stroke-linecap: butt; }
+  .pipe-group.selected .duct-edge { stroke: #0284c7 !important; }
 
   /* Section labels */
-  .sec-label {
+  .sec-title {
+    font-family: 'JetBrains Mono', monospace;
     font-size: 10.5px;
     font-weight: 700;
     letter-spacing: 0.18em;
+    fill: #475569;
     text-transform: uppercase;
-    fill: var(--text-mute);
+  }
+  .flow-dir {
     font-family: 'JetBrains Mono', monospace;
+    font-size: 8.5px;
+    fill: #94a3b8;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
   }
-  .sec-label-accent { fill: var(--refrig-hot); }
-  .sec-label-air { fill: var(--air); }
-  .divider-line {
-    stroke: var(--border);
-    stroke-width: 1;
-    stroke-dasharray: 2 4;
-  }
-  .pipe-tag {
-    font-size: 9px;
-    font-family: 'JetBrains Mono', monospace;
-    fill: var(--text-mute);
-    letter-spacing: 0.05em;
-    pointer-events: none;
-  }
+  .dim-line { stroke: #94a3b8; stroke-width: 0.7; stroke-dasharray: 3 2; }
 
-  /* ─── Param panel ─────────────────────── */
-  .param-panel {
-    background: var(--panel);
-    border-top: 1px solid var(--border);
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-  }
-  .param-head {
-    padding: 10px 20px;
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    background: var(--panel-soft);
-    gap: 12px;
-  }
-  .param-head .titleblock { min-width: 0; flex: 1; }
-  .param-head .title {
-    font-size: 13px;
-    font-weight: 700;
-    letter-spacing: -0.005em;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-  .param-head .title .kind-dot {
-    width: 8px; height: 8px;
-    border-radius: 50%;
-    display: inline-block;
-    flex-shrink: 0;
-  }
-  .param-head .title .kind-dot.refrigerant { background: var(--refrig-hot); }
-  .param-head .title .kind-dot.air { background: var(--air); }
-  .param-head .title .kind-dot.shared { background: var(--shared); }
-  .param-head .sub {
-    font-size: 10.5px;
-    color: var(--text-mute);
-    font-family: 'JetBrains Mono', monospace;
-    margin-top: 3px;
-    letter-spacing: 0.03em;
-  }
-  .param-head .actions {
-    display: flex;
-    gap: 6px;
-    flex-shrink: 0;
-  }
-  .btn {
-    padding: 6px 11px;
-    font-size: 11px;
-    font-weight: 600;
-    border: 1px solid var(--border);
-    background: var(--panel);
-    color: var(--text);
-    border-radius: 3px;
-    cursor: pointer;
-    font-family: 'JetBrains Mono', monospace;
-    letter-spacing: 0.05em;
-    transition: all 0.12s;
-  }
-  .btn:hover:not(:disabled) { border-color: var(--text-mute); }
-  .btn.primary {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: #fff;
-  }
-  .btn.primary:hover:not(:disabled) { background: var(--accent-hover); }
-  .btn:disabled {
-    opacity: 0.45;
-    cursor: not-allowed;
-  }
+  /* Library items */
+  .lib-item { transition: background-color 0.12s; }
+  .lib-item:hover { background: #f1f5f9; }
+  .lib-item.active { background: #ecfeff; border-color: #67e8f9; }
 
-  .param-body {
-    padding: 16px 20px 20px;
-    overflow-y: auto;
-    flex: 1;
-  }
-  .param-empty {
-    color: var(--text-mute);
-    font-size: 13px;
-    padding: 50px 0;
-    text-align: center;
-    line-height: 1.7;
-  }
-  .param-empty .hint {
-    font-size: 11px;
-    color: var(--text-dim);
-    font-family: 'JetBrains Mono', monospace;
-    margin-top: 8px;
-    letter-spacing: 0.03em;
-  }
-  .param-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
-    gap: 14px 20px;
-  }
-  .param-field label {
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    font-size: 11px;
-    color: var(--text-mute);
-    margin-bottom: 5px;
-    font-weight: 500;
-  }
-  .param-field label .unit {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 10px;
-    color: var(--text-dim);
-    letter-spacing: 0.02em;
-  }
-  .param-field input, .param-field select {
-    width: 100%;
-    padding: 7px 9px;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 12.5px;
-    border: 1px solid var(--border);
-    border-radius: 3px;
-    background: var(--panel);
-    color: var(--text);
+  /* Scrollbar styling */
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+  /* Tab state */
+  .tab-btn { border-bottom: 2px solid transparent; transition: all 0.15s; }
+  .tab-btn.active { border-bottom-color: #0891b2; color: #0f172a; }
+  .tab-btn:not(.active) { color: #64748b; }
+  .tab-btn:not(.active):hover { color: #0f172a; }
+
+  /* Input fields */
+  .param-input {
+    @apply w-full px-2 py-1 text-[11px] font-mono bg-white border border-slate-300 rounded text-slate-900;
+    outline: none;
     transition: border-color 0.12s;
   }
-  .param-field input:hover, .param-field select:hover { border-color: var(--text-mute); }
-  .param-field input:focus, .param-field select:focus {
-    outline: none;
-    border-color: var(--accent);
-    box-shadow: 0 0 0 3px rgba(31, 75, 138, 0.1);
-  }
-  .param-field.changed input, .param-field.changed select {
-    border-color: var(--shared);
-    background: #fffbf0;
-  }
-
-  /* ─── Chat sidebar ────────────────────── */
-  .chat {
-    display: flex;
-    flex-direction: column;
-    background: var(--panel-soft);
-    min-height: 0;
-  }
-  .chat-head {
-    padding: 12px 16px;
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    background: var(--panel);
-  }
-  .chat-head .title {
-    font-size: 13px;
-    font-weight: 700;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-  .chat-head .badge {
-    font-size: 9.5px;
-    padding: 3px 7px;
-    background: #fff5d7;
-    border: 1px solid #e5c974;
-    color: #7d5a00;
-    border-radius: 3px;
-    font-family: 'JetBrains Mono', monospace;
-    letter-spacing: 0.1em;
-    font-weight: 600;
-  }
-  .chat-body {
-    flex: 1;
-    overflow-y: auto;
-    padding: 16px;
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
-  }
-  .msg { font-size: 13px; line-height: 1.6; }
-  .msg .who {
-    font-size: 9.5px;
-    font-weight: 700;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: var(--text-mute);
-    margin-bottom: 5px;
-    font-family: 'JetBrains Mono', monospace;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-  .msg .who .dot {
-    width: 6px; height: 6px;
-    border-radius: 50%;
-  }
-  .msg.user .who .dot { background: var(--accent); }
-  .msg.assistant .who .dot { background: var(--shared); }
-  .msg.assistant .who { color: var(--shared); }
-  .msg.user {
-    background: var(--panel);
-    padding: 11px 13px;
-    border-radius: 6px 6px 2px 6px;
-    margin-left: 24px;
-    border: 1px solid var(--border);
-    box-shadow: var(--shadow-sm);
-  }
-  .msg.assistant {
-    padding: 0 2px;
-    margin-right: 12px;
-  }
-  .msg .preview {
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-left: 3px solid var(--shared);
-    padding: 10px 12px;
-    margin-top: 8px;
-    font-size: 12px;
-    color: var(--text-mute);
-    border-radius: 0 4px 4px 0;
-    font-family: 'JetBrains Mono', monospace;
-    line-height: 1.8;
-  }
-  .msg .preview code {
-    color: var(--text);
-    background: var(--bg);
-    padding: 1px 4px;
-    border-radius: 2px;
-    font-size: 11px;
-  }
-
-  .suggestions {
-    padding: 10px 14px 0;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    border-top: 1px solid var(--border);
-    background: var(--panel);
-  }
-  .suggestions .chip {
-    font-size: 11px;
-    padding: 4px 9px;
-    background: var(--panel-soft);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    color: var(--text-mute);
-    cursor: pointer;
-    font-family: 'Pretendard Variable', sans-serif;
-    transition: all 0.12s;
-  }
-  .suggestions .chip:hover {
-    border-color: var(--accent);
-    color: var(--accent);
-    background: #f4f7fc;
-  }
-  .chat-input {
-    padding: 10px 14px 14px;
-    background: var(--panel);
-    display: flex;
-    gap: 8px;
-    align-items: flex-end;
-  }
-  .chat-input textarea {
-    flex: 1;
-    resize: none;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    padding: 9px 11px;
-    font-family: inherit;
-    font-size: 12.5px;
-    height: 44px;
-    background: var(--panel-soft);
-    color: var(--text);
-  }
-  .chat-input textarea:focus {
-    outline: none;
-    border-color: var(--accent);
-    background: var(--panel);
-  }
-  .chat-input button {
-    padding: 0 14px;
-    height: 44px;
-    border: 1px solid var(--accent);
-    background: var(--accent);
-    color: #fff;
-    border-radius: 4px;
-    font-size: 11px;
-    font-weight: 700;
-    cursor: pointer;
-    font-family: 'JetBrains Mono', monospace;
-    letter-spacing: 0.1em;
-  }
-  .chat-input button:not(:disabled):hover { background: var(--accent-hover); }
-  .chat-input button:disabled, .chat-input textarea:disabled {
-    opacity: 0.55;
-    cursor: not-allowed;
-  }
-
-  /* ─── Responsive ──────────────────────── */
-  @media (max-width: 920px) {
-    .main {
-      grid-template-columns: 1fr;
-      grid-template-rows: 1fr auto;
-      height: auto;
-      min-height: calc(100vh - 56px - 33px);
-    }
-    .workspace { border-right: none; border-bottom: 1px solid var(--border); }
-    .chat { max-height: 360px; }
-  }
+  .param-input:hover { border-color: #94a3b8; }
+  .param-input:focus { border-color: #0891b2; box-shadow: 0 0 0 2px rgba(8, 145, 178, 0.1); }
+  .param-input.changed { border-color: #d97706; background: #fffbeb; }
 </style>
 </head>
-<body>
+<body class="h-screen w-full flex flex-col bg-white text-slate-800 text-xs overflow-hidden">
 
-<div class="topbar">
-  <h1>
-    <span class="emoji">🏭</span>
+<!-- ═══════════ TOP BAR ═══════════ -->
+<div class="h-9 bg-white border-b border-slate-200 flex items-center px-4 gap-4 text-[11px] shrink-0">
+  <div class="font-bold text-slate-900 tracking-wide flex items-center gap-1.5">
+    <div class="w-2 h-2 rounded-sm bg-cyan-600"></div>
     HPWD Studio
-    <span class="tag">WASHER-DRYER</span>
-  </h1>
-  <div class="meta">
-    <span><span class="k">cycle:</span> <span class="v">HEAT-PUMP</span></span>
-    <span><span class="k">refrigerant:</span> <span class="v">R290</span></span>
-    <span class="status"><span class="dot"></span><span class="v">idle</span></span>
+    <span class="text-slate-400 font-normal text-[10px] mono">· Task · Washer-Dryer</span>
+  </div>
+  <div class="text-slate-400 text-[10px]">v0.1-task · prototype</div>
+  <div class="flex-1"></div>
+  <div class="text-slate-500 text-[11px] mono">
+    t = <span class="text-slate-900 font-semibold">0.0s</span>
+    <span class="mx-1 text-slate-300">/</span>
+    <span class="text-slate-400">600s</span>
+  </div>
+  <div class="flex items-center gap-1.5 text-slate-500 text-[10px] mono">
+    <span class="inline-block w-1.5 h-1.5 rounded-full bg-slate-400"></span>
+    IDLE
   </div>
 </div>
 
-<div class="legend">
-  <div class="item"><span class="swatch hot"></span> 냉매 · 고압측 (토출·액·응축)</div>
-  <div class="item"><span class="swatch cold"></span> 냉매 · 저압측 (팽창·증발·흡입)</div>
-  <div class="item"><span class="swatch air"></span> 공기 덕트</div>
-  <div class="item"><span class="swatch shared"></span> 공유 HX (냉매·공기 양측 파라미터)</div>
+<!-- ═══════════ TOOLBAR ═══════════ -->
+<div class="h-11 bg-slate-50 border-b border-slate-200 flex items-center px-3 gap-1 shrink-0">
+  <button id="btn-run" class="px-2.5 py-1 flex items-center gap-1.5 text-[11px] rounded hover:bg-white border border-transparent hover:border-slate-200 text-slate-700 font-medium">
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="#059669" stroke="#059669"><polygon points="6 3 20 12 6 21 6 3"/></svg>
+    Run
+  </button>
+  <button class="px-2.5 py-1 flex items-center gap-1.5 text-[11px] rounded hover:bg-white border border-transparent hover:border-slate-200 text-slate-700 font-medium" disabled>
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+    Stop
+  </button>
+  <button id="btn-reset" class="px-2.5 py-1 flex items-center gap-1.5 text-[11px] rounded hover:bg-white border border-transparent hover:border-slate-200 text-slate-700 font-medium">
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+    Reset
+  </button>
+  <div class="w-px h-5 bg-slate-200 mx-1.5"></div>
+  <button class="px-2.5 py-1 flex items-center gap-1.5 text-[11px] rounded hover:bg-white border border-transparent hover:border-slate-200 text-slate-700 font-medium">
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+    Save
+  </button>
+  <button class="px-2.5 py-1 flex items-center gap-1.5 text-[11px] rounded hover:bg-white border border-transparent hover:border-slate-200 text-slate-700 font-medium">
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 14l1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.55 6a2 2 0 0 1-1.94 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.93a2 2 0 0 1 1.66.9l.82 1.2a2 2 0 0 0 1.66.9H18a2 2 0 0 1 2 2v2"/></svg>
+    Load
+  </button>
+  <div class="w-px h-5 bg-slate-200 mx-1.5"></div>
+  <div class="flex items-center gap-2 text-[11px] text-slate-600">
+    <label class="text-slate-500 mono">dt</label>
+    <input type="number" value="1.0" step="0.1" class="w-14 bg-white border border-slate-300 px-1.5 py-0.5 rounded text-slate-900 mono focus:outline-none focus:border-cyan-500">
+    <label class="text-slate-500 ml-2 mono">t_final</label>
+    <input type="number" value="600" class="w-16 bg-white border border-slate-300 px-1.5 py-0.5 rounded text-slate-900 mono focus:outline-none focus:border-cyan-500">
+  </div>
+  <div class="flex-1"></div>
+  <div class="text-[11px] text-slate-500 mono">
+    components <span class="text-slate-900 font-semibold">7</span>
+    <span class="mx-1.5 text-slate-300">·</span>
+    connections <span class="text-slate-900 font-semibold">9</span>
+    <span class="mx-1.5 text-slate-300">·</span>
+    refrig <span class="text-slate-900 font-semibold">R290</span>
+  </div>
 </div>
 
-<div class="main">
-  <div class="workspace">
-    <div class="schematic-wrap">
-      <svg width="880" height="560" viewBox="0 0 880 560" xmlns="http://www.w3.org/2000/svg">
-        <defs>
-          <marker id="arr-hot" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
-            <path d="M 0 0 L 10 5 L 0 10 z" fill="#b8293e"/>
-          </marker>
-          <marker id="arr-cold" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
-            <path d="M 0 0 L 10 5 L 0 10 z" fill="#1f4b8a"/>
-          </marker>
-          <marker id="arr-air" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
-            <path d="M 0 0 L 10 5 L 0 10 z" fill="#4f6b56"/>
-          </marker>
-          <!-- HX fin pattern for icon hint -->
-          <pattern id="finpat" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)">
-            <line x1="0" y1="0" x2="0" y2="6" stroke="#c68310" stroke-width="0.6" opacity="0.5"/>
-          </pattern>
-        </defs>
+<!-- ═══════════ MAIN 3-PANEL ═══════════ -->
+<div class="flex-1 flex overflow-hidden">
 
-        <!-- ════════ SECTION: REFRIGERANT CYCLE ════════ -->
-        <text x="16" y="22" class="sec-label sec-label-accent">🔁 REFRIGERANT CYCLE</text>
-        <text x="200" y="22" class="sec-label" style="letter-spacing: 0.05em;">Compressor → Condenser → LEV → Evaporator</text>
-
-        <!-- Pipes (drawn first so comps overlap them) -->
-        <!-- 1. Compressor → Condenser  (discharge, HP gas) -->
-        <path class="pipe refrigerant-hp" id="pipe-comp-cond"
-              d="M 150 117 L 260 117" marker-end="url(#arr-hot)"/>
-        <path class="pipe-hit" data-pipe="pipe-comp-cond" d="M 150 117 L 260 117"/>
-        <text x="205" y="108" class="pipe-tag" text-anchor="middle">토출 · HP</text>
-
-        <!-- 2. Condenser → LEV  (liquid line, HP liq) -->
-        <path class="pipe refrigerant-hp" id="pipe-cond-lev"
-              d="M 370 117 L 460 117" marker-end="url(#arr-hot)"/>
-        <path class="pipe-hit" data-pipe="pipe-cond-lev" d="M 370 117 L 460 117"/>
-        <text x="415" y="108" class="pipe-tag" text-anchor="middle">액 · HP</text>
-
-        <!-- 3. LEV → Evaporator  (LP 2-phase) -->
-        <path class="pipe refrigerant-lp" id="pipe-lev-evap"
-              d="M 530 117 L 620 117" marker-end="url(#arr-cold)"/>
-        <path class="pipe-hit" data-pipe="pipe-lev-evap" d="M 530 117 L 620 117"/>
-        <text x="575" y="108" class="pipe-tag" text-anchor="middle">2Φ · LP</text>
-
-        <!-- 4. Evaporator → Compressor  (suction, LP gas)  -- wraps around -->
-        <path class="pipe refrigerant-lp" id="pipe-evap-comp"
-              d="M 730 117 L 830 117 L 830 228 L 30 228 L 30 117 L 40 117"
-              marker-end="url(#arr-cold)"/>
-        <path class="pipe-hit" data-pipe="pipe-evap-comp"
-              d="M 730 117 L 830 117 L 830 228 L 30 228 L 30 117 L 40 117"/>
-        <text x="430" y="222" class="pipe-tag" text-anchor="middle">흡입 · LP Gas (return to compressor)</text>
-
-        <!-- ─── Components: refrigerant row ─── -->
-
-        <!-- Compressor -->
-        <g class="comp" data-id="compressor">
-          <rect x="40" y="90" width="110" height="55" rx="3"/>
-          <circle cx="60" cy="117" r="8" class="icon-mark" fill="none"/>
-          <text x="60" y="121" class="comp-sub" style="font-size:7px; letter-spacing:0;">M</text>
-          <text x="103" y="107" class="comp-sub">COMPRESSOR</text>
-          <text x="103" y="128" class="comp-label">압축기</text>
-        </g>
-
-        <!-- Condenser (shared) -->
-        <g class="comp shared" data-id="condenser">
-          <rect x="260" y="90" width="110" height="55" rx="3"/>
-          <rect x="265" y="94" width="100" height="47" fill="url(#finpat)" pointer-events="none"/>
-          <text x="315" y="107" class="comp-sub">CONDENSER · 공유</text>
-          <text x="315" y="128" class="comp-label">응축기</text>
-        </g>
-
-        <!-- LEV (valve symbol) -->
-        <g class="comp" data-id="lev">
-          <rect x="460" y="90" width="70" height="55" rx="3"/>
-          <polygon points="479,108 495,117 479,126" class="icon-mark" fill="none"/>
-          <polygon points="511,108 495,117 511,126" class="icon-mark" fill="none"/>
-          <text x="495" y="95" class="comp-sub" style="font-size:7.5px">LEV</text>
-          <text x="495" y="140" class="comp-label" style="font-size:11px">팽창</text>
-        </g>
-
-        <!-- Evaporator (shared) -->
-        <g class="comp shared" data-id="evaporator">
-          <rect x="620" y="90" width="110" height="55" rx="3"/>
-          <rect x="625" y="94" width="100" height="47" fill="url(#finpat)" pointer-events="none"/>
-          <text x="675" y="107" class="comp-sub">EVAPORATOR · 공유</text>
-          <text x="675" y="128" class="comp-label">증발기</text>
-        </g>
-
-        <!-- ════════ Divider ════════ -->
-        <line x1="0" y1="278" x2="880" y2="278" class="divider-line"/>
-
-        <!-- ════════ SECTION: AIR CYCLE ════════ -->
-        <text x="16" y="302" class="sec-label sec-label-air">💨 AIR CYCLE</text>
-        <text x="140" y="302" class="sec-label" style="letter-spacing: 0.05em;">Drum → Filter → Evaporator → Condenser → Fan</text>
-
-        <!-- Air ducts -->
-        <path class="pipe air" id="duct-drum-filter"
-              d="M 150 405 L 210 405" marker-end="url(#arr-air)"/>
-        <path class="pipe-hit" data-pipe="duct-drum-filter" d="M 150 405 L 210 405"/>
-
-        <path class="pipe air" id="duct-filter-evap"
-              d="M 280 405 L 330 405" marker-end="url(#arr-air)"/>
-        <path class="pipe-hit" data-pipe="duct-filter-evap" d="M 280 405 L 330 405"/>
-
-        <path class="pipe air" id="duct-evap-cond"
-              d="M 440 405 L 490 405" marker-end="url(#arr-air)"/>
-        <path class="pipe-hit" data-pipe="duct-evap-cond" d="M 440 405 L 490 405"/>
-
-        <path class="pipe air" id="duct-cond-fan"
-              d="M 600 405 L 650 405" marker-end="url(#arr-air)"/>
-        <path class="pipe-hit" data-pipe="duct-cond-fan" d="M 600 405 L 650 405"/>
-
-        <path class="pipe air" id="duct-fan-drum"
-              d="M 720 405 L 830 405 L 830 510 L 30 510 L 30 405 L 40 405"
-              marker-end="url(#arr-air)"/>
-        <path class="pipe-hit" data-pipe="duct-fan-drum"
-              d="M 720 405 L 830 405 L 830 510 L 30 510 L 30 405 L 40 405"/>
-        <text x="430" y="504" class="pipe-tag" text-anchor="middle">환기 · warm dry air (return to drum)</text>
-
-        <!-- ─── Components: air row ─── -->
-
-        <!-- Drum -->
-        <g class="comp" data-id="drum">
-          <rect x="40" y="370" width="110" height="70" rx="6"/>
-          <circle cx="95" cy="405" r="22" class="icon-mark"/>
-          <circle cx="95" cy="405" r="3" fill="#76746a" stroke="none"/>
-          <text x="95" y="385" class="comp-sub">DRUM</text>
-          <text x="95" y="435" class="comp-label" style="font-size:11px">드럼</text>
-        </g>
-
-        <!-- Filter -->
-        <g class="comp" data-id="filter">
-          <rect x="210" y="378" width="70" height="55" rx="3"/>
-          <g class="icon-mark">
-            <line x1="225" y1="395" x2="265" y2="395"/>
-            <line x1="225" y1="405" x2="265" y2="405"/>
-            <line x1="225" y1="415" x2="265" y2="415"/>
-          </g>
-          <text x="245" y="390" class="comp-sub" style="font-size:7.5px">FILTER</text>
-          <text x="245" y="430" class="comp-label" style="font-size:11px">필터</text>
-        </g>
-
-        <!-- Evaporator (shared - air side) -->
-        <g class="comp shared" data-id="evaporator">
-          <rect x="330" y="378" width="110" height="55" rx="3"/>
-          <rect x="335" y="382" width="100" height="47" fill="url(#finpat)" pointer-events="none"/>
-          <text x="385" y="395" class="comp-sub">EVAPORATOR · 공유</text>
-          <text x="385" y="416" class="comp-label">증발기</text>
-        </g>
-
-        <!-- Condenser (shared - air side) -->
-        <g class="comp shared" data-id="condenser">
-          <rect x="490" y="378" width="110" height="55" rx="3"/>
-          <rect x="495" y="382" width="100" height="47" fill="url(#finpat)" pointer-events="none"/>
-          <text x="545" y="395" class="comp-sub">CONDENSER · 공유</text>
-          <text x="545" y="416" class="comp-label">응축기</text>
-        </g>
-
-        <!-- Fan -->
-        <g class="comp" data-id="fan">
-          <rect x="650" y="378" width="70" height="55" rx="3"/>
-          <g class="icon-mark" transform="translate(685 405)">
-            <circle r="14"/>
-            <line x1="-10" y1="0" x2="10" y2="0"/>
-            <line x1="0" y1="-10" x2="0" y2="10"/>
-            <line x1="-7" y1="-7" x2="7" y2="7"/>
-            <line x1="-7" y1="7" x2="7" y2="-7"/>
-          </g>
-          <text x="685" y="388" class="comp-sub" style="font-size:7.5px">FAN</text>
-          <text x="685" y="430" class="comp-label" style="font-size:11px">팬</text>
-        </g>
-
-        <!-- Visual coupling hint for shared HXs: tiny vertical dashed marks -->
-        <g opacity="0.35" pointer-events="none">
-          <line x1="315" y1="148" x2="315" y2="163" stroke="#c68310" stroke-width="1" stroke-dasharray="2 2"/>
-          <line x1="385" y1="362" x2="385" y2="377" stroke="#c68310" stroke-width="1" stroke-dasharray="2 2"/>
-          <line x1="675" y1="148" x2="675" y2="163" stroke="#c68310" stroke-width="1" stroke-dasharray="2 2"/>
-          <line x1="545" y1="362" x2="545" y2="377" stroke="#c68310" stroke-width="1" stroke-dasharray="2 2"/>
-        </g>
-
-      </svg>
+  <!-- ─── LEFT: Type Library ─── -->
+  <div class="w-56 bg-white border-r border-slate-200 overflow-y-auto shrink-0">
+    <div class="px-3 py-2.5 text-[10px] font-semibold uppercase tracking-widest text-slate-500 border-b border-slate-100 bg-slate-50">
+      System Components
     </div>
 
-    <!-- ═════════════ PARAM PANEL ═════════════ -->
-    <div class="param-panel">
-      <div class="param-head">
-        <div class="titleblock">
-          <div class="title" id="param-title">🔧 파라미터</div>
-          <div class="sub" id="param-sub">개략도에서 컴포넌트나 배관 선택</div>
+    <!-- Refrigerant cycle -->
+    <div>
+      <div class="w-full flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] uppercase tracking-wider text-slate-600 bg-slate-50/50 border-b border-slate-100">
+        <span class="w-1.5 h-1.5 rounded-sm bg-red-500"></span>
+        <span class="text-slate-700 font-semibold">Refrigerant Cycle</span>
+        <span class="ml-auto text-slate-400 mono text-[9px]">4 comp</span>
+      </div>
+      <div class="py-1">
+        <div class="lib-item flex items-center gap-2 px-3 py-1.5 mx-1.5 my-0.5 rounded cursor-pointer border border-transparent" data-lib="compressor">
+          <div class="w-5 h-5 rounded flex items-center justify-center" style="background: #dc262615">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="1" fill="#dc2626"/></svg>
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="text-[11px] text-slate-800 truncate">Compressor</div>
+            <div class="text-[9px] text-slate-400 mono">압축기 · #100</div>
+          </div>
         </div>
-        <div class="actions">
-          <button class="btn" id="btn-reset" disabled>↺ RESET</button>
-          <button class="btn primary" id="btn-run" disabled>▶ RUN SIM</button>
+        <div class="lib-item flex items-center gap-2 px-3 py-1.5 mx-1.5 my-0.5 rounded cursor-pointer border border-transparent" data-lib="condenser">
+          <div class="w-5 h-5 rounded flex items-center justify-center" style="background: #ea580c15">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#ea580c" stroke-width="2"><rect x="3" y="6" width="18" height="12" rx="1"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="3" y1="14" x2="21" y2="14"/></svg>
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="text-[11px] text-slate-800 truncate">Condenser</div>
+            <div class="text-[9px] text-amber-600 mono">응축기 · shared HX</div>
+          </div>
+        </div>
+        <div class="lib-item flex items-center gap-2 px-3 py-1.5 mx-1.5 my-0.5 rounded cursor-pointer border border-transparent" data-lib="lev">
+          <div class="w-5 h-5 rounded flex items-center justify-center" style="background: #d9770615">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#d97706" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="text-[11px] text-slate-800 truncate">LEV</div>
+            <div class="text-[9px] text-slate-400 mono">팽창밸브 · #102</div>
+          </div>
+        </div>
+        <div class="lib-item flex items-center gap-2 px-3 py-1.5 mx-1.5 my-0.5 rounded cursor-pointer border border-transparent" data-lib="evaporator">
+          <div class="w-5 h-5 rounded flex items-center justify-center" style="background: #2563eb15">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2"><path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z"/></svg>
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="text-[11px] text-slate-800 truncate">Evaporator</div>
+            <div class="text-[9px] text-amber-600 mono">증발기 · shared HX</div>
+          </div>
         </div>
       </div>
-      <div class="param-body" id="param-body">
-        <div class="param-empty">
-          좌측 개략도에서 <strong>컴포넌트 박스</strong> 또는 <strong>배관·덕트 라인</strong>을 클릭
-          <div class="hint">공유 HX 클릭 시 양쪽 인스턴스가 함께 하이라이트됨</div>
+    </div>
+
+    <!-- Air cycle -->
+    <div>
+      <div class="w-full flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] uppercase tracking-wider text-slate-600 bg-slate-50/50 border-b border-t border-slate-100">
+        <span class="w-1.5 h-1.5 rounded-sm bg-emerald-600"></span>
+        <span class="text-slate-700 font-semibold">Air Cycle</span>
+        <span class="ml-auto text-slate-400 mono text-[9px]">3 comp</span>
+      </div>
+      <div class="py-1">
+        <div class="lib-item flex items-center gap-2 px-3 py-1.5 mx-1.5 my-0.5 rounded cursor-pointer border border-transparent" data-lib="drum">
+          <div class="w-5 h-5 rounded flex items-center justify-center" style="background: #05966915">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2"/></svg>
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="text-[11px] text-slate-800 truncate">Drum</div>
+            <div class="text-[9px] text-slate-400 mono">드럼 · #201</div>
+          </div>
+        </div>
+        <div class="lib-item flex items-center gap-2 px-3 py-1.5 mx-1.5 my-0.5 rounded cursor-pointer border border-transparent" data-lib="filter">
+          <div class="w-5 h-5 rounded flex items-center justify-center" style="background: #6b728015">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2"><rect x="3" y="5" width="18" height="14"/><line x1="6" y1="5" x2="6" y2="19"/><line x1="12" y1="5" x2="12" y2="19"/><line x1="18" y1="5" x2="18" y2="19"/></svg>
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="text-[11px] text-slate-800 truncate">Lint Filter</div>
+            <div class="text-[9px] text-slate-400 mono">필터 · #210</div>
+          </div>
+        </div>
+        <div class="lib-item flex items-center gap-2 px-3 py-1.5 mx-1.5 my-0.5 rounded cursor-pointer border border-transparent" data-lib="fan">
+          <div class="w-5 h-5 rounded flex items-center justify-center" style="background: #0891b215">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0891b2" stroke-width="2"><path d="M17.7 7.7a2.5 2.5 0 1 1 1.8 4.3H2"/><path d="M9.6 4.6A2 2 0 1 1 11 8H2"/><path d="M12.6 19.4A2 2 0 1 0 14 16H2"/></svg>
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="text-[11px] text-slate-800 truncate">Blower Fan</div>
+            <div class="text-[9px] text-slate-400 mono">팬 · #200</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Connections info -->
+    <div>
+      <div class="w-full flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] uppercase tracking-wider text-slate-600 bg-slate-50/50 border-b border-t border-slate-100">
+        <span class="w-1.5 h-1.5 rounded-sm bg-slate-500"></span>
+        <span class="text-slate-700 font-semibold">Connections</span>
+        <span class="ml-auto text-slate-400 mono text-[9px]">9 links</span>
+      </div>
+      <div class="py-1.5 px-3 text-[10px] text-slate-500 leading-relaxed mono">
+        <div class="flex items-center gap-1.5 mb-0.5"><span class="inline-block w-2 h-2 rounded-full" style="background:#dc2626"></span> refrig HP (4)</div>
+        <div class="flex items-center gap-1.5 mb-0.5"><span class="inline-block w-2 h-2 rounded-full" style="background:#2563eb"></span> refrig LP (2)</div>
+        <div class="flex items-center gap-1.5 mb-0.5"><span class="inline-block w-2 h-2 rounded" style="background:#6b7280"></span> air duct (5)</div>
+      </div>
+    </div>
+
+    <div class="px-3 py-3 text-[10px] text-slate-400 border-t border-slate-100 mt-2 leading-relaxed">
+      고정 schematic · 세탁건조기 사이클 전용.<br>
+      컴포넌트·배관 클릭 시 파라미터 편집.
+    </div>
+  </div>
+
+  <!-- ─── CENTER: Canvas (schematic) ─── -->
+  <div class="flex-1 flex flex-col overflow-hidden">
+    <div class="flex-1 relative canvas-bg overflow-auto">
+      <div class="absolute inset-0 flex items-start justify-center p-4">
+
+<svg width="940" height="620" viewBox="0 0 940 620" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Fin-tube HX hatching pattern -->
+    <pattern id="fin-hatch" patternUnits="userSpaceOnUse" width="4" height="4" patternTransform="rotate(45)">
+      <line x1="0" y1="0" x2="0" y2="4" stroke="#64748b" stroke-width="0.7"/>
+    </pattern>
+    <!-- Filter mesh pattern -->
+    <pattern id="mesh" patternUnits="userSpaceOnUse" width="6" height="6">
+      <path d="M 0 0 L 6 0 M 0 0 L 0 6 M 6 0 L 6 6 M 0 6 L 6 6" stroke="#64748b" stroke-width="0.5" fill="none"/>
+      <path d="M 0 0 L 6 6 M 6 0 L 0 6" stroke="#94a3b8" stroke-width="0.3" fill="none"/>
+    </pattern>
+    <!-- Duct ventilation pattern -->
+    <pattern id="duct-hint" patternUnits="userSpaceOnUse" width="8" height="4">
+      <line x1="0" y1="2" x2="3" y2="2" stroke="#94a3b8" stroke-width="0.5"/>
+    </pattern>
+    <!-- Arrow markers for flow direction -->
+    <marker id="arr-hp" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="4" markerHeight="4" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#0f172a"/>
+    </marker>
+    <marker id="arr-lp" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="4" markerHeight="4" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#0f172a"/>
+    </marker>
+    <marker id="arr-air" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="4" markerHeight="4" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#334155"/>
+    </marker>
+    <marker id="arr-rot" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="4" markerHeight="4" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b"/>
+    </marker>
+  </defs>
+
+  <!-- Title block (engineering drawing style) -->
+  <g>
+    <rect x="20" y="18" width="300" height="32" fill="white" stroke="#0f172a" stroke-width="1"/>
+    <text x="30" y="34" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#0f172a">HEAT PUMP WASHER-DRYER</text>
+    <text x="30" y="44" font-family="JetBrains Mono" font-size="8" fill="#64748b">CYCLE SCHEMATIC · DWG-HPWD-001 · REV A</text>
+  </g>
+  <g>
+    <rect x="640" y="18" width="280" height="32" fill="white" stroke="#0f172a" stroke-width="1"/>
+    <text x="650" y="31" font-family="JetBrains Mono" font-size="8" fill="#64748b">REFRIG: R290   ·   NOM LOAD: 8kg cotton</text>
+    <text x="650" y="43" font-family="JetBrains Mono" font-size="8" fill="#64748b">AMB: 23°C / 50%RH   ·   PSU: 220V/60Hz</text>
+  </g>
+
+  <!-- ═══════ SECTION 1: REFRIGERANT CYCLE ═══════ -->
+  <text x="20" y="80" class="sec-title">① Refrigerant Cycle</text>
+  <line x1="150" y1="77" x2="920" y2="77" class="dim-line"/>
+  <text x="160" y="74" class="flow-dir">compressor → condenser → LEV → evaporator → compressor</text>
+
+  <!-- REFRIGERANT PIPES (drawn first, behind components) -->
+  <!-- discharge (HP hot gas): compressor → condenser -->
+  <g class="pipe-group" data-pipe="pipe-comp-cond">
+    <path class="pipe-hit" d="M 165 145 L 270 145"/>
+    <path class="pipe-edge" d="M 165 145 L 270 145" stroke="#0f172a" stroke-width="11"/>
+    <path class="pipe-body" d="M 165 145 L 270 145" stroke="#dc2626" stroke-width="8"/>
+    <path class="pipe-highlight" d="M 165 142 L 270 142" stroke="#fecaca" stroke-width="2"/>
+    <path d="M 165 145 L 270 145" stroke="transparent" stroke-width="1" fill="none" marker-end="url(#arr-hp)"/>
+  </g>
+  <text x="217" y="131" class="flow-dir" text-anchor="middle">HP · hot gas</text>
+
+  <!-- liquid line: condenser → LEV -->
+  <g class="pipe-group" data-pipe="pipe-cond-lev">
+    <path class="pipe-hit" d="M 395 145 L 500 145"/>
+    <path class="pipe-edge" d="M 395 145 L 500 145" stroke="#0f172a" stroke-width="11"/>
+    <path class="pipe-body" d="M 395 145 L 500 145" stroke="#b91c1c" stroke-width="8"/>
+    <path class="pipe-highlight" d="M 395 142 L 500 142" stroke="#fecaca" stroke-width="2"/>
+    <path d="M 395 145 L 500 145" stroke="transparent" stroke-width="1" fill="none" marker-end="url(#arr-hp)"/>
+  </g>
+  <text x="447" y="131" class="flow-dir" text-anchor="middle">HP · liquid</text>
+
+  <!-- LEV outlet: LEV → evaporator (LP two-phase) -->
+  <g class="pipe-group" data-pipe="pipe-lev-evap">
+    <path class="pipe-hit" d="M 570 145 L 670 145"/>
+    <path class="pipe-edge" d="M 570 145 L 670 145" stroke="#0f172a" stroke-width="11"/>
+    <path class="pipe-body" d="M 570 145 L 670 145" stroke="#1d4ed8" stroke-width="8"/>
+    <path class="pipe-highlight" d="M 570 142 L 670 142" stroke="#bfdbfe" stroke-width="2"/>
+    <path d="M 570 145 L 670 145" stroke="transparent" stroke-width="1" fill="none" marker-end="url(#arr-lp)"/>
+  </g>
+  <text x="620" y="131" class="flow-dir" text-anchor="middle">LP · 2Φ</text>
+
+  <!-- Suction (LP gas): evaporator → compressor (wraps around) -->
+  <g class="pipe-group" data-pipe="pipe-evap-comp">
+    <path class="pipe-hit" d="M 795 145 L 895 145 L 895 255 L 45 255 L 45 145 L 60 145"/>
+    <path class="pipe-edge" d="M 795 145 L 895 145 L 895 255 L 45 255 L 45 145 L 60 145" stroke="#0f172a" stroke-width="11"/>
+    <path class="pipe-body" d="M 795 145 L 895 145 L 895 255 L 45 255 L 45 145 L 60 145" stroke="#2563eb" stroke-width="8"/>
+    <path class="pipe-highlight" d="M 795 142 L 892 142 L 892 252 L 48 252 L 48 145" stroke="#bfdbfe" stroke-width="2"/>
+    <path d="M 895 255 L 45 255" stroke="transparent" stroke-width="1" fill="none"/>
+    <path d="M 45 145 L 60 145" stroke="transparent" stroke-width="1" fill="none" marker-end="url(#arr-lp)"/>
+  </g>
+  <text x="470" y="248" class="flow-dir" text-anchor="middle">LP · suction gas (return to compressor)</text>
+
+  <!-- ─── REFRIGERANT COMPONENTS ─── -->
+
+  <!-- Compressor (scroll type, engineering view) -->
+  <g class="comp" data-id="compressor" transform="translate(55, 105)">
+    <!-- body outline -->
+    <rect x="2" y="5" width="108" height="70" fill="#fef3c7" stroke="#0f172a" stroke-width="1.5" rx="2"/>
+    <!-- motor cylinder (top section) -->
+    <rect x="10" y="12" width="92" height="24" fill="white" stroke="#0f172a" stroke-width="1"/>
+    <circle cx="56" cy="24" r="8" fill="white" stroke="#0f172a" stroke-width="1"/>
+    <text x="56" y="27" text-anchor="middle" font-family="JetBrains Mono" font-size="8" font-weight="700" fill="#0f172a">M</text>
+    <!-- scroll housing (bottom section) -->
+    <rect x="10" y="40" width="92" height="30" fill="white" stroke="#0f172a" stroke-width="1"/>
+    <!-- scroll spiral (simplified) -->
+    <path d="M 40 55 Q 40 48 48 48 Q 56 48 56 55 Q 56 62 48 62" fill="none" stroke="#0f172a" stroke-width="1"/>
+    <path d="M 72 55 Q 72 48 64 48" fill="none" stroke="#0f172a" stroke-width="1"/>
+    <circle cx="56" cy="55" r="2" fill="#0f172a"/>
+    <!-- port markers -->
+    <rect x="0" y="37" width="5" height="5" fill="#cbd5e1" stroke="#0f172a" stroke-width="0.8"/>
+    <rect x="107" y="37" width="5" height="5" fill="#cbd5e1" stroke="#0f172a" stroke-width="0.8"/>
+    <!-- mounting feet -->
+    <line x1="5" y1="75" x2="5" y2="80" stroke="#0f172a" stroke-width="1"/>
+    <line x1="107" y1="75" x2="107" y2="80" stroke="#0f172a" stroke-width="1"/>
+    <rect x="2" y="79" width="6" height="2" fill="#0f172a"/>
+    <rect x="104" y="79" width="6" height="2" fill="#0f172a"/>
+    <!-- labels -->
+    <text x="56" y="98" class="comp-label-text">COMPRESSOR</text>
+    <text x="56" y="108" class="comp-tag-text">압축기 · #100</text>
+    <!-- selection frame -->
+    <rect class="hit-frame" x="-3" y="0" width="118" height="112" rx="3"/>
+  </g>
+
+  <!-- Condenser (fin-tube HX engineering drawing) -->
+  <g class="comp shared" data-id="condenser" transform="translate(275, 100)">
+    <!-- outer frame -->
+    <rect x="0" y="0" width="120" height="90" fill="white" stroke="#0f172a" stroke-width="1.5"/>
+    <!-- top header tube -->
+    <rect x="5" y="6" width="110" height="8" fill="#cbd5e1" stroke="#0f172a" stroke-width="0.9"/>
+    <line x1="8" y1="10" x2="112" y2="10" stroke="#64748b" stroke-width="0.4"/>
+    <!-- bottom header tube -->
+    <rect x="5" y="76" width="110" height="8" fill="#cbd5e1" stroke="#0f172a" stroke-width="0.9"/>
+    <line x1="8" y1="80" x2="112" y2="80" stroke="#64748b" stroke-width="0.4"/>
+    <!-- fin area (hatched) -->
+    <rect x="5" y="14" width="110" height="62" fill="url(#fin-hatch)"/>
+    <!-- fin area outline -->
+    <rect x="5" y="14" width="110" height="62" fill="none" stroke="#0f172a" stroke-width="0.6"/>
+    <!-- tubes (vertical lines) -->
+    <g stroke="#0f172a" stroke-width="1.1">
+      <line x1="17" y1="10" x2="17" y2="80"/>
+      <line x1="32" y1="10" x2="32" y2="80"/>
+      <line x1="47" y1="10" x2="47" y2="80"/>
+      <line x1="62" y1="10" x2="62" y2="80"/>
+      <line x1="77" y1="10" x2="77" y2="80"/>
+      <line x1="92" y1="10" x2="92" y2="80"/>
+      <line x1="107" y1="10" x2="107" y2="80"/>
+    </g>
+    <!-- tube dots at header crossings -->
+    <g fill="white" stroke="#0f172a" stroke-width="0.6">
+      <circle cx="17" cy="10" r="1.5"/><circle cx="32" cy="10" r="1.5"/><circle cx="47" cy="10" r="1.5"/>
+      <circle cx="62" cy="10" r="1.5"/><circle cx="77" cy="10" r="1.5"/><circle cx="92" cy="10" r="1.5"/><circle cx="107" cy="10" r="1.5"/>
+      <circle cx="17" cy="80" r="1.5"/><circle cx="32" cy="80" r="1.5"/><circle cx="47" cy="80" r="1.5"/>
+      <circle cx="62" cy="80" r="1.5"/><circle cx="77" cy="80" r="1.5"/><circle cx="92" cy="80" r="1.5"/><circle cx="107" cy="80" r="1.5"/>
+    </g>
+    <!-- refrigerant ports (inlet top-left, outlet bottom-right for cross-counter flow) -->
+    <rect x="-5" y="6" width="5" height="8" fill="#dc2626" stroke="#0f172a" stroke-width="0.8"/>
+    <rect x="120" y="6" width="5" height="8" fill="#dc2626" stroke="#0f172a" stroke-width="0.8"/>
+    <!-- shared badge -->
+    <rect x="82" y="-12" width="38" height="10" fill="#fef3c7" stroke="#b45309" stroke-width="0.8"/>
+    <text x="101" y="-4" class="shared-badge" text-anchor="middle">SHARED HX</text>
+    <!-- labels -->
+    <text x="60" y="105" class="comp-label-text">CONDENSER</text>
+    <text x="60" y="116" class="comp-tag-text">응축기 · #101 · fin-tube</text>
+    <!-- selection frame -->
+    <rect class="hit-frame" x="-8" y="-15" width="136" height="136" rx="3"/>
+  </g>
+
+  <!-- LEV (expansion valve - bowtie with stepper) -->
+  <g class="comp" data-id="lev" transform="translate(500, 108)">
+    <!-- stepper motor top -->
+    <rect x="20" y="0" width="30" height="22" fill="white" stroke="#0f172a" stroke-width="1.2"/>
+    <!-- motor coils -->
+    <line x1="26" y1="4" x2="26" y2="18" stroke="#0f172a" stroke-width="0.7"/>
+    <line x1="30" y1="4" x2="30" y2="18" stroke="#0f172a" stroke-width="0.7"/>
+    <line x1="40" y1="4" x2="40" y2="18" stroke="#0f172a" stroke-width="0.7"/>
+    <line x1="44" y1="4" x2="44" y2="18" stroke="#0f172a" stroke-width="0.7"/>
+    <text x="35" y="14" text-anchor="middle" font-family="JetBrains Mono" font-size="7" fill="#0f172a">STEP</text>
+    <!-- shaft -->
+    <rect x="33" y="22" width="4" height="6" fill="#0f172a"/>
+    <!-- valve body -->
+    <rect x="5" y="28" width="60" height="28" fill="#fef3c7" stroke="#0f172a" stroke-width="1.5"/>
+    <!-- bowtie (valve symbol) -->
+    <polygon points="10,34 33,42 10,50" fill="white" stroke="#0f172a" stroke-width="1.2"/>
+    <polygon points="60,34 37,42 60,50" fill="white" stroke="#0f172a" stroke-width="1.2"/>
+    <!-- ports -->
+    <rect x="0" y="38" width="5" height="6" fill="#b91c1c" stroke="#0f172a" stroke-width="0.8"/>
+    <rect x="65" y="38" width="5" height="6" fill="#1d4ed8" stroke="#0f172a" stroke-width="0.8"/>
+    <!-- labels -->
+    <text x="35" y="72" class="comp-label-text">LEV</text>
+    <text x="35" y="83" class="comp-tag-text">팽창밸브 · #102</text>
+    <!-- selection frame -->
+    <rect class="hit-frame" x="-3" y="-3" width="76" height="94" rx="3"/>
+  </g>
+
+  <!-- Evaporator (fin-tube HX, same style as condenser) -->
+  <g class="comp shared" data-id="evaporator" transform="translate(675, 100)">
+    <rect x="0" y="0" width="120" height="90" fill="white" stroke="#0f172a" stroke-width="1.5"/>
+    <rect x="5" y="6" width="110" height="8" fill="#cbd5e1" stroke="#0f172a" stroke-width="0.9"/>
+    <line x1="8" y1="10" x2="112" y2="10" stroke="#64748b" stroke-width="0.4"/>
+    <rect x="5" y="76" width="110" height="8" fill="#cbd5e1" stroke="#0f172a" stroke-width="0.9"/>
+    <line x1="8" y1="80" x2="112" y2="80" stroke="#64748b" stroke-width="0.4"/>
+    <rect x="5" y="14" width="110" height="62" fill="url(#fin-hatch)"/>
+    <rect x="5" y="14" width="110" height="62" fill="none" stroke="#0f172a" stroke-width="0.6"/>
+    <g stroke="#0f172a" stroke-width="1.1">
+      <line x1="17" y1="10" x2="17" y2="80"/>
+      <line x1="32" y1="10" x2="32" y2="80"/>
+      <line x1="47" y1="10" x2="47" y2="80"/>
+      <line x1="62" y1="10" x2="62" y2="80"/>
+      <line x1="77" y1="10" x2="77" y2="80"/>
+      <line x1="92" y1="10" x2="92" y2="80"/>
+      <line x1="107" y1="10" x2="107" y2="80"/>
+    </g>
+    <g fill="white" stroke="#0f172a" stroke-width="0.6">
+      <circle cx="17" cy="10" r="1.5"/><circle cx="32" cy="10" r="1.5"/><circle cx="47" cy="10" r="1.5"/>
+      <circle cx="62" cy="10" r="1.5"/><circle cx="77" cy="10" r="1.5"/><circle cx="92" cy="10" r="1.5"/><circle cx="107" cy="10" r="1.5"/>
+      <circle cx="17" cy="80" r="1.5"/><circle cx="32" cy="80" r="1.5"/><circle cx="47" cy="80" r="1.5"/>
+      <circle cx="62" cy="80" r="1.5"/><circle cx="77" cy="80" r="1.5"/><circle cx="92" cy="80" r="1.5"/><circle cx="107" cy="80" r="1.5"/>
+    </g>
+    <!-- condensate droplets (distinguishing from condenser) -->
+    <g fill="#60a5fa" stroke="#1d4ed8" stroke-width="0.5">
+      <path d="M 25 86 Q 25 89 27 89 Q 29 89 29 86 Q 29 84 27 82 Q 25 84 25 86 Z"/>
+      <path d="M 55 86 Q 55 89 57 89 Q 59 89 59 86 Q 59 84 57 82 Q 55 84 55 86 Z"/>
+      <path d="M 85 86 Q 85 89 87 89 Q 89 89 89 86 Q 89 84 87 82 Q 85 84 85 86 Z"/>
+    </g>
+    <rect x="-5" y="6" width="5" height="8" fill="#1d4ed8" stroke="#0f172a" stroke-width="0.8"/>
+    <rect x="120" y="6" width="5" height="8" fill="#2563eb" stroke="#0f172a" stroke-width="0.8"/>
+    <rect x="82" y="-12" width="38" height="10" fill="#fef3c7" stroke="#b45309" stroke-width="0.8"/>
+    <text x="101" y="-4" class="shared-badge" text-anchor="middle">SHARED HX</text>
+    <text x="60" y="105" class="comp-label-text">EVAPORATOR</text>
+    <text x="60" y="116" class="comp-tag-text">증발기 · #103 · +condensate</text>
+    <rect class="hit-frame" x="-8" y="-15" width="136" height="136" rx="3"/>
+  </g>
+
+  <!-- ═══════ Divider ═══════ -->
+  <line x1="20" y1="310" x2="920" y2="310" stroke="#cbd5e1" stroke-width="0.8" stroke-dasharray="6 4"/>
+
+  <!-- ═══════ SECTION 2: AIR CYCLE ═══════ -->
+  <text x="20" y="335" class="sec-title">② Air Cycle</text>
+  <line x1="110" y1="332" x2="920" y2="332" class="dim-line"/>
+  <text x="120" y="329" class="flow-dir">drum → filter → evaporator → condenser → fan → drum</text>
+
+  <!-- ─── AIR DUCTS (rectangular cross-section, drawn first) ─── -->
+
+  <!-- duct: drum → filter -->
+  <g class="pipe-group" data-pipe="duct-drum-filter">
+    <path class="pipe-hit" d="M 165 460 L 230 460"/>
+    <path class="duct-edge" d="M 165 460 L 230 460" stroke="#0f172a" stroke-width="20"/>
+    <path class="duct-body" d="M 165 460 L 230 460" stroke="#e5e7eb" stroke-width="17"/>
+    <path class="duct-center" d="M 165 460 L 230 460" stroke="#6b7280" stroke-width="1" stroke-dasharray="4 3"/>
+    <path d="M 165 460 L 230 460" stroke="transparent" stroke-width="1" fill="none" marker-end="url(#arr-air)"/>
+  </g>
+
+  <!-- duct: filter → evaporator -->
+  <g class="pipe-group" data-pipe="duct-filter-evap">
+    <path class="pipe-hit" d="M 300 460 L 360 460"/>
+    <path class="duct-edge" d="M 300 460 L 360 460" stroke="#0f172a" stroke-width="20"/>
+    <path class="duct-body" d="M 300 460 L 360 460" stroke="#e5e7eb" stroke-width="17"/>
+    <path class="duct-center" d="M 300 460 L 360 460" stroke="#6b7280" stroke-width="1" stroke-dasharray="4 3"/>
+    <path d="M 300 460 L 360 460" stroke="transparent" stroke-width="1" fill="none" marker-end="url(#arr-air)"/>
+  </g>
+
+  <!-- duct: evaporator → condenser -->
+  <g class="pipe-group" data-pipe="duct-evap-cond">
+    <path class="pipe-hit" d="M 480 460 L 540 460"/>
+    <path class="duct-edge" d="M 480 460 L 540 460" stroke="#0f172a" stroke-width="20"/>
+    <path class="duct-body" d="M 480 460 L 540 460" stroke="#e5e7eb" stroke-width="17"/>
+    <path class="duct-center" d="M 480 460 L 540 460" stroke="#6b7280" stroke-width="1" stroke-dasharray="4 3"/>
+    <path d="M 480 460 L 540 460" stroke="transparent" stroke-width="1" fill="none" marker-end="url(#arr-air)"/>
+  </g>
+
+  <!-- duct: condenser → fan -->
+  <g class="pipe-group" data-pipe="duct-cond-fan">
+    <path class="pipe-hit" d="M 660 460 L 720 460"/>
+    <path class="duct-edge" d="M 660 460 L 720 460" stroke="#0f172a" stroke-width="20"/>
+    <path class="duct-body" d="M 660 460 L 720 460" stroke="#e5e7eb" stroke-width="17"/>
+    <path class="duct-center" d="M 660 460 L 720 460" stroke="#6b7280" stroke-width="1" stroke-dasharray="4 3"/>
+    <path d="M 660 460 L 720 460" stroke="transparent" stroke-width="1" fill="none" marker-end="url(#arr-air)"/>
+  </g>
+
+  <!-- duct: fan → drum (return) -->
+  <g class="pipe-group" data-pipe="duct-fan-drum">
+    <path class="pipe-hit" d="M 810 460 L 895 460 L 895 570 L 45 570 L 45 460 L 55 460"/>
+    <path class="duct-edge" d="M 810 460 L 895 460 L 895 570 L 45 570 L 45 460 L 55 460" stroke="#0f172a" stroke-width="20"/>
+    <path class="duct-body" d="M 810 460 L 895 460 L 895 570 L 45 570 L 45 460 L 55 460" stroke="#e5e7eb" stroke-width="17"/>
+    <path class="duct-center" d="M 810 460 L 895 460 L 895 570 L 45 570 L 45 460 L 55 460" stroke="#6b7280" stroke-width="1" stroke-dasharray="4 3"/>
+    <path d="M 45 460 L 55 460" stroke="transparent" stroke-width="1" fill="none" marker-end="url(#arr-air)"/>
+  </g>
+  <text x="470" y="565" class="flow-dir" text-anchor="middle">recirculated warm dry air (return to drum)</text>
+
+  <!-- ─── AIR COMPONENTS ─── -->
+
+  <!-- Drum (front view, circular with rotation) -->
+  <g class="comp" data-id="drum" transform="translate(55, 395)">
+    <!-- cabinet frame -->
+    <rect x="0" y="5" width="110" height="120" fill="#f8fafc" stroke="#0f172a" stroke-width="1.5" rx="3"/>
+    <!-- drum outer circle -->
+    <circle cx="55" cy="62" r="48" fill="white" stroke="#0f172a" stroke-width="1.5"/>
+    <!-- drum inner (perforated) -->
+    <circle cx="55" cy="62" r="40" fill="none" stroke="#0f172a" stroke-width="0.8" stroke-dasharray="3 2"/>
+    <!-- perforation dots (simulating drum holes) -->
+    <g fill="#94a3b8">
+      <circle cx="30" cy="50" r="0.8"/>
+      <circle cx="42" cy="38" r="0.8"/>
+      <circle cx="55" cy="32" r="0.8"/>
+      <circle cx="68" cy="38" r="0.8"/>
+      <circle cx="80" cy="50" r="0.8"/>
+      <circle cx="85" cy="62" r="0.8"/>
+      <circle cx="80" cy="74" r="0.8"/>
+      <circle cx="68" cy="86" r="0.8"/>
+      <circle cx="30" cy="74" r="0.8"/>
+      <circle cx="25" cy="62" r="0.8"/>
+    </g>
+    <!-- axle -->
+    <circle cx="55" cy="62" r="3" fill="#0f172a"/>
+    <circle cx="55" cy="62" r="5" fill="none" stroke="#0f172a" stroke-width="0.8"/>
+    <!-- rotation arrow -->
+    <path d="M 28 62 A 27 27 0 0 1 55 35" stroke="#64748b" stroke-width="1.2" fill="none" marker-end="url(#arr-rot)"/>
+    <!-- cloth hints (small curved shapes in drum) -->
+    <g fill="#e2e8f0" stroke="#475569" stroke-width="0.6">
+      <ellipse cx="40" cy="80" rx="6" ry="3" transform="rotate(-20 40 80)"/>
+      <ellipse cx="70" cy="78" rx="5" ry="2.5" transform="rotate(15 70 78)"/>
+      <ellipse cx="55" cy="85" rx="4" ry="2" transform="rotate(-5 55 85)"/>
+    </g>
+    <!-- air port indicators -->
+    <rect x="107" y="58" width="5" height="8" fill="#6b7280" stroke="#0f172a" stroke-width="0.8"/>
+    <rect x="-5" y="58" width="5" height="8" fill="#6b7280" stroke="#0f172a" stroke-width="0.8"/>
+    <!-- labels -->
+    <text x="55" y="18" class="comp-label-text">DRUM</text>
+    <text x="55" y="138" class="comp-tag-text">드럼 · #201 · 8kg cotton</text>
+    <rect class="hit-frame" x="-5" y="0" width="122" height="148" rx="3"/>
+  </g>
+
+  <!-- Filter -->
+  <g class="comp" data-id="filter" transform="translate(230, 425)">
+    <!-- housing frame -->
+    <rect x="0" y="0" width="70" height="70" fill="#f1f5f9" stroke="#0f172a" stroke-width="1.5"/>
+    <!-- filter mesh panel -->
+    <rect x="6" y="6" width="58" height="58" fill="url(#mesh)" stroke="#0f172a" stroke-width="0.9"/>
+    <!-- frame corner details -->
+    <rect x="3" y="3" width="6" height="6" fill="#cbd5e1" stroke="#0f172a" stroke-width="0.6"/>
+    <rect x="61" y="3" width="6" height="6" fill="#cbd5e1" stroke="#0f172a" stroke-width="0.6"/>
+    <rect x="3" y="61" width="6" height="6" fill="#cbd5e1" stroke="#0f172a" stroke-width="0.6"/>
+    <rect x="61" y="61" width="6" height="6" fill="#cbd5e1" stroke="#0f172a" stroke-width="0.6"/>
+    <!-- air flow indicator arrows (inside mesh) -->
+    <g stroke="#64748b" stroke-width="0.6" fill="none">
+      <line x1="15" y1="25" x2="22" y2="25" marker-end="url(#arr-rot)"/>
+      <line x1="15" y1="45" x2="22" y2="45" marker-end="url(#arr-rot)"/>
+    </g>
+    <!-- air ports -->
+    <rect x="-5" y="31" width="5" height="8" fill="#6b7280" stroke="#0f172a" stroke-width="0.8"/>
+    <rect x="70" y="31" width="5" height="8" fill="#6b7280" stroke="#0f172a" stroke-width="0.8"/>
+    <text x="35" y="85" class="comp-label-text">LINT FILTER</text>
+    <text x="35" y="96" class="comp-tag-text">필터 · #210</text>
+    <rect class="hit-frame" x="-3" y="-3" width="76" height="104" rx="3"/>
+  </g>
+
+  <!-- Evaporator (air side - shared, drawn differently - showing cross-section with air flow) -->
+  <g class="comp shared" data-id="evaporator" transform="translate(360, 415)">
+    <!-- rotated HX view (air flows horizontally through fins) -->
+    <rect x="0" y="0" width="120" height="90" fill="white" stroke="#0f172a" stroke-width="1.5"/>
+    <!-- side headers -->
+    <rect x="5" y="6" width="8" height="78" fill="#cbd5e1" stroke="#0f172a" stroke-width="0.9"/>
+    <rect x="107" y="6" width="8" height="78" fill="#cbd5e1" stroke="#0f172a" stroke-width="0.9"/>
+    <!-- fin area (horizontal hatching to show airflow direction) -->
+    <rect x="13" y="6" width="94" height="78" fill="url(#fin-hatch)"/>
+    <rect x="13" y="6" width="94" height="78" fill="none" stroke="#0f172a" stroke-width="0.6"/>
+    <!-- horizontal tubes (air flows through, tubes run horizontally here showing side view) -->
+    <g stroke="#0f172a" stroke-width="1.1">
+      <line x1="10" y1="14" x2="110" y2="14"/>
+      <line x1="10" y1="27" x2="110" y2="27"/>
+      <line x1="10" y1="40" x2="110" y2="40"/>
+      <line x1="10" y1="53" x2="110" y2="53"/>
+      <line x1="10" y1="66" x2="110" y2="66"/>
+      <line x1="10" y1="78" x2="110" y2="78"/>
+    </g>
+    <g fill="white" stroke="#0f172a" stroke-width="0.6">
+      <circle cx="10" cy="14" r="1.4"/><circle cx="10" cy="27" r="1.4"/><circle cx="10" cy="40" r="1.4"/>
+      <circle cx="10" cy="53" r="1.4"/><circle cx="10" cy="66" r="1.4"/><circle cx="10" cy="78" r="1.4"/>
+      <circle cx="110" cy="14" r="1.4"/><circle cx="110" cy="27" r="1.4"/><circle cx="110" cy="40" r="1.4"/>
+      <circle cx="110" cy="53" r="1.4"/><circle cx="110" cy="66" r="1.4"/><circle cx="110" cy="78" r="1.4"/>
+    </g>
+    <!-- condensate drain at bottom -->
+    <path d="M 10 84 L 110 84 L 100 90 L 20 90 Z" fill="#dbeafe" stroke="#0f172a" stroke-width="0.8"/>
+    <text x="60" y="89" font-family="JetBrains Mono" font-size="6.5" fill="#1e40af" text-anchor="middle">condensate</text>
+    <!-- air ports (left and right) -->
+    <rect x="-5" y="42" width="5" height="8" fill="#6b7280" stroke="#0f172a" stroke-width="0.8"/>
+    <rect x="120" y="42" width="5" height="8" fill="#6b7280" stroke="#0f172a" stroke-width="0.8"/>
+    <!-- shared badge -->
+    <rect x="82" y="-12" width="38" height="10" fill="#fef3c7" stroke="#b45309" stroke-width="0.8"/>
+    <text x="101" y="-4" class="shared-badge" text-anchor="middle">SHARED HX</text>
+    <text x="60" y="108" class="comp-label-text">EVAPORATOR</text>
+    <text x="60" y="119" class="comp-tag-text">증발기 · air-side view</text>
+    <rect class="hit-frame" x="-8" y="-15" width="136" height="140" rx="3"/>
+  </g>
+
+  <!-- Condenser (air side - shared) -->
+  <g class="comp shared" data-id="condenser" transform="translate(540, 415)">
+    <rect x="0" y="0" width="120" height="90" fill="white" stroke="#0f172a" stroke-width="1.5"/>
+    <rect x="5" y="6" width="8" height="78" fill="#cbd5e1" stroke="#0f172a" stroke-width="0.9"/>
+    <rect x="107" y="6" width="8" height="78" fill="#cbd5e1" stroke="#0f172a" stroke-width="0.9"/>
+    <rect x="13" y="6" width="94" height="78" fill="url(#fin-hatch)"/>
+    <rect x="13" y="6" width="94" height="78" fill="none" stroke="#0f172a" stroke-width="0.6"/>
+    <g stroke="#0f172a" stroke-width="1.1">
+      <line x1="10" y1="14" x2="110" y2="14"/>
+      <line x1="10" y1="27" x2="110" y2="27"/>
+      <line x1="10" y1="40" x2="110" y2="40"/>
+      <line x1="10" y1="53" x2="110" y2="53"/>
+      <line x1="10" y1="66" x2="110" y2="66"/>
+      <line x1="10" y1="78" x2="110" y2="78"/>
+    </g>
+    <g fill="white" stroke="#0f172a" stroke-width="0.6">
+      <circle cx="10" cy="14" r="1.4"/><circle cx="10" cy="27" r="1.4"/><circle cx="10" cy="40" r="1.4"/>
+      <circle cx="10" cy="53" r="1.4"/><circle cx="10" cy="66" r="1.4"/><circle cx="10" cy="78" r="1.4"/>
+      <circle cx="110" cy="14" r="1.4"/><circle cx="110" cy="27" r="1.4"/><circle cx="110" cy="40" r="1.4"/>
+      <circle cx="110" cy="53" r="1.4"/><circle cx="110" cy="66" r="1.4"/><circle cx="110" cy="78" r="1.4"/>
+    </g>
+    <!-- heat emission wiggly lines (distinguishing condenser) -->
+    <g stroke="#ea580c" stroke-width="0.8" fill="none" opacity="0.8">
+      <path d="M 40 -4 Q 42 -6 44 -4 Q 46 -2 48 -4"/>
+      <path d="M 60 -4 Q 62 -6 64 -4 Q 66 -2 68 -4"/>
+      <path d="M 80 -4 Q 82 -6 84 -4 Q 86 -2 88 -4"/>
+    </g>
+    <rect x="-5" y="42" width="5" height="8" fill="#6b7280" stroke="#0f172a" stroke-width="0.8"/>
+    <rect x="120" y="42" width="5" height="8" fill="#6b7280" stroke="#0f172a" stroke-width="0.8"/>
+    <rect x="82" y="-12" width="38" height="10" fill="#fef3c7" stroke="#b45309" stroke-width="0.8"/>
+    <text x="101" y="-4" class="shared-badge" text-anchor="middle">SHARED HX</text>
+    <text x="60" y="108" class="comp-label-text">CONDENSER</text>
+    <text x="60" y="119" class="comp-tag-text">응축기 · air-side view</text>
+    <rect class="hit-frame" x="-8" y="-15" width="136" height="140" rx="3"/>
+  </g>
+
+  <!-- Fan (centrifugal/sirocco with scroll housing) -->
+  <g class="comp" data-id="fan" transform="translate(720, 420)">
+    <!-- sirocco housing (spiral scroll) -->
+    <path d="M 45 5 Q 5 5 5 45 Q 5 85 45 85 L 85 85 L 85 55 L 90 55 Z"
+          fill="white" stroke="#0f172a" stroke-width="1.5"/>
+    <!-- inner blade cage -->
+    <circle cx="35" cy="45" r="24" fill="white" stroke="#0f172a" stroke-width="1"/>
+    <!-- backward-curved blades (12 blades) -->
+    <g stroke="#0f172a" stroke-width="0.9" fill="none">
+      <path d="M 35 21 Q 37 24 35 28"/>
+      <path d="M 47 25 Q 47 28 44 30"/>
+      <path d="M 55 35 Q 52 36 50 34"/>
+      <path d="M 57 45 Q 54 45 53 43"/>
+      <path d="M 55 55 Q 52 54 50 56"/>
+      <path d="M 47 65 Q 47 62 44 60"/>
+      <path d="M 35 69 Q 37 66 35 62"/>
+      <path d="M 23 65 Q 23 62 26 60"/>
+      <path d="M 15 55 Q 18 54 20 56"/>
+      <path d="M 13 45 Q 16 45 17 43"/>
+      <path d="M 15 35 Q 18 36 20 34"/>
+      <path d="M 23 25 Q 23 28 26 30"/>
+    </g>
+    <!-- hub -->
+    <circle cx="35" cy="45" r="4" fill="#0f172a"/>
+    <circle cx="35" cy="45" r="1.5" fill="white"/>
+    <!-- motor on side -->
+    <rect x="85" y="40" width="16" height="10" fill="#e2e8f0" stroke="#0f172a" stroke-width="1"/>
+    <text x="93" y="47" text-anchor="middle" font-family="JetBrains Mono" font-size="6" fill="#0f172a">M</text>
+    <!-- outlet arrow (showing air direction out) -->
+    <path d="M 85 60 L 85 70 L 90 70" fill="none" stroke="#334155" stroke-width="1" stroke-dasharray="2 1"/>
+    <!-- air ports -->
+    <rect x="-2" y="41" width="5" height="8" fill="#6b7280" stroke="#0f172a" stroke-width="0.8"/>
+    <rect x="86" y="82" width="8" height="5" fill="#6b7280" stroke="#0f172a" stroke-width="0.8"/>
+    <text x="50" y="103" class="comp-label-text">BLOWER FAN</text>
+    <text x="50" y="114" class="comp-tag-text">팬 · #200 · sirocco</text>
+    <rect class="hit-frame" x="-3" y="0" width="108" height="120" rx="3"/>
+  </g>
+
+  <!-- Shared HX coupling indicators (small vertical dashed lines between the two views) -->
+  <g opacity="0.5" pointer-events="none">
+    <line x1="335" y1="218" x2="335" y2="250" stroke="#b45309" stroke-width="0.8" stroke-dasharray="2 2"/>
+    <line x1="335" y1="270" x2="335" y2="400" stroke="#b45309" stroke-width="0.8" stroke-dasharray="2 2"/>
+    <text x="340" y="305" font-family="JetBrains Mono" font-size="7" fill="#b45309">SAME HX</text>
+    <line x1="735" y1="218" x2="735" y2="250" stroke="#b45309" stroke-width="0.8" stroke-dasharray="2 2"/>
+    <line x1="735" y1="270" x2="735" y2="400" stroke="#b45309" stroke-width="0.8" stroke-dasharray="2 2"/>
+    <text x="740" y="305" font-family="JetBrains Mono" font-size="7" fill="#b45309">SAME HX</text>
+    <!-- Note: in reality condenser is on opposite sides; this diagram uses side-by-side for clarity -->
+  </g>
+
+  <!-- Legend in bottom-right corner (engineering drawing style) -->
+  <g transform="translate(680, 585)">
+    <rect x="0" y="0" width="240" height="30" fill="white" stroke="#0f172a" stroke-width="0.8"/>
+    <text x="6" y="10" font-family="JetBrains Mono" font-size="7" font-weight="700" fill="#0f172a">LEGEND</text>
+    <line x1="40" y1="16" x2="56" y2="16" stroke="#dc2626" stroke-width="5"/>
+    <text x="60" y="18" font-family="JetBrains Mono" font-size="7" fill="#475569">HP refrig</text>
+    <line x1="108" y1="16" x2="124" y2="16" stroke="#2563eb" stroke-width="5"/>
+    <text x="128" y="18" font-family="JetBrains Mono" font-size="7" fill="#475569">LP refrig</text>
+    <rect x="175" y="13" width="16" height="6" fill="#e5e7eb" stroke="#0f172a" stroke-width="0.6"/>
+    <text x="195" y="18" font-family="JetBrains Mono" font-size="7" fill="#475569">air duct</text>
+    <text x="6" y="26" font-family="JetBrains Mono" font-size="7" fill="#b45309">⚠ SHARED HX · 냉매/공기 양면</text>
+  </g>
+</svg>
+      </div>
+    </div>
+
+    <!-- Footer status -->
+    <div class="h-7 bg-slate-50 border-t border-slate-200 flex items-center px-3 text-[10px] text-slate-500 mono shrink-0 gap-4">
+      <span>selected: <span id="footer-sel" class="text-slate-900 font-semibold">—</span></span>
+      <span class="text-slate-300">|</span>
+      <span>modified: <span id="footer-mod" class="text-slate-900 font-semibold">0</span></span>
+      <span class="flex-1"></span>
+      <span>view: schematic · fixed</span>
+    </div>
+  </div>
+
+  <!-- ─── RIGHT: Properties / Chat panel ─── -->
+  <div class="w-[360px] bg-white border-l border-slate-200 flex flex-col shrink-0">
+    <!-- Tabs -->
+    <div class="h-10 border-b border-slate-200 flex items-center px-2 gap-0.5 bg-slate-50 shrink-0">
+      <button id="tab-props" class="tab-btn active px-3 py-2 text-[11px] font-medium mono tracking-wider uppercase">Properties</button>
+      <button id="tab-chat" class="tab-btn px-3 py-2 text-[11px] font-medium mono tracking-wider uppercase">AI Chat</button>
+      <div class="flex-1"></div>
+      <span id="tab-chat-badge" class="text-[9px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 border border-amber-300 mono font-semibold">UI ONLY</span>
+    </div>
+
+    <!-- Properties panel -->
+    <div id="props-panel" class="flex-1 overflow-y-auto">
+      <div id="props-head" class="px-4 py-3 border-b border-slate-100 bg-slate-50/60">
+        <div id="props-title" class="text-[13px] font-semibold text-slate-900 flex items-center gap-1.5">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-slate-400"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          Properties
+        </div>
+        <div id="props-sub" class="text-[10px] text-slate-500 mono mt-1">no selection</div>
+      </div>
+      <div id="props-body" class="p-4">
+        <div class="text-center py-16 text-slate-400 text-[12px] leading-relaxed">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="mx-auto mb-3 text-slate-300"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/></svg>
+          개략도에서 컴포넌트 또는<br>배관·덕트를 클릭하세요
+          <div class="text-[10px] mono text-slate-400 mt-2">shared HX는 양쪽 인스턴스 동시 선택</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Chat panel -->
+    <div id="chat-panel" class="hidden flex-1 overflow-hidden flex flex-col">
+      <div class="flex-1 overflow-y-auto p-3 space-y-3 bg-slate-50">
+        <div class="text-[12px] leading-relaxed">
+          <div class="flex items-center gap-1.5 mb-1 text-[9px] mono uppercase tracking-widest text-amber-700 font-semibold">
+            <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>Assistant
+          </div>
+          <div class="text-slate-700">
+            HPWD Studio Task 프로토타입. 아직 LLM 백엔드는 연결 안 됨 — UI shell만.
+          </div>
+          <div class="mt-2 bg-white border border-slate-200 border-l-2 border-l-amber-500 rounded-r px-3 py-2 mono text-[10.5px] text-slate-600 leading-relaxed">
+            추후 탑재 기능:<br>
+            · <code class="bg-slate-100 px-1 rounded">set_param</code> — 자연어 파라미터 수정<br>
+            · <code class="bg-slate-100 px-1 rounded">run_sim</code> — 시뮬레이션 실행<br>
+            · <code class="bg-slate-100 px-1 rounded">explain</code> — 결과 해석·리포트<br>
+            · <code class="bg-slate-100 px-1 rounded">check_spec</code> — RAG 규격 체크<br>
+            · <code class="bg-slate-100 px-1 rounded">suggest</code> — what-if 시나리오
+          </div>
+        </div>
+      </div>
+      <div class="border-t border-slate-200 p-2 bg-white">
+        <div class="flex flex-wrap gap-1.5 mb-2 px-0.5">
+          <span class="chip-sug text-[10px] px-2 py-1 bg-slate-100 border border-slate-200 rounded-full text-slate-600 cursor-pointer hover:border-cyan-500 hover:text-cyan-700">증발기 UA 비교</span>
+          <span class="chip-sug text-[10px] px-2 py-1 bg-slate-100 border border-slate-200 rounded-full text-slate-600 cursor-pointer hover:border-cyan-500 hover:text-cyan-700">SMER 최대화</span>
+          <span class="chip-sug text-[10px] px-2 py-1 bg-slate-100 border border-slate-200 rounded-full text-slate-600 cursor-pointer hover:border-cyan-500 hover:text-cyan-700">토출배관 단축</span>
+        </div>
+        <div class="flex gap-1.5">
+          <textarea disabled class="flex-1 resize-none px-2 py-1.5 text-[11px] border border-slate-300 rounded bg-slate-50 text-slate-700 h-9 mono" placeholder="압축기 RPM 3000으로 설정하고 돌려줘 (현재 비활성)"></textarea>
+          <button disabled class="px-3 text-[10px] mono font-semibold bg-cyan-600 text-white rounded opacity-50 cursor-not-allowed tracking-wider">SEND</button>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- ═════════════ CHAT SIDEBAR ═════════════ -->
-  <aside class="chat">
-    <div class="chat-head">
-      <div class="title">💬 AI 어시스턴트</div>
-      <span class="badge">UI ONLY</span>
-    </div>
-    <div class="chat-body" id="chat-body">
-      <div class="msg assistant">
-        <div class="who"><span class="dot"></span>ASSISTANT</div>
-        <div>HPWD Studio 세탁건조기 전용 프로토타입임. 현재는 UI shell만 — LLM 백엔드는 추후 연결 예정.</div>
-        <div class="preview">
-          추후 탑재 기능:<br>
-          · <code>set_param</code> — 자연어로 파라미터 수정<br>
-          · <code>run_sim</code> — 시뮬레이션 실행<br>
-          · <code>explain_result</code> — 결과 해석·리포트<br>
-          · <code>check_spec</code> — RAG 기반 규격 체크<br>
-          · <code>suggest_design</code> — what-if 시나리오
-        </div>
-      </div>
-      <div class="msg assistant">
-        <div class="who"><span class="dot"></span>ASSISTANT</div>
-        <div>먼저 개략도 요소를 클릭해서 파라미터 구조 살펴보기 추천. 공유 HX(노란색)는 냉매/공기 양쪽 파라미터를 한 화면에서 관리.</div>
-      </div>
-    </div>
-    <div class="suggestions">
-      <span class="chip">증발기 UA 올려서 비교</span>
-      <span class="chip">토출배관 길이 줄이면?</span>
-      <span class="chip">SMER 최대화 셋업</span>
-      <span class="chip">필터 오염시 영향</span>
-    </div>
-    <div class="chat-input">
-      <textarea placeholder="예: 압축기 RPM 3000으로 설정하고 돌려줘 (현재 비활성)" disabled></textarea>
-      <button disabled>SEND</button>
-    </div>
-  </aside>
 </div>
 
 <script>
 'use strict';
 
-/* ═══════════ Parameter schemas ═══════════ */
+/* ═══════════ Component parameter schemas ═══════════ */
 const schemas = {
   compressor: {
-    title: '압축기 · COMPRESSOR',
-    kindDot: 'refrigerant',
-    kind: '냉동사이클 · 능동 컴포넌트 (Prime mover)',
-    emoji: '⚙️',
-    fields: [
-      { key: 'type', label: '유형', type: 'select',
-        options: ['Rotary', 'Scroll', 'Reciprocating', 'BLDC Inverter'], value: 'BLDC Inverter' },
-      { key: 'displacement', label: '배기량', type: 'number', unit: 'cc/rev', value: 10.5 },
-      { key: 'rpm', label: '회전수', type: 'number', unit: 'RPM', value: 3000 },
-      { key: 'eta_is', label: '단열효율', type: 'number', unit: '-', value: 0.72 },
-      { key: 'eta_vol', label: '체적효율', type: 'number', unit: '-', value: 0.88 },
-      { key: 'eta_mech', label: '기계효율', type: 'number', unit: '-', value: 0.90 },
-      { key: 'q_loss', label: '외벽 열손실 계수', type: 'number', unit: 'W/K', value: 1.2 },
+    title: 'Compressor',
+    sub: '압축기 · Type #100 · refrigerant cycle',
+    kindColor: '#dc2626',
+    groups: [
+      { label: 'Geometry & Kinematics', fields: [
+        { key: 'type', label: 'Type', type: 'select', options: ['Rotary', 'Scroll', 'Reciprocating', 'BLDC Inverter'], value: 'BLDC Inverter' },
+        { key: 'V_disp', label: 'Displacement', unit: 'cc/rev', value: 10.5 },
+        { key: 'RPM', label: 'Speed', unit: 'RPM', value: 3000 },
+      ]},
+      { label: 'Efficiencies', fields: [
+        { key: 'eta_is', label: 'η_isentropic', unit: '-', value: 0.72 },
+        { key: 'eta_v', label: 'η_volumetric', unit: '-', value: 0.88 },
+        { key: 'eta_mech', label: 'η_mechanical', unit: '-', value: 0.90 },
+      ]},
+      { label: 'Thermal', fields: [
+        { key: 'Q_loss', label: 'shell heat loss', unit: 'W/K', value: 1.2 },
+      ]},
     ]
   },
   condenser: {
-    title: '응축기 · CONDENSER',
-    kindDot: 'shared',
-    kind: '공유 HX · 냉매측 ↔ 공기측 양측 모델링',
-    emoji: '🔥',
-    fields: [
-      { key: 'hx_type', label: 'HX 타입', type: 'select', options: ['Fin-and-Tube', 'Microchannel'], value: 'Fin-and-Tube' },
-      { key: 'tube_di', label: '관 내경', type: 'number', unit: 'mm', value: 7.0 },
-      { key: 'tube_do', label: '관 외경', type: 'number', unit: 'mm', value: 7.94 },
-      { key: 'rows', label: '관 열수', type: 'number', unit: 'ea', value: 2 },
-      { key: 'passes', label: '패스 수', type: 'number', unit: 'ea', value: 4 },
-      { key: 'fin_pitch', label: '핀 피치', type: 'number', unit: 'mm', value: 1.6 },
-      { key: 'fin_thk', label: '핀 두께', type: 'number', unit: 'mm', value: 0.12 },
-      { key: 'core_w', label: '코어 폭', type: 'number', unit: 'mm', value: 280 },
-      { key: 'core_h', label: '코어 높이', type: 'number', unit: 'mm', value: 240 },
-      { key: 'core_d', label: '코어 두께', type: 'number', unit: 'mm', value: 38 },
-      { key: 'ua_est', label: 'UA (초기 추정)', type: 'number', unit: 'W/K', value: 320 },
-      { key: 'dp_ref_k', label: '냉매측 ΔP 계수', type: 'number', unit: '-', value: 1.0 },
-      { key: 'dp_air_k', label: '공기측 ΔP 계수', type: 'number', unit: '-', value: 1.0 },
+    title: 'Condenser',
+    sub: '응축기 · Type #101 · SHARED HX · fin-tube',
+    kindColor: '#ea580c',
+    shared: true,
+    groups: [
+      { label: 'Core Geometry', fields: [
+        { key: 'hx_type', label: 'HX type', type: 'select', options: ['Fin-and-Tube', 'Microchannel'], value: 'Fin-and-Tube' },
+        { key: 'core_W', label: 'core width', unit: 'mm', value: 280 },
+        { key: 'core_H', label: 'core height', unit: 'mm', value: 240 },
+        { key: 'core_D', label: 'core depth', unit: 'mm', value: 38 },
+      ]},
+      { label: 'Tube', fields: [
+        { key: 'tube_di', label: 'inner dia.', unit: 'mm', value: 7.0 },
+        { key: 'tube_do', label: 'outer dia.', unit: 'mm', value: 7.94 },
+        { key: 'rows', label: 'rows', unit: 'ea', value: 2 },
+        { key: 'passes', label: 'passes', unit: 'ea', value: 4 },
+      ]},
+      { label: 'Fin', fields: [
+        { key: 'fin_pitch', label: 'fin pitch', unit: 'mm', value: 1.6 },
+        { key: 'fin_thk', label: 'fin thickness', unit: 'mm', value: 0.12 },
+      ]},
+      { label: 'Performance', fields: [
+        { key: 'UA', label: 'UA estimate', unit: 'W/K', value: 320 },
+        { key: 'dP_ref_k', label: 'ΔP ref (side) k', unit: '-', value: 1.0 },
+        { key: 'dP_air_k', label: 'ΔP air (side) k', unit: '-', value: 1.0 },
+      ]},
     ]
   },
   lev: {
-    title: '팽창밸브 · LEV',
-    kindDot: 'refrigerant',
-    kind: '냉동사이클 · 제어 컴포넌트 (Throttling)',
-    emoji: '🎛️',
-    fields: [
-      { key: 'type', label: '타입', type: 'select',
-        options: ['LEV (Linear EV)', 'EEV (Electronic EV)', 'TXV', 'Capillary'], value: 'LEV (Linear EV)' },
-      { key: 'opening', label: '개도', type: 'number', unit: 'pulse', value: 220 },
-      { key: 'max_pulse', label: '최대 스텝', type: 'number', unit: 'pulse', value: 480 },
-      { key: 'cv_max', label: '최대 Cv', type: 'number', unit: '-', value: 0.32 },
-      { key: 'response_ms', label: '응답 시정수', type: 'number', unit: 'ms', value: 150 },
+    title: 'LEV',
+    sub: '팽창밸브 · Type #102 · refrigerant cycle',
+    kindColor: '#d97706',
+    groups: [
+      { label: 'Valve', fields: [
+        { key: 'type', label: 'type', type: 'select', options: ['LEV (Linear)', 'EEV (Electronic)', 'TXV', 'Capillary'], value: 'LEV (Linear)' },
+        { key: 'opening', label: 'opening', unit: 'pulse', value: 220 },
+        { key: 'max_pulse', label: 'max steps', unit: 'pulse', value: 480 },
+        { key: 'Cv_max', label: 'Cv_max', unit: '-', value: 0.32 },
+      ]},
+      { label: 'Dynamics', fields: [
+        { key: 'tau', label: 'response time', unit: 'ms', value: 150 },
+      ]},
     ]
   },
   evaporator: {
-    title: '증발기 · EVAPORATOR',
-    kindDot: 'shared',
-    kind: '공유 HX · 냉매측 ↔ 공기측 + 응축수 모델링',
-    emoji: '❄️',
-    fields: [
-      { key: 'hx_type', label: 'HX 타입', type: 'select', options: ['Fin-and-Tube', 'Microchannel'], value: 'Fin-and-Tube' },
-      { key: 'tube_di', label: '관 내경', type: 'number', unit: 'mm', value: 7.0 },
-      { key: 'tube_do', label: '관 외경', type: 'number', unit: 'mm', value: 7.94 },
-      { key: 'rows', label: '관 열수', type: 'number', unit: 'ea', value: 2 },
-      { key: 'passes', label: '패스 수', type: 'number', unit: 'ea', value: 4 },
-      { key: 'fin_pitch', label: '핀 피치', type: 'number', unit: 'mm', value: 1.4 },
-      { key: 'fin_thk', label: '핀 두께', type: 'number', unit: 'mm', value: 0.12 },
-      { key: 'core_w', label: '코어 폭', type: 'number', unit: 'mm', value: 280 },
-      { key: 'core_h', label: '코어 높이', type: 'number', unit: 'mm', value: 240 },
-      { key: 'core_d', label: '코어 두께', type: 'number', unit: 'mm', value: 38 },
-      { key: 'ua_est', label: 'UA (초기 추정)', type: 'number', unit: 'W/K', value: 280 },
-      { key: 'dp_ref_k', label: '냉매측 ΔP 계수', type: 'number', unit: '-', value: 1.0 },
-      { key: 'dp_air_k', label: '공기측 ΔP 계수', type: 'number', unit: '-', value: 1.0 },
-      { key: 'cond_drain_k', label: '응축수 배출 보정', type: 'number', unit: '-', value: 1.0 },
+    title: 'Evaporator',
+    sub: '증발기 · Type #103 · SHARED HX · fin-tube',
+    kindColor: '#2563eb',
+    shared: true,
+    groups: [
+      { label: 'Core Geometry', fields: [
+        { key: 'hx_type', label: 'HX type', type: 'select', options: ['Fin-and-Tube', 'Microchannel'], value: 'Fin-and-Tube' },
+        { key: 'core_W', label: 'core width', unit: 'mm', value: 280 },
+        { key: 'core_H', label: 'core height', unit: 'mm', value: 240 },
+        { key: 'core_D', label: 'core depth', unit: 'mm', value: 38 },
+      ]},
+      { label: 'Tube', fields: [
+        { key: 'tube_di', label: 'inner dia.', unit: 'mm', value: 7.0 },
+        { key: 'tube_do', label: 'outer dia.', unit: 'mm', value: 7.94 },
+        { key: 'rows', label: 'rows', unit: 'ea', value: 2 },
+        { key: 'passes', label: 'passes', unit: 'ea', value: 4 },
+      ]},
+      { label: 'Fin', fields: [
+        { key: 'fin_pitch', label: 'fin pitch', unit: 'mm', value: 1.4 },
+        { key: 'fin_thk', label: 'fin thickness', unit: 'mm', value: 0.12 },
+      ]},
+      { label: 'Performance', fields: [
+        { key: 'UA', label: 'UA estimate', unit: 'W/K', value: 280 },
+        { key: 'SH', label: 'target superheat', unit: 'K', value: 5 },
+        { key: 'dP_ref_k', label: 'ΔP ref (side) k', unit: '-', value: 1.0 },
+        { key: 'dP_air_k', label: 'ΔP air (side) k', unit: '-', value: 1.0 },
+        { key: 'drain_k', label: 'condensate drain k', unit: '-', value: 1.0 },
+      ]},
     ]
   },
   drum: {
-    title: '드럼 · DRUM',
-    kindDot: 'air',
-    kind: '공기사이클 · 세탁물 홀더 (Moisture source)',
-    emoji: '🌀',
-    fields: [
-      { key: 'volume', label: '드럼 체적', type: 'number', unit: 'L', value: 120 },
-      { key: 'load_kg', label: '세탁물 부하', type: 'number', unit: 'kg', value: 8.0 },
-      { key: 'fabric_type', label: '직물 종류', type: 'select', options: ['Cotton', 'Synthetic', 'Mixed', 'Wool'], value: 'Mixed' },
-      { key: 'moist_init', label: '초기 함수율', type: 'number', unit: '%', value: 60 },
-      { key: 'moist_target', label: '목표 함수율', type: 'number', unit: '%', value: 5 },
-      { key: 'rpm_tumble', label: '텀블링 RPM', type: 'number', unit: 'RPM', value: 52 },
-      { key: 'thermal_mass_k', label: '세탁물 열용량 보정', type: 'number', unit: '-', value: 1.0 },
-      { key: 'lip_leak', label: '가스켓 누기율', type: 'number', unit: '%', value: 3 },
+    title: 'Drum',
+    sub: '드럼 · Type #201 · air cycle',
+    kindColor: '#059669',
+    groups: [
+      { label: 'Geometry', fields: [
+        { key: 'V', label: 'drum volume', unit: 'L', value: 120 },
+        { key: 'D', label: 'drum diameter', unit: 'mm', value: 585 },
+      ]},
+      { label: 'Load', fields: [
+        { key: 'fabric', label: 'fabric', type: 'select', options: ['Cotton', 'Synthetic', 'Mixed', 'Wool'], value: 'Mixed' },
+        { key: 'm_load', label: 'load mass', unit: 'kg', value: 8.0 },
+        { key: 'MC_init', label: 'init moisture', unit: '%', value: 60 },
+        { key: 'MC_target', label: 'target moisture', unit: '%', value: 5 },
+      ]},
+      { label: 'Motion', fields: [
+        { key: 'RPM', label: 'tumble RPM', unit: 'RPM', value: 52 },
+        { key: 'leak', label: 'gasket leak', unit: '%', value: 3 },
+      ]},
     ]
   },
   filter: {
-    title: '필터 · LINT FILTER',
-    kindDot: 'air',
-    kind: '공기사이클 · 수동 컴포넌트 (ΔP source)',
-    emoji: '🕸️',
-    fields: [
-      { key: 'area', label: '필터 면적', type: 'number', unit: 'm²', value: 0.045 },
-      { key: 'k_dp', label: '기본 ΔP 계수', type: 'number', unit: '-', value: 1.0 },
-      { key: 'soil_pct', label: '오염도', type: 'number', unit: '%', value: 0 },
-      { key: 'material', label: '소재', type: 'select', options: ['Mesh', 'Non-woven', 'Hybrid'], value: 'Mesh' },
+    title: 'Lint Filter',
+    sub: '필터 · Type #210 · air cycle',
+    kindColor: '#6b7280',
+    groups: [
+      { label: 'Geometry', fields: [
+        { key: 'A_filter', label: 'filter area', unit: 'm²', value: 0.045 },
+      ]},
+      { label: 'Pressure Drop', fields: [
+        { key: 'k_dp', label: 'base ΔP k', unit: '-', value: 1.0 },
+        { key: 'soil', label: 'soiling', unit: '%', value: 0 },
+      ]},
+      { label: 'Material', fields: [
+        { key: 'material', label: 'material', type: 'select', options: ['Mesh', 'Non-woven', 'Hybrid'], value: 'Mesh' },
+      ]},
     ]
   },
   fan: {
-    title: '팬 · BLOWER',
-    kindDot: 'air',
-    kind: '공기사이클 · 능동 컴포넌트 (Air mover)',
-    emoji: '🌬️',
-    fields: [
-      { key: 'type', label: '팬 타입', type: 'select', options: ['Axial', 'Centrifugal', 'Sirocco'], value: 'Sirocco' },
-      { key: 'rpm', label: '회전수', type: 'number', unit: 'RPM', value: 2400 },
-      { key: 'flow_max', label: '최대 풍량', type: 'number', unit: 'm³/min', value: 4.2 },
-      { key: 'sp_max', label: '최대 정압', type: 'number', unit: 'Pa', value: 180 },
-      { key: 'eta_fan', label: '팬 효율', type: 'number', unit: '-', value: 0.35 },
-      { key: 'motor_eta', label: '모터 효율', type: 'number', unit: '-', value: 0.82 },
+    title: 'Blower Fan',
+    sub: '팬 · Type #200 · air cycle',
+    kindColor: '#0891b2',
+    groups: [
+      { label: 'Fan', fields: [
+        { key: 'type', label: 'type', type: 'select', options: ['Axial', 'Centrifugal', 'Sirocco'], value: 'Sirocco' },
+        { key: 'RPM', label: 'speed', unit: 'RPM', value: 2400 },
+      ]},
+      { label: 'Performance', fields: [
+        { key: 'Q_max', label: 'Q_max', unit: 'm³/min', value: 4.2 },
+        { key: 'SP_max', label: 'SP_max', unit: 'Pa', value: 180 },
+        { key: 'eta_fan', label: 'η_fan', unit: '-', value: 0.35 },
+        { key: 'eta_mot', label: 'η_motor', unit: '-', value: 0.82 },
+      ]},
     ]
   },
 };
 
-/* ═══════════ Pipe metadata ═══════════ */
+/* ═══════════ Pipe / Duct schemas ═══════════ */
 const pipeMeta = {
-  'pipe-comp-cond': { kind: 'refrigerant', label: '토출배관 (Discharge)', phase: '고압·고온 기체', length: 380, di: 6.35, ins: 6, bends: 2 },
-  'pipe-cond-lev':  { kind: 'refrigerant', label: '액배관 (Liquid Line)', phase: '고압 액', length: 420, di: 6.35, ins: 3, bends: 2 },
-  'pipe-lev-evap':  { kind: 'refrigerant', label: '분배기 유입 (Distributor)', phase: '저압 2상', length: 180, di: 6.35, ins: 3, bends: 1 },
-  'pipe-evap-comp': { kind: 'refrigerant', label: '흡입배관 (Suction)', phase: '저압 기체', length: 520, di: 9.52, ins: 9, bends: 3 },
-  'duct-drum-filter': { kind: 'air', label: '드럼 → 필터', length: 180, area: 12000 },
-  'duct-filter-evap': { kind: 'air', label: '필터 → 증발기', length: 120, area: 10500 },
-  'duct-evap-cond':   { kind: 'air', label: '증발기 → 응축기', length: 60,  area: 9500 },
-  'duct-cond-fan':    { kind: 'air', label: '응축기 → 팬', length: 80,  area: 9500 },
-  'duct-fan-drum':    { kind: 'air', label: '팬 → 드럼 (환기)', length: 340, area: 9000 },
+  'pipe-comp-cond': { kind: 'refrig-hp', label: 'Discharge line', korean: '토출배관', phase: 'HP hot gas', length: 380, di: 6.35, ins: 6, bends: 2 },
+  'pipe-cond-lev':  { kind: 'refrig-hp', label: 'Liquid line', korean: '액배관', phase: 'HP liquid', length: 420, di: 6.35, ins: 3, bends: 2 },
+  'pipe-lev-evap':  { kind: 'refrig-lp', label: 'Distributor line', korean: '증발기 유입', phase: 'LP two-phase', length: 180, di: 6.35, ins: 3, bends: 1 },
+  'pipe-evap-comp': { kind: 'refrig-lp', label: 'Suction line', korean: '흡입배관', phase: 'LP gas', length: 520, di: 9.52, ins: 9, bends: 3 },
+  'duct-drum-filter': { kind: 'air', label: 'Drum → Filter', length: 180, area: 12000 },
+  'duct-filter-evap': { kind: 'air', label: 'Filter → Evaporator', length: 120, area: 10500 },
+  'duct-evap-cond':   { kind: 'air', label: 'Evap → Cond', length: 60,  area: 9500 },
+  'duct-cond-fan':    { kind: 'air', label: 'Cond → Fan', length: 80,  area: 9500 },
+  'duct-fan-drum':    { kind: 'air', label: 'Fan → Drum (return)', length: 340, area: 9000 },
 };
 
 function pipeSchema(id) {
   const meta = pipeMeta[id];
   if (!meta) return null;
-  if (meta.kind === 'refrigerant') {
+  if (meta.kind.startsWith('refrig')) {
     return {
-      title: `냉매배관 · ${meta.label}`,
-      kindDot: 'refrigerant',
-      kind: `냉동사이클 배관 · ${meta.phase}`,
-      emoji: '🟥',
-      fields: [
-        { key: 'length', label: '길이', type: 'number', unit: 'mm', value: meta.length },
-        { key: 'di', label: '내경', type: 'number', unit: 'mm', value: meta.di },
-        { key: 'do', label: '외경', type: 'number', unit: 'mm', value: meta.di + 1 },
-        { key: 'insul_thk', label: '단열재 두께', type: 'number', unit: 'mm', value: meta.ins },
-        { key: 'insul_k', label: '단열재 열전도율', type: 'number', unit: 'W/m·K', value: 0.036 },
-        { key: 'bends', label: '벤드 개수', type: 'number', unit: 'ea', value: meta.bends },
-        { key: 'bend_r', label: '벤드 반경', type: 'number', unit: 'mm', value: 25 },
-        { key: 'refrigerant', label: '냉매', type: 'select', options: ['R290', 'R134a', 'R1234yf', 'R32'], value: 'R290' },
-        { key: 'roughness', label: '관내 조도', type: 'number', unit: 'μm', value: 1.5 },
+      title: `Pipe · ${meta.label}`,
+      sub: `냉매배관 · ${meta.korean} · ${meta.phase}`,
+      kindColor: meta.kind === 'refrig-hp' ? '#dc2626' : '#2563eb',
+      groups: [
+        { label: 'Geometry', fields: [
+          { key: 'L', label: 'length', unit: 'mm', value: meta.length },
+          { key: 'di', label: 'inner dia.', unit: 'mm', value: meta.di },
+          { key: 'do', label: 'outer dia.', unit: 'mm', value: meta.di + 1 },
+          { key: 'bends', label: 'bends', unit: 'ea', value: meta.bends },
+          { key: 'bend_r', label: 'bend radius', unit: 'mm', value: 25 },
+        ]},
+        { label: 'Insulation', fields: [
+          { key: 'ins_thk', label: 'insul thickness', unit: 'mm', value: meta.ins },
+          { key: 'ins_k', label: 'insul conductivity', unit: 'W/m·K', value: 0.036 },
+        ]},
+        { label: 'Refrigerant', fields: [
+          { key: 'refrig', label: 'refrigerant', type: 'select', options: ['R290', 'R134a', 'R1234yf', 'R32'], value: 'R290' },
+          { key: 'rough', label: 'roughness', unit: 'μm', value: 1.5 },
+        ]},
       ]
     };
   }
   return {
-    title: `공기덕트 · ${meta.label}`,
-    kindDot: 'air',
-    kind: '공기사이클 덕트',
-    emoji: '🟩',
-    fields: [
-      { key: 'length', label: '길이', type: 'number', unit: 'mm', value: meta.length },
-      { key: 'area', label: '단면적', type: 'number', unit: 'mm²', value: meta.area },
-      { key: 'shape', label: '단면 형상', type: 'select', options: ['원형', '사각', '타원'], value: '사각' },
-      { key: 'insulated', label: '단열 적용', type: 'select', options: ['있음', '없음'], value: '없음' },
-      { key: 'leak_pct', label: '누기율', type: 'number', unit: '%', value: 2 },
-      { key: 'roughness', label: '내면 조도', type: 'number', unit: 'μm', value: 50 },
-      { key: 'bends', label: '벤드 개수', type: 'number', unit: 'ea', value: 1 },
+    title: `Duct · ${meta.label}`,
+    sub: '공기덕트 · air cycle',
+    kindColor: '#6b7280',
+    groups: [
+      { label: 'Geometry', fields: [
+        { key: 'L', label: 'length', unit: 'mm', value: meta.length },
+        { key: 'A', label: 'cross-section', unit: 'mm²', value: meta.area },
+        { key: 'shape', label: 'shape', type: 'select', options: ['Round', 'Rectangular', 'Oval'], value: 'Rectangular' },
+        { key: 'bends', label: 'bends', unit: 'ea', value: 1 },
+      ]},
+      { label: 'Construction', fields: [
+        { key: 'insulated', label: 'insulated', type: 'select', options: ['yes', 'no'], value: 'no' },
+        { key: 'rough', label: 'roughness', unit: 'μm', value: 50 },
+        { key: 'leak', label: 'leak rate', unit: '%', value: 2 },
+      ]},
     ]
   };
 }
 
-/* ═══════════ State ═══════════ */
-const state = {
-  selected: null,       // { type, id, el }
-  changed: new Set(),   // keys with edits
-};
+/* ═══════════ State & rendering ═══════════ */
+const state = { selected: null, modified: new Set() };
 
-const paramBody = document.getElementById('param-body');
-const paramTitle = document.getElementById('param-title');
-const paramSub = document.getElementById('param-sub');
-const btnReset = document.getElementById('btn-reset');
-const btnRun = document.getElementById('btn-run');
+const propsTitle = document.getElementById('props-title');
+const propsSub = document.getElementById('props-sub');
+const propsBody = document.getElementById('props-body');
+const footerSel = document.getElementById('footer-sel');
+const footerMod = document.getElementById('footer-mod');
 
-/* ═══════════ Rendering ═══════════ */
 function renderSchema(schema) {
-  paramTitle.innerHTML = `<span class="kind-dot ${schema.kindDot}"></span>${schema.emoji || '🔧'} ${schema.title}`;
-  paramSub.textContent = schema.kind;
+  propsTitle.innerHTML = `
+    <span class="inline-block w-2 h-2 rounded-sm" style="background:${schema.kindColor}"></span>
+    ${schema.title}
+    ${schema.shared ? '<span class="ml-1 text-[9px] px-1.5 py-0.5 bg-amber-100 text-amber-700 border border-amber-300 rounded mono">SHARED</span>' : ''}`;
+  propsSub.textContent = schema.sub;
 
-  paramBody.innerHTML = '';
-  const grid = document.createElement('div');
-  grid.className = 'param-grid';
-  schema.fields.forEach(f => {
-    const wrap = document.createElement('div');
-    wrap.className = 'param-field';
-    wrap.dataset.key = f.key;
+  propsBody.innerHTML = '';
+  schema.groups.forEach((grp, gi) => {
+    const section = document.createElement('div');
+    section.className = 'mb-4';
+    section.innerHTML = `
+      <div class="text-[9.5px] font-bold uppercase tracking-widest text-slate-500 mb-1.5 flex items-center gap-1.5">
+        <span class="inline-block w-3 h-px bg-slate-400"></span>${grp.label}
+      </div>`;
+    const table = document.createElement('div');
+    table.className = 'space-y-1.5';
+    grp.fields.forEach(f => {
+      const row = document.createElement('div');
+      row.className = 'grid grid-cols-[1fr_110px_34px] items-center gap-1.5';
+      row.dataset.key = f.key;
 
-    const label = document.createElement('label');
-    const labelText = document.createElement('span');
-    labelText.textContent = f.label;
-    label.appendChild(labelText);
-    if (f.unit) {
-      const u = document.createElement('span');
-      u.className = 'unit';
-      u.textContent = `[${f.unit}]`;
-      label.appendChild(u);
-    }
-    wrap.appendChild(label);
+      const label = document.createElement('label');
+      label.className = 'text-[10.5px] text-slate-600';
+      label.textContent = f.label;
+      row.appendChild(label);
 
-    let input;
-    if (f.type === 'select') {
-      input = document.createElement('select');
-      f.options.forEach(opt => {
-        const o = document.createElement('option');
-        o.value = opt; o.textContent = opt;
-        if (opt === f.value) o.selected = true;
-        input.appendChild(o);
+      let input;
+      if (f.type === 'select') {
+        input = document.createElement('select');
+        input.className = 'param-input';
+        f.options.forEach(opt => {
+          const o = document.createElement('option');
+          o.value = opt; o.textContent = opt;
+          if (opt === f.value) o.selected = true;
+          input.appendChild(o);
+        });
+      } else {
+        input = document.createElement('input');
+        input.type = 'number';
+        input.step = 'any';
+        input.className = 'param-input';
+        input.value = f.value;
+      }
+      input.dataset.key = f.key;
+      input.dataset.orig = f.value;
+      input.addEventListener('input', () => {
+        const changed = String(input.value) !== String(input.dataset.orig);
+        input.classList.toggle('changed', changed);
+        const k = `${state.selected.id}.${f.key}`;
+        if (changed) state.modified.add(k); else state.modified.delete(k);
+        updateFooter();
       });
-    } else {
-      input = document.createElement('input');
-      input.type = f.type;
-      input.value = f.value;
-      input.step = 'any';
-    }
-    input.dataset.key = f.key;
-    input.dataset.orig = f.value;
-    input.addEventListener('input', () => {
-      const changed = String(input.value) !== String(input.dataset.orig);
-      wrap.classList.toggle('changed', changed);
-      if (changed) state.changed.add(f.key); else state.changed.delete(f.key);
-      btnReset.disabled = state.changed.size === 0;
+      row.appendChild(input);
+
+      const unit = document.createElement('span');
+      unit.className = 'text-[9.5px] text-slate-400 mono text-right';
+      unit.textContent = f.unit || '';
+      row.appendChild(unit);
+
+      table.appendChild(row);
     });
-    wrap.appendChild(input);
-    grid.appendChild(wrap);
+    section.appendChild(table);
+    propsBody.appendChild(section);
   });
-  paramBody.appendChild(grid);
-  btnRun.disabled = false;
-  btnReset.disabled = true;
-  state.changed.clear();
 }
 
-function clearPanel() {
-  paramTitle.innerHTML = '🔧 파라미터';
-  paramSub.textContent = '개략도에서 컴포넌트나 배관 선택';
-  paramBody.innerHTML = `
-    <div class="param-empty">
-      좌측 개략도에서 <strong>컴포넌트 박스</strong> 또는 <strong>배관·덕트 라인</strong>을 클릭
-      <div class="hint">공유 HX 클릭 시 양쪽 인스턴스가 함께 하이라이트됨</div>
+function clearProps() {
+  propsTitle.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-slate-400"><circle cx="12" cy="12" r="3"/></svg>Properties';
+  propsSub.textContent = 'no selection';
+  propsBody.innerHTML = `
+    <div class="text-center py-16 text-slate-400 text-[12px] leading-relaxed">
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="mx-auto mb-3 text-slate-300"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/></svg>
+      개략도에서 컴포넌트 또는<br>배관·덕트를 클릭하세요
+      <div class="text-[10px] mono text-slate-400 mt-2">shared HX는 양쪽 인스턴스 동시 선택</div>
     </div>`;
-  btnRun.disabled = true;
-  btnReset.disabled = true;
-  state.changed.clear();
+  footerSel.textContent = '—';
+}
+
+function updateFooter() {
+  footerMod.textContent = state.modified.size;
 }
 
 /* ═══════════ Selection ═══════════ */
 function clearSelection() {
-  document.querySelectorAll('.comp.selected, .pipe.selected').forEach(el => el.classList.remove('selected'));
+  document.querySelectorAll('.comp.selected, .pipe-group.selected, .lib-item.active').forEach(el => el.classList.remove('selected', 'active'));
   state.selected = null;
 }
 
 function selectComponent(id) {
   clearSelection();
   document.querySelectorAll(`.comp[data-id="${id}"]`).forEach(g => g.classList.add('selected'));
+  document.querySelector(`.lib-item[data-lib="${id}"]`)?.classList.add('active');
   state.selected = { type: 'comp', id };
-  const schema = schemas[id];
-  if (schema) renderSchema(schema);
+  footerSel.textContent = `comp · ${id}`;
+  renderSchema(schemas[id]);
 }
 
 function selectPipe(id) {
   clearSelection();
-  const path = document.getElementById(id);
-  if (path) path.classList.add('selected');
+  document.querySelector(`.pipe-group[data-pipe="${id}"]`)?.classList.add('selected');
   state.selected = { type: 'pipe', id };
-  const schema = pipeSchema(id);
-  if (schema) renderSchema(schema);
+  footerSel.textContent = `${id.startsWith('duct') ? 'duct' : 'pipe'} · ${id}`;
+  renderSchema(pipeSchema(id));
 }
 
-/* ═══════════ Events ═══════════ */
+/* ═══════════ Event binding ═══════════ */
 document.querySelectorAll('.comp').forEach(g => {
   g.addEventListener('click', e => {
     e.stopPropagation();
@@ -1126,47 +1218,65 @@ document.querySelectorAll('.comp').forEach(g => {
   });
 });
 
-document.querySelectorAll('.pipe-hit').forEach(p => {
-  p.addEventListener('click', e => {
+document.querySelectorAll('.pipe-group').forEach(g => {
+  g.addEventListener('click', e => {
     e.stopPropagation();
-    selectPipe(p.dataset.pipe);
+    selectPipe(g.dataset.pipe);
   });
 });
 
-document.querySelector('.schematic-wrap').addEventListener('click', e => {
-  if (e.target.tagName === 'svg' || e.target.classList.contains('schematic-wrap')) {
+document.querySelectorAll('.lib-item').forEach(item => {
+  item.addEventListener('click', () => {
+    selectComponent(item.dataset.lib);
+  });
+});
+
+// deselect when clicking empty canvas
+document.querySelector('.canvas-bg').addEventListener('click', e => {
+  if (e.target.classList.contains('canvas-bg') || e.target.tagName === 'svg') {
     clearSelection();
-    clearPanel();
+    clearProps();
+    updateFooter();
   }
 });
 
-btnReset.addEventListener('click', () => {
-  document.querySelectorAll('.param-field.changed').forEach(field => {
-    const input = field.querySelector('input, select');
-    input.value = input.dataset.orig;
-    field.classList.remove('changed');
-  });
-  state.changed.clear();
-  btnReset.disabled = true;
+// Tab switching
+const tabProps = document.getElementById('tab-props');
+const tabChat = document.getElementById('tab-chat');
+const panelProps = document.getElementById('props-panel');
+const panelChat = document.getElementById('chat-panel');
+tabProps.addEventListener('click', () => {
+  tabProps.classList.add('active');
+  tabChat.classList.remove('active');
+  panelProps.classList.remove('hidden');
+  panelChat.classList.add('hidden');
+});
+tabChat.addEventListener('click', () => {
+  tabChat.classList.add('active');
+  tabProps.classList.remove('active');
+  panelChat.classList.remove('hidden');
+  panelChat.classList.add('flex');
+  panelProps.classList.add('hidden');
 });
 
-btnRun.addEventListener('click', () => {
-  // UI-only feedback
-  btnRun.textContent = '▶ (백엔드 미연결)';
-  btnRun.style.opacity = '0.6';
+// Reset button
+document.getElementById('btn-reset').addEventListener('click', () => {
+  propsBody.querySelectorAll('.param-input.changed').forEach(el => {
+    el.value = el.dataset.orig;
+    el.classList.remove('changed');
+  });
+  state.modified.clear();
+  updateFooter();
+});
+
+// Run button (UI only)
+document.getElementById('btn-run').addEventListener('click', () => {
+  const btn = document.getElementById('btn-run');
+  btn.innerHTML = '<span class="text-amber-600 mono text-[10px]">(backend not connected)</span>';
   setTimeout(() => {
-    btnRun.textContent = '▶ RUN SIM';
-    btnRun.style.opacity = '';
-  }, 1200);
+    btn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="#059669" stroke="#059669"><polygon points="6 3 20 12 6 21 6 3"/></svg> Run';
+  }, 1400);
 });
-
-document.querySelectorAll('.suggestions .chip').forEach(chip => {
-  chip.addEventListener('click', () => {
-    chip.style.transform = 'scale(0.96)';
-    setTimeout(() => chip.style.transform = '', 120);
-  });
-});
-
 </script>
 </body>
 </html>
