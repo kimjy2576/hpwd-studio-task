@@ -503,6 +503,25 @@ function autoMapSignals(fromBlock, toBlock) {
 
 // 그리드 크기 (px). 캔버스 배경 dot pattern과 동일.
 const GRID_SIZE = 20;
+
+/* ════════ 블록 connector slot 시스템 ════════
+ * 한 블록에 좌측 N개 input slot, 우측 N개 output slot.
+ * 사용 중인 slot만 visible, 빈 slot은 hover 또는 연결 모드일 때 ghost로 표시.
+ * 한 블록이 여러 source / sink 모듈과 연결될 수 있다. */
+const SLOTS_PER_SIDE = 4;
+
+/* connections 중 해당 (block, direction)에서 가장 빠른 빈 slot index. 다 차면 마지막. */
+function findFreeSlot(cs, blockId, direction) {
+  const used = new Set();
+  cs.forEach(c => {
+    const ref = direction === 'out' ? c.from : c.to;
+    if (ref?.blockId === blockId && ref.slot !== undefined) used.add(ref.slot);
+  });
+  for (let i = 0; i < SLOTS_PER_SIDE; i++) {
+    if (!used.has(i)) return i;
+  }
+  return SLOTS_PER_SIDE - 1; // overflow → 마지막 slot 공유
+}
 const snap = (v) => Math.round(v / GRID_SIZE) * GRID_SIZE;
 
 // 선분이 사각형과 겹치는지 판정 (선분은 수평 또는 수직만 가정)
@@ -644,6 +663,7 @@ function HPWDStudio() {
   const [connecting, setConnecting] = useState(null);
   const [draggingConn, setDraggingConn] = useState(null);
   const [hoveredConn, setHoveredConn] = useState(null);
+  const [hoveredBlockId, setHoveredBlockId] = useState(null);
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
 
   // 박스 드래그 선택 상태: {startX, startY, curX, curY}
@@ -856,13 +876,14 @@ function HPWDStudio() {
     }
   };
 
-  /* 블록 단위 connector(좌측 in / 우측 out) 클릭 핸들러.
-   * 두 블록을 잇는 한 라인 생성. 호환 시그널은 자동 매핑.
-   * 같은 두 블록 사이에 이미 라인이 있으면 무시(중복 방지). */
-  const handleBlockConnectorClick = (e, blockId, direction) => {
+  /* 블록 connector slot 클릭 핸들러.
+   * slot 인자가 주어지면 그 slot 사용, 없으면 다음 빈 slot 자동 할당.
+   * 같은 두 블록 사이 다중 라인 허용 (multi-source/sink). */
+  const handleBlockConnectorClick = (e, blockId, direction, slot) => {
     e.stopPropagation();
     if (!connecting) {
-      setConnecting({ blockId, direction });
+      const useSlot = slot !== undefined ? slot : findFreeSlot(connections, blockId, direction);
+      setConnecting({ blockId, direction, slot: useSlot });
       return;
     }
     if (connecting.blockId === blockId || connecting.direction === direction) {
@@ -875,19 +896,21 @@ function HPWDStudio() {
     const toBlock   = blocks.find(b => b.id === toId);
     const kind = detectLineKind(fromBlock, toBlock);
     const signals = autoMapSignals(fromBlock, toBlock);
+    const fromSlot = connecting.direction === 'out'
+      ? connecting.slot
+      : (slot !== undefined ? slot : findFreeSlot(connections, fromId, 'out'));
+    const toSlot = connecting.direction === 'in'
+      ? connecting.slot
+      : (slot !== undefined ? slot : findFreeSlot(connections, toId, 'in'));
     pushHistory(blocks, connections);
-    setConnections(cs => {
-      // 동일 from→to 라인 중복 방지
-      if (cs.some(c => c.from.blockId === fromId && c.to.blockId === toId)) return cs;
-      return [...cs, {
-        from: { blockId: fromId },
-        to:   { blockId: toId },
-        kind,
-        signals,
-        lineParams: defaultLineParams(kind),
-        midOffsetX: 0,
-      }];
-    });
+    setConnections(cs => [...cs, {
+      from: { blockId: fromId, slot: fromSlot },
+      to:   { blockId: toId,   slot: toSlot },
+      kind,
+      signals,
+      lineParams: defaultLineParams(kind),
+      midOffsetX: 0,
+    }]);
     setConnecting(null);
   };
 
@@ -1424,13 +1447,14 @@ function HPWDStudio() {
     const baseMin = block.type === 'display' ? 70 : 80;
     return Math.max(baseMin, 45 + numIO * 20 + 10);
   };
-  const getBlockConnectorPos = (block, direction) => {
+  const getBlockConnectorPos = (block, direction, slot = 0) => {
     if (!block) return null;
     const h = getBlockHeight(block);
-    // connector 원의 실제 절대 위치 = block.y + 24(header) + (h-24)/2 = block.y + h/2 + 12
+    // 슬롯은 헤더(24px) 아래의 (h-24) 영역에서 균등 분배
+    const slotY = 24 + (h - 24) * ((slot ?? 0) + 1) / (SLOTS_PER_SIDE + 1);
     return {
       x: direction === 'in' ? block.x : block.x + 180,
-      y: block.y + h / 2 + 12,
+      y: block.y + slotY,
     };
   };
 
@@ -1624,8 +1648,8 @@ function HPWDStudio() {
                 const fromBlock = blocks.find(b => b.id === c.from.blockId);
                 const toBlock = blocks.find(b => b.id === c.to.blockId);
                 if (!fromBlock || !toBlock) return null;
-                const fromPos = getBlockConnectorPos(fromBlock, 'out');
-                const toPos = getBlockConnectorPos(toBlock, 'in');
+                const fromPos = getBlockConnectorPos(fromBlock, 'out', c.from?.slot);
+                const toPos = getBlockConnectorPos(toBlock, 'in', c.to?.slot);
                 if (!fromPos || !toPos) return null;
 
                 // 장애물: 자기 자신의 source/target을 제외한 다른 블록들
@@ -1814,7 +1838,7 @@ function HPWDStudio() {
               {connecting && (() => {
                 const block = blocks.find(b => b.id === connecting.blockId);
                 if (!block) return null;
-                const pos = getBlockConnectorPos(block, connecting.direction);
+                const pos = getBlockConnectorPos(block, connecting.direction, connecting.slot);
                 if (!pos) return null;
                 const target = { x: mousePos.x, y: mousePos.y };
                 const path = connecting.direction === 'out'
@@ -1858,6 +1882,8 @@ function HPWDStudio() {
                     willChange: 'transform',
                   }}
                   onMouseDown={(e) => handleBlockMouseDown(e, block.id)}
+                  onMouseEnter={() => setHoveredBlockId(block.id)}
+                  onMouseLeave={() => setHoveredBlockId(prev => prev === block.id ? null : prev)}
                 >
                   <div className="h-6 px-2 flex items-center gap-1.5 border-b rounded-t-md"
                        style={{ borderColor: def.color + '30', background: def.color + '0d' }}>
@@ -1922,61 +1948,83 @@ function HPWDStudio() {
                       </div>
                     )}
 
-                    {/* 좌측 단일 input connector (블록 정중앙 높이) */}
-                    {def.inputs.length > 0 && (() => {
-                      const isActive = connecting && connecting.blockId === block.id && connecting.direction === 'in';
-                      return (
-                        <div
-                          data-port="in"
-                          onMouseDown={(e) => e.stopPropagation()}
-                          onClick={(e) => handleBlockConnectorClick(e, block.id, 'in')}
-                          className={`absolute flex items-center justify-center cursor-crosshair rounded-full transition-colors ${
-                            isActive ? 'bg-cyan-100' : 'hover:bg-cyan-50'
-                          }`}
-                          style={{
-                            left: -10,
-                            top: (height - 24) / 2 - 10,
-                            width: 20,
-                            height: 20,
-                          }}
-                          title={`${block.name} ← in (${def.inputs.length} signals · auto-mapped)`}
-                        >
-                          <div
-                            className={`w-3.5 h-3.5 rounded-full border-2 bg-white shrink-0 pointer-events-none transition-colors ${
-                              isActive ? 'border-cyan-600' : 'border-slate-500'
-                            }`}
-                            style={isActive ? { backgroundColor: '#06b6d4' } : {}}
-                          />
-                        </div>
-                      );
-                    })()}
+                    {/* ─── Multi-slot connectors ───
+                     * 좌측: input slot N개, 우측: output slot N개.
+                     * 사용 중 slot: 진한 dot. 빈 slot: hover 또는 connecting 모드일 때 ghost. */}
+                    {(() => {
+                      const isHovered = hoveredBlockId === block.id;
+                      const isConnectingFromThis = connecting && connecting.blockId === block.id;
+                      // 연결 진행 중인 경우, 호환 방향 (반대쪽)이 강조 대상
+                      const renderSlot = (direction) => {
+                        if (direction === 'in' && def.inputs.length === 0) return null;
+                        if (direction === 'out' && def.outputs.length === 0) return null;
 
-                    {/* 우측 단일 output connector */}
-                    {def.outputs.length > 0 && (() => {
-                      const isActive = connecting && connecting.blockId === block.id && connecting.direction === 'out';
+                        const innerH = height - 24; // 헤더 제외 영역
+                        const usedSlots = new Set();
+                        connections.forEach(c => {
+                          const ref = direction === 'out' ? c.from : c.to;
+                          if (ref?.blockId === block.id && ref.slot !== undefined) usedSlots.add(ref.slot);
+                        });
+
+                        // 어느 slot을 보일지 결정
+                        const showAll = isHovered || (connecting && !isConnectingFromThis && connecting.direction !== direction);
+                        const colorOn = direction === 'in' ? '#06b6d4' : '#f59e0b';
+                        const borderOn = direction === 'in' ? '#0891b2' : '#d97706';
+                        const bgHover  = direction === 'in' ? 'hover:bg-cyan-50' : 'hover:bg-amber-50';
+
+                        return Array.from({ length: SLOTS_PER_SIDE }, (_, slotIdx) => {
+                          const used = usedSlots.has(slotIdx);
+                          const isActive = isConnectingFromThis &&
+                            connecting.direction === direction &&
+                            connecting.slot === slotIdx;
+                          const visible = used || isActive || showAll;
+                          if (!visible) return null;
+
+                          // slot Y center within the relative div: innerH * (slotIdx + 1) / (SLOTS_PER_SIDE + 1)
+                          const slotY = innerH * (slotIdx + 1) / (SLOTS_PER_SIDE + 1);
+                          const positionStyle = direction === 'in'
+                            ? { left: -10, top: slotY - 10 }
+                            : { right: -10, top: slotY - 10 };
+
+                          // 외관: 사용 중 = 진하게, ghost = 옅게 / 작게
+                          const dotClass = used || isActive
+                            ? `w-3.5 h-3.5 rounded-full border-2 bg-white shrink-0 pointer-events-none transition-all`
+                            : `w-2.5 h-2.5 rounded-full border bg-white shrink-0 pointer-events-none opacity-50 transition-all`;
+                          const dotStyle = isActive
+                            ? { backgroundColor: colorOn, borderColor: borderOn }
+                            : (used
+                                ? { borderColor: '#475569', borderWidth: 2 }
+                                : { borderColor: '#94a3b8' });
+
+                          return (
+                            <div
+                              key={`${direction}-${slotIdx}`}
+                              data-port={direction}
+                              data-slot={slotIdx}
+                              onMouseDown={(e) => e.stopPropagation()}
+                              onClick={(e) => handleBlockConnectorClick(e, block.id, direction, slotIdx)}
+                              className={`absolute flex items-center justify-center cursor-crosshair rounded-full transition-colors ${
+                                isActive
+                                  ? (direction === 'in' ? 'bg-cyan-100' : 'bg-amber-100')
+                                  : bgHover
+                              }`}
+                              style={{
+                                ...positionStyle,
+                                width: 20,
+                                height: 20,
+                              }}
+                              title={`${block.name} ${direction === 'in' ? '←' : '→'} slot ${slotIdx}${used ? ' (used)' : ''}`}
+                            >
+                              <div className={dotClass} style={dotStyle}/>
+                            </div>
+                          );
+                        });
+                      };
                       return (
-                        <div
-                          data-port="out"
-                          onMouseDown={(e) => e.stopPropagation()}
-                          onClick={(e) => handleBlockConnectorClick(e, block.id, 'out')}
-                          className={`absolute flex items-center justify-center cursor-crosshair rounded-full transition-colors ${
-                            isActive ? 'bg-amber-100' : 'hover:bg-amber-50'
-                          }`}
-                          style={{
-                            right: -10,
-                            top: (height - 24) / 2 - 10,
-                            width: 20,
-                            height: 20,
-                          }}
-                          title={`${block.name} → out (${def.outputs.length} signals · auto-mapped)`}
-                        >
-                          <div
-                            className={`w-3.5 h-3.5 rounded-full border-2 bg-white shrink-0 pointer-events-none transition-colors ${
-                              isActive ? 'border-amber-600' : 'border-slate-500'
-                            }`}
-                            style={isActive ? { backgroundColor: '#f59e0b' } : {}}
-                          />
-                        </div>
+                        <>
+                          {renderSlot('in')}
+                          {renderSlot('out')}
+                        </>
                       );
                     })()}
                   </div>
