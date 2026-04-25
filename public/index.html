@@ -1,1060 +1,2369 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>HPWD Studio — Task (Washer-Dryer)</title>
-<script src="https://cdn.tailwindcss.com"></script>
-<link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css" rel="stylesheet">
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<style>
-  html, body, #root { height: 100%; margin: 0; }
-  body {
-    font-family: 'Pretendard Variable', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    overflow: hidden;
-    color: #0f172a;
-    background: white;
-  }
-  .mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
-
-  /* ─── Schematic (engineering drawing style) ─── */
-  .canvas-bg {
-    background-color: #f8fafc;
-    background-image:
-      linear-gradient(rgba(15, 23, 42, 0.04) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(15, 23, 42, 0.04) 1px, transparent 1px);
-    background-size: 20px 20px;
-  }
-
-  /* Components */
-  .comp { cursor: pointer; transition: filter 0.15s; }
-  .comp:hover { filter: brightness(0.97); }
-  .comp .hit-frame {
-    fill: transparent;
-    stroke: transparent;
-    stroke-width: 2;
-  }
-  .comp:hover .hit-frame { stroke: #0891b2; stroke-dasharray: 3 3; }
-  .comp.selected .hit-frame { stroke: #0284c7; stroke-dasharray: 0; stroke-width: 2.5; }
-  .comp-label-text {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 9.5px;
-    font-weight: 600;
-    fill: #0f172a;
-    letter-spacing: 0.05em;
-    pointer-events: none;
-    text-anchor: middle;
-  }
-  .comp-tag-text {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 8px;
-    fill: #64748b;
-    letter-spacing: 0.1em;
-    pointer-events: none;
-    text-anchor: middle;
-    text-transform: uppercase;
-  }
-  .shared-badge {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 7px;
-    fill: #b45309;
-    font-weight: 600;
-    pointer-events: none;
-  }
-
-  /* Pipes (layered strokes for tubular look) */
-  .pipe-group { cursor: pointer; }
-  .pipe-hit {
-    stroke: transparent;
-    stroke-width: 20;
-    fill: none;
-    pointer-events: stroke;
-  }
-  .pipe-edge { fill: none; stroke-linejoin: round; stroke-linecap: round; }
-  .pipe-body { fill: none; stroke-linejoin: round; stroke-linecap: round; }
-  .pipe-highlight { fill: none; stroke-linejoin: round; stroke-linecap: round; opacity: 0.55; }
-
-  .pipe-group.selected .pipe-edge { stroke: #0284c7 !important; }
-  .pipe-group:hover .pipe-edge { filter: brightness(0.85); }
-
-  /* Duct: wider rectangular */
-  .duct-edge { fill: none; stroke-linejoin: miter; stroke-linecap: butt; }
-  .duct-body { fill: none; stroke-linejoin: miter; stroke-linecap: butt; }
-  .duct-center { fill: none; stroke-linejoin: miter; stroke-linecap: butt; }
-  .pipe-group.selected .duct-edge { stroke: #0284c7 !important; }
-
-  /* Section labels */
-  .sec-title {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 10.5px;
-    font-weight: 700;
-    letter-spacing: 0.18em;
-    fill: #475569;
-    text-transform: uppercase;
-  }
-  .flow-dir {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 8.5px;
-    fill: #94a3b8;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-  }
-  .dim-line { stroke: #94a3b8; stroke-width: 0.7; stroke-dasharray: 3 2; }
-
-  /* Library items */
-  .lib-item { transition: background-color 0.12s; }
-  .lib-item:hover { background: #f1f5f9; }
-  .lib-item.active { background: #ecfeff; border-color: #67e8f9; }
-
-  /* Scrollbar styling */
-  ::-webkit-scrollbar { width: 8px; height: 8px; }
-  ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
-  ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-
-  /* Tab state */
-  .tab-btn { border-bottom: 2px solid transparent; transition: all 0.15s; }
-  .tab-btn.active { border-bottom-color: #0891b2; color: #0f172a; }
-  .tab-btn:not(.active) { color: #64748b; }
-  .tab-btn:not(.active):hover { color: #0f172a; }
-
-  /* Input fields */
-  .param-input {
-    @apply w-full px-2 py-1 text-[11px] font-mono bg-white border border-slate-300 rounded text-slate-900;
-    outline: none;
-    transition: border-color 0.12s;
-  }
-  .param-input:hover { border-color: #94a3b8; }
-  .param-input:focus { border-color: #0891b2; box-shadow: 0 0 0 2px rgba(8, 145, 178, 0.1); }
-  .param-input.changed { border-color: #d97706; background: #fffbeb; }
-</style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HPWD Studio</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js"></script>
+  <script crossorigin src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.25.6/babel.min.js"></script>
+  <style>
+    html, body, #root { height: 100%; margin: 0; }
+    body { font-family: 'Inter', 'Pretendard', -apple-system, 'Segoe UI', sans-serif; overflow: hidden; }
+  </style>
 </head>
-<body class="h-screen w-full flex flex-col bg-white text-slate-800 text-xs overflow-hidden">
+<body>
+  <div id="root"><div style="height:100vh;display:flex;align-items:center;justify-content:center;color:#64748b;font-family:monospace;font-size:14px;">Loading HPWD Studio...</div></div>
+  <script type="text/babel" data-presets="react">
+    const { useState, useRef, useEffect, useCallback } = React;
+    const { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } = Recharts;
 
-<!-- ═══════════ TOP BAR ═══════════ -->
-<div class="h-9 bg-white border-b border-slate-200 flex items-center px-4 gap-4 text-[11px] shrink-0">
-  <div class="font-bold text-slate-900 tracking-wide flex items-center gap-1.5">
-    <div class="w-2 h-2 rounded-sm bg-cyan-600"></div>
-    HPWD Studio
-    <span class="text-slate-400 font-normal text-[10px] mono">· Task · Washer-Dryer</span>
-  </div>
-  <div class="text-slate-400 text-[10px]">v0.1-task · prototype</div>
-  <div class="flex-1"></div>
-  <div class="text-slate-500 text-[11px] mono">
-    t = <span class="text-slate-900 font-semibold">0.0s</span>
-    <span class="mx-1 text-slate-300">/</span>
-    <span class="text-slate-400">600s</span>
-  </div>
-  <div class="flex items-center gap-1.5 text-slate-500 text-[10px] mono">
-    <span class="inline-block w-1.5 h-1.5 rounded-full bg-slate-400"></span>
-    IDLE
-  </div>
-</div>
+    const _mkIcon = (body) => ({ size = 16, style = {}, className = '', ...rest }) =>
+      React.createElement('svg', { xmlns: 'http://www.w3.org/2000/svg', width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round', className, style, ...rest }, body);
 
-<!-- ═══════════ TOOLBAR ═══════════ -->
-<div class="h-11 bg-slate-50 border-b border-slate-200 flex items-center px-3 gap-1 shrink-0">
-  <button id="btn-run" class="px-2.5 py-1 flex items-center gap-1.5 text-[11px] rounded hover:bg-white border border-transparent hover:border-slate-200 text-slate-700 font-medium">
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="#059669" stroke="#059669"><polygon points="6 3 20 12 6 21 6 3"/></svg>
-    Run
-  </button>
-  <button class="px-2.5 py-1 flex items-center gap-1.5 text-[11px] rounded hover:bg-white border border-transparent hover:border-slate-200 text-slate-700 font-medium" disabled>
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
-    Stop
-  </button>
-  <button id="btn-reset" class="px-2.5 py-1 flex items-center gap-1.5 text-[11px] rounded hover:bg-white border border-transparent hover:border-slate-200 text-slate-700 font-medium">
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
-    Reset
-  </button>
-  <div class="w-px h-5 bg-slate-200 mx-1.5"></div>
-  <button class="px-2.5 py-1 flex items-center gap-1.5 text-[11px] rounded hover:bg-white border border-transparent hover:border-slate-200 text-slate-700 font-medium">
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
-    Save
-  </button>
-  <button class="px-2.5 py-1 flex items-center gap-1.5 text-[11px] rounded hover:bg-white border border-transparent hover:border-slate-200 text-slate-700 font-medium">
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 14l1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.55 6a2 2 0 0 1-1.94 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.93a2 2 0 0 1 1.66.9l.82 1.2a2 2 0 0 0 1.66.9H18a2 2 0 0 1 2 2v2"/></svg>
-    Load
-  </button>
-  <div class="w-px h-5 bg-slate-200 mx-1.5"></div>
-  <div class="flex items-center gap-2 text-[11px] text-slate-600">
-    <label class="text-slate-500 mono">dt</label>
-    <input type="number" value="1.0" step="0.1" class="w-14 bg-white border border-slate-300 px-1.5 py-0.5 rounded text-slate-900 mono focus:outline-none focus:border-cyan-500">
-    <label class="text-slate-500 ml-2 mono">t_final</label>
-    <input type="number" value="600" class="w-16 bg-white border border-slate-300 px-1.5 py-0.5 rounded text-slate-900 mono focus:outline-none focus:border-cyan-500">
-  </div>
-  <div class="flex-1"></div>
-  <div class="text-[11px] text-slate-500 mono">
-    components <span class="text-slate-900 font-semibold">7</span>
-    <span class="mx-1.5 text-slate-300">·</span>
-    connections <span class="text-slate-900 font-semibold">9</span>
-    <span class="mx-1.5 text-slate-300">·</span>
-    refrig <span class="text-slate-900 font-semibold">R290</span>
-  </div>
-</div>
+    const Play       = _mkIcon(<polygon points="6 3 20 12 6 21 6 3" />);
+    const Square     = _mkIcon(<rect x="4" y="4" width="16" height="16" rx="2" />);
+    const RotateCcw  = _mkIcon(<g><path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5" /></g>);
+    const Trash2     = _mkIcon(<g><path d="M3 6h18" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></g>);
+    const Save       = _mkIcon(<g><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></g>);
+    const FolderOpen = _mkIcon(<path d="M6 14l1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.55 6a2 2 0 0 1-1.94 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.93a2 2 0 0 1 1.66.9l.82 1.2a2 2 0 0 0 1.66.9H18a2 2 0 0 1 2 2v2" />);
+    const Settings   = _mkIcon(<g><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" /></g>);
+    const Activity   = _mkIcon(<polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />);
+    const Zap        = _mkIcon(<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />);
+    const Wind       = _mkIcon(<g><path d="M17.7 7.7a2.5 2.5 0 1 1 1.8 4.3H2" /><path d="M9.6 4.6A2 2 0 1 1 11 8H2" /><path d="M12.6 19.4A2 2 0 1 0 14 16H2" /></g>);
+    const Droplet    = _mkIcon(<path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z" />);
+    const Thermometer= _mkIcon(<path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0z" />);
+    const Gauge      = _mkIcon(<g><path d="m12 14 4-4" /><path d="M3.34 19a10 10 0 1 1 17.32 0" /></g>);
+    const CircleDot  = _mkIcon(<g><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="1" /></g>);
+    const BoxIcon    = _mkIcon(<g><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" /></g>);
+    const Box        = BoxIcon;
+    const BarChart3  = _mkIcon(<g><path d="M3 3v18h18" /><path d="M18 17V9" /><path d="M13 17V5" /><path d="M8 17v-3" /></g>);
+    const ChevronRight = _mkIcon(<polyline points="9 18 15 12 9 6" />);
+    const ChevronDown  = _mkIcon(<polyline points="6 9 12 15 18 9" />);
+    const Hash       = _mkIcon(<g><line x1="4" y1="9" x2="20" y2="9" /><line x1="4" y1="15" x2="20" y2="15" /><line x1="10" y1="3" x2="8" y2="21" /><line x1="16" y1="3" x2="14" y2="21" /></g>);
+    const TrendingUp = _mkIcon(<g><polyline points="23 6 13.5 15.5 8.5 10.5 1 18" /><polyline points="17 6 23 6 23 12" /></g>);
+    const Waves      = _mkIcon(<g><path d="M2 6c.6.5 1.2 1 2.5 1C7 7 7 5 9.5 5c2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1" /><path d="M2 12c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1" /><path d="M2 18c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1" /></g>);
+    const Plus       = _mkIcon(<g><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></g>);
+    const Minus      = _mkIcon(<line x1="5" y1="12" x2="19" y2="12" />);
+    const X          = _mkIcon(<g><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></g>);
+    const Divide     = _mkIcon(<g><circle cx="12" cy="6" r="1.5" fill="currentColor" /><line x1="5" y1="12" x2="19" y2="12" /><circle cx="12" cy="18" r="1.5" fill="currentColor" /></g>);
+    const Eye        = _mkIcon(<g><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></g>);
+    const Download   = _mkIcon(<g><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></g>);
+    const Undo       = _mkIcon(<g><path d="M3 7v6h6" /><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6.7 3L3 13" /></g>);
+    const Redo       = _mkIcon(<g><path d="M21 7v6h-6" /><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6.7 3L21 13" /></g>);
 
-<!-- ═══════════ MAIN 3-PANEL ═══════════ -->
-<div class="flex-1 flex overflow-hidden">
 
-  <!-- ─── LEFT: Type Library ─── -->
-  <div class="w-56 bg-white border-r border-slate-200 overflow-y-auto shrink-0">
-    <div class="px-3 py-2.5 text-[10px] font-semibold uppercase tracking-widest text-slate-500 border-b border-slate-100 bg-slate-50">
-      System Components
-    </div>
-
-    <!-- Refrigerant cycle -->
-    <div>
-      <div class="w-full flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] uppercase tracking-wider text-slate-600 bg-slate-50/50 border-b border-slate-100">
-        <span class="w-1.5 h-1.5 rounded-sm bg-red-500"></span>
-        <span class="text-slate-700 font-semibold">Refrigerant Cycle</span>
-        <span class="ml-auto text-slate-400 mono text-[9px]">4 comp</span>
-      </div>
-      <div class="py-1">
-        <div class="lib-item flex items-center gap-2 px-3 py-1.5 mx-1.5 my-0.5 rounded cursor-pointer border border-transparent" data-lib="compressor">
-          <div class="w-5 h-5 rounded flex items-center justify-center" style="background: #dc262615">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="1" fill="#dc2626"/></svg>
-          </div>
-          <div class="flex-1 min-w-0">
-            <div class="text-[11px] text-slate-800 truncate">Compressor</div>
-            <div class="text-[9px] text-slate-400 mono">압축기 · #100</div>
-          </div>
-        </div>
-        <div class="lib-item flex items-center gap-2 px-3 py-1.5 mx-1.5 my-0.5 rounded cursor-pointer border border-transparent" data-lib="condenser">
-          <div class="w-5 h-5 rounded flex items-center justify-center" style="background: #ea580c15">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#ea580c" stroke-width="2"><rect x="3" y="6" width="18" height="12" rx="1"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="3" y1="14" x2="21" y2="14"/></svg>
-          </div>
-          <div class="flex-1 min-w-0">
-            <div class="text-[11px] text-slate-800 truncate">Condenser</div>
-            <div class="text-[9px] text-amber-600 mono">응축기 · shared HX</div>
-          </div>
-        </div>
-        <div class="lib-item flex items-center gap-2 px-3 py-1.5 mx-1.5 my-0.5 rounded cursor-pointer border border-transparent" data-lib="eev">
-          <div class="w-5 h-5 rounded flex items-center justify-center" style="background: #d9770615">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#d97706" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-          </div>
-          <div class="flex-1 min-w-0">
-            <div class="text-[11px] text-slate-800 truncate">EEV</div>
-            <div class="text-[9px] text-slate-400 mono">팽창밸브 · #102</div>
-          </div>
-        </div>
-        <div class="lib-item flex items-center gap-2 px-3 py-1.5 mx-1.5 my-0.5 rounded cursor-pointer border border-transparent" data-lib="evaporator">
-          <div class="w-5 h-5 rounded flex items-center justify-center" style="background: #2563eb15">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2"><path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z"/></svg>
-          </div>
-          <div class="flex-1 min-w-0">
-            <div class="text-[11px] text-slate-800 truncate">Evaporator</div>
-            <div class="text-[9px] text-amber-600 mono">증발기 · shared HX</div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Air cycle -->
-    <div>
-      <div class="w-full flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] uppercase tracking-wider text-slate-600 bg-slate-50/50 border-b border-t border-slate-100">
-        <span class="w-1.5 h-1.5 rounded-sm bg-emerald-600"></span>
-        <span class="text-slate-700 font-semibold">Air Cycle</span>
-        <span class="ml-auto text-slate-400 mono text-[9px]">3 comp</span>
-      </div>
-      <div class="py-1">
-        <div class="lib-item flex items-center gap-2 px-3 py-1.5 mx-1.5 my-0.5 rounded cursor-pointer border border-transparent" data-lib="drum">
-          <div class="w-5 h-5 rounded flex items-center justify-center" style="background: #05966915">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2"/></svg>
-          </div>
-          <div class="flex-1 min-w-0">
-            <div class="text-[11px] text-slate-800 truncate">Drum</div>
-            <div class="text-[9px] text-slate-400 mono">드럼 · #201</div>
-          </div>
-        </div>
-        <div class="lib-item flex items-center gap-2 px-3 py-1.5 mx-1.5 my-0.5 rounded cursor-pointer border border-transparent" data-lib="filter">
-          <div class="w-5 h-5 rounded flex items-center justify-center" style="background: #6b728015">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2"><rect x="3" y="5" width="18" height="14"/><line x1="6" y1="5" x2="6" y2="19"/><line x1="12" y1="5" x2="12" y2="19"/><line x1="18" y1="5" x2="18" y2="19"/></svg>
-          </div>
-          <div class="flex-1 min-w-0">
-            <div class="text-[11px] text-slate-800 truncate">Lint Filter</div>
-            <div class="text-[9px] text-slate-400 mono">필터 · #210</div>
-          </div>
-        </div>
-        <div class="lib-item flex items-center gap-2 px-3 py-1.5 mx-1.5 my-0.5 rounded cursor-pointer border border-transparent" data-lib="fan">
-          <div class="w-5 h-5 rounded flex items-center justify-center" style="background: #0891b215">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0891b2" stroke-width="2"><path d="M17.7 7.7a2.5 2.5 0 1 1 1.8 4.3H2"/><path d="M9.6 4.6A2 2 0 1 1 11 8H2"/><path d="M12.6 19.4A2 2 0 1 0 14 16H2"/></svg>
-          </div>
-          <div class="flex-1 min-w-0">
-            <div class="text-[11px] text-slate-800 truncate">Blower Fan</div>
-            <div class="text-[9px] text-slate-400 mono">팬 · #200</div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Connections info -->
-    <div>
-      <div class="w-full flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] uppercase tracking-wider text-slate-600 bg-slate-50/50 border-b border-t border-slate-100">
-        <span class="w-1.5 h-1.5 rounded-sm bg-slate-500"></span>
-        <span class="text-slate-700 font-semibold">Connections</span>
-        <span class="ml-auto text-slate-400 mono text-[9px]">9 links</span>
-      </div>
-      <div class="py-1.5 px-3 text-[10px] text-slate-500 leading-relaxed mono">
-        <div class="flex items-center gap-1.5 mb-0.5"><span class="inline-block w-2 h-2 rounded-full" style="background:#dc2626"></span> refrig HP (4)</div>
-        <div class="flex items-center gap-1.5 mb-0.5"><span class="inline-block w-2 h-2 rounded-full" style="background:#2563eb"></span> refrig LP (2)</div>
-        <div class="flex items-center gap-1.5 mb-0.5"><span class="inline-block w-2 h-2 rounded" style="background:#6b7280"></span> air duct (5)</div>
-      </div>
-    </div>
-
-    <div class="px-3 py-3 text-[10px] text-slate-400 border-t border-slate-100 mt-2 leading-relaxed">
-      고정 schematic · 세탁건조기 사이클 전용.<br>
-      컴포넌트·배관 클릭 시 파라미터 편집.
-    </div>
-  </div>
-
-  <!-- ─── CENTER: Canvas (schematic) ─── -->
-  <div class="flex-1 flex flex-col overflow-hidden">
-    <div class="flex-1 relative canvas-bg overflow-auto">
-      <div class="absolute inset-0 flex items-start justify-center p-4">
-
-<svg width="940" height="620" viewBox="0 0 940 620" xmlns="http://www.w3.org/2000/svg">
-  <defs>
-    <!-- Fin-tube HX hatching pattern -->
-    <pattern id="fin-hatch" patternUnits="userSpaceOnUse" width="4" height="4" patternTransform="rotate(45)">
-      <line x1="0" y1="0" x2="0" y2="4" stroke="#64748b" stroke-width="0.7"/>
-    </pattern>
-    <!-- Filter mesh pattern -->
-    <pattern id="mesh" patternUnits="userSpaceOnUse" width="6" height="6">
-      <path d="M 0 0 L 6 0 M 0 0 L 0 6 M 6 0 L 6 6 M 0 6 L 6 6" stroke="#64748b" stroke-width="0.5" fill="none"/>
-      <path d="M 0 0 L 6 6 M 6 0 L 0 6" stroke="#94a3b8" stroke-width="0.3" fill="none"/>
-    </pattern>
-    <!-- Duct ventilation pattern -->
-    <pattern id="duct-hint" patternUnits="userSpaceOnUse" width="8" height="4">
-      <line x1="0" y1="2" x2="3" y2="2" stroke="#94a3b8" stroke-width="0.5"/>
-    </pattern>
-    <!-- Arrow markers for flow direction -->
-    <marker id="arr-hp" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="4" markerHeight="4" orient="auto">
-      <path d="M 0 0 L 10 5 L 0 10 z" fill="#0f172a"/>
-    </marker>
-    <marker id="arr-lp" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="4" markerHeight="4" orient="auto">
-      <path d="M 0 0 L 10 5 L 0 10 z" fill="#0f172a"/>
-    </marker>
-    <marker id="arr-air" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="4" markerHeight="4" orient="auto">
-      <path d="M 0 0 L 10 5 L 0 10 z" fill="#334155"/>
-    </marker>
-    <marker id="arr-rot" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="4" markerHeight="4" orient="auto">
-      <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b"/>
-    </marker>
-  </defs>
-
-  <!-- Title block (engineering drawing style) -->
-  <g>
-    <rect x="20" y="18" width="300" height="32" fill="white" stroke="#0f172a" stroke-width="1"/>
-    <text x="30" y="34" font-family="JetBrains Mono" font-size="10" font-weight="700" fill="#0f172a">HEAT PUMP WASHER-DRYER</text>
-    <text x="30" y="44" font-family="JetBrains Mono" font-size="8" fill="#64748b">CYCLE SCHEMATIC · DWG-HPWD-001 · REV A</text>
-  </g>
-  <g>
-    <rect x="640" y="18" width="280" height="32" fill="white" stroke="#0f172a" stroke-width="1"/>
-    <text x="650" y="31" font-family="JetBrains Mono" font-size="8" fill="#64748b">REFRIG: R290   ·   NOM LOAD: 8kg cotton</text>
-    <text x="650" y="43" font-family="JetBrains Mono" font-size="8" fill="#64748b">AMB: 23°C / 50%RH   ·   PSU: 220V/60Hz</text>
-  </g>
-
-  <!-- ═══════ SECTION 1: REFRIGERANT CYCLE ═══════ -->
-  <text x="20" y="80" class="sec-title">① Refrigerant Cycle</text>
-  <line x1="150" y1="77" x2="920" y2="77" class="dim-line"/>
-  <text x="160" y="74" class="flow-dir">compressor → condenser → LEV → evaporator → compressor</text>
-
-  <!-- REFRIGERANT PIPES (drawn first, behind components) -->
-  <!-- discharge (HP hot gas): compressor → condenser -->
-  <g class="pipe-group" data-pipe="pipe-comp-cond">
-    <path class="pipe-hit" d="M 150 145 L 280 145"/>
-    <path class="pipe-edge" d="M 150 145 L 280 145" stroke="#0f172a" stroke-width="11"/>
-    <path class="pipe-body" d="M 150 145 L 280 145" stroke="#dc2626" stroke-width="8"/>
-    <path class="pipe-highlight" d="M 150 142 L 280 142" stroke="#fecaca" stroke-width="2"/>
-    <path d="M 150 145 L 280 145" stroke="transparent" stroke-width="1" fill="none" marker-end="url(#arr-hp)"/>
-  </g>
-  <text x="215" y="131" class="flow-dir" text-anchor="middle">HP · hot gas</text>
-
-  <!-- liquid line: condenser → EEV -->
-  <g class="pipe-group" data-pipe="pipe-cond-eev">
-    <path class="pipe-hit" d="M 390 145 L 495 145"/>
-    <path class="pipe-edge" d="M 390 145 L 495 145" stroke="#0f172a" stroke-width="11"/>
-    <path class="pipe-body" d="M 390 145 L 495 145" stroke="#b91c1c" stroke-width="8"/>
-    <path class="pipe-highlight" d="M 390 142 L 495 142" stroke="#fecaca" stroke-width="2"/>
-    <path d="M 390 145 L 495 145" stroke="transparent" stroke-width="1" fill="none" marker-end="url(#arr-hp)"/>
-  </g>
-  <text x="442" y="131" class="flow-dir" text-anchor="middle">HP · liquid</text>
-
-  <!-- EEV outlet: EEV → evaporator (LP two-phase) -->
-  <g class="pipe-group" data-pipe="pipe-eev-evap">
-    <path class="pipe-hit" d="M 575 145 L 680 145"/>
-    <path class="pipe-edge" d="M 575 145 L 680 145" stroke="#0f172a" stroke-width="11"/>
-    <path class="pipe-body" d="M 575 145 L 680 145" stroke="#1d4ed8" stroke-width="8"/>
-    <path class="pipe-highlight" d="M 575 142 L 680 142" stroke="#bfdbfe" stroke-width="2"/>
-    <path d="M 575 145 L 680 145" stroke="transparent" stroke-width="1" fill="none" marker-end="url(#arr-lp)"/>
-  </g>
-  <text x="627" y="131" class="flow-dir" text-anchor="middle">LP · 2Φ</text>
-
-  <!-- Suction (LP gas): evaporator → compressor (wraps around) -->
-  <g class="pipe-group" data-pipe="pipe-evap-comp">
-    <path class="pipe-hit" d="M 785 145 L 895 145 L 895 255 L 45 255 L 45 145 L 60 145"/>
-    <path class="pipe-edge" d="M 785 145 L 895 145 L 895 255 L 45 255 L 45 145 L 60 145" stroke="#0f172a" stroke-width="11"/>
-    <path class="pipe-body" d="M 785 145 L 895 145 L 895 255 L 45 255 L 45 145 L 60 145" stroke="#2563eb" stroke-width="8"/>
-    <path class="pipe-highlight" d="M 785 142 L 892 142 L 892 252 L 48 252 L 48 145" stroke="#bfdbfe" stroke-width="2"/>
-    <path d="M 895 255 L 45 255" stroke="transparent" stroke-width="1" fill="none"/>
-    <path d="M 45 145 L 60 145" stroke="transparent" stroke-width="1" fill="none" marker-end="url(#arr-lp)"/>
-  </g>
-  <text x="470" y="248" class="flow-dir" text-anchor="middle">LP · suction gas (return to compressor)</text>
-
-  <!-- ─── REFRIGERANT COMPONENTS ─── -->
-
-  <!-- Compressor (real product image) -->
-  <g class="comp" data-id="compressor" transform="translate(60, 95)">
-    <image href="./images/compressor.png" x="0" y="0" width="90" height="90" preserveAspectRatio="xMidYMid meet"/>
-    <text x="45" y="108" class="comp-label-text">COMPRESSOR</text>
-    <text x="45" y="118" class="comp-tag-text">압축기 · #100</text>
-    <rect class="hit-frame" x="-4" y="-4" width="98" height="128" rx="3"/>
-  </g>
-
-  <!-- Condenser (real product image, refrigerant-side view) -->
-  <g class="comp shared" data-id="condenser" transform="translate(280, 90)">
-    <image href="./images/condenser.png" x="0" y="0" width="110" height="100" preserveAspectRatio="xMidYMid meet"/>
-    <!-- shared badge -->
-    <rect x="72" y="-12" width="42" height="11" fill="#fef3c7" stroke="#b45309" stroke-width="0.8"/>
-    <text x="93" y="-3.5" class="shared-badge" text-anchor="middle">SHARED HX</text>
-    <text x="55" y="115" class="comp-label-text">CONDENSER</text>
-    <text x="55" y="126" class="comp-tag-text">응축기 · #101</text>
-    <rect class="hit-frame" x="-5" y="-15" width="120" height="148" rx="3"/>
-  </g>
-
-  <!-- EEV (real product image) -->
-  <g class="comp" data-id="eev" transform="translate(495, 100)">
-    <image href="./images/eev.png" x="0" y="0" width="80" height="92" preserveAspectRatio="xMidYMid meet"/>
-    <text x="40" y="108" class="comp-label-text">EEV</text>
-    <text x="40" y="118" class="comp-tag-text">팽창밸브 · #102</text>
-    <rect class="hit-frame" x="-4" y="-4" width="88" height="128" rx="3"/>
-  </g>
-
-  <!-- Evaporator (real product image, refrigerant-side view) -->
-  <g class="comp shared" data-id="evaporator" transform="translate(680, 90)">
-    <image href="./images/evaporator.png" x="0" y="0" width="105" height="105" preserveAspectRatio="xMidYMid meet"/>
-    <rect x="62" y="-12" width="42" height="11" fill="#fef3c7" stroke="#b45309" stroke-width="0.8"/>
-    <text x="83" y="-3.5" class="shared-badge" text-anchor="middle">SHARED HX</text>
-    <text x="52" y="118" class="comp-label-text">EVAPORATOR</text>
-    <text x="52" y="128" class="comp-tag-text">증발기 · #103</text>
-    <rect class="hit-frame" x="-5" y="-15" width="115" height="151" rx="3"/>
-  </g>
-
-  <!-- ═══════ Divider ═══════ -->
-  <line x1="20" y1="310" x2="920" y2="310" stroke="#cbd5e1" stroke-width="0.8" stroke-dasharray="6 4"/>
-
-  <!-- ═══════ SECTION 2: AIR CYCLE ═══════ -->
-  <text x="20" y="335" class="sec-title">② Air Cycle</text>
-  <line x1="110" y1="332" x2="920" y2="332" class="dim-line"/>
-  <text x="120" y="329" class="flow-dir">drum → filter → evaporator → condenser → fan → drum</text>
-
-  <!-- ─── AIR DUCTS (rectangular cross-section, drawn first) ─── -->
-
-  <!-- duct: drum → filter -->
-  <g class="pipe-group" data-pipe="duct-drum-filter">
-    <path class="pipe-hit" d="M 165 460 L 230 460"/>
-    <path class="duct-edge" d="M 165 460 L 230 460" stroke="#0f172a" stroke-width="20"/>
-    <path class="duct-body" d="M 165 460 L 230 460" stroke="#e5e7eb" stroke-width="17"/>
-    <path class="duct-center" d="M 165 460 L 230 460" stroke="#6b7280" stroke-width="1" stroke-dasharray="4 3"/>
-    <path d="M 165 460 L 230 460" stroke="transparent" stroke-width="1" fill="none" marker-end="url(#arr-air)"/>
-  </g>
-
-  <!-- duct: filter → evaporator -->
-  <g class="pipe-group" data-pipe="duct-filter-evap">
-    <path class="pipe-hit" d="M 300 460 L 360 460"/>
-    <path class="duct-edge" d="M 300 460 L 360 460" stroke="#0f172a" stroke-width="20"/>
-    <path class="duct-body" d="M 300 460 L 360 460" stroke="#e5e7eb" stroke-width="17"/>
-    <path class="duct-center" d="M 300 460 L 360 460" stroke="#6b7280" stroke-width="1" stroke-dasharray="4 3"/>
-    <path d="M 300 460 L 360 460" stroke="transparent" stroke-width="1" fill="none" marker-end="url(#arr-air)"/>
-  </g>
-
-  <!-- duct: evaporator → condenser -->
-  <g class="pipe-group" data-pipe="duct-evap-cond">
-    <path class="pipe-hit" d="M 465 460 L 545 460"/>
-    <path class="duct-edge" d="M 465 460 L 545 460" stroke="#0f172a" stroke-width="20"/>
-    <path class="duct-body" d="M 465 460 L 545 460" stroke="#e5e7eb" stroke-width="17"/>
-    <path class="duct-center" d="M 465 460 L 545 460" stroke="#6b7280" stroke-width="1" stroke-dasharray="4 3"/>
-    <path d="M 465 460 L 545 460" stroke="transparent" stroke-width="1" fill="none" marker-end="url(#arr-air)"/>
-  </g>
-
-  <!-- duct: condenser → fan -->
-  <g class="pipe-group" data-pipe="duct-cond-fan">
-    <path class="pipe-hit" d="M 655 460 L 720 460"/>
-    <path class="duct-edge" d="M 655 460 L 720 460" stroke="#0f172a" stroke-width="20"/>
-    <path class="duct-body" d="M 655 460 L 720 460" stroke="#e5e7eb" stroke-width="17"/>
-    <path class="duct-center" d="M 655 460 L 720 460" stroke="#6b7280" stroke-width="1" stroke-dasharray="4 3"/>
-    <path d="M 655 460 L 720 460" stroke="transparent" stroke-width="1" fill="none" marker-end="url(#arr-air)"/>
-  </g>
-
-  <!-- duct: fan → drum (return) -->
-  <g class="pipe-group" data-pipe="duct-fan-drum">
-    <path class="pipe-hit" d="M 810 460 L 895 460 L 895 570 L 45 570 L 45 460 L 55 460"/>
-    <path class="duct-edge" d="M 810 460 L 895 460 L 895 570 L 45 570 L 45 460 L 55 460" stroke="#0f172a" stroke-width="20"/>
-    <path class="duct-body" d="M 810 460 L 895 460 L 895 570 L 45 570 L 45 460 L 55 460" stroke="#e5e7eb" stroke-width="17"/>
-    <path class="duct-center" d="M 810 460 L 895 460 L 895 570 L 45 570 L 45 460 L 55 460" stroke="#6b7280" stroke-width="1" stroke-dasharray="4 3"/>
-    <path d="M 45 460 L 55 460" stroke="transparent" stroke-width="1" fill="none" marker-end="url(#arr-air)"/>
-  </g>
-  <text x="470" y="565" class="flow-dir" text-anchor="middle">recirculated warm dry air (return to drum)</text>
-
-  <!-- ─── AIR COMPONENTS ─── -->
-
-  <!-- Drum (real product image) -->
-  <g class="comp" data-id="drum" transform="translate(45, 405)">
-    <image href="./images/drum.png" x="0" y="0" width="120" height="110" preserveAspectRatio="xMidYMid meet"/>
-    <text x="60" y="125" class="comp-label-text">DRUM</text>
-    <text x="60" y="135" class="comp-tag-text">드럼 · #201 · 8kg cotton</text>
-    <rect class="hit-frame" x="-5" y="-5" width="130" height="146" rx="3"/>
-  </g>
-
-  <!-- Filter -->
-  <g class="comp" data-id="filter" transform="translate(230, 425)">
-    <!-- housing frame -->
-    <rect x="0" y="0" width="70" height="70" fill="#f1f5f9" stroke="#0f172a" stroke-width="1.5"/>
-    <!-- filter mesh panel -->
-    <rect x="6" y="6" width="58" height="58" fill="url(#mesh)" stroke="#0f172a" stroke-width="0.9"/>
-    <!-- frame corner details -->
-    <rect x="3" y="3" width="6" height="6" fill="#cbd5e1" stroke="#0f172a" stroke-width="0.6"/>
-    <rect x="61" y="3" width="6" height="6" fill="#cbd5e1" stroke="#0f172a" stroke-width="0.6"/>
-    <rect x="3" y="61" width="6" height="6" fill="#cbd5e1" stroke="#0f172a" stroke-width="0.6"/>
-    <rect x="61" y="61" width="6" height="6" fill="#cbd5e1" stroke="#0f172a" stroke-width="0.6"/>
-    <!-- air flow indicator arrows (inside mesh) -->
-    <g stroke="#64748b" stroke-width="0.6" fill="none">
-      <line x1="15" y1="25" x2="22" y2="25" marker-end="url(#arr-rot)"/>
-      <line x1="15" y1="45" x2="22" y2="45" marker-end="url(#arr-rot)"/>
-    </g>
-    <!-- air ports -->
-    <rect x="-5" y="31" width="5" height="8" fill="#6b7280" stroke="#0f172a" stroke-width="0.8"/>
-    <rect x="70" y="31" width="5" height="8" fill="#6b7280" stroke="#0f172a" stroke-width="0.8"/>
-    <text x="35" y="85" class="comp-label-text">LINT FILTER</text>
-    <text x="35" y="96" class="comp-tag-text">필터 · #210</text>
-    <rect class="hit-frame" x="-3" y="-3" width="76" height="104" rx="3"/>
-  </g>
-
-  <!-- Evaporator (air-side, real product image - same physical HX) -->
-  <g class="comp shared" data-id="evaporator" transform="translate(360, 410)">
-    <image href="./images/evaporator.png" x="0" y="0" width="105" height="105" preserveAspectRatio="xMidYMid meet"/>
-    <rect x="62" y="-12" width="42" height="11" fill="#fef3c7" stroke="#b45309" stroke-width="0.8"/>
-    <text x="83" y="-3.5" class="shared-badge" text-anchor="middle">SHARED HX</text>
-    <text x="52" y="120" class="comp-label-text">EVAPORATOR</text>
-    <text x="52" y="130" class="comp-tag-text">증발기 · air-side</text>
-    <rect class="hit-frame" x="-5" y="-15" width="115" height="151" rx="3"/>
-  </g>
-
-  <!-- Condenser (air-side, real product image - same physical HX) -->
-  <g class="comp shared" data-id="condenser" transform="translate(545, 410)">
-    <image href="./images/condenser.png" x="0" y="0" width="110" height="100" preserveAspectRatio="xMidYMid meet"/>
-    <rect x="68" y="-12" width="42" height="11" fill="#fef3c7" stroke="#b45309" stroke-width="0.8"/>
-    <text x="89" y="-3.5" class="shared-badge" text-anchor="middle">SHARED HX</text>
-    <text x="55" y="120" class="comp-label-text">CONDENSER</text>
-    <text x="55" y="130" class="comp-tag-text">응축기 · air-side</text>
-    <rect class="hit-frame" x="-5" y="-15" width="120" height="151" rx="3"/>
-  </g>
-
-  <!-- Fan (real product image) -->
-  <g class="comp" data-id="fan" transform="translate(715, 410)">
-    <image href="./images/fan.png" x="0" y="0" width="115" height="100" preserveAspectRatio="xMidYMid meet"/>
-    <text x="57" y="120" class="comp-label-text">BLOWER FAN</text>
-    <text x="57" y="130" class="comp-tag-text">팬 · #200 · sirocco</text>
-    <rect class="hit-frame" x="-4" y="-4" width="125" height="140" rx="3"/>
-  </g>
-
-  <!-- Shared HX cross-reference (위/아래가 같은 물리 HX임을 X자 점선으로 표시) -->
-  <g opacity="0.4" pointer-events="none">
-    <!-- Condenser: 상단(중심 x=335, y_bottom=190) → 하단(중심 x=600, y_top=410) -->
-    <line x1="335" y1="195" x2="600" y2="410" stroke="#b45309" stroke-width="0.7" stroke-dasharray="3 3"/>
-    <!-- Evaporator: 상단(중심 x=732, y_bottom=195) → 하단(중심 x=412, y_top=410) -->
-    <line x1="732" y1="195" x2="412" y2="410" stroke="#b45309" stroke-width="0.7" stroke-dasharray="3 3"/>
-    <text x="475" y="295" font-family="JetBrains Mono" font-size="7.5" fill="#b45309" text-anchor="middle">⇡⇣ same physical HX</text>
-  </g>
-
-  <!-- Legend in bottom-right corner (engineering drawing style) -->
-  <g transform="translate(680, 585)">
-    <rect x="0" y="0" width="240" height="30" fill="white" stroke="#0f172a" stroke-width="0.8"/>
-    <text x="6" y="10" font-family="JetBrains Mono" font-size="7" font-weight="700" fill="#0f172a">LEGEND</text>
-    <line x1="40" y1="16" x2="56" y2="16" stroke="#dc2626" stroke-width="5"/>
-    <text x="60" y="18" font-family="JetBrains Mono" font-size="7" fill="#475569">HP refrig</text>
-    <line x1="108" y1="16" x2="124" y2="16" stroke="#2563eb" stroke-width="5"/>
-    <text x="128" y="18" font-family="JetBrains Mono" font-size="7" fill="#475569">LP refrig</text>
-    <rect x="175" y="13" width="16" height="6" fill="#e5e7eb" stroke="#0f172a" stroke-width="0.6"/>
-    <text x="195" y="18" font-family="JetBrains Mono" font-size="7" fill="#475569">air duct</text>
-    <text x="6" y="26" font-family="JetBrains Mono" font-size="7" fill="#b45309">⚠ SHARED HX · 냉매/공기 양면</text>
-  </g>
-</svg>
-      </div>
-    </div>
-
-    <!-- Footer status -->
-    <div class="h-7 bg-slate-50 border-t border-slate-200 flex items-center px-3 text-[10px] text-slate-500 mono shrink-0 gap-4">
-      <span>selected: <span id="footer-sel" class="text-slate-900 font-semibold">—</span></span>
-      <span class="text-slate-300">|</span>
-      <span>modified: <span id="footer-mod" class="text-slate-900 font-semibold">0</span></span>
-      <span class="flex-1"></span>
-      <span>view: schematic · fixed</span>
-    </div>
-  </div>
-
-  <!-- ─── RIGHT: Properties / Chat panel ─── -->
-  <div class="w-[360px] bg-white border-l border-slate-200 flex flex-col shrink-0">
-    <!-- Tabs -->
-    <div class="h-10 border-b border-slate-200 flex items-center px-2 gap-0.5 bg-slate-50 shrink-0">
-      <button id="tab-props" class="tab-btn active px-3 py-2 text-[11px] font-medium mono tracking-wider uppercase">Properties</button>
-      <button id="tab-chat" class="tab-btn px-3 py-2 text-[11px] font-medium mono tracking-wider uppercase">AI Chat</button>
-      <div class="flex-1"></div>
-      <span id="tab-chat-badge" class="text-[9px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 border border-amber-300 mono font-semibold">UI ONLY</span>
-    </div>
-
-    <!-- Properties panel -->
-    <div id="props-panel" class="flex-1 overflow-y-auto">
-      <div id="props-head" class="px-4 py-3 border-b border-slate-100 bg-slate-50/60">
-        <div id="props-title" class="text-[13px] font-semibold text-slate-900 flex items-center gap-1.5">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-slate-400"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-          Properties
-        </div>
-        <div id="props-sub" class="text-[10px] text-slate-500 mono mt-1">no selection</div>
-      </div>
-      <div id="props-body" class="p-4">
-        <div class="text-center py-16 text-slate-400 text-[12px] leading-relaxed">
-          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="mx-auto mb-3 text-slate-300"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/></svg>
-          개략도에서 컴포넌트 또는<br>배관·덕트를 클릭하세요
-          <div class="text-[10px] mono text-slate-400 mt-2">shared HX는 양쪽 인스턴스 동시 선택</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Chat panel -->
-    <div id="chat-panel" class="hidden flex-1 overflow-hidden flex flex-col">
-      <div class="flex-1 overflow-y-auto p-3 space-y-3 bg-slate-50">
-        <div class="text-[12px] leading-relaxed">
-          <div class="flex items-center gap-1.5 mb-1 text-[9px] mono uppercase tracking-widest text-amber-700 font-semibold">
-            <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>Assistant
-          </div>
-          <div class="text-slate-700">
-            HPWD Studio Task 프로토타입. 아직 LLM 백엔드는 연결 안 됨 — UI shell만.
-          </div>
-          <div class="mt-2 bg-white border border-slate-200 border-l-2 border-l-amber-500 rounded-r px-3 py-2 mono text-[10.5px] text-slate-600 leading-relaxed">
-            추후 탑재 기능:<br>
-            · <code class="bg-slate-100 px-1 rounded">set_param</code> — 자연어 파라미터 수정<br>
-            · <code class="bg-slate-100 px-1 rounded">run_sim</code> — 시뮬레이션 실행<br>
-            · <code class="bg-slate-100 px-1 rounded">explain</code> — 결과 해석·리포트<br>
-            · <code class="bg-slate-100 px-1 rounded">check_spec</code> — RAG 규격 체크<br>
-            · <code class="bg-slate-100 px-1 rounded">suggest</code> — what-if 시나리오
-          </div>
-        </div>
-      </div>
-      <div class="border-t border-slate-200 p-2 bg-white">
-        <div class="flex flex-wrap gap-1.5 mb-2 px-0.5">
-          <span class="chip-sug text-[10px] px-2 py-1 bg-slate-100 border border-slate-200 rounded-full text-slate-600 cursor-pointer hover:border-cyan-500 hover:text-cyan-700">증발기 UA 비교</span>
-          <span class="chip-sug text-[10px] px-2 py-1 bg-slate-100 border border-slate-200 rounded-full text-slate-600 cursor-pointer hover:border-cyan-500 hover:text-cyan-700">SMER 최대화</span>
-          <span class="chip-sug text-[10px] px-2 py-1 bg-slate-100 border border-slate-200 rounded-full text-slate-600 cursor-pointer hover:border-cyan-500 hover:text-cyan-700">토출배관 단축</span>
-        </div>
-        <div class="flex gap-1.5">
-          <textarea disabled class="flex-1 resize-none px-2 py-1.5 text-[11px] border border-slate-300 rounded bg-slate-50 text-slate-700 h-9 mono" placeholder="압축기 RPM 3000으로 설정하고 돌려줘 (현재 비활성)"></textarea>
-          <button disabled class="px-3 text-[10px] mono font-semibold bg-cyan-600 text-white rounded opacity-50 cursor-not-allowed tracking-wider">SEND</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-</div>
-
-<script>
-'use strict';
-
-/* ═══════════ Component parameter schemas ═══════════ */
-const schemas = {
+const TYPES = {
+  ambient: {
+    typeNo: 1, name: 'Ambient', category: 'source', color: '#475569', icon: Thermometer,
+    desc: '대기 조건 (온도/습도)',
+    parameters: [
+      { key: 'T_amb', label: 'T_ambient', value: 25, unit: '°C' },
+      { key: 'RH_amb', label: 'RH_ambient', value: 50, unit: '%' },
+      { key: 'P_atm', label: 'P_atm', value: 101.325, unit: 'kPa' },
+    ],
+    inputs: [],
+    outputs: [
+      { key: 'T_out', label: 'T', unit: '°C' },
+      { key: 'RH_out', label: 'RH', unit: '%' },
+      { key: 'P_out', label: 'P', unit: 'kPa' },
+    ],
+    compute: (inp, par) => ({ T_out: par.T_amb, RH_out: par.RH_amb, P_out: par.P_atm }),
+  },
   compressor: {
-    title: 'Compressor',
-    sub: '압축기 · Type #100 · refrigerant cycle',
-    kindColor: '#dc2626',
-    groups: [
-      { label: 'Geometry & Kinematics', fields: [
-        { key: 'type', label: 'Type', type: 'select', options: ['Rotary', 'Scroll', 'Reciprocating', 'BLDC Inverter'], value: 'BLDC Inverter' },
-        { key: 'V_disp', label: 'Displacement', unit: 'cc/rev', value: 10.5 },
-        { key: 'RPM', label: 'Speed', unit: 'RPM', value: 3000 },
-      ]},
-      { label: 'Efficiencies', fields: [
-        { key: 'eta_is', label: 'η_isentropic', unit: '-', value: 0.72 },
-        { key: 'eta_v', label: 'η_volumetric', unit: '-', value: 0.88 },
-        { key: 'eta_mech', label: 'η_mechanical', unit: '-', value: 0.90 },
-      ]},
-      { label: 'Thermal', fields: [
-        { key: 'Q_loss', label: 'shell heat loss', unit: 'W/K', value: 1.2 },
-      ]},
-    ]
+    typeNo: 100, name: 'Compressor', category: 'refrigerant', color: '#dc2626', icon: CircleDot, image: './images/compressor.png',
+    desc: '로터리/리시프로 압축기',
+    parameters: [
+      { key: 'V_disp', label: 'Displacement', value: 10.0, unit: 'cc' },
+      { key: 'RPM', label: 'Speed', value: 3000, unit: 'rpm' },
+      { key: 'eta_v', label: 'η_vol', value: 0.85, unit: '-' },
+      { key: 'eta_is', label: 'η_is', value: 0.70, unit: '-' },
+      { key: 'PR', label: 'Press. Ratio', value: 3.5, unit: '-' },
+    ],
+    inputs: [
+      { key: 'P_suc', label: 'P_suc', unit: 'kPa' },
+      { key: 'T_suc', label: 'T_suc', unit: '°C' },
+    ],
+    outputs: [
+      { key: 'm_dot', label: 'm_dot', unit: 'g/s' },
+      { key: 'T_dis', label: 'T_dis', unit: '°C' },
+      { key: 'P_dis', label: 'P_dis', unit: 'kPa' },
+      { key: 'W_comp', label: 'W_comp', unit: 'W' },
+    ],
+    compute: (inp, par) => {
+      const P_suc = inp.P_suc ?? 500;
+      const T_suc = inp.T_suc ?? 10;
+      const T_suc_K = T_suc + 273.15;
+      const rho = (P_suc * 1000) / (120 * T_suc_K);
+      const m_dot = par.eta_v * rho * par.V_disp * 1e-6 * par.RPM / 60 * 1000;
+      const P_dis = P_suc * par.PR;
+      const T_dis_is = T_suc_K * Math.pow(par.PR, 0.28);
+      const T_dis = T_suc_K + (T_dis_is - T_suc_K) / par.eta_is;
+      const W_comp = (m_dot / 1000) * 1.0 * (T_dis - T_suc_K) * 1000;
+      return { m_dot, T_dis: T_dis - 273.15, P_dis, W_comp };
+    },
   },
   condenser: {
-    title: 'Condenser',
-    sub: '응축기 · Type #101 · SHARED HX · fin-tube',
-    kindColor: '#ea580c',
-    shared: true,
-    groups: [
-      { label: 'Core Geometry', fields: [
-        { key: 'hx_type', label: 'HX type', type: 'select', options: ['Fin-and-Tube', 'Microchannel'], value: 'Fin-and-Tube' },
-        { key: 'core_W', label: 'core width', unit: 'mm', value: 280 },
-        { key: 'core_H', label: 'core height', unit: 'mm', value: 240 },
-        { key: 'core_D', label: 'core depth', unit: 'mm', value: 38 },
-      ]},
-      { label: 'Tube', fields: [
-        { key: 'tube_di', label: 'inner dia.', unit: 'mm', value: 7.0 },
-        { key: 'tube_do', label: 'outer dia.', unit: 'mm', value: 7.94 },
-        { key: 'rows', label: 'rows', unit: 'ea', value: 2 },
-        { key: 'passes', label: 'passes', unit: 'ea', value: 4 },
-      ]},
-      { label: 'Fin', fields: [
-        { key: 'fin_pitch', label: 'fin pitch', unit: 'mm', value: 1.6 },
-        { key: 'fin_thk', label: 'fin thickness', unit: 'mm', value: 0.12 },
-      ]},
-      { label: 'Performance', fields: [
-        { key: 'UA', label: 'UA estimate', unit: 'W/K', value: 320 },
-        { key: 'dP_ref_k', label: 'ΔP ref (side) k', unit: '-', value: 1.0 },
-        { key: 'dP_air_k', label: 'ΔP air (side) k', unit: '-', value: 1.0 },
-      ]},
-    ]
+    typeNo: 101, name: 'Condenser', category: 'refrigerant', color: '#ea580c', icon: Box, image: './images/condenser.png',
+    desc: '응축기 (고온측 열교환기)',
+    parameters: [
+      { key: 'UA', label: 'UA', value: 150, unit: 'W/K' },
+      { key: 'dP_ref', label: 'ΔP_ref', value: 20, unit: 'kPa' },
+    ],
+    inputs: [
+      { key: 'm_dot', label: 'm_dot', unit: 'g/s' },
+      { key: 'T_in', label: 'T_ref_in', unit: '°C' },
+      { key: 'P_in', label: 'P_ref_in', unit: 'kPa' },
+      { key: 'T_air', label: 'T_air', unit: '°C' },
+      { key: 'm_air', label: 'm_air', unit: 'kg/s' },
+    ],
+    outputs: [
+      { key: 'T_out', label: 'T_ref_out', unit: '°C' },
+      { key: 'P_out', label: 'P_ref_out', unit: 'kPa' },
+      { key: 'Q', label: 'Q_cond', unit: 'W' },
+      { key: 'T_air_out', label: 'T_air_out', unit: '°C' },
+    ],
+    compute: (inp, par) => {
+      const m = (inp.m_dot ?? 1) / 1000;
+      const T_in = inp.T_in ?? 80;
+      const T_air = inp.T_air ?? 25;
+      const m_air = inp.m_air ?? 0.05;
+      const C_min = Math.min(m * 1200, m_air * 1005);
+      const NTU = par.UA / Math.max(C_min, 1e-6);
+      const eps = 1 - Math.exp(-NTU);
+      const Q = eps * C_min * (T_in - T_air);
+      const T_out = T_in - Q / (m * 1200 + 1e-6);
+      const T_air_out = T_air + Q / (m_air * 1005 + 1e-6);
+      return { T_out, P_out: (inp.P_in ?? 1800) - par.dP_ref, Q, T_air_out };
+    },
   },
-  eev: {
-    title: 'EEV',
-    sub: '팽창밸브 · Type #102 · refrigerant cycle',
-    kindColor: '#d97706',
-    groups: [
-      { label: 'Valve', fields: [
-        { key: 'type', label: 'type', type: 'select', options: ['EEV (Electronic)', 'LEV (Linear)', 'TXV', 'Capillary'], value: 'EEV (Electronic)' },
-        { key: 'opening', label: 'opening', unit: 'pulse', value: 220 },
-        { key: 'max_pulse', label: 'max steps', unit: 'pulse', value: 480 },
-        { key: 'Cv_max', label: 'Cv_max', unit: '-', value: 0.32 },
-      ]},
-      { label: 'Dynamics', fields: [
-        { key: 'tau', label: 'response time', unit: 'ms', value: 150 },
-      ]},
-    ]
+  exv: {
+    typeNo: 102, name: 'Expansion Valve', category: 'refrigerant', color: '#d97706', icon: Zap, image: './images/eev.png',
+    desc: '전자팽창밸브 (EEV)',
+    parameters: [
+      { key: 'A_orifice', label: 'A_orifice', value: 0.5, unit: 'mm²' },
+      { key: 'opening', label: 'Opening', value: 100, unit: '%' },
+      { key: 'Cd', label: 'Cd', value: 0.65, unit: '-' },
+    ],
+    inputs: [
+      { key: 'P_in', label: 'P_in', unit: 'kPa' },
+      { key: 'T_in', label: 'T_in', unit: '°C' },
+      { key: 'P_out_target', label: 'P_out', unit: 'kPa' },
+    ],
+    outputs: [
+      { key: 'm_dot', label: 'm_dot', unit: 'g/s' },
+      { key: 'T_out', label: 'T_out', unit: '°C' },
+      { key: 'P_out', label: 'P_out', unit: 'kPa' },
+    ],
+    compute: (inp, par) => {
+      const P_in = inp.P_in ?? 1800;
+      const P_out = inp.P_out_target ?? 500;
+      const T_in = inp.T_in ?? 35;
+      const A_eff = par.A_orifice * (par.opening / 100) * 1e-6;
+      const rho = (P_in * 1000) / (120 * (T_in + 273.15));
+      const dP = Math.max((P_in - P_out) * 1000, 0);
+      const m_dot = par.Cd * A_eff * Math.sqrt(2 * rho * dP) * 1000;
+      return { m_dot, T_out: 0.03 * P_out - 20, P_out };
+    },
   },
   evaporator: {
-    title: 'Evaporator',
-    sub: '증발기 · Type #103 · SHARED HX · fin-tube',
-    kindColor: '#2563eb',
-    shared: true,
-    groups: [
-      { label: 'Core Geometry', fields: [
-        { key: 'hx_type', label: 'HX type', type: 'select', options: ['Fin-and-Tube', 'Microchannel'], value: 'Fin-and-Tube' },
-        { key: 'core_W', label: 'core width', unit: 'mm', value: 280 },
-        { key: 'core_H', label: 'core height', unit: 'mm', value: 240 },
-        { key: 'core_D', label: 'core depth', unit: 'mm', value: 38 },
-      ]},
-      { label: 'Tube', fields: [
-        { key: 'tube_di', label: 'inner dia.', unit: 'mm', value: 7.0 },
-        { key: 'tube_do', label: 'outer dia.', unit: 'mm', value: 7.94 },
-        { key: 'rows', label: 'rows', unit: 'ea', value: 2 },
-        { key: 'passes', label: 'passes', unit: 'ea', value: 4 },
-      ]},
-      { label: 'Fin', fields: [
-        { key: 'fin_pitch', label: 'fin pitch', unit: 'mm', value: 1.4 },
-        { key: 'fin_thk', label: 'fin thickness', unit: 'mm', value: 0.12 },
-      ]},
-      { label: 'Performance', fields: [
-        { key: 'UA', label: 'UA estimate', unit: 'W/K', value: 280 },
-        { key: 'SH', label: 'target superheat', unit: 'K', value: 5 },
-        { key: 'dP_ref_k', label: 'ΔP ref (side) k', unit: '-', value: 1.0 },
-        { key: 'dP_air_k', label: 'ΔP air (side) k', unit: '-', value: 1.0 },
-        { key: 'drain_k', label: 'condensate drain k', unit: '-', value: 1.0 },
-      ]},
-    ]
-  },
-  drum: {
-    title: 'Drum',
-    sub: '드럼 · Type #201 · air cycle',
-    kindColor: '#059669',
-    groups: [
-      { label: 'Geometry', fields: [
-        { key: 'V', label: 'drum volume', unit: 'L', value: 120 },
-        { key: 'D', label: 'drum diameter', unit: 'mm', value: 585 },
-      ]},
-      { label: 'Load', fields: [
-        { key: 'fabric', label: 'fabric', type: 'select', options: ['Cotton', 'Synthetic', 'Mixed', 'Wool'], value: 'Mixed' },
-        { key: 'm_load', label: 'load mass', unit: 'kg', value: 8.0 },
-        { key: 'MC_init', label: 'init moisture', unit: '%', value: 60 },
-        { key: 'MC_target', label: 'target moisture', unit: '%', value: 5 },
-      ]},
-      { label: 'Motion', fields: [
-        { key: 'RPM', label: 'tumble RPM', unit: 'RPM', value: 52 },
-        { key: 'leak', label: 'gasket leak', unit: '%', value: 3 },
-      ]},
-    ]
-  },
-  filter: {
-    title: 'Lint Filter',
-    sub: '필터 · Type #210 · air cycle',
-    kindColor: '#6b7280',
-    groups: [
-      { label: 'Geometry', fields: [
-        { key: 'A_filter', label: 'filter area', unit: 'm²', value: 0.045 },
-      ]},
-      { label: 'Pressure Drop', fields: [
-        { key: 'k_dp', label: 'base ΔP k', unit: '-', value: 1.0 },
-        { key: 'soil', label: 'soiling', unit: '%', value: 0 },
-      ]},
-      { label: 'Material', fields: [
-        { key: 'material', label: 'material', type: 'select', options: ['Mesh', 'Non-woven', 'Hybrid'], value: 'Mesh' },
-      ]},
-    ]
+    typeNo: 103, name: 'Evaporator', category: 'refrigerant', color: '#2563eb', icon: Droplet, image: './images/evaporator.png',
+    desc: '증발기 (저온측 열교환기)',
+    parameters: [
+      { key: 'UA', label: 'UA', value: 120, unit: 'W/K' },
+      { key: 'dP_ref', label: 'ΔP_ref', value: 15, unit: 'kPa' },
+      { key: 'SH', label: 'Superheat', value: 5, unit: 'K' },
+    ],
+    inputs: [
+      { key: 'm_dot', label: 'm_dot', unit: 'g/s' },
+      { key: 'T_in', label: 'T_ref_in', unit: '°C' },
+      { key: 'P_in', label: 'P_ref_in', unit: 'kPa' },
+      { key: 'T_air', label: 'T_air', unit: '°C' },
+      { key: 'm_air', label: 'm_air', unit: 'kg/s' },
+    ],
+    outputs: [
+      { key: 'T_out', label: 'T_ref_out', unit: '°C' },
+      { key: 'P_out', label: 'P_ref_out', unit: 'kPa' },
+      { key: 'Q', label: 'Q_evap', unit: 'W' },
+      { key: 'T_air_out', label: 'T_air_out', unit: '°C' },
+    ],
+    compute: (inp, par) => {
+      const m = (inp.m_dot ?? 1) / 1000;
+      const T_in = inp.T_in ?? -10;
+      const T_air = inp.T_air ?? 40;
+      const m_air = inp.m_air ?? 0.05;
+      const C_min = Math.min(m * 1500, m_air * 1005);
+      const NTU = par.UA / Math.max(C_min, 1e-6);
+      const eps = 1 - Math.exp(-NTU);
+      const Q = eps * C_min * (T_air - T_in);
+      const T_air_out = T_air - Q / (m_air * 1005 + 1e-6);
+      return { T_out: T_in + par.SH, P_out: (inp.P_in ?? 500) - par.dP_ref, Q, T_air_out };
+    },
   },
   fan: {
-    title: 'Blower Fan',
-    sub: '팬 · Type #200 · air cycle',
-    kindColor: '#0891b2',
-    groups: [
-      { label: 'Fan', fields: [
-        { key: 'type', label: 'type', type: 'select', options: ['Axial', 'Centrifugal', 'Sirocco'], value: 'Sirocco' },
-        { key: 'RPM', label: 'speed', unit: 'RPM', value: 2400 },
-      ]},
-      { label: 'Performance', fields: [
-        { key: 'Q_max', label: 'Q_max', unit: 'm³/min', value: 4.2 },
-        { key: 'SP_max', label: 'SP_max', unit: 'Pa', value: 180 },
-        { key: 'eta_fan', label: 'η_fan', unit: '-', value: 0.35 },
-        { key: 'eta_mot', label: 'η_motor', unit: '-', value: 0.82 },
-      ]},
-    ]
+    typeNo: 200, name: 'Fan', category: 'air', color: '#0891b2', icon: Wind, image: './images/fan.png',
+    desc: '송풍기 (시로코/축류)',
+    parameters: [
+      { key: 'RPM', label: 'Speed', value: 2500, unit: 'rpm' },
+      { key: 'V_max', label: 'V_max', value: 0.15, unit: 'm³/s' },
+      { key: 'eta', label: 'η_fan', value: 0.55, unit: '-' },
+      { key: 'dP_max', label: 'ΔP_max', value: 300, unit: 'Pa' },
+    ],
+    inputs: [
+      { key: 'T_in', label: 'T_air_in', unit: '°C' },
+      { key: 'dP_sys', label: 'ΔP_system', unit: 'Pa' },
+    ],
+    outputs: [
+      { key: 'm_air', label: 'm_air', unit: 'kg/s' },
+      { key: 'T_out', label: 'T_air_out', unit: '°C' },
+      { key: 'W_fan', label: 'W_fan', unit: 'W' },
+    ],
+    compute: (inp, par) => {
+      const T_in = inp.T_in ?? 25;
+      const dP_sys = inp.dP_sys ?? 150;
+      const speed_frac = par.RPM / 2500;
+      const V = par.V_max * speed_frac * Math.sqrt(Math.max(1 - dP_sys / (par.dP_max * speed_frac ** 2), 0.1));
+      const rho_air = 1.2 * (293.15 / (T_in + 273.15));
+      const m_air = rho_air * V;
+      const W_fan = (V * dP_sys) / par.eta;
+      return { m_air, T_out: T_in + W_fan / (m_air * 1005 + 1e-6), W_fan };
+    },
+  },
+  drum: {
+    typeNo: 201, name: 'Drum', category: 'air', color: '#0e7490', icon: Gauge, image: './images/drum.png',
+    desc: '세탁건조기 드럼 (직물-공기 열/물질전달)',
+    parameters: [
+      { key: 'm_fabric', label: 'Fabric Mass', value: 5.0, unit: 'kg' },
+      { key: 'MC_init', label: 'MC_init', value: 0.8, unit: '-' },
+      { key: 'hA', label: 'hA', value: 50, unit: 'W/K' },
+      { key: 'dP_drum', label: 'ΔP_drum', value: 100, unit: 'Pa' },
+    ],
+    inputs: [
+      { key: 'T_air_in', label: 'T_air_in', unit: '°C' },
+      { key: 'm_air', label: 'm_air', unit: 'kg/s' },
+    ],
+    outputs: [
+      { key: 'T_air_out', label: 'T_air_out', unit: '°C' },
+      { key: 'MC', label: 'MC', unit: '-' },
+      { key: 'm_evap', label: 'm_evap', unit: 'g/s' },
+      { key: 'dP', label: 'ΔP', unit: 'Pa' },
+    ],
+    stateInit: { MC: null, T_fab: 25 },
+    compute: (inp, par, t, state, dt) => {
+      const T_air_in = inp.T_air_in ?? 50;
+      const m_air = inp.m_air ?? 0.05;
+      if (state.MC === null) state.MC = par.MC_init;
+      const dT = T_air_in - state.T_fab;
+      const Q = par.hA * dT;
+      const h_fg = 2400e3;
+      const m_evap = state.MC > 0.05 ? Q / h_fg : 0;
+      state.T_fab = state.T_fab + (Q - m_evap * h_fg) / (par.m_fabric * 1500) * dt;
+      state.MC = Math.max(state.MC - (m_evap * dt) / par.m_fabric, 0);
+      return {
+        T_air_out: T_air_in - Q / (m_air * 1005 + 1e-6),
+        MC: state.MC,
+        m_evap: m_evap * 1000,
+        dP: par.dP_drum,
+      };
+    },
+  },
+  // ================ 테스트용 신호 생성 ================
+  constant: {
+    typeNo: 10, name: 'Constant', category: 'source', color: '#6366f1', icon: Hash,
+    desc: '상수 값 생성',
+    parameters: [
+      { key: 'value', label: 'Value', value: 1.0, unit: '' },
+    ],
+    inputs: [],
+    outputs: [{ key: 'y', label: 'y', unit: '' }],
+    compute: (inp, par) => ({ y: par.value }),
+  },
+  ramp: {
+    typeNo: 11, name: 'Ramp', category: 'source', color: '#6366f1', icon: TrendingUp,
+    desc: '선형 시간 함수: y = slope·t + offset',
+    parameters: [
+      { key: 'slope', label: 'Slope', value: 1.0, unit: '/s' },
+      { key: 'offset', label: 'Offset', value: 0.0, unit: '' },
+    ],
+    inputs: [],
+    outputs: [{ key: 'y', label: 'y', unit: '' }],
+    compute: (inp, par, t) => ({ y: par.slope * t + par.offset }),
+  },
+  sine: {
+    typeNo: 12, name: 'Sine', category: 'source', color: '#6366f1', icon: Waves,
+    desc: '사인파: y = A·sin(2πft) + offset',
+    parameters: [
+      { key: 'A', label: 'Amplitude', value: 1.0, unit: '' },
+      { key: 'freq', label: 'Frequency', value: 0.1, unit: 'Hz' },
+      { key: 'offset', label: 'Offset', value: 0.0, unit: '' },
+    ],
+    inputs: [],
+    outputs: [{ key: 'y', label: 'y', unit: '' }],
+    compute: (inp, par, t) => ({
+      y: par.A * Math.sin(2 * Math.PI * par.freq * t) + par.offset,
+    }),
+  },
+
+  // ================ 사칙연산 ================
+  add: {
+    typeNo: 20, name: 'Add', category: 'math', color: '#10b981', icon: Plus,
+    desc: '덧셈: y = a + b',
+    parameters: [],
+    inputs: [
+      { key: 'a', label: 'a', unit: '' },
+      { key: 'b', label: 'b', unit: '' },
+    ],
+    outputs: [{ key: 'y', label: 'a+b', unit: '' }],
+    compute: (inp) => ({ y: (inp.a ?? 0) + (inp.b ?? 0) }),
+  },
+  subtract: {
+    typeNo: 21, name: 'Subtract', category: 'math', color: '#10b981', icon: Minus,
+    desc: '뺄셈: y = a − b',
+    parameters: [],
+    inputs: [
+      { key: 'a', label: 'a', unit: '' },
+      { key: 'b', label: 'b', unit: '' },
+    ],
+    outputs: [{ key: 'y', label: 'a−b', unit: '' }],
+    compute: (inp) => ({ y: (inp.a ?? 0) - (inp.b ?? 0) }),
+  },
+  multiply: {
+    typeNo: 22, name: 'Multiply', category: 'math', color: '#10b981', icon: X,
+    desc: '곱셈: y = a × b',
+    parameters: [],
+    inputs: [
+      { key: 'a', label: 'a', unit: '' },
+      { key: 'b', label: 'b', unit: '' },
+    ],
+    outputs: [{ key: 'y', label: 'a·b', unit: '' }],
+    compute: (inp) => ({ y: (inp.a ?? 0) * (inp.b ?? 1) }),
+  },
+  divide: {
+    typeNo: 23, name: 'Divide', category: 'math', color: '#10b981', icon: Divide,
+    desc: '나눗셈: y = a ÷ b (b=0 시 0 반환)',
+    parameters: [],
+    inputs: [
+      { key: 'a', label: 'a', unit: '' },
+      { key: 'b', label: 'b', unit: '' },
+    ],
+    outputs: [{ key: 'y', label: 'a/b', unit: '' }],
+    compute: (inp) => {
+      const b = inp.b ?? 1;
+      return { y: Math.abs(b) < 1e-12 ? 0 : (inp.a ?? 0) / b };
+    },
+  },
+
+  // ================ 결과 디스플레이 ================
+  display: {
+    typeNo: 901, name: 'Display', category: 'output', color: '#7c3aed', icon: Eye,
+    desc: '현재 값을 블록에 크게 표시',
+    parameters: [
+      { key: 'digits', label: 'Decimals', value: 3, unit: '' },
+      { key: 'label', label: 'Label', value: '', unit: '' },
+    ],
+    inputs: [{ key: 'x', label: 'x', unit: '' }],
+    outputs: [],
+    compute: () => ({}),
+  },
+
+  plotter: {
+    typeNo: 900, name: 'Plotter', category: 'output', color: '#7c3aed', icon: BarChart3,
+    desc: '결과 시각화 (시계열)',
+    parameters: [{ key: 'label', label: 'Label', value: 'Signal', unit: '' }],
+    inputs: [
+      { key: 'y1', label: 'y1', unit: '' },
+      { key: 'y2', label: 'y2', unit: '' },
+      { key: 'y3', label: 'y3', unit: '' },
+    ],
+    outputs: [],
+    compute: () => ({}),
   },
 };
 
-/* ═══════════ Pipe / Duct schemas ═══════════ */
-const pipeMeta = {
-  'pipe-comp-cond': { kind: 'refrig-hp', label: 'Discharge line', korean: '토출배관', phase: 'HP hot gas', length: 380, di: 6.35, ins: 6, bends: 2 },
-  'pipe-cond-eev':  { kind: 'refrig-hp', label: 'Liquid line', korean: '액배관', phase: 'HP liquid', length: 420, di: 6.35, ins: 3, bends: 2 },
-  'pipe-eev-evap':  { kind: 'refrig-lp', label: 'Distributor line', korean: '증발기 유입', phase: 'LP two-phase', length: 180, di: 6.35, ins: 3, bends: 1 },
-  'pipe-evap-comp': { kind: 'refrig-lp', label: 'Suction line', korean: '흡입배관', phase: 'LP gas', length: 520, di: 9.52, ins: 9, bends: 3 },
-  'duct-drum-filter': { kind: 'air', label: 'Drum → Filter', length: 180, area: 12000 },
-  'duct-filter-evap': { kind: 'air', label: 'Filter → Evaporator', length: 120, area: 10500 },
-  'duct-evap-cond':   { kind: 'air', label: 'Evap → Cond', length: 60,  area: 9500 },
-  'duct-cond-fan':    { kind: 'air', label: 'Cond → Fan', length: 80,  area: 9500 },
-  'duct-fan-drum':    { kind: 'air', label: 'Fan → Drum (return)', length: 340, area: 9000 },
+const CATEGORY_STYLES = {
+  source:      { bg: 'bg-slate-100',  text: 'text-slate-700', border: 'border-slate-300', badge: 'SRC' },
+  math:        { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200', badge: 'MTH' },
+  refrigerant: { bg: 'bg-red-50',     text: 'text-red-700',   border: 'border-red-200',   badge: 'REF' },
+  air:         { bg: 'bg-cyan-50',    text: 'text-cyan-700',  border: 'border-cyan-200',  badge: 'AIR' },
+  control:     { bg: 'bg-violet-50',  text: 'text-violet-700',border: 'border-violet-200',badge: 'CTL' },
+  output:      { bg: 'bg-violet-50',  text: 'text-violet-700',border: 'border-violet-200',badge: 'OUT' },
 };
 
-function pipeSchema(id) {
-  const meta = pipeMeta[id];
-  if (!meta) return null;
-  if (meta.kind.startsWith('refrig')) {
+// 그리드 크기 (px). 캔버스 배경 dot pattern과 동일.
+const GRID_SIZE = 20;
+const snap = (v) => Math.round(v / GRID_SIZE) * GRID_SIZE;
+
+// 선분이 사각형과 겹치는지 판정 (선분은 수평 또는 수직만 가정)
+function segmentIntersectsRect(x1, y1, x2, y2, rect) {
+  const PAD = 4; // 블록 테두리에 너무 붙지 않도록 여유
+  const rx1 = rect.x - PAD, ry1 = rect.y - PAD;
+  const rx2 = rect.x + rect.w + PAD, ry2 = rect.y + rect.h + PAD;
+  // 수평 선분
+  if (y1 === y2) {
+    if (y1 < ry1 || y1 > ry2) return false;
+    const sx1 = Math.min(x1, x2), sx2 = Math.max(x1, x2);
+    return !(sx2 < rx1 || sx1 > rx2);
+  }
+  // 수직 선분
+  if (x1 === x2) {
+    if (x1 < rx1 || x1 > rx2) return false;
+    const sy1 = Math.min(y1, y2), sy2 = Math.max(y1, y2);
+    return !(sy2 < ry1 || sy1 > ry2);
+  }
+  return false;
+}
+
+// 경로(세그먼트들의 꼭짓점 배열)가 어떤 장애물과라도 충돌하는지
+function pathHitsObstacles(points, obstacles) {
+  for (let i = 0; i < points.length - 1; i++) {
+    const [x1, y1] = points[i], [x2, y2] = points[i + 1];
+    for (const rect of obstacles) {
+      if (segmentIntersectsRect(x1, y1, x2, y2, rect)) return true;
+    }
+  }
+  return false;
+}
+
+// 직교(90도) 경로 계산. offsets로 각 세그먼트 위치 조정.
+// obstacles: [{x, y, w, h}] 블록 목록 → 이들을 피해가도록 midX/midY를 자동 조정.
+// returns { d, handles: [{segment, x, y, axis, segMin, segMax}] }
+function getOrthogonalPath(from, to, offsets = {}, obstacles = []) {
+  const MARGIN = 20;
+  const STUB = 12;
+  const {
+    midOffsetX = 0,
+    midOffsetY = 0,
+    outOffsetX = 0,
+    inOffsetX = 0,
+  } = offsets;
+
+  if (to.x >= from.x + MARGIN * 2) {
+    // 일반 L→R: 3-세그먼트 (수평→수직→수평)
+    const autoMid = (from.x + to.x) / 2;
+    let midX = Math.max(from.x + STUB, Math.min(to.x - STUB, autoMid + midOffsetX));
+
+    // 장애물 회피: 사용자가 수동 오프셋을 주지 않았을 때만 자동 조정
+    if (midOffsetX === 0 && obstacles.length > 0) {
+      const testPath = () => [[from.x, from.y], [midX, from.y], [midX, to.y], [to.x, to.y]];
+      if (pathHitsObstacles(testPath(), obstacles)) {
+        // 후보 midX들을 훑으면서 첫 번째로 충돌 없는 위치 선택
+        // from.x+STUB부터 to.x-STUB까지 GRID 간격으로 탐색
+        const candidates = [];
+        const minX = from.x + STUB;
+        const maxX = to.x - STUB;
+        // 자동 중심에서 바깥으로 번갈아 탐색 (시각적으로 중앙 우선)
+        for (let d = 0; d <= maxX - minX; d += GRID_SIZE) {
+          const left = autoMid - d;
+          const right = autoMid + d;
+          if (left >= minX && left <= maxX) candidates.push(left);
+          if (d > 0 && right >= minX && right <= maxX) candidates.push(right);
+        }
+        for (const cand of candidates) {
+          midX = cand;
+          if (!pathHitsObstacles(testPath(), obstacles)) break;
+        }
+      }
+    }
+
+    const segMin = Math.min(from.y, to.y);
+    const segMax = Math.max(from.y, to.y);
     return {
-      title: `Pipe · ${meta.label}`,
-      sub: `냉매배관 · ${meta.korean} · ${meta.phase}`,
-      kindColor: meta.kind === 'refrig-hp' ? '#dc2626' : '#2563eb',
-      groups: [
-        { label: 'Geometry', fields: [
-          { key: 'L', label: 'length', unit: 'mm', value: meta.length },
-          { key: 'di', label: 'inner dia.', unit: 'mm', value: meta.di },
-          { key: 'do', label: 'outer dia.', unit: 'mm', value: meta.di + 1 },
-          { key: 'bends', label: 'bends', unit: 'ea', value: meta.bends },
-          { key: 'bend_r', label: 'bend radius', unit: 'mm', value: 25 },
-        ]},
-        { label: 'Insulation', fields: [
-          { key: 'ins_thk', label: 'insul thickness', unit: 'mm', value: meta.ins },
-          { key: 'ins_k', label: 'insul conductivity', unit: 'W/m·K', value: 0.036 },
-        ]},
-        { label: 'Refrigerant', fields: [
-          { key: 'refrig', label: 'refrigerant', type: 'select', options: ['R290', 'R134a', 'R1234yf', 'R32'], value: 'R290' },
-          { key: 'rough', label: 'roughness', unit: 'μm', value: 1.5 },
-        ]},
-      ]
+      d: `M ${from.x} ${from.y} L ${midX} ${from.y} L ${midX} ${to.y} L ${to.x} ${to.y}`,
+      isNormal: true,
+      handles: [
+        { segment: 'midX', x: midX, y: (from.y + to.y) / 2, axis: 'x', segMin, segMax },
+      ],
     };
   }
+
+  // 역참조(루프): 5-세그먼트 — 수평→수직→수평→수직→수평
+  const autoOutX = from.x + MARGIN;
+  const autoInX = to.x - MARGIN;
+  const autoMidY = Math.abs(from.y - to.y) < 20
+    ? from.y + 50
+    : (from.y + to.y) / 2;
+  const outX = autoOutX + outOffsetX;
+  const inX = autoInX + inOffsetX;
+  let midY = autoMidY + midOffsetY;
+
+  // 루프 라우팅 장애물 회피: midY를 블록 위/아래로 밀어냄
+  if (midOffsetY === 0 && obstacles.length > 0) {
+    const testPath = () => [[from.x, from.y], [outX, from.y], [outX, midY], [inX, midY], [inX, to.y], [to.x, to.y]];
+    if (pathHitsObstacles(testPath(), obstacles)) {
+      // 위/아래로 번갈아가며 스캔
+      for (let d = GRID_SIZE; d <= 400; d += GRID_SIZE) {
+        // 아래로
+        midY = autoMidY + d;
+        if (!pathHitsObstacles(testPath(), obstacles)) break;
+        // 위로
+        midY = autoMidY - d;
+        if (!pathHitsObstacles(testPath(), obstacles)) break;
+      }
+    }
+  }
+
   return {
-    title: `Duct · ${meta.label}`,
-    sub: '공기덕트 · air cycle',
-    kindColor: '#6b7280',
-    groups: [
-      { label: 'Geometry', fields: [
-        { key: 'L', label: 'length', unit: 'mm', value: meta.length },
-        { key: 'A', label: 'cross-section', unit: 'mm²', value: meta.area },
-        { key: 'shape', label: 'shape', type: 'select', options: ['Round', 'Rectangular', 'Oval'], value: 'Rectangular' },
-        { key: 'bends', label: 'bends', unit: 'ea', value: 1 },
-      ]},
-      { label: 'Construction', fields: [
-        { key: 'insulated', label: 'insulated', type: 'select', options: ['yes', 'no'], value: 'no' },
-        { key: 'rough', label: 'roughness', unit: 'μm', value: 50 },
-        { key: 'leak', label: 'leak rate', unit: '%', value: 2 },
-      ]},
-    ]
+    d: `M ${from.x} ${from.y} L ${outX} ${from.y} L ${outX} ${midY} L ${inX} ${midY} L ${inX} ${to.y} L ${to.x} ${to.y}`,
+    isNormal: false,
+    handles: [
+      { segment: 'outX', x: outX, y: (from.y + midY) / 2, axis: 'x',
+        segMin: Math.min(from.y, midY), segMax: Math.max(from.y, midY) },
+      { segment: 'midY', x: (outX + inX) / 2, y: midY, axis: 'y',
+        segMin: Math.min(outX, inX), segMax: Math.max(outX, inX) },
+      { segment: 'inX', x: inX, y: (midY + to.y) / 2, axis: 'x',
+        segMin: Math.min(midY, to.y), segMax: Math.max(midY, to.y) },
+    ],
   };
 }
 
-/* ═══════════ State & rendering ═══════════ */
-const state = { selected: null, modified: new Set() };
+// 세그먼트 이름 → 오프셋 키 매핑
+const SEGMENT_OFFSET_KEYS = {
+  midX: 'midOffsetX',
+  midY: 'midOffsetY',
+  outX: 'outOffsetX',
+  inX: 'inOffsetX',
+};
 
-const propsTitle = document.getElementById('props-title');
-const propsSub = document.getElementById('props-sub');
-const propsBody = document.getElementById('props-body');
-const footerSel = document.getElementById('footer-sel');
-const footerMod = document.getElementById('footer-mod');
+function HPWDStudio() {
+  const [blocks, setBlocks] = useState([]);
+  const [connections, setConnections] = useState([]);
+  const [selectedIds, setSelectedIds] = useState([]);       // 선택된 블록 id 배열
+  const [selectedConnIds, setSelectedConnIds] = useState([]); // 선택된 연결선 index 배열
+  const [connecting, setConnecting] = useState(null);
+  const [draggingConn, setDraggingConn] = useState(null);
+  const [hoveredConn, setHoveredConn] = useState(null);
+  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
 
-function renderSchema(schema) {
-  propsTitle.innerHTML = `
-    <span class="inline-block w-2 h-2 rounded-sm" style="background:${schema.kindColor}"></span>
-    ${schema.title}
-    ${schema.shared ? '<span class="ml-1 text-[9px] px-1.5 py-0.5 bg-amber-100 text-amber-700 border border-amber-300 rounded mono">SHARED</span>' : ''}`;
-  propsSub.textContent = schema.sub;
+  // 박스 드래그 선택 상태: {startX, startY, curX, curY}
+  const [selectionBox, setSelectionBox] = useState(null);
 
-  propsBody.innerHTML = '';
-  schema.groups.forEach((grp, gi) => {
-    const section = document.createElement('div');
-    section.className = 'mb-4';
-    section.innerHTML = `
-      <div class="text-[9.5px] font-bold uppercase tracking-widest text-slate-500 mb-1.5 flex items-center gap-1.5">
-        <span class="inline-block w-3 h-px bg-slate-400"></span>${grp.label}
-      </div>`;
-    const table = document.createElement('div');
-    table.className = 'space-y-1.5';
-    grp.fields.forEach(f => {
-      const row = document.createElement('div');
-      row.className = 'grid grid-cols-[1fr_110px_34px] items-center gap-1.5';
-      row.dataset.key = f.key;
+  // Save/Load 슬롯 모달: 'save' | 'load' | null
+  const [slotModal, setSlotModal] = useState(null);
+  const [slotList, setSlotList] = useState([]);  // 슬롯 메타데이터 목록
 
-      const label = document.createElement('label');
-      label.className = 'text-[10.5px] text-slate-600';
-      label.textContent = f.label;
-      row.appendChild(label);
+  // 편의를 위해 단일 선택 API를 다중으로 어댑트
+  const selected = selectedIds.length > 0 ? selectedIds[selectedIds.length - 1] : null;
+  const selectedConn = selectedConnIds.length > 0 ? selectedConnIds[selectedConnIds.length - 1] : null;
+  const setSelected = (id) => setSelectedIds(id === null ? [] : [id]);
+  const setSelectedConn = (i) => setSelectedConnIds(i === null ? [] : [i]);
 
-      let input;
-      if (f.type === 'select') {
-        input = document.createElement('select');
-        input.className = 'param-input';
-        f.options.forEach(opt => {
-          const o = document.createElement('option');
-          o.value = opt; o.textContent = opt;
-          if (opt === f.value) o.selected = true;
-          input.appendChild(o);
-        });
-      } else {
-        input = document.createElement('input');
-        input.type = 'number';
-        input.step = 'any';
-        input.className = 'param-input';
-        input.value = f.value;
-      }
-      input.dataset.key = f.key;
-      input.dataset.orig = f.value;
-      input.addEventListener('input', () => {
-        const changed = String(input.value) !== String(input.dataset.orig);
-        input.classList.toggle('changed', changed);
-        const k = `${state.selected.id}.${f.key}`;
-        if (changed) state.modified.add(k); else state.modified.delete(k);
-        updateFooter();
-      });
-      row.appendChild(input);
+  // 클립보드 (Ctrl+C/X/V용) — { blocks: [], connections: [] }
+  const clipboardRef = useRef(null);
 
-      const unit = document.createElement('span');
-      unit.className = 'text-[9.5px] text-slate-400 mono text-right';
-      unit.textContent = f.unit || '';
-      row.appendChild(unit);
+  // Undo/Redo 스택 — 각 엔트리는 { blocks, connections }
+  const [undoStack, setUndoStack] = useState([]);
+  const [redoStack, setRedoStack] = useState([]);
+  const undoStackRef = useRef([]);
+  const redoStackRef = useRef([]);
+  undoStackRef.current = undoStack;
+  redoStackRef.current = redoStack;
+  const MAX_HISTORY = 50;
 
-      table.appendChild(row);
+  const [simState, setSimState] = useState({
+    running: false, t: 0, dt: 1.0, t_final: 600, history: [], log: [],
+  });
+  const simRef = useRef(simState);
+  simRef.current = simState;
+
+  const canvasRef = useRef(null);
+  const blockRefsMap = useRef({});  // blockId → DOM element ref
+  const draggingRef = useRef(null); // 드래그 상태를 ref로 (state 대신)
+  const draggingConnRef = useRef(null);
+  const mousePosRef = useRef({ x: 0, y: 0 });
+  const rafRef = useRef(null);      // requestAnimationFrame id
+  const [expandedCats, setExpandedCats] = useState({ source: true, math: true, refrigerant: true, air: true, output: true });
+
+  const handleLibraryDragStart = (e, typeKey) => {
+    e.dataTransfer.setData('typeKey', typeKey);
+    e.dataTransfer.effectAllowed = 'copy';
+  };
+  const handleCanvasDragOver = (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; };
+  const handleCanvasDrop = (e) => {
+    e.preventDefault();
+    const typeKey = e.dataTransfer.getData('typeKey');
+    if (!typeKey || !TYPES[typeKey]) return;
+    const rect = canvasRef.current.getBoundingClientRect();
+    addBlock(typeKey, e.clientX - rect.left, e.clientY - rect.top);
+  };
+
+  const addBlock = (typeKey, x, y) => {
+    const def = TYPES[typeKey];
+    const id = `b${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    const params = Object.fromEntries(def.parameters.map(p => [p.key, p.value]));
+    pushHistory(blocks, connections);
+    setBlocks(bs => [...bs, {
+      id, type: typeKey, x: snap(x - 90), y: snap(y - 40),
+      name: `${def.name}_${bs.filter(b => b.type === typeKey).length + 1}`,
+      params, outputs: {},
+      state: def.stateInit ? JSON.parse(JSON.stringify(def.stateInit)) : {},
+    }]);
+    setSelected(id);
+  };
+
+  const handleBlockMouseDown = (e, blockId) => {
+    // Port 클릭 시에도 이벤트 전파는 막아야 함 (안 그러면 캔버스 박스 드래그 시작됨)
+    e.stopPropagation();
+    if (e.target.closest('[data-port]')) return;
+    const rect = canvasRef.current.getBoundingClientRect();
+    const block = blocks.find(b => b.id === blockId);
+
+    // Shift/Ctrl: 다중 선택 토글
+    if (e.shiftKey || e.ctrlKey || e.metaKey) {
+      setSelectedIds(prev => prev.includes(blockId)
+        ? prev.filter(id => id !== blockId)
+        : [...prev, blockId]);
+      setSelectedConnIds([]);
+      return; // shift-select 모드에서는 드래그 시작 안 함
+    }
+
+    // 현재 블록이 이미 선택된 다중 선택의 일부면 선택 유지
+    // 아니면 이 블록만 단독 선택
+    let dragIds;
+    if (selectedIds.includes(blockId)) {
+      dragIds = selectedIds;
+    } else {
+      setSelectedIds([blockId]);
+      dragIds = [blockId];
+    }
+    setSelectedConnIds([]);
+
+    // 드래그할 모든 블록의 시작 위치 저장
+    const startPositions = {};
+    dragIds.forEach(id => {
+      const b = blocks.find(bb => bb.id === id);
+      if (b) startPositions[id] = { x: b.x, y: b.y };
     });
-    section.appendChild(table);
-    propsBody.appendChild(section);
-  });
-}
+    draggingRef.current = {
+      blockIds: dragIds,
+      primaryId: blockId,
+      startPositions,
+      offsetX: e.clientX - rect.left - block.x,
+      offsetY: e.clientY - rect.top - block.y,
+    };
+  };
 
-function clearProps() {
-  propsTitle.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-slate-400"><circle cx="12" cy="12" r="3"/></svg>Properties';
-  propsSub.textContent = 'no selection';
-  propsBody.innerHTML = `
-    <div class="text-center py-16 text-slate-400 text-[12px] leading-relaxed">
-      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="mx-auto mb-3 text-slate-300"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/></svg>
-      개략도에서 컴포넌트 또는<br>배관·덕트를 클릭하세요
-      <div class="text-[10px] mono text-slate-400 mt-2">shared HX는 양쪽 인스턴스 동시 선택</div>
-    </div>`;
-  footerSel.textContent = '—';
-}
+  const handleCanvasMouseMove = (e) => {
+    const rect = canvasRef.current.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    mousePosRef.current = { x: mx, y: my };
 
-function updateFooter() {
-  footerMod.textContent = state.modified.size;
-}
+    // 블록 드래그: DOM 직접 조작, 다중 블록 동시 이동 지원
+    if (draggingRef.current) {
+      const { blockIds, primaryId, offsetX, offsetY, startPositions } = draggingRef.current;
+      // primary 블록 기준으로 delta 계산, 나머지는 같은 delta 적용
+      const primaryStart = startPositions[primaryId];
+      const snappedX = snap(mx - offsetX);
+      const snappedY = snap(my - offsetY);
+      const dx = snappedX - primaryStart.x;
+      const dy = snappedY - primaryStart.y;
+      // 모든 선택된 블록을 transform으로 이동
+      blockIds.forEach(id => {
+        const el = blockRefsMap.current[id];
+        if (el) el.style.transform = `translate(${dx}px, ${dy}px)`;
+      });
+      draggingRef.current.dx = dx;
+      draggingRef.current.dy = dy;
+      return;
+    }
 
-/* ═══════════ Selection ═══════════ */
-function clearSelection() {
-  document.querySelectorAll('.comp.selected, .pipe-group.selected, .lib-item.active').forEach(el => el.classList.remove('selected', 'active'));
-  state.selected = null;
-}
+    // 박스 선택 드래그 중
+    if (selectionBox) {
+      setSelectionBox(sb => sb ? { ...sb, curX: mx, curY: my } : sb);
+      return;
+    }
 
-function selectComponent(id) {
-  clearSelection();
-  document.querySelectorAll(`.comp[data-id="${id}"]`).forEach(g => g.classList.add('selected'));
-  document.querySelector(`.lib-item[data-lib="${id}"]`)?.classList.add('active');
-  state.selected = { type: 'comp', id };
-  footerSel.textContent = `comp · ${id}`;
-  renderSchema(schemas[id]);
-}
+    // 연결선 세그먼트 드래그
+    if (draggingConn) {
+      const { idx, segment, startMouseX, startMouseY, startOffset } = draggingConn;
+      const axis = segment.endsWith('Y') ? 'y' : 'x';
+      const delta = axis === 'y' ? (my - startMouseY) : (mx - startMouseX);
+      const offsetKey = SEGMENT_OFFSET_KEYS[segment];
+      setConnections(cs => cs.map((c, i) =>
+        i === idx ? { ...c, [offsetKey]: startOffset + delta } : c
+      ));
+    }
 
-function selectPipe(id) {
-  clearSelection();
-  document.querySelector(`.pipe-group[data-pipe="${id}"]`)?.classList.add('selected');
-  state.selected = { type: 'pipe', id };
-  footerSel.textContent = `${id.startsWith('duct') ? 'duct' : 'pipe'} · ${id}`;
-  renderSchema(pipeSchema(id));
-}
+    if (connecting) {
+      setMousePos({ x: mx, y: my });
+    }
+  };
 
-/* ═══════════ Event binding ═══════════ */
-document.querySelectorAll('.comp').forEach(g => {
-  g.addEventListener('click', e => {
+  const handleCanvasMouseUp = () => {
+    if (draggingRef.current) {
+      const { blockIds, startPositions, dx, dy } = draggingRef.current;
+      // transform 초기화
+      blockIds.forEach(id => {
+        const el = blockRefsMap.current[id];
+        if (el) el.style.transform = '';
+      });
+      if (dx !== undefined && (dx !== 0 || dy !== 0)) {
+        pushHistory(blocks, connections);
+        setBlocks(bs => bs.map(b => {
+          if (!blockIds.includes(b.id)) return b;
+          const start = startPositions[b.id];
+          return { ...b, x: start.x + dx, y: start.y + dy };
+        }));
+      }
+      draggingRef.current = null;
+    }
+
+    // 박스 선택 종료 → 사각형 영역 내 블록 + 연결선 선택
+    if (selectionBox) {
+      const box = selectionBox;
+      const x1 = Math.min(box.startX, box.curX);
+      const y1 = Math.min(box.startY, box.curY);
+      const x2 = Math.max(box.startX, box.curX);
+      const y2 = Math.max(box.startY, box.curY);
+
+      // 박스가 너무 작으면 (거의 클릭) 무시
+      if (x2 - x1 > 4 || y2 - y1 > 4) {
+        // 블록: bbox가 완전히 포함되면 선택
+        const pickedBlocks = blocks.filter(b => {
+          const def = TYPES[b.type];
+          const maxPorts = Math.max(def.inputs.length, def.outputs.length);
+          const baseMin = b.type === 'display' ? 70 : 80;
+          const h = Math.max(baseMin, 45 + maxPorts * 20 + 10);
+          return b.x >= x1 && b.y >= y1 && (b.x + 180) <= x2 && (b.y + h) <= y2;
+        }).map(b => b.id);
+
+        // 연결선: source와 target 둘 다 박스 안 블록일 때만 선택
+        const pickedConns = connections
+          .map((c, i) => ({ c, i }))
+          .filter(({ c }) => pickedBlocks.includes(c.from.blockId) && pickedBlocks.includes(c.to.blockId))
+          .map(({ i }) => i);
+
+        setSelectedIds(pickedBlocks);
+        setSelectedConnIds(pickedConns);
+      }
+      setSelectionBox(null);
+    }
+
+    if (draggingConn) {
+      setDraggingConn(null);
+    }
+  };
+
+  const handlePortClick = (e, blockId, portKey, direction) => {
     e.stopPropagation();
-    selectComponent(g.dataset.id);
-  });
-});
+    if (!connecting) { setConnecting({ blockId, portKey, direction }); return; }
+    if (connecting.direction === direction || connecting.blockId === blockId) { setConnecting(null); return; }
+    const from = connecting.direction === 'out' ? connecting : { blockId, portKey };
+    const to = connecting.direction === 'in' ? connecting : { blockId, portKey };
+    pushHistory(blocks, connections);
+    setConnections(cs => {
+      const filtered = cs.filter(c => !(c.to.blockId === to.blockId && c.to.portKey === to.portKey));
+      return [...filtered, {
+        from: { blockId: from.blockId, portKey: from.portKey },
+        to: { blockId: to.blockId, portKey: to.portKey },
+        midOffsetX: 0,
+      }];
+    });
+    setConnecting(null);
+  };
 
-document.querySelectorAll('.pipe-group').forEach(g => {
-  g.addEventListener('click', e => {
-    e.stopPropagation();
-    selectPipe(g.dataset.pipe);
-  });
-});
+  const deleteBlock = (id) => {
+    pushHistory(blocks, connections);
+    setBlocks(bs => bs.filter(b => b.id !== id));
+    setConnections(cs => cs.filter(c => c.from.blockId !== id && c.to.blockId !== id));
+    if (selected === id) setSelected(null);
+  };
 
-document.querySelectorAll('.lib-item').forEach(item => {
-  item.addEventListener('click', () => {
-    selectComponent(item.dataset.lib);
-  });
-});
+  const updateParam = (blockId, paramKey, value) => {
+    setBlocks(bs => bs.map(b => b.id === blockId ? { ...b, params: { ...b.params, [paramKey]: value } } : b));
+  };
 
-// deselect when clicking empty canvas
-document.querySelector('.canvas-bg').addEventListener('click', e => {
-  if (e.target.classList.contains('canvas-bg') || e.target.tagName === 'svg') {
-    clearSelection();
-    clearProps();
-    updateFooter();
+  const updateBlockName = (blockId, name) => {
+    setBlocks(bs => bs.map(b => b.id === blockId ? { ...b, name } : b));
+  };
+
+  // 단일 시간 스텝 평가: blocks와 t가 주어지면 outputs 계산해서 반환
+  // (initSim과 stepSimulation이 공유하는 순수 평가 함수)
+  // -------- Undo / Redo --------
+  // 현재 상태를 undo 스택에 push, redo 스택 비움 (새 액션 시작 시)
+  const pushHistory = (prevBlocks, prevConns) => {
+    setUndoStack(s => {
+      const next = [...s, {
+        blocks: JSON.parse(JSON.stringify(prevBlocks)),
+        connections: JSON.parse(JSON.stringify(prevConns)),
+      }];
+      if (next.length > MAX_HISTORY) next.shift();
+      return next;
+    });
+    setRedoStack([]);
+  };
+
+  const doUndo = () => {
+    const stack = undoStackRef.current;
+    if (stack.length === 0) return;
+    const prev = stack[stack.length - 1];
+    // 현재 상태를 redo로 저장
+    setRedoStack(r => [...r, {
+      blocks: JSON.parse(JSON.stringify(blocks)),
+      connections: JSON.parse(JSON.stringify(connections)),
+    }]);
+    setUndoStack(s => s.slice(0, -1));
+    setBlocks(prev.blocks);
+    setConnections(prev.connections);
+    setSelected(null);
+    setSelectedConn(null);
+  };
+
+  const doRedo = () => {
+    const stack = redoStackRef.current;
+    if (stack.length === 0) return;
+    const next = stack[stack.length - 1];
+    // 현재 상태를 undo로 다시 저장
+    setUndoStack(s => [...s, {
+      blocks: JSON.parse(JSON.stringify(blocks)),
+      connections: JSON.parse(JSON.stringify(connections)),
+    }]);
+    setRedoStack(r => r.slice(0, -1));
+    setBlocks(next.blocks);
+    setConnections(next.connections);
+    setSelected(null);
+    setSelectedConn(null);
+  };
+
+  // -------- Clipboard --------
+  // 선택된 블록들을 클립보드에 복사.
+  // 양 끝이 모두 선택된 블록인 연결선도 같이 복사 (내부 연결 보존)
+  const doCopy = () => {
+    if (selectedIds.length === 0) return;
+    const cloneBlocks = selectedIds
+      .map(id => blocks.find(b => b.id === id))
+      .filter(Boolean)
+      .map(b => ({
+        ...JSON.parse(JSON.stringify(b)),
+        outputs: {},
+        state: TYPES[b.type].stateInit ? JSON.parse(JSON.stringify(TYPES[b.type].stateInit)) : {},
+      }));
+    const idSet = new Set(selectedIds);
+    const innerConns = connections
+      .filter(c => idSet.has(c.from.blockId) && idSet.has(c.to.blockId))
+      .map(c => JSON.parse(JSON.stringify(c)));
+    clipboardRef.current = {
+      blocks: cloneBlocks,
+      connections: innerConns,
+    };
+  };
+
+  // Cut = Copy + 선택된 블록과 연결선 삭제
+  const doCut = () => {
+    if (selectedIds.length === 0 && selectedConnIds.length === 0) return;
+    doCopy();
+    pushHistory(blocks, connections);
+    const idSet = new Set(selectedIds);
+    setBlocks(bs => bs.filter(b => !idSet.has(b.id)));
+    setConnections(cs => cs.filter((c, i) => {
+      // 선택된 연결선이거나, 양 끝 중 하나라도 선택된 블록이면 제거
+      if (selectedConnIds.includes(i)) return false;
+      return !idSet.has(c.from.blockId) && !idSet.has(c.to.blockId);
+    }));
+    setSelectedIds([]);
+    setSelectedConnIds([]);
+  };
+
+  // 붙여넣기: 새 id 발급, +40px 오프셋, 내부 연결도 재매핑
+  const doPaste = () => {
+    const clip = clipboardRef.current;
+    if (!clip || clip.blocks.length === 0) return;
+    pushHistory(blocks, connections);
+    const idMap = {};
+    // 같은 type 별로 이름 suffix 카운트 누적
+    const typeCounts = {};
+    blocksRef.current.forEach(b => {
+      typeCounts[b.type] = (typeCounts[b.type] || 0) + 1;
+    });
+    const newBlocks = clip.blocks.map((b, i) => {
+      const newId = `b${Date.now()}_${i}_${Math.random().toString(36).slice(2, 6)}`;
+      idMap[b.id] = newId;
+      const def = TYPES[b.type];
+      typeCounts[b.type] = (typeCounts[b.type] || 0) + 1;
+      return {
+        ...b,
+        id: newId,
+        name: `${def.name}_${typeCounts[b.type]}`,
+        x: snap(b.x + GRID_SIZE * 2),
+        y: snap(b.y + GRID_SIZE * 2),
+      };
+    });
+    const newConns = clip.connections.map(c => ({
+      ...JSON.parse(JSON.stringify(c)),
+      from: { ...c.from, blockId: idMap[c.from.blockId] },
+      to: { ...c.to, blockId: idMap[c.to.blockId] },
+    }));
+    setBlocks(bs => [...bs, ...newBlocks]);
+    setConnections(cs => [...cs, ...newConns]);
+    // 붙여넣은 블록들을 선택 상태로
+    setSelectedIds(newBlocks.map(b => b.id));
+    setSelectedConnIds([]);
+  };
+
+  const evaluateBlocks = (prevBlocks, conns, t, dt) => {
+    return prevBlocks.map(b => {
+      const def = TYPES[b.type];
+      const inputs = {};
+      def.inputs.forEach(inp => {
+        const conn = conns.find(c => c.to.blockId === b.id && c.to.portKey === inp.key);
+        if (conn) {
+          const src = prevBlocks.find(bb => bb.id === conn.from.blockId);
+          if (src?.outputs?.[conn.from.portKey] !== undefined) {
+            inputs[inp.key] = src.outputs[conn.from.portKey];
+          }
+        }
+      });
+      const newState = b.state ? { ...b.state } : {};
+      const outputs = def.compute(inputs, b.params, t, newState, dt);
+      return { ...b, outputs, state: newState, lastInputs: inputs };
+    });
+  };
+
+  // 스냅샷 생성: 현재 모든 블록 outputs을 {t, Block.key: value} 딕셔너리로
+  const makeSnapshot = (blocksList, t) => {
+    const snapshot = { t };
+    blocksList.forEach(b => {
+      Object.entries(b.outputs || {}).forEach(([k, v]) => {
+        snapshot[`${b.name}.${k}`] = typeof v === 'number' ? Number(v.toFixed(4)) : v;
+      });
+    });
+    return snapshot;
+  };
+
+  // t=0 초기값 평가: 2회 반복 (연결된 신호가 첫 pass에서는 undefined → default fallback,
+  // 2회째에 전파된 값 사용). 그 결과를 history[0]에 기록.
+  const initSim = () => {
+    const conns = connectionsRef.current;
+    const b0 = blocks;
+    // pass 1: 초기 evaluation
+    let evaluated = evaluateBlocks(b0, conns, 0, simState.dt);
+    // pass 2: 전파 (source → math → display 순으로 값이 전달되도록)
+    evaluated = evaluateBlocks(evaluated, conns, 0, simState.dt);
+
+    setBlocks(evaluated);
+    setSimState(s => ({
+      ...s,
+      t: 0,
+      history: [makeSnapshot(evaluated, 0)],
+      log: [...s.log, `◦ Initialized @ t=0.0s`],
+    }));
+  };
+
+  const stepSimulation = useCallback(() => {
+    setBlocks(prevBlocks => {
+      const conns = connectionsRef.current;
+      return evaluateBlocks(prevBlocks, conns, simRef.current.t, simRef.current.dt);
+    });
+
+    setSimState(s => {
+      const t_new = s.t + s.dt;
+      const snapshot = makeSnapshot(blocksRef.current, t_new);
+      return { ...s, t: t_new, history: [...s.history, snapshot], running: t_new < s.t_final && s.running };
+    });
+  }, []);
+
+  const connectionsRef = useRef(connections);
+  connectionsRef.current = connections;
+  const blocksRef = useRef(blocks);
+  blocksRef.current = blocks;
+
+  useEffect(() => {
+    if (!simState.running) return;
+    const id = setInterval(stepSimulation, 50);
+    return () => clearInterval(id);
+  }, [simState.running, stepSimulation]);
+
+  // 키보드 단축키: Delete/Backspace 삭제, Esc 선택 해제, Ctrl+C/X/V 클립보드, Ctrl+Z/Y undo/redo, Ctrl+A 전체 선택
+  useEffect(() => {
+    const onKey = (e) => {
+      const tag = e.target.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+
+      const ctrlOrCmd = e.ctrlKey || e.metaKey;
+      const hasBlockSel = selectedIds.length > 0;
+      const hasConnSel = selectedConnIds.length > 0;
+      const hasAnySel = hasBlockSel || hasConnSel;
+
+      if (ctrlOrCmd) {
+        const key = e.key.toLowerCase();
+        if (key === 'a') {
+          // 전체 선택
+          setSelectedIds(blocks.map(b => b.id));
+          setSelectedConnIds(connections.map((_, i) => i));
+          e.preventDefault();
+        } else if (key === 'c') {
+          if (hasBlockSel) { doCopy(); e.preventDefault(); }
+        } else if (key === 'x') {
+          if (hasAnySel) { doCut(); e.preventDefault(); }
+        } else if (key === 'v') {
+          doPaste(); e.preventDefault();
+        } else if (key === 'z') {
+          if (e.shiftKey) { doRedo(); } else { doUndo(); }
+          e.preventDefault();
+        } else if (key === 'y') {
+          doRedo(); e.preventDefault();
+        }
+        return;
+      }
+
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (hasAnySel) {
+          pushHistory(blocks, connections);
+          const blockIdSet = new Set(selectedIds);
+          const connIdxSet = new Set(selectedConnIds);
+          setBlocks(bs => bs.filter(b => !blockIdSet.has(b.id)));
+          setConnections(cs => cs.filter((c, i) => {
+            if (connIdxSet.has(i)) return false;
+            // 양 끝 중 하나라도 삭제된 블록이면 같이 제거
+            return !blockIdSet.has(c.from.blockId) && !blockIdSet.has(c.to.blockId);
+          }));
+          setSelectedIds([]);
+          setSelectedConnIds([]);
+          e.preventDefault();
+        }
+      } else if (e.key === 'Escape') {
+        setSelectedIds([]);
+        setSelectedConnIds([]);
+        setConnecting(null);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedIds, selectedConnIds, blocks, connections]);
+
+  // 블록 파라미터나 연결이 바뀌면 t=0 값 자동 갱신 (시뮬레이션 중이 아닐 때만, 디바운스)
+  // 이걸로 Display 블록이 실시간으로 현재 파라미터 기반 초기값을 보여줌
+  useEffect(() => {
+    if (simState.running) return;
+    if (blocks.length === 0) return;
+    const timer = setTimeout(() => {
+      const conns = connectionsRef.current;
+      // 2-pass 평가로 신호 전파
+      let evaluated = evaluateBlocks(blocks, conns, 0, simState.dt);
+      evaluated = evaluateBlocks(evaluated, conns, 0, simState.dt);
+      // outputs/lastInputs만 업데이트 (x,y 위치 변경 방지)
+      setBlocks(bs => bs.map(b => {
+        const ev = evaluated.find(e => e.id === b.id);
+        return ev ? { ...b, outputs: ev.outputs, lastInputs: ev.lastInputs } : b;
+      }));
+    }, 100);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    // 블록 파라미터 변화 감지 (outputs/x/y 제외)
+    JSON.stringify(blocks.map(b => ({ id: b.id, type: b.type, name: b.name, params: b.params }))),
+    connections,
+    simState.running,
+  ]);
+
+  const runSim = () => {
+    // history가 비어있으면(초기 로드 직후) t=0 스냅샷 먼저 기록
+    if (simState.history.length === 0) {
+      initSim();
+    }
+    setSimState(s => ({ ...s, running: true, log: [...s.log, `▶ Run @ t=${s.t.toFixed(1)}s`] }));
+  };
+  const stopSim = () => setSimState(s => ({ ...s, running: false, log: [...s.log, `■ Stop @ t=${s.t.toFixed(1)}s`] }));
+  const resetSim = () => {
+    // 블록 state는 초기화, dt/t_final은 유지
+    const resetBlocks = blocks.map(b => {
+      const def = TYPES[b.type];
+      return { ...b, outputs: {}, state: def.stateInit ? JSON.parse(JSON.stringify(def.stateInit)) : {} };
+    });
+    // t=0에서 2-pass 평가 (source → math → display 전파)
+    const conns = connectionsRef.current;
+    let evaluated = evaluateBlocks(resetBlocks, conns, 0, simState.dt);
+    evaluated = evaluateBlocks(evaluated, conns, 0, simState.dt);
+
+    setBlocks(evaluated);
+    setSimState(s => ({
+      ...s,
+      running: false,
+      t: 0,
+      history: [makeSnapshot(evaluated, 0)],
+      log: ['↺ Reset @ t=0.0s'],
+    }));
+  };
+
+  // -------- Slot Save/Load (localStorage) --------
+  const SLOT_INDEX_KEY = 'hpwd-studio-slots';
+  const SLOT_PREFIX = 'hpwd-studio-slot-';
+
+  const loadSlotIndex = () => {
+    try {
+      const raw = localStorage.getItem(SLOT_INDEX_KEY);
+      return raw ? JSON.parse(raw) : [];
+    } catch { return []; }
+  };
+
+  const saveSlotIndex = (slots) => {
+    try { localStorage.setItem(SLOT_INDEX_KEY, JSON.stringify(slots)); } catch (err) {
+      alert('슬롯 인덱스 저장 실패: ' + err.message);
+    }
+  };
+
+  // 현재 프로젝트를 슬롯으로 저장 (새 슬롯 또는 덮어쓰기)
+  const saveSlot = (name, existingId = null) => {
+    const slots = loadSlotIndex();
+    const now = Date.now();
+    const id = existingId || `slot_${now}_${Math.random().toString(36).slice(2, 6)}`;
+    const data = {
+      id, name, savedAt: now,
+      blocks: JSON.parse(JSON.stringify(blocks)),
+      connections: JSON.parse(JSON.stringify(connections)),
+      simState: { dt: simState.dt, t_final: simState.t_final },
+    };
+    try {
+      localStorage.setItem(SLOT_PREFIX + id, JSON.stringify(data));
+    } catch (err) {
+      alert('슬롯 저장 실패 (용량 초과 가능성): ' + err.message);
+      return false;
+    }
+    // 인덱스 업데이트 (덮어쓰기면 교체, 신규면 추가)
+    const meta = {
+      id, name, savedAt: now,
+      blockCount: blocks.length,
+      connectionCount: connections.length,
+    };
+    const updated = existingId
+      ? slots.map(s => s.id === existingId ? meta : s)
+      : [...slots, meta];
+    saveSlotIndex(updated);
+    return true;
+  };
+
+  const loadSlot = (id) => {
+    try {
+      const raw = localStorage.getItem(SLOT_PREFIX + id);
+      if (!raw) { alert('슬롯 데이터를 찾을 수 없습니다'); return false; }
+      const data = JSON.parse(raw);
+      setBlocks(data.blocks || []);
+      setConnections(data.connections || []);
+      if (data.simState) setSimState(s => ({ ...s, ...data.simState, running: false, t: 0, history: [] }));
+      setSelectedIds([]);
+      setSelectedConnIds([]);
+      return true;
+    } catch (err) {
+      alert('슬롯 로드 실패: ' + err.message);
+      return false;
+    }
+  };
+
+  const deleteSlot = (id) => {
+    localStorage.removeItem(SLOT_PREFIX + id);
+    saveSlotIndex(loadSlotIndex().filter(s => s.id !== id));
+  };
+
+  const renameSlot = (id, newName) => {
+    const slots = loadSlotIndex();
+    const slot = slots.find(s => s.id === id);
+    if (!slot) return;
+    slot.name = newName;
+    saveSlotIndex(slots);
+    // 슬롯 데이터 자체에도 이름 반영
+    try {
+      const raw = localStorage.getItem(SLOT_PREFIX + id);
+      if (raw) {
+        const data = JSON.parse(raw);
+        data.name = newName;
+        localStorage.setItem(SLOT_PREFIX + id, JSON.stringify(data));
+      }
+    } catch { /* ignore */ }
+  };
+
+  // 모달 열 때 슬롯 목록 갱신
+  const openSlotModal = (mode) => {
+    setSlotList(loadSlotIndex());
+    setSlotModal(mode);
+  };
+
+  const refreshSlotList = () => setSlotList(loadSlotIndex());
+
+  // -------- JSON File Export/Import (기존 기능, 백업 용도) --------
+  const exportProjectFile = () => {
+    const data = { blocks, connections, simState: { dt: simState.dt, t_final: simState.t_final } };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `hpwd_project_${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const importProjectFile = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const data = JSON.parse(ev.target.result);
+        setBlocks(data.blocks || []);
+        setConnections(data.connections || []);
+        if (data.simState) setSimState(s => ({ ...s, ...data.simState, running: false, t: 0, history: [] }));
+      } catch (err) { alert('Failed to load: ' + err.message); }
+    };
+    reader.readAsText(file);
+    e.target.value = ''; // 같은 파일 재선택 가능하게
+  };
+
+  // -------- CSV Export --------
+  // CSV 필드 이스케이프: 쉼표/따옴표/개행 포함 시 따옴표로 감싸고 내부 따옴표는 중복
+  const csvEscape = (v) => {
+    if (v === null || v === undefined) return '';
+    const s = String(v);
+    if (s.includes(',') || s.includes('"') || s.includes('\n')) {
+      return '"' + s.replace(/"/g, '""') + '"';
+    }
+    return s;
+  };
+
+  // 공통 다운로드 함수 (UTF-8 BOM 추가 → Excel에서 한글/숫자 정상 인식)
+  const downloadCsv = (filename, rows) => {
+    if (!rows || rows.length === 0) {
+      alert('내보낼 데이터가 없습니다. 먼저 시뮬레이션을 실행하세요.');
+      return;
+    }
+    const csv = '\ufeff' + rows.map(r => r.map(csvEscape).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // 전역 CSV: 모든 블록 출력 시계열
+  const exportAllCsv = () => {
+    if (simState.history.length === 0) {
+      alert('내보낼 데이터가 없습니다. 먼저 시뮬레이션을 실행하세요.');
+      return;
+    }
+    // 모든 키 수집 (t는 제일 앞)
+    const keySet = new Set();
+    simState.history.forEach(row => Object.keys(row).forEach(k => keySet.add(k)));
+    keySet.delete('t');
+    const keys = ['t', ...Array.from(keySet).sort()];
+    const rows = [keys];
+    simState.history.forEach(row => {
+      rows.push(keys.map(k => row[k] ?? ''));
+    });
+    downloadCsv(`hpwd_all_${Date.now()}.csv`, rows);
+  };
+
+  // 개별 Plotter CSV: 해당 플로터에 연결된 신호만
+  const exportPlotterCsv = (plotterBlock) => {
+    if (simState.history.length === 0) {
+      alert('내보낼 데이터가 없습니다. 먼저 시뮬레이션을 실행하세요.');
+      return;
+    }
+    const conns = connections.filter(c => c.to.blockId === plotterBlock.id);
+    const signals = conns.map(c => {
+      const src = blocks.find(b => b.id === c.from.blockId);
+      return src ? { key: `${src.name}.${c.from.portKey}`, port: c.to.portKey } : null;
+    }).filter(Boolean);
+
+    if (signals.length === 0) {
+      alert(`${plotterBlock.name}에 연결된 신호가 없습니다.`);
+      return;
+    }
+
+    // 헤더: t, y1(SrcName.out), y2(...), ...
+    const headers = ['t', ...signals.map(s => `${s.port}(${s.key})`)];
+    const rows = [headers];
+    simState.history.forEach(row => {
+      rows.push([row.t, ...signals.map(s => row[s.key] ?? '')]);
+    });
+    downloadCsv(`${plotterBlock.name}_${Date.now()}.csv`, rows);
+  };
+
+  const getPortPos = (block, portKey, direction) => {
+    const def = TYPES[block.type];
+    const ports = direction === 'in' ? def.inputs : def.outputs;
+    const idx = ports.findIndex(p => p.key === portKey);
+    if (idx === -1) return null;
+    return { x: direction === 'in' ? block.x : block.x + 180, y: block.y + 43 + idx * 20 };
+  };
+
+  const selectedBlock = blocks.find(b => b.id === selected);
+  const selectedDef = selectedBlock ? TYPES[selectedBlock.type] : null;
+
+  const plotterData = blocks.filter(b => b.type === 'plotter').map(pb => {
+    const series = connections.filter(c => c.to.blockId === pb.id).map(c => {
+      const src = blocks.find(b => b.id === c.from.blockId);
+      return src ? `${src.name}.${c.from.portKey}` : null;
+    }).filter(Boolean);
+    return { id: pb.id, name: pb.name, series };
+  });
+
+  return (
+    <div className="h-screen w-full flex flex-col bg-white text-slate-800 text-xs overflow-hidden"
+         style={{ fontFamily: "'Inter', 'Pretendard', -apple-system, sans-serif" }}>
+
+      {/* Menubar */}
+      <div className="h-9 bg-white border-b border-slate-200 flex items-center px-4 gap-4 text-[11px] shrink-0">
+        <div className="font-bold text-slate-900 tracking-wide flex items-center gap-1.5">
+          <div className="w-2 h-2 rounded-sm bg-cyan-600"></div>
+          HPWD Studio
+        </div>
+        <div className="text-slate-400 text-[10px]">v0.1.0 · prototype</div>
+        <div className="flex-1"></div>
+        <div className="text-slate-500 text-[11px] font-mono">
+          t = <span className="text-slate-900 font-semibold">{simState.t.toFixed(1)}s</span>
+          <span className="mx-1 text-slate-300">/</span>
+          <span className="text-slate-400">{simState.t_final}s</span>
+        </div>
+        <div className={`px-2 py-0.5 rounded-full text-[10px] font-medium border ${
+          simState.running ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-50 text-slate-500 border-slate-200'
+        }`}>
+          {simState.running ? '● Running' : '○ Idle'}
+        </div>
+      </div>
+
+      {/* Toolbar */}
+      <div className="h-11 bg-slate-50 border-b border-slate-200 flex items-center px-3 gap-1 shrink-0">
+        <ToolBtn onClick={() => openSlotModal('save')} icon={Save} label="Save" title="프로젝트를 슬롯에 저장" />
+        <ToolBtn onClick={() => openSlotModal('load')} icon={FolderOpen} label="Load" title="슬롯에서 프로젝트 불러오기" />
+        <div className="w-px h-5 bg-slate-200 mx-1.5" />
+        <ToolBtn onClick={doUndo} icon={Undo} label="Undo" disabled={undoStack.length === 0}
+                 title="Ctrl+Z" />
+        <ToolBtn onClick={doRedo} icon={Redo} label="Redo" disabled={redoStack.length === 0}
+                 title="Ctrl+Y" />
+        <div className="w-px h-5 bg-slate-200 mx-1.5" />
+        <ToolBtn onClick={runSim} icon={Play} label="Run" disabled={simState.running} color="text-emerald-600 hover:bg-emerald-50" />
+        <ToolBtn onClick={stopSim} icon={Square} label="Stop" disabled={!simState.running} color="text-red-600 hover:bg-red-50" />
+        <ToolBtn onClick={resetSim} icon={RotateCcw} label="Reset" color="text-amber-600 hover:bg-amber-50" />
+        <div className="w-px h-5 bg-slate-200 mx-1.5" />
+        <ToolBtn onClick={exportAllCsv} icon={Download} label="Export CSV"
+                 disabled={simState.history.length === 0}
+                 color="text-sky-600 hover:bg-sky-50" />
+        <div className="w-px h-5 bg-slate-200 mx-1.5" />
+        <div className="flex items-center gap-2 text-[11px] text-slate-600">
+          <label className="text-slate-500">dt</label>
+          <input type="number" value={simState.dt} step={0.1} min={0.1}
+                 onChange={e => setSimState(s => ({ ...s, dt: parseFloat(e.target.value) || 1 }))}
+                 className="w-14 bg-white border border-slate-300 px-1.5 py-0.5 rounded text-slate-900 font-mono focus:outline-none focus:border-cyan-500" />
+          <label className="text-slate-500 ml-2">t_final</label>
+          <input type="number" value={simState.t_final} step={10}
+                 onChange={e => setSimState(s => ({ ...s, t_final: parseFloat(e.target.value) || 600 }))}
+                 className="w-16 bg-white border border-slate-300 px-1.5 py-0.5 rounded text-slate-900 font-mono focus:outline-none focus:border-cyan-500" />
+        </div>
+        <div className="flex-1" />
+        <div className="text-[11px] text-slate-500 font-mono">
+          blocks <span className="text-slate-900 font-semibold">{blocks.length}</span>
+          <span className="mx-1.5 text-slate-300">·</span>
+          conns <span className="text-slate-900 font-semibold">{connections.length}</span>
+        </div>
+      </div>
+
+      {/* Main 3-panel */}
+      <div className="flex-1 flex overflow-hidden">
+
+        {/* Left: Type Library */}
+        <div className="w-56 bg-white border-r border-slate-200 overflow-y-auto shrink-0">
+          <div className="px-3 py-2.5 text-[10px] font-semibold uppercase tracking-widest text-slate-500 border-b border-slate-100 bg-slate-50">
+            Type Library
+          </div>
+          {Object.entries(
+            Object.entries(TYPES).reduce((acc, [k, v]) => { (acc[v.category] ||= []).push([k, v]); return acc; }, {})
+          ).map(([cat, items]) => {
+            const catStyle = CATEGORY_STYLES[cat];
+            return (
+              <div key={cat}>
+                <button
+                  className="w-full flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] uppercase tracking-wider text-slate-600 hover:bg-slate-50 transition-colors"
+                  onClick={() => setExpandedCats(ec => ({ ...ec, [cat]: !ec[cat] }))}
+                >
+                  {expandedCats[cat] ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
+                  <span className={`px-1.5 py-0.5 rounded text-[9px] font-semibold ${catStyle.bg} ${catStyle.text} ${catStyle.border} border`}>
+                    {catStyle.badge}
+                  </span>
+                  <span className="text-slate-700">{cat}</span>
+                </button>
+                {expandedCats[cat] && items.map(([key, def]) => {
+                  const Icon = def.icon;
+                  return (
+                    <div
+                      key={key}
+                      draggable
+                      onDragStart={(e) => handleLibraryDragStart(e, key)}
+                      className="flex items-center gap-2 px-3 py-1.5 mx-1.5 my-0.5 rounded cursor-grab hover:bg-slate-50 border border-transparent hover:border-slate-200 active:cursor-grabbing transition-colors"
+                      title={def.desc}
+                    >
+                      <div className="w-7 h-7 rounded flex items-center justify-center overflow-hidden shrink-0" style={{ background: def.image ? '#fff' : def.color + '15', border: def.image ? '1px solid #e2e8f0' : 'none' }}>
+                        {def.image
+                          ? <img src={def.image} alt={def.name} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                          : <Icon size={12} style={{ color: def.color }} />}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[11px] text-slate-800 truncate">{def.name}</div>
+                        <div className="text-[9px] text-slate-400 font-mono">Type {def.typeNo}</div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })}
+          <div className="px-3 py-4 text-[10px] text-slate-400 border-t border-slate-100 mt-2 leading-relaxed">
+            드래그하여 캔버스에 배치하세요
+          </div>
+        </div>
+
+        {/* Center: Canvas + Bottom plot */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <div
+            ref={canvasRef}
+            className="flex-1 relative bg-slate-50 overflow-auto"
+            style={{
+              backgroundImage: 'radial-gradient(circle, #cbd5e1 1px, transparent 1px)',
+              backgroundSize: '20px 20px',
+            }}
+            onDragOver={handleCanvasDragOver}
+            onDrop={handleCanvasDrop}
+            onMouseDown={(e) => {
+              // 캔버스 div 또는 투명 SVG에서만 박스 드래그 시작 (블록/연결선 위는 제외)
+              // 블록, 포트, 연결선 path/circle/rect 들은 각자 stopPropagation 처리됨
+              // 여기 도달한다는 건 진짜 빈 공간이라는 뜻
+              if (e.button !== 0) return; // 왼쪽 버튼만
+              const rect = canvasRef.current.getBoundingClientRect();
+              const x = e.clientX - rect.left;
+              const y = e.clientY - rect.top;
+              if (!(e.shiftKey || e.ctrlKey || e.metaKey)) {
+                setSelectedIds([]);
+                setSelectedConnIds([]);
+              }
+              setConnecting(null);
+              setSelectionBox({ startX: x, startY: y, curX: x, curY: y });
+            }}
+            onMouseMove={handleCanvasMouseMove}
+            onMouseUp={handleCanvasMouseUp}
+          >
+            <svg className="absolute inset-0 pointer-events-none" width="100%" height="100%">
+              {/* 블록 높이를 미리 계산 (연결선 충돌 감지용 장애물 rect) */}
+              {(() => { return null; })()}
+              {connections.map((c, i) => {
+                const fromBlock = blocks.find(b => b.id === c.from.blockId);
+                const toBlock = blocks.find(b => b.id === c.to.blockId);
+                if (!fromBlock || !toBlock) return null;
+                const fromPos = getPortPos(fromBlock, c.from.portKey, 'out');
+                const toPos = getPortPos(toBlock, c.to.portKey, 'in');
+                if (!fromPos || !toPos) return null;
+
+                // 장애물: 자기 자신의 source/target을 제외한 다른 블록들
+                const obstacles = blocks
+                  .filter(b => b.id !== fromBlock.id && b.id !== toBlock.id)
+                  .map(b => {
+                    const def = TYPES[b.type];
+                    const maxPorts = Math.max(def.inputs.length, def.outputs.length);
+                    const baseMin = b.type === 'display' ? 70 : 80;
+                    const h = Math.max(baseMin, 45 + maxPorts * 20 + 10);
+                    return { x: b.x, y: b.y, w: 180, h };
+                  });
+
+                const path = getOrthogonalPath(fromPos, toPos, {
+                  midOffsetX: c.midOffsetX ?? 0,
+                  midOffsetY: c.midOffsetY ?? 0,
+                  outOffsetX: c.outOffsetX ?? 0,
+                  inOffsetX: c.inOffsetX ?? 0,
+                }, obstacles);
+                const isHovered = hoveredConn === i;
+                const isSelected = selectedConnIds.includes(i);
+                const isDraggingThis = draggingConn?.idx === i;
+                const highlight = isSelected || isHovered || isDraggingThis;
+
+                const firstHandle = path.handles[0] || { x: 0, y: 0 };
+
+                return (
+                  <g
+                    key={i}
+                    className="pointer-events-auto"
+                    onMouseEnter={() => setHoveredConn(i)}
+                    onMouseLeave={() => setHoveredConn(h => h === i ? null : h)}
+                  >
+                    {/* 가시 직교선 */}
+                    <path
+                      d={path.d}
+                      stroke={isSelected ? '#0284c7' : (highlight ? '#0891b2' : '#94a3b8')}
+                      strokeWidth={isSelected ? 2.5 : (highlight ? 2 : 1.5)}
+                      fill="none"
+                      className="transition-colors"
+                    />
+                    {/* 전체 라인 히트 영역 (클릭 시 연결선 선택) */}
+                    <path
+                      d={path.d}
+                      stroke="transparent"
+                      strokeWidth="12"
+                      fill="none"
+                      className="cursor-pointer"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (e.shiftKey || e.ctrlKey || e.metaKey) {
+                          setSelectedConnIds(prev => prev.includes(i)
+                            ? prev.filter(idx => idx !== i)
+                            : [...prev, i]);
+                        } else {
+                          setSelectedConnIds([i]);
+                          setSelectedIds([]);
+                        }
+                      }}
+                    />
+
+                    {/* 각 세그먼트 편집 핸들 */}
+                    {path.handles.map(h => {
+                      const isVerticalSeg = h.axis === 'x';
+                      const segLength = h.segMax - h.segMin;
+                      if (segLength < 4) return null;
+                      const isBeingDragged = isDraggingThis && draggingConn?.segment === h.segment;
+                      const showActive = isBeingDragged || highlight;
+                      const cursor = isVerticalSeg ? 'cursor-ew-resize' : 'cursor-ns-resize';
+
+                      const startDragSeg = (e) => {
+                        e.stopPropagation();
+                        const rect = canvasRef.current.getBoundingClientRect();
+                        const offsetKey = SEGMENT_OFFSET_KEYS[h.segment];
+                        setSelectedConn(i);
+                        setSelected(null);
+                        setDraggingConn({
+                          idx: i,
+                          segment: h.segment,
+                          startMouseX: e.clientX - rect.left,
+                          startMouseY: e.clientY - rect.top,
+                          startOffset: c[offsetKey] ?? 0,
+                        });
+                      };
+
+                      const resetSeg = (e) => {
+                        e.stopPropagation();
+                        const offsetKey = SEGMENT_OFFSET_KEYS[h.segment];
+                        setConnections(cs => cs.map((cc, idx) => idx === i ? { ...cc, [offsetKey]: 0 } : cc));
+                      };
+
+                      return (
+                        <g key={h.segment}>
+                          {/* 세그먼트 히트 영역 (길쭉한 투명 rect) */}
+                          <rect
+                            x={isVerticalSeg ? h.x - 5 : h.segMin}
+                            y={isVerticalSeg ? h.segMin : h.y - 5}
+                            width={isVerticalSeg ? 10 : segLength}
+                            height={isVerticalSeg ? segLength : 10}
+                            fill="transparent"
+                            className={cursor}
+                            onMouseDown={startDragSeg}
+                            onDoubleClick={resetSeg}
+                          />
+                          {/* 시각 핸들 */}
+                          <circle
+                            cx={h.x}
+                            cy={h.y}
+                            r={showActive ? 5 : 3}
+                            fill="white"
+                            stroke={showActive ? '#0891b2' : '#94a3b8'}
+                            strokeWidth={2}
+                            className={`${cursor} transition-all`}
+                            onMouseDown={startDragSeg}
+                            onDoubleClick={resetSeg}
+                          >
+                            <title>{`드래그: ${isVerticalSeg ? '좌우' : '상하'} 이동 · 더블클릭: 리셋`}</title>
+                          </circle>
+                        </g>
+                      );
+                    })}
+
+                    {/* 삭제 버튼 (선택 시에만 persistent 표시) */}
+                    {isSelected && (
+                      <g
+                        className="cursor-pointer"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setConnections(cs => cs.filter((_, idx) => idx !== i));
+                          setSelectedConn(null);
+                        }}
+                      >
+                        {/* 넓은 히트 영역 */}
+                        <circle cx={firstHandle.x + 18} cy={firstHandle.y} r={12} fill="transparent" />
+                        {/* 실제 버튼 */}
+                        <circle cx={firstHandle.x + 18} cy={firstHandle.y} r={9} fill="#ef4444" stroke="white" strokeWidth={2} />
+                        <text x={firstHandle.x + 18} y={firstHandle.y + 4} textAnchor="middle" fill="white" fontSize="13" fontWeight="bold" style={{ userSelect: 'none', pointerEvents: 'none' }}>×</text>
+                      </g>
+                    )}
+                  </g>
+                );
+              })}
+              {/* 연결 진행 중 점선 (마우스 따라다님) */}
+              {connecting && (() => {
+                const block = blocks.find(b => b.id === connecting.blockId);
+                if (!block) return null;
+                const pos = getPortPos(block, connecting.portKey, connecting.direction);
+                if (!pos) return null;
+                const target = { x: mousePos.x, y: mousePos.y };
+                const path = connecting.direction === 'out'
+                  ? getOrthogonalPath(pos, target)
+                  : getOrthogonalPath(target, pos);
+                return (
+                  <path d={path.d} stroke="#0891b2" strokeWidth="1.75" strokeDasharray="4 4" fill="none" />
+                );
+              })()}
+              {/* 박스 선택 사각형 */}
+              {selectionBox && (() => {
+                const x = Math.min(selectionBox.startX, selectionBox.curX);
+                const y = Math.min(selectionBox.startY, selectionBox.curY);
+                const w = Math.abs(selectionBox.curX - selectionBox.startX);
+                const h = Math.abs(selectionBox.curY - selectionBox.startY);
+                return (
+                  <rect
+                    x={x} y={y} width={w} height={h}
+                    fill="#0891b2" fillOpacity="0.08"
+                    stroke="#0891b2" strokeWidth="1" strokeDasharray="4 2"
+                  />
+                );
+              })()}
+            </svg>
+
+            {blocks.map(block => {
+              const def = TYPES[block.type];
+              const Icon = def.icon;
+              const isSel = selectedIds.includes(block.id);
+              const maxPorts = Math.max(def.inputs.length, def.outputs.length);
+              const baseMin = block.type === 'display' ? 70 : 80;
+              const height = Math.max(baseMin, 45 + maxPorts * 20 + 10);
+              return (
+                <div
+                  key={block.id}
+                  ref={(el) => { if (el) blockRefsMap.current[block.id] = el; }}
+                  className={`absolute rounded-md bg-white shadow-sm ${isSel ? 'ring-2 ring-cyan-500 ring-offset-1 shadow-md' : 'hover:shadow-md'}`}
+                  style={{
+                    left: block.x, top: block.y, width: 180, height,
+                    border: `1px solid ${isSel ? def.color : '#e2e8f0'}`,
+                    willChange: 'transform',
+                  }}
+                  onMouseDown={(e) => handleBlockMouseDown(e, block.id)}
+                >
+                  <div className="h-6 px-2 flex items-center gap-1.5 border-b rounded-t-md"
+                       style={{ borderColor: def.color + '30', background: def.color + '0d' }}>
+                    <Icon size={11} style={{ color: def.color }} />
+                    <span className="text-[10px] font-semibold text-slate-800 flex-1 truncate">{block.name}</span>
+                    <span className="text-[9px] text-slate-400 font-mono">T{def.typeNo}</span>
+                  </div>
+                  <div className="relative" style={{ height: height - 24 }}>
+                    {/* Display 블록: 현재 값을 크게 표시 */}
+                    {block.type === 'display' && (() => {
+                      const val = block.lastInputs?.x;
+                      const digits = block.params.digits ?? 3;
+                      const label = block.params.label;
+                      const text = val === undefined
+                        ? '—'
+                        : (typeof val === 'number' ? val.toFixed(digits) : String(val));
+                      return (
+                        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none px-2">
+                          {label && <div className="text-[9px] text-slate-500 mb-0.5 truncate w-full text-center">{label}</div>}
+                          <div className="text-lg font-bold text-violet-700 font-mono tabular-nums">{text}</div>
+                        </div>
+                      );
+                    })()}
+                    {def.inputs.map((p, i) => {
+                      const isActive = connecting && connecting.blockId === block.id && connecting.portKey === p.key && connecting.direction === 'in';
+                      // 원 중심이 block.y + 43 + i*20에 오도록 배치 (getPortPos와 일치)
+                      // relative div가 block.y+24부터 시작 → 상대 중심 Y = 19 + i*20
+                      // wrapper 높이 16px, items-center로 원(12px) 중심이 wrapper 중앙(8px 지점)에 옴
+                      // 따라서 wrapper top = 19+i*20 - 8 = 11+i*20
+                      return (
+                        <div
+                          key={p.key}
+                          data-port="in"
+                          onMouseDown={(e) => e.stopPropagation()}
+                          onClick={(e) => handlePortClick(e, block.id, p.key, 'in')}
+                          className={`absolute flex items-center cursor-crosshair rounded transition-colors ${
+                            isActive ? 'bg-cyan-100' : 'hover:bg-cyan-50'
+                          }`}
+                          style={{
+                            left: -12,        // 원 중심이 block.x에 오려면: -12(left) + 6(padding) + 6(원 반지름) = 0
+                            top: 11 + i * 20,
+                            height: 16,
+                            paddingLeft: 6,
+                            paddingRight: 4,
+                          }}
+                          title={`${p.label} [${p.unit}]`}
+                        >
+                          <div
+                            className={`w-3 h-3 rounded-full border-2 bg-white shrink-0 pointer-events-none transition-colors ${
+                              isActive ? 'bg-cyan-500 border-cyan-600' : 'border-slate-400'
+                            }`}
+                          />
+                          <span className="text-[9px] text-slate-600 ml-1 font-mono leading-none pointer-events-none whitespace-nowrap">{p.label}</span>
+                        </div>
+                      );
+                    })}
+                    {def.outputs.map((p, i) => {
+                      const isActive = connecting && connecting.blockId === block.id && connecting.portKey === p.key && connecting.direction === 'out';
+                      // 거울 배치: 원 중심이 block.x + 180에 오도록
+                      return (
+                        <div
+                          key={p.key}
+                          data-port="out"
+                          onMouseDown={(e) => e.stopPropagation()}
+                          onClick={(e) => handlePortClick(e, block.id, p.key, 'out')}
+                          className={`absolute flex items-center flex-row-reverse cursor-crosshair rounded transition-colors ${
+                            isActive ? 'bg-amber-100' : 'hover:bg-amber-50'
+                          }`}
+                          style={{
+                            right: -12,
+                            top: 11 + i * 20,
+                            height: 16,
+                            paddingRight: 6,
+                            paddingLeft: 4,
+                          }}
+                          title={`${p.label} [${p.unit}]`}
+                        >
+                          <div
+                            className={`w-3 h-3 rounded-full border-2 bg-white shrink-0 pointer-events-none transition-colors ${
+                              isActive ? 'bg-amber-500 border-amber-600' : 'border-slate-400'
+                            }`}
+                          />
+                          <span className="text-[9px] text-slate-600 mr-1 font-mono leading-none pointer-events-none whitespace-nowrap">
+                            {p.label}
+                            {block.outputs[p.key] !== undefined && (
+                              <span className="ml-1 text-amber-700 font-semibold">
+                                {typeof block.outputs[p.key] === 'number' ? block.outputs[p.key].toFixed(1) : ''}
+                              </span>
+                            )}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+
+            {blocks.length === 0 && (
+              <div className="absolute inset-0 flex items-center justify-center text-slate-400 pointer-events-none">
+                <div className="text-center">
+                  <div className="text-3xl mb-3 text-slate-300">◇</div>
+                  <div className="text-sm text-slate-500">좌측 Type Library에서 컴포넌트를 드래그하세요</div>
+                  <div className="text-[11px] mt-1 text-slate-400">Ambient → Fan → Drum → Plotter 순으로 연결해보세요</div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Bottom: Plot + Log */}
+          <div className="h-52 bg-white border-t border-slate-200 flex shrink-0">
+            <div className="flex-1 p-3 overflow-hidden">
+              <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest mb-2">Output Plot</div>
+              {plotterData.length === 0 ? (
+                <div className="h-full flex items-center justify-center text-slate-400 text-[11px]">
+                  Plotter 블록을 추가하고 신호를 연결하세요
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height="88%">
+                  <LineChart data={simState.history}>
+                    <CartesianGrid strokeDasharray="2 2" stroke="#e2e8f0" />
+                    <XAxis dataKey="t" stroke="#94a3b8" tick={{ fontSize: 10 }} label={{ value: 'time [s]', position: 'insideBottomRight', offset: -5, style: { fill: '#94a3b8', fontSize: 10 } }} />
+                    <YAxis stroke="#94a3b8" tick={{ fontSize: 10 }} />
+                    <Tooltip contentStyle={{ background: 'white', border: '1px solid #e2e8f0', fontSize: 11, borderRadius: 4 }} />
+                    <Legend wrapperStyle={{ fontSize: 10 }} />
+                    {plotterData.flatMap(pd => pd.series).map((s, i) => (
+                      <Line key={s} type="monotone" dataKey={s}
+                            stroke={['#0891b2', '#d97706', '#7c3aed', '#db2777', '#059669'][i % 5]}
+                            dot={false} strokeWidth={1.75} isAnimationActive={false} />
+                    ))}
+                  </LineChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+            <div className="w-64 border-l border-slate-200 p-3 overflow-y-auto bg-slate-50">
+              <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest mb-2">Sim Log</div>
+              {simState.log.slice(-20).map((l, i) => (
+                <div key={i} className="text-[10px] text-slate-600 font-mono leading-tight">{l}</div>
+              ))}
+              {simState.log.length === 0 && <div className="text-[10px] text-slate-400">No events yet</div>}
+            </div>
+          </div>
+        </div>
+
+        {/* Right: Properties */}
+        <div className="w-72 bg-white border-l border-slate-200 overflow-y-auto shrink-0">
+          <div className="px-3 py-2.5 text-[10px] font-semibold uppercase tracking-widest text-slate-500 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
+            <span>Properties</span>
+            {selectedBlock && (
+              <button onClick={() => deleteBlock(selectedBlock.id)} className="text-red-500 hover:text-red-600">
+                <Trash2 size={12} />
+              </button>
+            )}
+          </div>
+
+          {/* 다중 선택 시 요약만 표시, 파라미터 편집은 단일 선택 시만 */}
+          {selectedIds.length > 1 || selectedConnIds.length > 0 ? (
+            <div className="p-3 space-y-2">
+              <div className="text-[11px] text-sky-700 font-semibold">
+                다중 선택됨
+              </div>
+              {selectedIds.length > 0 && (
+                <div className="text-[10px] text-slate-600">
+                  블록 <span className="font-semibold text-slate-900">{selectedIds.length}</span>개
+                </div>
+              )}
+              {selectedConnIds.length > 0 && (
+                <div className="text-[10px] text-slate-600">
+                  연결선 <span className="font-semibold text-slate-900">{selectedConnIds.length}</span>개
+                </div>
+              )}
+              <div className="text-[10px] text-slate-400 italic pt-2 leading-relaxed">
+                단축키:<br/>
+                · Delete — 선택 항목 삭제<br/>
+                · Ctrl+C / X — 복사 / 잘라내기<br/>
+                · 드래그 — 선택된 블록 전체 이동<br/>
+                · Esc — 선택 해제
+              </div>
+            </div>
+          ) : !selectedBlock ? (
+            <div className="p-4 text-slate-400 text-[11px] text-center leading-relaxed">
+              블록을 선택하거나<br/>빈 캔버스에서 드래그해<br/>여러 항목 선택
+            </div>
+          ) : (
+            <div className="p-3 space-y-4">
+              <div>
+                <div className="text-[10px] text-slate-500 mb-1 font-medium">Name</div>
+                <input
+                  value={selectedBlock.name}
+                  onChange={(e) => updateBlockName(selectedBlock.id, e.target.value)}
+                  className="w-full bg-white border border-slate-300 px-2 py-1 rounded text-[11px] text-slate-900 focus:outline-none focus:border-cyan-500"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={`px-1.5 py-0.5 rounded text-[9px] font-semibold ${CATEGORY_STYLES[selectedDef.category].bg} ${CATEGORY_STYLES[selectedDef.category].text} ${CATEGORY_STYLES[selectedDef.category].border} border`}>
+                  {CATEGORY_STYLES[selectedDef.category].badge}
+                </span>
+                <span className="text-[10px] text-slate-500 font-mono">Type {selectedDef.typeNo}</span>
+                <span className="text-[10px] text-slate-500">· {selectedDef.name}</span>
+              </div>
+              <div className="text-[10px] text-slate-500 italic leading-relaxed">{selectedDef.desc}</div>
+
+              {/* Plotter 전용: 이 플로터의 신호만 CSV 내보내기 */}
+              {selectedBlock.type === 'plotter' && (
+                <button
+                  onClick={() => exportPlotterCsv(selectedBlock)}
+                  disabled={simState.history.length === 0}
+                  className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 bg-sky-50 hover:bg-sky-100 border border-sky-200 rounded text-[11px] text-sky-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  <Download size={11} />
+                  <span>이 Plotter 신호만 CSV로 내보내기</span>
+                </button>
+              )}
+
+              {selectedDef.parameters.length > 0 && (
+                <div>
+                  <div className="text-[10px] uppercase tracking-wider text-slate-500 mb-1.5 flex items-center gap-1 font-semibold">
+                    <Settings size={10} /> Parameters
+                  </div>
+                  <div className="space-y-1">
+                    {selectedDef.parameters.map(p => (
+                      <div key={p.key} className="flex items-center gap-2">
+                        <label className="flex-1 text-[11px] text-slate-700">{p.label}</label>
+                        <input
+                          type={typeof p.value === 'number' ? 'number' : 'text'}
+                          value={selectedBlock.params[p.key]}
+                          step={typeof p.value === 'number' ? (p.value < 1 ? 0.01 : p.value < 10 ? 0.1 : 1) : undefined}
+                          onChange={(e) => updateParam(selectedBlock.id, p.key,
+                            typeof p.value === 'number' ? (parseFloat(e.target.value) || 0) : e.target.value)}
+                          className="w-20 bg-white border border-slate-300 px-1.5 py-0.5 rounded text-[11px] text-slate-900 font-mono text-right focus:outline-none focus:border-cyan-500"
+                        />
+                        <span className="text-[10px] text-slate-400 w-10 font-mono">{p.unit}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {selectedDef.inputs.length > 0 && (
+                <div>
+                  <div className="text-[10px] uppercase tracking-wider text-slate-500 mb-1.5 flex items-center gap-1 font-semibold">
+                    <Activity size={10} /> Inputs
+                  </div>
+                  <div className="space-y-1">
+                    {selectedDef.inputs.map(p => {
+                      const val = selectedBlock.lastInputs?.[p.key];
+                      return (
+                        <div key={p.key} className="flex items-center gap-2 text-[11px]">
+                          <span className="flex-1 text-slate-700">{p.label}</span>
+                          <span className="text-cyan-700 font-semibold font-mono w-16 text-right">
+                            {val !== undefined ? (typeof val === 'number' ? val.toFixed(2) : val) : '—'}
+                          </span>
+                          <span className="text-[10px] text-slate-400 w-10 font-mono">{p.unit}</span>
+                        </div>
+                      );
+                    })}
+                    {selectedDef.inputs.some(p => !connections.find(c => c.to.blockId === selectedBlock.id && c.to.portKey === p.key)) && (
+                      <div className="text-[9px] text-amber-600 mt-1 flex items-center gap-1">
+                        <span>⚠</span> 일부 입력이 연결되지 않음
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {selectedDef.outputs.length > 0 && (
+                <div>
+                  <div className="text-[10px] uppercase tracking-wider text-slate-500 mb-1.5 flex items-center gap-1 font-semibold">
+                    <Zap size={10} /> Outputs
+                  </div>
+                  <div className="space-y-1">
+                    {selectedDef.outputs.map(p => {
+                      const val = selectedBlock.outputs?.[p.key];
+                      return (
+                        <div key={p.key} className="flex items-center gap-2 text-[11px]">
+                          <span className="flex-1 text-slate-700">{p.label}</span>
+                          <span className="text-amber-700 font-semibold font-mono w-16 text-right">
+                            {val !== undefined ? (typeof val === 'number' ? val.toFixed(2) : val) : '—'}
+                          </span>
+                          <span className="text-[10px] text-slate-400 w-10 font-mono">{p.unit}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {selectedBlock.state && Object.keys(selectedBlock.state).length > 0 && (
+                <div>
+                  <div className="text-[10px] uppercase tracking-wider text-slate-500 mb-1.5 font-semibold">State</div>
+                  <div className="space-y-1">
+                    {Object.entries(selectedBlock.state).map(([k, v]) => (
+                      <div key={k} className="flex items-center gap-2 text-[11px]">
+                        <span className="flex-1 text-slate-600">{k}</span>
+                        <span className="text-slate-800 font-mono w-16 text-right">
+                          {typeof v === 'number' ? v.toFixed(3) : JSON.stringify(v)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Statusbar */}
+      <div className="h-6 bg-slate-50 border-t border-slate-200 flex items-center px-3 text-[10px] text-slate-500 gap-4 shrink-0 font-mono">
+        <span>
+          <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1"></span>
+          Connecting: {connecting ? `${blocks.find(b => b.id === connecting.blockId)?.name}.${connecting.portKey} (${connecting.direction})` : 'none'}
+        </span>
+        <span>({mousePos.x.toFixed(0)}, {mousePos.y.toFixed(0)})</span>
+        {(selectedIds.length > 0 || selectedConnIds.length > 0) && (
+          <span className="text-sky-600">
+            선택됨: 블록 {selectedIds.length} · 연결선 {selectedConnIds.length} · Delete 키로 삭제
+          </span>
+        )}
+        <div className="flex-1" />
+        <span>HPWD Simulation Studio · quasi-steady seq. subst.</span>
+      </div>
+
+      {/* Slot Save/Load Modal */}
+      {slotModal && (
+        <SlotModal
+          mode={slotModal}
+          slots={slotList}
+          onClose={() => setSlotModal(null)}
+          onSave={(name, existingId) => {
+            if (saveSlot(name, existingId)) {
+              refreshSlotList();
+            }
+          }}
+          onLoad={(id) => {
+            if (loadSlot(id)) setSlotModal(null);
+          }}
+          onDelete={(id) => {
+            deleteSlot(id);
+            refreshSlotList();
+          }}
+          onRename={(id, newName) => {
+            renameSlot(id, newName);
+            refreshSlotList();
+          }}
+          onExportFile={exportProjectFile}
+          onImportFile={importProjectFile}
+          currentBlockCount={blocks.length}
+          currentConnectionCount={connections.length}
+        />
+      )}
+      <ChatFAB />
+    </div>
+  );
+}
+
+/* ═══════════ AI Chat Floating Button + Popup ═══════════ */
+function ChatFAB() {
+  const [open, setOpen] = useState(false);
+  const [messages, setMessages] = useState([
+    {
+      role: 'assistant',
+      text: 'HPWD Studio AI 어시스턴트입니다. 자연어로 1D 시뮬레이션 구조를 자동 생성하는 것이 목표예요.',
+    },
+    {
+      role: 'assistant',
+      text: '현재는 UI shell만 — 백엔드는 미연결. 다음 도구를 호출하도록 설계됨:',
+      tools: [
+        'add_block(type, x, y) — 블록 추가',
+        'connect(from_block, from_port, to_block, to_port) — 포트 연결',
+        'set_param(block_id, key, value) — 파라미터 설정',
+        'delete_block(id) / clear_canvas() — 정리',
+        'load_preset("heat-pump-washer-dryer") — 프리셋 일괄 로드',
+        'run() / stop() / reset() — 시뮬레이션 제어',
+        'explain_result() — 결과 해석·리포트',
+      ],
+    },
+  ]);
+  const [input, setInput] = useState('');
+  const bodyRef = useRef(null);
+
+  useEffect(() => {
+    if (bodyRef.current) bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
+  }, [messages, open]);
+
+  const send = () => {
+    const t = input.trim();
+    if (!t) return;
+    setMessages(m => [
+      ...m,
+      { role: 'user', text: t },
+      {
+        role: 'assistant',
+        text: '⚠️ AI 백엔드 미연결. 향후 LLM이 위 도구들을 호출해서 캔버스를 자동 조작하도록 연결 예정입니다.',
+      },
+    ]);
+    setInput('');
+  };
+
+  const examples = [
+    '히트펌프 세탁건조기 사이클 만들어줘',
+    'R290 적용 시 최적 운전점',
+    '드럼 부하 5kg으로 변경',
+    '결과 해석해줘',
+  ];
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        className="fixed bottom-6 right-6 w-14 h-14 rounded-full bg-cyan-600 hover:bg-cyan-700 text-white flex items-center justify-center shadow-lg hover:shadow-xl transition-all hover:scale-105"
+        style={{ zIndex: 50 }}
+        title="AI 어시스턴트 열기"
+      >
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+        </svg>
+        <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-amber-400 border-2 border-white animate-pulse"></span>
+      </button>
+    );
   }
-});
 
-// Tab switching
-const tabProps = document.getElementById('tab-props');
-const tabChat = document.getElementById('tab-chat');
-const panelProps = document.getElementById('props-panel');
-const panelChat = document.getElementById('chat-panel');
-tabProps.addEventListener('click', () => {
-  tabProps.classList.add('active');
-  tabChat.classList.remove('active');
-  panelProps.classList.remove('hidden');
-  panelChat.classList.add('hidden');
-});
-tabChat.addEventListener('click', () => {
-  tabChat.classList.add('active');
-  tabProps.classList.remove('active');
-  panelChat.classList.remove('hidden');
-  panelChat.classList.add('flex');
-  panelProps.classList.add('hidden');
-});
+  return (
+    <div
+      className="fixed bottom-6 right-6 w-[400px] h-[560px] bg-white rounded-lg shadow-2xl border border-slate-200 flex flex-col"
+      style={{ zIndex: 50 }}
+    >
+      {/* Header */}
+      <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between bg-gradient-to-r from-cyan-600 to-cyan-700 text-white rounded-t-lg shrink-0">
+        <div className="flex items-center gap-2">
+          <div className="w-2 h-2 rounded-full bg-white"></div>
+          <span className="font-semibold text-[13px]">AI 어시스턴트</span>
+          <span className="text-[9px] px-1.5 py-0.5 bg-white/20 rounded font-mono tracking-wider">UI ONLY</span>
+        </div>
+        <button
+          onClick={() => setOpen(false)}
+          className="text-white/80 hover:text-white text-2xl leading-none w-6 h-6 flex items-center justify-center"
+          title="닫기"
+        >×</button>
+      </div>
 
-// Reset button
-document.getElementById('btn-reset').addEventListener('click', () => {
-  propsBody.querySelectorAll('.param-input.changed').forEach(el => {
-    el.value = el.dataset.orig;
-    el.classList.remove('changed');
-  });
-  state.modified.clear();
-  updateFooter();
-});
+      {/* Messages */}
+      <div ref={bodyRef} className="flex-1 overflow-y-auto p-3 space-y-3 bg-slate-50">
+        {messages.map((m, i) => (
+          <div key={i} className="text-[12px] leading-relaxed">
+            <div className={`text-[9px] font-mono uppercase tracking-widest font-semibold mb-1 flex items-center gap-1.5 ${m.role === 'user' ? 'text-cyan-700 justify-end' : 'text-amber-700'}`}>
+              {m.role !== 'user' && <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>}
+              {m.role === 'user' ? 'YOU' : 'ASSISTANT'}
+              {m.role === 'user' && <span className="w-1.5 h-1.5 rounded-full bg-cyan-600"></span>}
+            </div>
+            <div className={m.role === 'user' ? 'bg-cyan-50 border border-cyan-200 rounded-lg rounded-tr-sm px-3 py-2 ml-8 text-slate-800' : 'text-slate-700 mr-4'}>
+              {m.text}
+            </div>
+            {m.tools && (
+              <div className="bg-white border border-amber-200 border-l-2 border-l-amber-500 rounded-r px-3 py-2 mt-1.5 font-mono text-[10px] text-slate-600 leading-relaxed mr-4">
+                {m.tools.map((tt, j) => (
+                  <div key={j}>· {tt}</div>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
 
-// Run button (UI only)
-document.getElementById('btn-run').addEventListener('click', () => {
-  const btn = document.getElementById('btn-run');
-  btn.innerHTML = '<span class="text-amber-600 mono text-[10px]">(backend not connected)</span>';
-  setTimeout(() => {
-    btn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="#059669" stroke="#059669"><polygon points="6 3 20 12 6 21 6 3"/></svg> Run';
-  }, 1400);
-});
-</script>
+      {/* Quick examples */}
+      <div className="px-3 py-2 border-t border-slate-100 flex flex-wrap gap-1.5 bg-white shrink-0">
+        {examples.map((s, i) => (
+          <span
+            key={i}
+            onClick={() => setInput(s)}
+            className="text-[10px] px-2 py-0.5 bg-slate-100 hover:bg-cyan-50 hover:text-cyan-700 hover:border-cyan-300 rounded-full cursor-pointer text-slate-600 border border-slate-200 transition-colors"
+          >
+            {s}
+          </span>
+        ))}
+      </div>
+
+      {/* Input */}
+      <div className="border-t border-slate-200 p-2 flex gap-1.5 bg-white rounded-b-lg shrink-0">
+        <textarea
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
+          className="flex-1 resize-none px-2 py-1.5 text-[12px] border border-slate-300 rounded bg-slate-50 text-slate-700 h-12 outline-none focus:border-cyan-500 focus:bg-white"
+          placeholder="예: 히트펌프 사이클 만들어줘 (Enter)"
+        />
+        <button
+          onClick={send}
+          disabled={!input.trim()}
+          className="px-3 text-[10px] font-mono font-semibold bg-cyan-600 text-white rounded hover:bg-cyan-700 self-stretch tracking-wider disabled:opacity-50 disabled:cursor-not-allowed"
+        >SEND</button>
+      </div>
+    </div>
+  );
+}
+
+function ToolBtn({ icon: Icon, label, onClick, disabled, color = 'text-slate-700 hover:bg-slate-100', as, title }) {
+  const Comp = as || 'button';
+  return (
+    <Comp
+      onClick={disabled ? undefined : onClick}
+      title={title}
+      className={`px-2 py-1 rounded flex items-center gap-1 text-[11px] transition-colors ${color} ${disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
+    >
+      <Icon size={13} />
+      <span>{label}</span>
+    </Comp>
+  );
+}
+
+// =============================================================
+// SlotModal — 세이브 슬롯 관리 UI
+// =============================================================
+function SlotModal({ mode, slots, onClose, onSave, onLoad, onDelete, onRename, onExportFile, onImportFile, currentBlockCount, currentConnectionCount }) {
+  const [newName, setNewName] = useState('');
+  const [renamingId, setRenamingId] = useState(null);
+  const [renameValue, setRenameValue] = useState('');
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+  const fileInputRef = useRef(null);
+
+  const sortedSlots = [...slots].sort((a, b) => b.savedAt - a.savedAt);
+
+  const fmtDate = (ts) => {
+    const d = new Date(ts);
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+
+  const handleNewSave = () => {
+    const name = newName.trim() || `Untitled ${fmtDate(Date.now())}`;
+    onSave(name, null);
+    setNewName('');
+  };
+
+  const handleOverwrite = (slot) => {
+    if (confirm(`"${slot.name}" 슬롯을 현재 상태로 덮어쓸까요?`)) {
+      onSave(slot.name, slot.id);
+    }
+  };
+
+  const handleRenameStart = (slot) => {
+    setRenamingId(slot.id);
+    setRenameValue(slot.name);
+  };
+
+  const handleRenameCommit = (id) => {
+    const v = renameValue.trim();
+    if (v) onRename(id, v);
+    setRenamingId(null);
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-lg shadow-2xl border border-slate-200 w-[560px] max-h-[80vh] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="px-5 py-3 border-b border-slate-200 flex items-center justify-between">
+          <div>
+            <div className="text-sm font-semibold text-slate-900">
+              {mode === 'save' ? '프로젝트 저장' : '프로젝트 불러오기'}
+            </div>
+            <div className="text-[11px] text-slate-500 font-mono">
+              {mode === 'save'
+                ? `현재: 블록 ${currentBlockCount} · 연결선 ${currentConnectionCount}`
+                : `저장된 슬롯 ${slots.length}개 · 브라우저에 로컬 저장됨`}
+            </div>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none px-2">
+            ×
+          </button>
+        </div>
+
+        {/* Save mode: 새 슬롯 입력 */}
+        {mode === 'save' && (
+          <div className="px-5 py-3 bg-slate-50 border-b border-slate-200 flex items-center gap-2">
+            <input
+              type="text"
+              placeholder="새 슬롯 이름 (비워두면 시간 기반 자동 명명)"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleNewSave(); }}
+              className="flex-1 px-2.5 py-1.5 text-[12px] bg-white border border-slate-300 rounded focus:outline-none focus:border-cyan-500"
+              autoFocus
+            />
+            <button
+              onClick={handleNewSave}
+              className="px-3 py-1.5 text-[12px] bg-cyan-600 text-white rounded hover:bg-cyan-700 transition-colors font-medium"
+            >
+              새 슬롯으로 저장
+            </button>
+          </div>
+        )}
+
+        {/* Slot list */}
+        <div className="flex-1 overflow-y-auto">
+          {sortedSlots.length === 0 ? (
+            <div className="p-10 text-center text-slate-400 text-[12px]">
+              저장된 슬롯이 없습니다
+              {mode === 'load' && <div className="mt-2 text-[11px]">먼저 Save에서 슬롯을 만들어보세요</div>}
+            </div>
+          ) : (
+            <div className="divide-y divide-slate-100">
+              {sortedSlots.map((slot) => (
+                <div key={slot.id} className="px-5 py-3 hover:bg-slate-50 group flex items-center gap-3">
+                  <div className="flex-1 min-w-0">
+                    {renamingId === slot.id ? (
+                      <input
+                        type="text"
+                        value={renameValue}
+                        onChange={(e) => setRenameValue(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') handleRenameCommit(slot.id);
+                          else if (e.key === 'Escape') setRenamingId(null);
+                        }}
+                        onBlur={() => handleRenameCommit(slot.id)}
+                        autoFocus
+                        className="w-full px-1.5 py-0.5 text-[12px] bg-white border border-cyan-500 rounded focus:outline-none"
+                      />
+                    ) : (
+                      <div className="text-[13px] font-medium text-slate-900 truncate">{slot.name}</div>
+                    )}
+                    <div className="text-[10px] text-slate-500 font-mono mt-0.5">
+                      {fmtDate(slot.savedAt)} · 블록 {slot.blockCount} · 연결선 {slot.connectionCount}
+                    </div>
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex items-center gap-1">
+                    {mode === 'load' ? (
+                      <button
+                        onClick={() => onLoad(slot.id)}
+                        className="px-2.5 py-1 text-[11px] bg-cyan-50 hover:bg-cyan-100 text-cyan-700 border border-cyan-200 rounded transition-colors"
+                      >
+                        불러오기
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => handleOverwrite(slot)}
+                        className="px-2.5 py-1 text-[11px] bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 rounded transition-colors"
+                      >
+                        덮어쓰기
+                      </button>
+                    )}
+                    <button
+                      onClick={() => handleRenameStart(slot)}
+                      className="px-2 py-1 text-[11px] text-slate-600 hover:bg-slate-100 rounded transition-colors"
+                      title="이름 변경"
+                    >
+                      ✎
+                    </button>
+                    {confirmDeleteId === slot.id ? (
+                      <>
+                        <button
+                          onClick={() => { onDelete(slot.id); setConfirmDeleteId(null); }}
+                          className="px-2 py-1 text-[11px] bg-red-600 text-white rounded hover:bg-red-700"
+                        >
+                          확인
+                        </button>
+                        <button
+                          onClick={() => setConfirmDeleteId(null)}
+                          className="px-2 py-1 text-[11px] text-slate-500 hover:bg-slate-100 rounded"
+                        >
+                          취소
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        onClick={() => setConfirmDeleteId(slot.id)}
+                        className="px-2 py-1 text-[11px] text-red-500 hover:bg-red-50 rounded transition-colors"
+                        title="삭제"
+                      >
+                        🗑
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Footer: JSON 파일 Export/Import */}
+        <div className="px-5 py-3 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-[11px]">
+          <span className="text-slate-500">
+            백업/공유용:
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onExportFile}
+              className="px-2.5 py-1 text-[11px] text-slate-700 border border-slate-300 rounded hover:bg-white transition-colors"
+            >
+              JSON 파일로 내보내기
+            </button>
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="px-2.5 py-1 text-[11px] text-slate-700 border border-slate-300 rounded hover:bg-white transition-colors"
+            >
+              JSON 파일 가져오기
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".json"
+              className="hidden"
+              onChange={onImportFile}
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<HPWDStudio />);
+  </script>
 </body>
 </html>
