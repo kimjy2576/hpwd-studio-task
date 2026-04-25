@@ -392,6 +392,81 @@ const CATEGORY_STYLES = {
   output:      { bg: 'bg-violet-50',  text: 'text-violet-700',border: 'border-violet-200',badge: 'OUT' },
 };
 
+/* ════════ LINE KINDS — 연결선 종류 정의 ════════
+ * 모든 connection은 'kind' 필드를 가지며, 렌더링 스타일과 lineParams 필드 셋이 다름.
+ * 한 라인 = 한 물리적 배관/덕트/호스 (현재는 한 시그널 페어를 운반,
+ * 향후 multi-signal로 확장 예정). lineParams는 라인 자체의 속성
+ * (길이, 내경, 재질 등) — 시뮬레이션이 활용 가능. */
+const LINE_KINDS = {
+  refrigerant: {
+    name: '냉매배관 (동관)',
+    short: 'REFRIG',
+    color: '#dc2626',
+    width: 2.5,
+    dasharray: undefined,
+    desc: '동관 — 냉매 사이클. 양상(액/기/2상) 변화',
+    fields: [
+      { key: 'L', label: '길이', unit: 'mm', value: 300 },
+      { key: 'di', label: '내경', unit: 'mm', value: 6.35 },
+      { key: 'do', label: '외경', unit: 'mm', value: 7.94 },
+      { key: 'ins_thk', label: '단열재 두께', unit: 'mm', value: 5 },
+      { key: 'ins_k', label: '단열재 열전도율', unit: 'W/m·K', value: 0.036 },
+      { key: 'bends', label: '벤드 수', unit: 'ea', value: 2 },
+      { key: 'material', label: '재질', type: 'select', options: ['Cu', 'Al', 'CuNi'], value: 'Cu' },
+    ],
+  },
+  air: {
+    name: '공기 유로 (덕트)',
+    short: 'DUCT',
+    color: '#475569',
+    width: 4,
+    dasharray: '7 3',
+    desc: '덕트 — 습공기(공기+수증기). 누기 가능',
+    fields: [
+      { key: 'L', label: '길이', unit: 'mm', value: 200 },
+      { key: 'A', label: '단면적', unit: 'mm²', value: 10000 },
+      { key: 'shape', label: '단면 형상', type: 'select', options: ['Round', 'Rectangular', 'Oval'], value: 'Rectangular' },
+      { key: 'leak', label: '누기율', unit: '%', value: 2 },
+      { key: 'rough', label: '내면 조도', unit: 'μm', value: 50 },
+      { key: 'insulated', label: '단열', type: 'select', options: ['no', 'yes'], value: 'no' },
+    ],
+  },
+  water: {
+    name: '물 배관 (고무호스)',
+    short: 'WATER',
+    color: '#2563eb',
+    width: 2.5,
+    dasharray: '2 4',
+    desc: '고무호스 — 응축수, 세탁수 등 액상',
+    fields: [
+      { key: 'L', label: '길이', unit: 'mm', value: 400 },
+      { key: 'di', label: '내경', unit: 'mm', value: 12 },
+      { key: 'do', label: '외경', unit: 'mm', value: 18 },
+      { key: 'material', label: '재질', type: 'select', options: ['EPDM', 'NBR', 'TPV', 'Silicone'], value: 'EPDM' },
+      { key: 'p_max', label: '내압', unit: 'bar', value: 10 },
+    ],
+  },
+};
+
+/* 두 블록 카테고리로부터 default 라인 종류 결정 */
+function detectLineKind(fromBlock, toBlock) {
+  if (!fromBlock || !toBlock) return 'refrigerant';
+  const fromCat = TYPES[fromBlock.type]?.category;
+  const toCat = TYPES[toBlock.type]?.category;
+  if (fromCat === 'refrigerant' && toCat === 'refrigerant') return 'refrigerant';
+  if (fromCat === 'air' && toCat === 'air') return 'air';
+  if (fromCat === 'refrigerant' || toCat === 'refrigerant') return 'refrigerant';
+  if (fromCat === 'air' || toCat === 'air') return 'air';
+  return 'refrigerant';
+}
+
+/* 라인 종류의 default lineParams 생성 */
+function defaultLineParams(kind) {
+  const out = {};
+  (LINE_KINDS[kind]?.fields || []).forEach(f => { out[f.key] = f.value; });
+  return out;
+}
+
 // 그리드 크기 (px). 캔버스 배경 dot pattern과 동일.
 const GRID_SIZE = 20;
 const snap = (v) => Math.round(v / GRID_SIZE) * GRID_SIZE;
@@ -756,9 +831,14 @@ function HPWDStudio() {
     pushHistory(blocks, connections);
     setConnections(cs => {
       const filtered = cs.filter(c => !(c.to.blockId === to.blockId && c.to.portKey === to.portKey));
+      const fromBlock = blocks.find(b => b.id === from.blockId);
+      const toBlock = blocks.find(b => b.id === to.blockId);
+      const kind = detectLineKind(fromBlock, toBlock);
       return [...filtered, {
         from: { blockId: from.blockId, portKey: from.portKey },
         to: { blockId: to.blockId, portKey: to.portKey },
+        kind,
+        lineParams: defaultLineParams(kind),
         midOffsetX: 0,
       }];
     });
@@ -1413,6 +1493,34 @@ function HPWDStudio() {
           <div className="px-3 py-4 text-[10px] text-slate-400 border-t border-slate-100 mt-2 leading-relaxed">
             드래그하여 캔버스에 배치하세요
           </div>
+
+          {/* Line Types — 연결선 종류 시각 가이드 */}
+          <div className="border-t border-slate-100 bg-slate-50/40">
+            <div className="px-3 py-2 text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+              Line Types
+            </div>
+            <div className="px-2 pb-3 space-y-1">
+              {Object.entries(LINE_KINDS).map(([k, def]) => (
+                <div
+                  key={k}
+                  className="flex items-center gap-2 px-2 py-1.5 text-[10.5px] rounded border border-transparent hover:border-slate-200 hover:bg-white transition-colors"
+                  title={def.desc}
+                >
+                  <span className="inline-block shrink-0" style={{
+                    width: 22, height: 0,
+                    borderTop: `${def.width}px ${def.dasharray ? 'dashed' : 'solid'} ${def.color}`,
+                  }}></span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-slate-700 truncate text-[10.5px]">{def.name}</div>
+                    <div className="text-[9px] text-slate-400 font-mono">{def.short} · {def.fields.length} params</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="px-3 pb-3 text-[9.5px] text-slate-400 leading-relaxed">
+              포트 연결 시 종류 자동 감지 ·<br/>연결선 클릭하여 변경
+            </div>
+          </div>
         </div>
 
         {/* Center: Canvas + Bottom plot */}
@@ -1486,14 +1594,25 @@ function HPWDStudio() {
                     onMouseEnter={() => setHoveredConn(i)}
                     onMouseLeave={() => setHoveredConn(h => h === i ? null : h)}
                   >
-                    {/* 가시 직교선 */}
-                    <path
-                      d={path.d}
-                      stroke={isSelected ? '#0284c7' : (highlight ? '#0891b2' : '#94a3b8')}
-                      strokeWidth={isSelected ? 2.5 : (highlight ? 2 : 1.5)}
-                      fill="none"
-                      className="transition-colors"
-                    />
+                    {/* 가시 직교선 — kind에 따라 스타일 분기 */}
+                    {(() => {
+                      const lk = LINE_KINDS[c.kind || 'refrigerant'] || LINE_KINDS.refrigerant;
+                      const baseW = lk.width;
+                      const w = isSelected ? baseW + 1.5 : (highlight ? baseW + 0.8 : baseW);
+                      const stroke = isSelected ? '#0284c7' : (highlight ? '#0891b2' : lk.color);
+                      return (
+                        <path
+                          d={path.d}
+                          stroke={stroke}
+                          strokeWidth={w}
+                          strokeDasharray={lk.dasharray}
+                          fill="none"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          className="transition-colors"
+                        />
+                      );
+                    })()}
                     {/* 전체 라인 히트 영역 (클릭 시 연결선 선택) */}
                     <path
                       d={path.d}
@@ -1798,8 +1917,168 @@ function HPWDStudio() {
             )}
           </div>
 
-          {/* 다중 선택 시 요약만 표시, 파라미터 편집은 단일 선택 시만 */}
-          {selectedIds.length > 1 || selectedConnIds.length > 0 ? (
+          {/* 단일 연결선 선택 시 — 라인 편집 UI */}
+          {selectedConnIds.length === 1 && selectedIds.length === 0 ? (
+            (() => {
+              const idx = selectedConnIds[0];
+              const conn = connections[idx];
+              if (!conn) return null;
+              const fromBlock = blocks.find(b => b.id === conn.from.blockId);
+              const toBlock = blocks.find(b => b.id === conn.to.blockId);
+              const fromDef = fromBlock ? TYPES[fromBlock.type] : null;
+              const toDef = toBlock ? TYPES[toBlock.type] : null;
+              const fromPort = fromDef?.outputs?.find(p => p.key === conn.from.portKey);
+              const toPort = toDef?.inputs?.find(p => p.key === conn.to.portKey);
+              const kind = conn.kind || 'refrigerant';
+              const lk = LINE_KINDS[kind];
+
+              const updateConn = (updates) => {
+                setConnections(cs => cs.map((cc, i) => i === idx ? { ...cc, ...updates } : cc));
+              };
+              const changeKind = (newKind) => {
+                updateConn({ kind: newKind, lineParams: defaultLineParams(newKind) });
+              };
+              const updateLineParam = (key, val) => {
+                updateConn({ lineParams: { ...(conn.lineParams || {}), [key]: val } });
+              };
+              const changePort = (side, newPortKey) => {
+                if (side === 'from') updateConn({ from: { ...conn.from, portKey: newPortKey } });
+                else updateConn({ to: { ...conn.to, portKey: newPortKey } });
+              };
+
+              return (
+                <div className="p-3 space-y-3">
+                  {/* Header */}
+                  <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
+                    <span className="inline-block w-3 h-3 rounded-sm" style={{ background: lk.color, border: lk.dasharray ? `1px dashed ${lk.color}` : 'none' }}></span>
+                    <div className="text-[12px] font-semibold text-slate-900">{lk.name}</div>
+                    <span className="ml-auto text-[9px] font-mono px-1.5 py-0.5 bg-slate-100 rounded text-slate-500">#{idx}</span>
+                  </div>
+
+                  {/* Line kind selector */}
+                  <div>
+                    <div className="text-[10px] font-semibold uppercase tracking-widest text-slate-500 mb-1.5">Line Type</div>
+                    <div className="grid grid-cols-3 gap-1">
+                      {Object.entries(LINE_KINDS).map(([k, def]) => (
+                        <button
+                          key={k}
+                          onClick={() => changeKind(k)}
+                          className={`px-2 py-1.5 text-[10px] rounded border transition-colors ${kind === k
+                            ? 'bg-cyan-50 border-cyan-400 text-cyan-700'
+                            : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+                          title={def.desc}
+                        >
+                          <div className="flex items-center justify-center gap-1.5">
+                            <span className="inline-block" style={{
+                              width: 14, height: 0,
+                              borderTop: `${def.width}px ${def.dasharray ? 'dashed' : 'solid'} ${def.color}`,
+                            }}></span>
+                          </div>
+                          <div className="font-mono text-[9px] mt-0.5 tracking-wider">{def.short}</div>
+                        </button>
+                      ))}
+                    </div>
+                    <div className="text-[9.5px] text-slate-400 mt-1.5 leading-snug">{lk.desc}</div>
+                  </div>
+
+                  {/* Signal mapping (어떤 물리량이 흐르는지) */}
+                  <div>
+                    <div className="text-[10px] font-semibold uppercase tracking-widest text-slate-500 mb-1.5">
+                      Signals · 운반 물리량
+                    </div>
+                    <div className="bg-slate-50 rounded border border-slate-200 p-2 space-y-2">
+                      {/* From */}
+                      <div className="grid grid-cols-[40px_1fr] items-center gap-2">
+                        <span className="text-[9px] font-mono uppercase tracking-wider text-slate-500">From</span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10.5px] text-slate-700 truncate">{fromDef?.name || '?'}</span>
+                          <span className="text-slate-300">·</span>
+                          <select
+                            value={conn.from.portKey}
+                            onChange={e => changePort('from', e.target.value)}
+                            className="flex-1 text-[10.5px] font-mono bg-white border border-slate-300 rounded px-1.5 py-0.5 text-slate-900 focus:outline-none focus:border-cyan-500"
+                          >
+                            {(fromDef?.outputs || []).map(p => (
+                              <option key={p.key} value={p.key}>{p.label}{p.unit ? ` [${p.unit}]` : ''}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                      <div className="text-center text-slate-400 text-[10px]">↓</div>
+                      {/* To */}
+                      <div className="grid grid-cols-[40px_1fr] items-center gap-2">
+                        <span className="text-[9px] font-mono uppercase tracking-wider text-slate-500">To</span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10.5px] text-slate-700 truncate">{toDef?.name || '?'}</span>
+                          <span className="text-slate-300">·</span>
+                          <select
+                            value={conn.to.portKey}
+                            onChange={e => changePort('to', e.target.value)}
+                            className="flex-1 text-[10.5px] font-mono bg-white border border-slate-300 rounded px-1.5 py-0.5 text-slate-900 focus:outline-none focus:border-cyan-500"
+                          >
+                            {(toDef?.inputs || []).map(p => (
+                              <option key={p.key} value={p.key}>{p.label}{p.unit ? ` [${p.unit}]` : ''}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-[9px] text-slate-400 mt-1 italic leading-snug">
+                      현재 1라인 = 1신호 매핑. 향후 multi-signal 운반 지원 예정.
+                    </div>
+                  </div>
+
+                  {/* Line physical parameters */}
+                  <div>
+                    <div className="text-[10px] font-semibold uppercase tracking-widest text-slate-500 mb-1.5">
+                      Line Parameters · 배관/덕트 사양
+                    </div>
+                    <div className="space-y-1.5">
+                      {(lk.fields || []).map(f => {
+                        const v = conn.lineParams?.[f.key] ?? f.value;
+                        return (
+                          <div key={f.key} className="grid grid-cols-[1fr_104px_30px] items-center gap-1.5">
+                            <label className="text-[10.5px] text-slate-600">{f.label}</label>
+                            {f.type === 'select' ? (
+                              <select
+                                value={v}
+                                onChange={e => updateLineParam(f.key, e.target.value)}
+                                className="text-[10.5px] font-mono bg-white border border-slate-300 rounded px-1.5 py-0.5 text-slate-900 focus:outline-none focus:border-cyan-500"
+                              >
+                                {f.options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                              </select>
+                            ) : (
+                              <input
+                                type="number"
+                                step="any"
+                                value={v}
+                                onChange={e => updateLineParam(f.key, parseFloat(e.target.value))}
+                                className="text-[10.5px] font-mono bg-white border border-slate-300 rounded px-1.5 py-0.5 text-slate-900 focus:outline-none focus:border-cyan-500"
+                              />
+                            )}
+                            <span className="text-[9px] text-slate-400 font-mono text-right truncate">{f.unit || ''}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Delete */}
+                  <div className="pt-2 border-t border-slate-100">
+                    <button
+                      onClick={() => {
+                        setConnections(cs => cs.filter((_, i) => i !== idx));
+                        setSelectedConnIds([]);
+                      }}
+                      className="w-full px-2 py-1.5 text-[10.5px] text-red-600 border border-red-200 rounded hover:bg-red-50 transition-colors"
+                    >
+                      🗑 라인 삭제
+                    </button>
+                  </div>
+                </div>
+              );
+            })()
+          ) : selectedIds.length > 1 || selectedConnIds.length > 0 ? (
             <div className="p-3 space-y-2">
               <div className="text-[11px] text-sky-700 font-semibold">
                 다중 선택됨
