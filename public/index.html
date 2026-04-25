@@ -738,6 +738,7 @@ function HPWDStudio() {
   const [resizing, setResizing] = useState(null); // {blockId, startSize, startX, startY}
   const [editingNameId, setEditingNameId] = useState(null);
   const [editingName, setEditingName] = useState('');
+  const [endpointDrag, setEndpointDrag] = useState(null); // {connIdx, end:'from'|'to'}
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
 
   // 박스 드래그 선택 상태: {startX, startY, curX, curY}
@@ -890,7 +891,7 @@ function HPWDStudio() {
       ));
     }
 
-    if (connecting) {
+    if (connecting || endpointDrag) {
       setMousePos({ x: mx, y: my });
     }
   };
@@ -1191,8 +1192,72 @@ function HPWDStudio() {
   const blocksRef = useRef(blocks);
   blocksRef.current = blocks;
 
-  /* 이미지 블록 리사이즈 — 우하단 핸들 드래그 시 imageSize 업데이트.
-   * aspect ratio 1:1 유지 (정사각). dx, dy 중 큰 변화량을 사용. */
+  /* 캔버스 좌표 (cx, cy)에서 가장 가까운 슬롯 (모든 블록 × 4면 × N슬롯).
+   * threshold 이내면 반환, 아니면 null. */
+  const findNearestSlot = (cx, cy, threshold = 28) => {
+    let best = null;
+    let bestDist = threshold;
+    for (const b of blocks) {
+      for (const side of ['top', 'bottom', 'left', 'right']) {
+        for (let slot = 0; slot < SLOTS_PER_SIDE; slot++) {
+          const pos = getBlockSlotPos(b, side, slot);
+          if (!pos) continue;
+          const d = Math.hypot(pos.x - cx, pos.y - cy);
+          if (d < bestDist) {
+            best = { blockId: b.id, side, slot };
+            bestDist = d;
+          }
+        }
+      }
+    }
+    return best;
+  };
+
+  /* 끝점 드래그 종료 — 가장 가까운 슬롯에 snap. */
+  useEffect(() => {
+    if (!endpointDrag) return;
+    const onUp = (e) => {
+      const rect = canvasRef.current?.getBoundingClientRect();
+      if (!rect) { setEndpointDrag(null); return; }
+      const cx = e.clientX - rect.left;
+      const cy = e.clientY - rect.top;
+      const target = findNearestSlot(cx, cy, 28);
+      if (target) {
+        const conn = connections[endpointDrag.connIdx];
+        const otherEnd = endpointDrag.end === 'from' ? conn.to : conn.from;
+        // 같은 블록끼리 자기루프 방지
+        if (target.blockId !== otherEnd.blockId) {
+          pushHistory(blocks, connections);
+          setConnections(cs => cs.map((c, i) => {
+            if (i !== endpointDrag.connIdx) return c;
+            const newEnd = { blockId: target.blockId, side: target.side, slot: target.slot };
+            // 블록이 바뀌었으면 시그널 재매핑 + kind 재감지
+            const oldOther = endpointDrag.end === 'from' ? c.to : c.from;
+            if (newEnd.blockId !== (endpointDrag.end === 'from' ? c.from.blockId : c.to.blockId)) {
+              const fromBlk = blocks.find(b => b.id === (endpointDrag.end === 'from' ? newEnd.blockId : c.from.blockId));
+              const toBlk   = blocks.find(b => b.id === (endpointDrag.end === 'to'   ? newEnd.blockId : c.to.blockId));
+              const newKind = detectLineKind(fromBlk, toBlk);
+              const newSignals = autoMapSignals(fromBlk, toBlk);
+              return {
+                ...c,
+                [endpointDrag.end]: newEnd,
+                kind: newKind,
+                signals: newSignals,
+                lineParams: defaultLineParams(newKind),
+              };
+            }
+            // 같은 블록 안에서 슬롯/면만 변경
+            return { ...c, [endpointDrag.end]: newEnd };
+          }));
+        }
+      }
+      setEndpointDrag(null);
+    };
+    window.addEventListener('mouseup', onUp);
+    return () => window.removeEventListener('mouseup', onUp);
+  }, [endpointDrag, connections, blocks]);
+
+  /* 이미지 블록 리사이즈 — 우하단 핸들 드래그 시 imageSize 업데이트. */
   useEffect(() => {
     if (!resizing) return;
     const onMove = (e) => {
@@ -1759,19 +1824,53 @@ function HPWDStudio() {
                 // 호환: 기존 데이터에 side 없으면 default
                 const fromSide = c.from.side || 'right';
                 const toSide   = c.to.side   || 'left';
-                const fromPos = getBlockSlotPos(fromBlock, fromSide, c.from?.slot);
-                const toPos   = getBlockSlotPos(toBlock,   toSide,   c.to?.slot);
+                let fromPos = getBlockSlotPos(fromBlock, fromSide, c.from?.slot);
+                let toPos   = getBlockSlotPos(toBlock,   toSide,   c.to?.slot);
                 if (!fromPos || !toPos) return null;
 
-                const elbowPoints = buildElbowPoints(fromPos, fromSide, toPos, toSide, 24);
-                const radius = c.cornerRadius ?? 8;
-                const pathD = smoothPath(elbowPoints, radius);
+                // endpoint drag 중이면 해당 끝점은 마우스(또는 nearest slot)로 미리보기
+                const isDraggingFrom = endpointDrag?.connIdx === i && endpointDrag.end === 'from';
+                const isDraggingTo   = endpointDrag?.connIdx === i && endpointDrag.end === 'to';
+                let drawFromSide = fromSide, drawToSide = toSide;
+                let drawFromPos = fromPos, drawToPos = toPos;
+                if (isDraggingFrom || isDraggingTo) {
+                  const snap = findNearestSlot(mousePos.x, mousePos.y, 28);
+                  if (isDraggingFrom) {
+                    if (snap) {
+                      const sb = blocks.find(b => b.id === snap.blockId);
+                      drawFromPos = getBlockSlotPos(sb, snap.side, snap.slot);
+                      drawFromSide = snap.side;
+                    } else {
+                      drawFromPos = mousePos;
+                      drawFromSide = null;
+                    }
+                  }
+                  if (isDraggingTo) {
+                    if (snap) {
+                      const sb = blocks.find(b => b.id === snap.blockId);
+                      drawToPos = getBlockSlotPos(sb, snap.side, snap.slot);
+                      drawToSide = snap.side;
+                    } else {
+                      drawToPos = mousePos;
+                      drawToSide = null;
+                    }
+                  }
+                }
+
+                let pathD;
+                if (drawFromSide && drawToSide) {
+                  const elbowPoints = buildElbowPoints(drawFromPos, drawFromSide, drawToPos, drawToSide, 24);
+                  pathD = smoothPath(elbowPoints, c.cornerRadius ?? 8);
+                } else {
+                  // side 미정 (마우스 자유 위치) — 직선
+                  pathD = `M ${drawFromPos.x} ${drawFromPos.y} L ${drawToPos.x} ${drawToPos.y}`;
+                }
                 const path = { d: pathD, handles: [] };
-                const firstHandle = elbowPoints[1] || fromPos;
+                const firstHandle = drawFromPos;
                 const isHovered = hoveredConn === i;
                 const isSelected = selectedConnIds.includes(i);
                 const highlight = isSelected || isHovered;
-                const isDraggingThis = false;
+                const isDraggingThis = isDraggingFrom || isDraggingTo;
 
                 return (
                   <g
@@ -1928,6 +2027,50 @@ function HPWDStudio() {
                         <text x={firstHandle.x + 18} y={firstHandle.y + 4} textAnchor="middle" fill="white" fontSize="13" fontWeight="bold" style={{ userSelect: 'none', pointerEvents: 'none' }}>×</text>
                       </g>
                     )}
+
+                    {/* Endpoint drag handles — selected 시 양 끝점에 잡고 끌어서 다른 슬롯으로 옮기기 */}
+                    {isSelected && (
+                      <>
+                        {/* From 끝점 */}
+                        <g
+                          className="cursor-grab"
+                          onMouseDown={(e) => {
+                            e.stopPropagation();
+                            setEndpointDrag({ connIdx: i, end: 'from' });
+                          }}
+                        >
+                          <circle cx={drawFromPos.x} cy={drawFromPos.y} r={11} fill="transparent"/>
+                          <circle cx={drawFromPos.x} cy={drawFromPos.y} r={7}
+                                  fill={isDraggingFrom ? '#06b6d4' : 'white'}
+                                  stroke="#0284c7" strokeWidth={2.5}/>
+                        </g>
+                        {/* To 끝점 */}
+                        <g
+                          className="cursor-grab"
+                          onMouseDown={(e) => {
+                            e.stopPropagation();
+                            setEndpointDrag({ connIdx: i, end: 'to' });
+                          }}
+                        >
+                          <circle cx={drawToPos.x} cy={drawToPos.y} r={11} fill="transparent"/>
+                          <circle cx={drawToPos.x} cy={drawToPos.y} r={7}
+                                  fill={isDraggingTo ? '#06b6d4' : 'white'}
+                                  stroke="#0284c7" strokeWidth={2.5}/>
+                        </g>
+                      </>
+                    )}
+
+                    {/* Snap target highlight — drag 중 가까운 슬롯이 있으면 그 위에 ring 표시 */}
+                    {isDraggingThis && (() => {
+                      const snap = findNearestSlot(mousePos.x, mousePos.y, 28);
+                      if (!snap) return null;
+                      const sb = blocks.find(b => b.id === snap.blockId);
+                      const sp = getBlockSlotPos(sb, snap.side, snap.slot);
+                      if (!sp) return null;
+                      return (
+                        <circle cx={sp.x} cy={sp.y} r={12} fill="none" stroke="#06b6d4" strokeWidth={2} strokeDasharray="3 3"/>
+                      );
+                    })()}
                   </g>
                 );
               })}
