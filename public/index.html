@@ -467,6 +467,40 @@ function defaultLineParams(kind) {
   return out;
 }
 
+/* 두 블록 사이에 자동으로 호환 시그널 페어를 매핑.
+ * pass 1: 키 완전일치  ·  pass 2: 키 prefix + 단위 일치  ·  pass 3: 단위만 일치 */
+function autoMapSignals(fromBlock, toBlock) {
+  if (!fromBlock || !toBlock) return [];
+  const fromOuts = TYPES[fromBlock.type]?.outputs || [];
+  const toIns = TYPES[toBlock.type]?.inputs || [];
+  const usedTo = new Set();
+  const mapped = [];
+  // pass 1: exact key match
+  fromOuts.forEach(out => {
+    const m = toIns.find(inp => !usedTo.has(inp.key) && inp.key === out.key);
+    if (m) { mapped.push({ fromPort: out.key, toPort: m.key }); usedTo.add(m.key); }
+  });
+  // pass 2: prefix + unit match (T_dis ↔ T_in)
+  fromOuts.forEach(out => {
+    if (mapped.some(s => s.fromPort === out.key)) return;
+    const prefix = out.key.split('_')[0];
+    const m = toIns.find(inp =>
+      !usedTo.has(inp.key) &&
+      inp.key.split('_')[0] === prefix &&
+      (inp.unit || '') === (out.unit || '')
+    );
+    if (m) { mapped.push({ fromPort: out.key, toPort: m.key }); usedTo.add(m.key); }
+  });
+  // pass 3: unit-only fallback
+  fromOuts.forEach(out => {
+    if (mapped.some(s => s.fromPort === out.key)) return;
+    if (!out.unit) return;
+    const m = toIns.find(inp => !usedTo.has(inp.key) && inp.unit === out.unit);
+    if (m) { mapped.push({ fromPort: out.key, toPort: m.key }); usedTo.add(m.key); }
+  });
+  return mapped;
+}
+
 // 그리드 크기 (px). 캔버스 배경 dot pattern과 동일.
 const GRID_SIZE = 20;
 const snap = (v) => Math.round(v / GRID_SIZE) * GRID_SIZE;
@@ -822,22 +856,34 @@ function HPWDStudio() {
     }
   };
 
-  const handlePortClick = (e, blockId, portKey, direction) => {
+  /* 블록 단위 connector(좌측 in / 우측 out) 클릭 핸들러.
+   * 두 블록을 잇는 한 라인 생성. 호환 시그널은 자동 매핑.
+   * 같은 두 블록 사이에 이미 라인이 있으면 무시(중복 방지). */
+  const handleBlockConnectorClick = (e, blockId, direction) => {
     e.stopPropagation();
-    if (!connecting) { setConnecting({ blockId, portKey, direction }); return; }
-    if (connecting.direction === direction || connecting.blockId === blockId) { setConnecting(null); return; }
-    const from = connecting.direction === 'out' ? connecting : { blockId, portKey };
-    const to = connecting.direction === 'in' ? connecting : { blockId, portKey };
+    if (!connecting) {
+      setConnecting({ blockId, direction });
+      return;
+    }
+    if (connecting.blockId === blockId || connecting.direction === direction) {
+      setConnecting(null);
+      return;
+    }
+    const fromId = connecting.direction === 'out' ? connecting.blockId : blockId;
+    const toId   = connecting.direction === 'out' ? blockId : connecting.blockId;
+    const fromBlock = blocks.find(b => b.id === fromId);
+    const toBlock   = blocks.find(b => b.id === toId);
+    const kind = detectLineKind(fromBlock, toBlock);
+    const signals = autoMapSignals(fromBlock, toBlock);
     pushHistory(blocks, connections);
     setConnections(cs => {
-      const filtered = cs.filter(c => !(c.to.blockId === to.blockId && c.to.portKey === to.portKey));
-      const fromBlock = blocks.find(b => b.id === from.blockId);
-      const toBlock = blocks.find(b => b.id === to.blockId);
-      const kind = detectLineKind(fromBlock, toBlock);
-      return [...filtered, {
-        from: { blockId: from.blockId, portKey: from.portKey },
-        to: { blockId: to.blockId, portKey: to.portKey },
+      // 동일 from→to 라인 중복 방지
+      if (cs.some(c => c.from.blockId === fromId && c.to.blockId === toId)) return cs;
+      return [...cs, {
+        from: { blockId: fromId },
+        to:   { blockId: toId },
         kind,
+        signals,
         lineParams: defaultLineParams(kind),
         midOffsetX: 0,
       }];
@@ -988,12 +1034,16 @@ function HPWDStudio() {
       const def = TYPES[b.type];
       const inputs = {};
       def.inputs.forEach(inp => {
-        const conn = conns.find(c => c.to.blockId === b.id && c.to.portKey === inp.key);
-        if (conn) {
-          const src = prevBlocks.find(bb => bb.id === conn.from.blockId);
-          if (src?.outputs?.[conn.from.portKey] !== undefined) {
-            inputs[inp.key] = src.outputs[conn.from.portKey];
+        // b의 input port에 매핑된 signal pair를 갖는 connection 찾기
+        for (const c of conns) {
+          if (c.to.blockId !== b.id) continue;
+          const sig = (c.signals || []).find(s => s.toPort === inp.key);
+          if (!sig) continue;
+          const src = prevBlocks.find(bb => bb.id === c.from.blockId);
+          if (src?.outputs?.[sig.fromPort] !== undefined) {
+            inputs[inp.key] = src.outputs[sig.fromPort];
           }
+          break;
         }
       });
       const newState = b.state ? { ...b.state } : {};
@@ -1343,10 +1393,14 @@ function HPWDStudio() {
       return;
     }
     const conns = connections.filter(c => c.to.blockId === plotterBlock.id);
-    const signals = conns.map(c => {
+    const signals = conns.flatMap(c => {
       const src = blocks.find(b => b.id === c.from.blockId);
-      return src ? { key: `${src.name}.${c.from.portKey}`, port: c.to.portKey } : null;
-    }).filter(Boolean);
+      if (!src) return [];
+      return (c.signals || []).map(sig => ({
+        key: `${src.name}.${sig.fromPort}`,
+        port: sig.toPort,
+      }));
+    });
 
     if (signals.length === 0) {
       alert(`${plotterBlock.name}에 연결된 신호가 없습니다.`);
@@ -1362,22 +1416,32 @@ function HPWDStudio() {
     downloadCsv(`${plotterBlock.name}_${Date.now()}.csv`, rows);
   };
 
-  const getPortPos = (block, portKey, direction) => {
+  /* 블록의 connector(좌측 in / 우측 out) 위치 — 블록 가운데 높이.
+   * 라인은 모듈 단위로 잇는다. */
+  const getBlockHeight = (block) => {
     const def = TYPES[block.type];
-    const ports = direction === 'in' ? def.inputs : def.outputs;
-    const idx = ports.findIndex(p => p.key === portKey);
-    if (idx === -1) return null;
-    return { x: direction === 'in' ? block.x : block.x + 180, y: block.y + 43 + idx * 20 };
+    const numIO = Math.max(def.inputs.length, def.outputs.length);
+    const baseMin = block.type === 'display' ? 70 : 80;
+    return Math.max(baseMin, 45 + numIO * 20 + 10);
+  };
+  const getBlockConnectorPos = (block, direction) => {
+    if (!block) return null;
+    const h = getBlockHeight(block);
+    return {
+      x: direction === 'in' ? block.x : block.x + 180,
+      y: block.y + h / 2,
+    };
   };
 
   const selectedBlock = blocks.find(b => b.id === selected);
   const selectedDef = selectedBlock ? TYPES[selectedBlock.type] : null;
 
   const plotterData = blocks.filter(b => b.type === 'plotter').map(pb => {
-    const series = connections.filter(c => c.to.blockId === pb.id).map(c => {
+    const series = connections.filter(c => c.to.blockId === pb.id).flatMap(c => {
       const src = blocks.find(b => b.id === c.from.blockId);
-      return src ? `${src.name}.${c.from.portKey}` : null;
-    }).filter(Boolean);
+      if (!src) return [];
+      return (c.signals || []).map(sig => `${src.name}.${sig.fromPort}`);
+    });
     return { id: pb.id, name: pb.name, series };
   });
 
@@ -1559,8 +1623,8 @@ function HPWDStudio() {
                 const fromBlock = blocks.find(b => b.id === c.from.blockId);
                 const toBlock = blocks.find(b => b.id === c.to.blockId);
                 if (!fromBlock || !toBlock) return null;
-                const fromPos = getPortPos(fromBlock, c.from.portKey, 'out');
-                const toPos = getPortPos(toBlock, c.to.portKey, 'in');
+                const fromPos = getBlockConnectorPos(fromBlock, 'out');
+                const toPos = getBlockConnectorPos(toBlock, 'in');
                 if (!fromPos || !toPos) return null;
 
                 // 장애물: 자기 자신의 source/target을 제외한 다른 블록들
@@ -1594,23 +1658,42 @@ function HPWDStudio() {
                     onMouseEnter={() => setHoveredConn(i)}
                     onMouseLeave={() => setHoveredConn(h => h === i ? null : h)}
                   >
-                    {/* 가시 직교선 — kind에 따라 스타일 분기 */}
+                    {/* 가시 라인 — kind에 따라 layered design */}
                     {(() => {
                       const lk = LINE_KINDS[c.kind || 'refrigerant'] || LINE_KINDS.refrigerant;
-                      const baseW = lk.width;
-                      const w = isSelected ? baseW + 1.5 : (highlight ? baseW + 0.8 : baseW);
-                      const stroke = isSelected ? '#0284c7' : (highlight ? '#0891b2' : lk.color);
+                      // selected/highlight 상태 색상 오버레이
+                      const overlay = isSelected ? '#0284c7' : (highlight ? '#0891b2' : null);
+                      const baseColor = lk.color;
+
+                      if ((c.kind || 'refrigerant') === 'refrigerant') {
+                        // 동관: 외곽 진한 + 본체 빨강 + 상단 하이라이트
+                        return (
+                          <g>
+                            <path d={path.d} stroke="#7f1d1d" strokeWidth={7} fill="none" strokeLinejoin="round" strokeLinecap="round"/>
+                            <path d={path.d} stroke={overlay || baseColor} strokeWidth={5} fill="none" strokeLinejoin="round" strokeLinecap="round" className="transition-colors"/>
+                            <path d={path.d} stroke="#fca5a5" strokeWidth={1.4} fill="none" opacity={0.65} strokeLinejoin="round" strokeLinecap="round"
+                              transform="translate(0,-1.2)"/>
+                          </g>
+                        );
+                      }
+                      if (c.kind === 'air') {
+                        // 덕트: 두꺼운 외곽 + 회색 body + 중심선 점선
+                        return (
+                          <g>
+                            <path d={path.d} stroke="#1f2937" strokeWidth={11} fill="none" strokeLinejoin="round" strokeLinecap="butt"/>
+                            <path d={path.d} stroke={overlay || '#cbd5e1'} strokeWidth={9} fill="none" strokeLinejoin="round" strokeLinecap="butt" className="transition-colors"/>
+                            <path d={path.d} stroke="#475569" strokeWidth={1} strokeDasharray="5 4" fill="none" strokeLinejoin="round" strokeLinecap="butt"/>
+                          </g>
+                        );
+                      }
+                      // water (rubber hose): 진한 파랑 외곽 + 메인 파랑 + 옅은 내부 라인
                       return (
-                        <path
-                          d={path.d}
-                          stroke={stroke}
-                          strokeWidth={w}
-                          strokeDasharray={lk.dasharray}
-                          fill="none"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          className="transition-colors"
-                        />
+                        <g>
+                          <path d={path.d} stroke="#1e3a8a" strokeWidth={6} fill="none" strokeLinejoin="round" strokeLinecap="round"/>
+                          <path d={path.d} stroke={overlay || baseColor} strokeWidth={4} fill="none" strokeLinejoin="round" strokeLinecap="round" className="transition-colors"/>
+                          <path d={path.d} stroke="#bfdbfe" strokeWidth={1} fill="none" opacity={0.7} strokeLinejoin="round" strokeLinecap="round"
+                            transform="translate(0,-0.8)"/>
+                        </g>
                       );
                     })()}
                     {/* 전체 라인 히트 영역 (클릭 시 연결선 선택) */}
@@ -1718,7 +1801,7 @@ function HPWDStudio() {
               {connecting && (() => {
                 const block = blocks.find(b => b.id === connecting.blockId);
                 if (!block) return null;
-                const pos = getPortPos(block, connecting.portKey, connecting.direction);
+                const pos = getBlockConnectorPos(block, connecting.direction);
                 if (!pos) return null;
                 const target = { x: mousePos.x, y: mousePos.y };
                 const path = connecting.direction === 'out'
@@ -1785,76 +1868,104 @@ function HPWDStudio() {
                         </div>
                       );
                     })()}
-                    {def.inputs.map((p, i) => {
-                      const isActive = connecting && connecting.blockId === block.id && connecting.portKey === p.key && connecting.direction === 'in';
-                      // 원 중심이 block.y + 43 + i*20에 오도록 배치 (getPortPos와 일치)
-                      // relative div가 block.y+24부터 시작 → 상대 중심 Y = 19 + i*20
-                      // wrapper 높이 16px, items-center로 원(12px) 중심이 wrapper 중앙(8px 지점)에 옴
-                      // 따라서 wrapper top = 19+i*20 - 8 = 11+i*20
+                    {def.inputs.map((p, i) => null)}
+                    {def.outputs.map((p, i) => null)}
+
+                    {/* Block 내부: input/output 시그널 list (read-only). display는 위에서 큰 값 표시. */}
+                    {block.type !== 'display' && (
+                      <div className="absolute inset-0 px-2 pt-1.5 pb-1.5 flex flex-col pointer-events-none overflow-hidden">
+                        {def.inputs.length > 0 && (
+                          <div className="space-y-0.5">
+                            {def.inputs.slice(0, 5).map(p => (
+                              <div key={p.key} className="text-[9px] font-mono text-slate-500 truncate flex items-center gap-1" title={`${p.label} [${p.unit||''}]`}>
+                                <span className="text-cyan-600">◀</span>
+                                <span className="truncate">{p.label}</span>
+                              </div>
+                            ))}
+                            {def.inputs.length > 5 && (
+                              <div className="text-[8.5px] font-mono text-slate-400">+{def.inputs.length - 5}</div>
+                            )}
+                          </div>
+                        )}
+                        <div className="flex-1"/>
+                        {def.outputs.length > 0 && (
+                          <div className="space-y-0.5 text-right">
+                            {def.outputs.slice(0, 5).map(p => (
+                              <div key={p.key} className="text-[9px] font-mono truncate" title={`${p.label} [${p.unit||''}]`}>
+                                <span className="text-slate-500 truncate">{p.label}</span>
+                                <span className="text-amber-600 ml-1">▶</span>
+                                {block.outputs[p.key] !== undefined && (
+                                  <span className="ml-1 text-amber-700 font-semibold">
+                                    {typeof block.outputs[p.key] === 'number' ? block.outputs[p.key].toFixed(1) : ''}
+                                  </span>
+                                )}
+                              </div>
+                            ))}
+                            {def.outputs.length > 5 && (
+                              <div className="text-[8.5px] font-mono text-slate-400">+{def.outputs.length - 5}</div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* 좌측 단일 input connector (블록 정중앙 높이) */}
+                    {def.inputs.length > 0 && (() => {
+                      const isActive = connecting && connecting.blockId === block.id && connecting.direction === 'in';
                       return (
                         <div
-                          key={p.key}
                           data-port="in"
                           onMouseDown={(e) => e.stopPropagation()}
-                          onClick={(e) => handlePortClick(e, block.id, p.key, 'in')}
-                          className={`absolute flex items-center cursor-crosshair rounded transition-colors ${
+                          onClick={(e) => handleBlockConnectorClick(e, block.id, 'in')}
+                          className={`absolute flex items-center justify-center cursor-crosshair rounded-full transition-colors ${
                             isActive ? 'bg-cyan-100' : 'hover:bg-cyan-50'
                           }`}
                           style={{
-                            left: -12,        // 원 중심이 block.x에 오려면: -12(left) + 6(padding) + 6(원 반지름) = 0
-                            top: 11 + i * 20,
-                            height: 16,
-                            paddingLeft: 6,
-                            paddingRight: 4,
+                            left: -10,
+                            top: (height - 24) / 2 - 10,
+                            width: 20,
+                            height: 20,
                           }}
-                          title={`${p.label} [${p.unit}]`}
+                          title={`${block.name} ← in (${def.inputs.length} signals · auto-mapped)`}
                         >
                           <div
-                            className={`w-3 h-3 rounded-full border-2 bg-white shrink-0 pointer-events-none transition-colors ${
-                              isActive ? 'bg-cyan-500 border-cyan-600' : 'border-slate-400'
+                            className={`w-3.5 h-3.5 rounded-full border-2 bg-white shrink-0 pointer-events-none transition-colors ${
+                              isActive ? 'border-cyan-600' : 'border-slate-500'
                             }`}
+                            style={isActive ? { backgroundColor: '#06b6d4' } : {}}
                           />
-                          <span className="text-[9px] text-slate-600 ml-1 font-mono leading-none pointer-events-none whitespace-nowrap">{p.label}</span>
                         </div>
                       );
-                    })}
-                    {def.outputs.map((p, i) => {
-                      const isActive = connecting && connecting.blockId === block.id && connecting.portKey === p.key && connecting.direction === 'out';
-                      // 거울 배치: 원 중심이 block.x + 180에 오도록
+                    })()}
+
+                    {/* 우측 단일 output connector */}
+                    {def.outputs.length > 0 && (() => {
+                      const isActive = connecting && connecting.blockId === block.id && connecting.direction === 'out';
                       return (
                         <div
-                          key={p.key}
                           data-port="out"
                           onMouseDown={(e) => e.stopPropagation()}
-                          onClick={(e) => handlePortClick(e, block.id, p.key, 'out')}
-                          className={`absolute flex items-center flex-row-reverse cursor-crosshair rounded transition-colors ${
+                          onClick={(e) => handleBlockConnectorClick(e, block.id, 'out')}
+                          className={`absolute flex items-center justify-center cursor-crosshair rounded-full transition-colors ${
                             isActive ? 'bg-amber-100' : 'hover:bg-amber-50'
                           }`}
                           style={{
-                            right: -12,
-                            top: 11 + i * 20,
-                            height: 16,
-                            paddingRight: 6,
-                            paddingLeft: 4,
+                            right: -10,
+                            top: (height - 24) / 2 - 10,
+                            width: 20,
+                            height: 20,
                           }}
-                          title={`${p.label} [${p.unit}]`}
+                          title={`${block.name} → out (${def.outputs.length} signals · auto-mapped)`}
                         >
                           <div
-                            className={`w-3 h-3 rounded-full border-2 bg-white shrink-0 pointer-events-none transition-colors ${
-                              isActive ? 'bg-amber-500 border-amber-600' : 'border-slate-400'
+                            className={`w-3.5 h-3.5 rounded-full border-2 bg-white shrink-0 pointer-events-none transition-colors ${
+                              isActive ? 'border-amber-600' : 'border-slate-500'
                             }`}
+                            style={isActive ? { backgroundColor: '#f59e0b' } : {}}
                           />
-                          <span className="text-[9px] text-slate-600 mr-1 font-mono leading-none pointer-events-none whitespace-nowrap">
-                            {p.label}
-                            {block.outputs[p.key] !== undefined && (
-                              <span className="ml-1 text-amber-700 font-semibold">
-                                {typeof block.outputs[p.key] === 'number' ? block.outputs[p.key].toFixed(1) : ''}
-                              </span>
-                            )}
-                          </span>
                         </div>
                       );
-                    })}
+                    })()}
                   </div>
                 </div>
               );
@@ -1927,10 +2038,9 @@ function HPWDStudio() {
               const toBlock = blocks.find(b => b.id === conn.to.blockId);
               const fromDef = fromBlock ? TYPES[fromBlock.type] : null;
               const toDef = toBlock ? TYPES[toBlock.type] : null;
-              const fromPort = fromDef?.outputs?.find(p => p.key === conn.from.portKey);
-              const toPort = toDef?.inputs?.find(p => p.key === conn.to.portKey);
               const kind = conn.kind || 'refrigerant';
               const lk = LINE_KINDS[kind];
+              const sigs = conn.signals || [];
 
               const updateConn = (updates) => {
                 setConnections(cs => cs.map((cc, i) => i === idx ? { ...cc, ...updates } : cc));
@@ -1941,9 +2051,23 @@ function HPWDStudio() {
               const updateLineParam = (key, val) => {
                 updateConn({ lineParams: { ...(conn.lineParams || {}), [key]: val } });
               };
-              const changePort = (side, newPortKey) => {
-                if (side === 'from') updateConn({ from: { ...conn.from, portKey: newPortKey } });
-                else updateConn({ to: { ...conn.to, portKey: newPortKey } });
+              const updateSignal = (sigIdx, side, val) => {
+                const next = sigs.map((s, i) => i === sigIdx
+                  ? (side === 'from' ? { ...s, fromPort: val } : { ...s, toPort: val })
+                  : s);
+                updateConn({ signals: next });
+              };
+              const removeSignal = (sigIdx) => {
+                updateConn({ signals: sigs.filter((_, i) => i !== sigIdx) });
+              };
+              const addSignal = () => {
+                const firstFrom = (fromDef?.outputs || [])[0];
+                const firstTo   = (toDef?.inputs || [])[0];
+                if (!firstFrom || !firstTo) return;
+                updateConn({ signals: [...sigs, { fromPort: firstFrom.key, toPort: firstTo.key }] });
+              };
+              const remap = () => {
+                updateConn({ signals: autoMapSignals(fromBlock, toBlock) });
               };
 
               return (
@@ -1953,6 +2077,13 @@ function HPWDStudio() {
                     <span className="inline-block w-3 h-3 rounded-sm" style={{ background: lk.color, border: lk.dasharray ? `1px dashed ${lk.color}` : 'none' }}></span>
                     <div className="text-[12px] font-semibold text-slate-900">{lk.name}</div>
                     <span className="ml-auto text-[9px] font-mono px-1.5 py-0.5 bg-slate-100 rounded text-slate-500">#{idx}</span>
+                  </div>
+
+                  {/* From → To header */}
+                  <div className="flex items-center gap-2 text-[11px]">
+                    <span className="font-mono text-slate-700 truncate">{fromBlock?.name || '?'}</span>
+                    <span className="text-slate-400">→</span>
+                    <span className="font-mono text-slate-700 truncate">{toBlock?.name || '?'}</span>
                   </div>
 
                   {/* Line kind selector */}
@@ -1970,7 +2101,7 @@ function HPWDStudio() {
                         >
                           <div className="flex items-center justify-center gap-1.5">
                             <span className="inline-block" style={{
-                              width: 14, height: 0,
+                              width: 18, height: 0,
                               borderTop: `${def.width}px ${def.dasharray ? 'dashed' : 'solid'} ${def.color}`,
                             }}></span>
                           </div>
@@ -1981,51 +2112,54 @@ function HPWDStudio() {
                     <div className="text-[9.5px] text-slate-400 mt-1.5 leading-snug">{lk.desc}</div>
                   </div>
 
-                  {/* Signal mapping (어떤 물리량이 흐르는지) */}
+                  {/* Multi-signal mapping */}
                   <div>
-                    <div className="text-[10px] font-semibold uppercase tracking-widest text-slate-500 mb-1.5">
-                      Signals · 운반 물리량
+                    <div className="flex items-center justify-between mb-1.5">
+                      <div className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+                        Signals · 운반 물리량 ({sigs.length})
+                      </div>
+                      <button
+                        onClick={remap}
+                        className="text-[9px] font-mono px-1.5 py-0.5 text-cyan-700 border border-cyan-200 rounded hover:bg-cyan-50"
+                        title="호환 시그널 자동 매핑"
+                      >↻ AUTO</button>
                     </div>
-                    <div className="bg-slate-50 rounded border border-slate-200 p-2 space-y-2">
-                      {/* From */}
-                      <div className="grid grid-cols-[40px_1fr] items-center gap-2">
-                        <span className="text-[9px] font-mono uppercase tracking-wider text-slate-500">From</span>
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-[10.5px] text-slate-700 truncate">{fromDef?.name || '?'}</span>
-                          <span className="text-slate-300">·</span>
+                    <div className="bg-slate-50 rounded border border-slate-200 divide-y divide-slate-200">
+                      {sigs.length === 0 ? (
+                        <div className="p-3 text-[10.5px] text-slate-400 italic text-center">매핑된 시그널이 없습니다</div>
+                      ) : sigs.map((sig, sigIdx) => (
+                        <div key={sigIdx} className="grid grid-cols-[1fr_12px_1fr_22px] items-center gap-1.5 p-1.5">
                           <select
-                            value={conn.from.portKey}
-                            onChange={e => changePort('from', e.target.value)}
-                            className="flex-1 text-[10.5px] font-mono bg-white border border-slate-300 rounded px-1.5 py-0.5 text-slate-900 focus:outline-none focus:border-cyan-500"
+                            value={sig.fromPort}
+                            onChange={e => updateSignal(sigIdx, 'from', e.target.value)}
+                            className="text-[10px] font-mono bg-white border border-slate-300 rounded px-1 py-0.5 text-slate-900 focus:outline-none focus:border-cyan-500 min-w-0"
                           >
                             {(fromDef?.outputs || []).map(p => (
                               <option key={p.key} value={p.key}>{p.label}{p.unit ? ` [${p.unit}]` : ''}</option>
                             ))}
                           </select>
-                        </div>
-                      </div>
-                      <div className="text-center text-slate-400 text-[10px]">↓</div>
-                      {/* To */}
-                      <div className="grid grid-cols-[40px_1fr] items-center gap-2">
-                        <span className="text-[9px] font-mono uppercase tracking-wider text-slate-500">To</span>
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-[10.5px] text-slate-700 truncate">{toDef?.name || '?'}</span>
-                          <span className="text-slate-300">·</span>
+                          <span className="text-slate-400 text-[10px] text-center">→</span>
                           <select
-                            value={conn.to.portKey}
-                            onChange={e => changePort('to', e.target.value)}
-                            className="flex-1 text-[10.5px] font-mono bg-white border border-slate-300 rounded px-1.5 py-0.5 text-slate-900 focus:outline-none focus:border-cyan-500"
+                            value={sig.toPort}
+                            onChange={e => updateSignal(sigIdx, 'to', e.target.value)}
+                            className="text-[10px] font-mono bg-white border border-slate-300 rounded px-1 py-0.5 text-slate-900 focus:outline-none focus:border-cyan-500 min-w-0"
                           >
                             {(toDef?.inputs || []).map(p => (
                               <option key={p.key} value={p.key}>{p.label}{p.unit ? ` [${p.unit}]` : ''}</option>
                             ))}
                           </select>
+                          <button
+                            onClick={() => removeSignal(sigIdx)}
+                            className="text-slate-400 hover:text-red-500 text-[14px] leading-none"
+                            title="시그널 매핑 제거"
+                          >×</button>
                         </div>
-                      </div>
+                      ))}
                     </div>
-                    <div className="text-[9px] text-slate-400 mt-1 italic leading-snug">
-                      현재 1라인 = 1신호 매핑. 향후 multi-signal 운반 지원 예정.
-                    </div>
+                    <button
+                      onClick={addSignal}
+                      className="mt-1.5 w-full text-[10px] font-mono py-1 text-slate-600 border border-slate-200 border-dashed rounded hover:bg-slate-50 hover:border-slate-300"
+                    >+ 시그널 추가</button>
                   </div>
 
                   {/* Line physical parameters */}
@@ -2178,7 +2312,9 @@ function HPWDStudio() {
                         </div>
                       );
                     })}
-                    {selectedDef.inputs.some(p => !connections.find(c => c.to.blockId === selectedBlock.id && c.to.portKey === p.key)) && (
+                    {selectedDef.inputs.some(p =>
+                      !connections.find(c => c.to.blockId === selectedBlock.id && (c.signals || []).some(s => s.toPort === p.key))
+                    ) && (
                       <div className="text-[9px] text-amber-600 mt-1 flex items-center gap-1">
                         <span>⚠</span> 일부 입력이 연결되지 않음
                       </div>
@@ -2233,7 +2369,7 @@ function HPWDStudio() {
       <div className="h-6 bg-slate-50 border-t border-slate-200 flex items-center px-3 text-[10px] text-slate-500 gap-4 shrink-0 font-mono">
         <span>
           <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1"></span>
-          Connecting: {connecting ? `${blocks.find(b => b.id === connecting.blockId)?.name}.${connecting.portKey} (${connecting.direction})` : 'none'}
+          Connecting: {connecting ? `${blocks.find(b => b.id === connecting.blockId)?.name} (${connecting.direction})` : 'none'}
         </span>
         <span>({mousePos.x.toFixed(0)}, {mousePos.y.toFixed(0)})</span>
         {(selectedIds.length > 0 || selectedConnIds.length > 0) && (
