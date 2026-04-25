@@ -664,6 +664,9 @@ function HPWDStudio() {
   const [draggingConn, setDraggingConn] = useState(null);
   const [hoveredConn, setHoveredConn] = useState(null);
   const [hoveredBlockId, setHoveredBlockId] = useState(null);
+  const [resizing, setResizing] = useState(null); // {blockId, startSize, startX, startY}
+  const [editingNameId, setEditingNameId] = useState(null);
+  const [editingName, setEditingName] = useState('');
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
 
   // 박스 드래그 선택 상태: {startX, startY, curX, curY}
@@ -853,7 +856,8 @@ function HPWDStudio() {
         // 블록: bbox가 완전히 포함되면 선택
         const pickedBlocks = blocks.filter(b => {
           const h = getBlockHeight(b);
-          return b.x >= x1 && b.y >= y1 && (b.x + 180) <= x2 && (b.y + h) <= y2;
+          const w = getBlockWidth(b);
+          return b.x >= x1 && b.y >= y1 && (b.x + w) <= x2 && (b.y + h) <= y2;
         }).map(b => b.id);
 
         // 연결선: source와 target 둘 다 박스 안 블록일 때만 선택
@@ -1119,6 +1123,26 @@ function HPWDStudio() {
   connectionsRef.current = connections;
   const blocksRef = useRef(blocks);
   blocksRef.current = blocks;
+
+  /* 이미지 블록 리사이즈 — 우하단 핸들 드래그 시 imageSize 업데이트.
+   * aspect ratio 1:1 유지 (정사각). dx, dy 중 큰 변화량을 사용. */
+  useEffect(() => {
+    if (!resizing) return;
+    const onMove = (e) => {
+      const dx = e.clientX - resizing.startX;
+      const dy = e.clientY - resizing.startY;
+      const delta = Math.abs(dx) > Math.abs(dy) ? dx : dy;
+      const newSize = Math.max(80, Math.min(400, resizing.startSize + delta));
+      setBlocks(bs => bs.map(b => b.id === resizing.blockId ? { ...b, imageSize: newSize } : b));
+    };
+    const onUp = () => setResizing(null);
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, [resizing]);
 
   useEffect(() => {
     if (!simState.running) return;
@@ -1442,17 +1466,24 @@ function HPWDStudio() {
     const def = TYPES[block.type];
     const numIO = Math.max(def.inputs.length, def.outputs.length);
     if (block.type === 'display') return Math.max(70, 45 + numIO * 20 + 10);
-    if (def.image) return 160; // 이미지 블록은 정사각에 가깝게 — 헤더 없음, 슬롯 4개 균등
+    if (def.image) return block.imageSize || 160; // 사용자 조절 가능, default 160
     return Math.max(80, 45 + numIO * 20 + 10);
+  };
+  /* 블록 가로 폭 — 비이미지 블록은 항상 180, 이미지 블록은 정사각 (imageSize) */
+  const getBlockWidth = (block) => {
+    const def = TYPES[block.type];
+    if (def.image) return block.imageSize || 160;
+    return 180;
   };
   const getBlockConnectorPos = (block, direction, slot = 0) => {
     if (!block) return null;
     const def = TYPES[block.type];
+    const w = getBlockWidth(block);
     const h = getBlockHeight(block);
     const headerH = def.image ? 0 : 24; // 이미지 블록은 헤더 없음
     const slotY = headerH + (h - headerH) * ((slot ?? 0) + 1) / (SLOTS_PER_SIDE + 1);
     return {
-      x: direction === 'in' ? block.x : block.x + 180,
+      x: direction === 'in' ? block.x : block.x + w,
       y: block.y + slotY,
     };
   };
@@ -1656,7 +1687,8 @@ function HPWDStudio() {
                   .filter(b => b.id !== fromBlock.id && b.id !== toBlock.id)
                   .map(b => {
                     const h = getBlockHeight(b);
-                    return { x: b.x, y: b.y, w: 180, h };
+                    const w = getBlockWidth(b);
+                    return { x: b.x, y: b.y, w, h };
                   });
 
                 const path = getOrthogonalPath(fromPos, toPos, {
@@ -1865,6 +1897,7 @@ function HPWDStudio() {
               const Icon = def.icon;
               const isSel = selectedIds.includes(block.id);
               const height = getBlockHeight(block);
+              const width = getBlockWidth(block);
               return (
                 <div
                   key={block.id}
@@ -1874,7 +1907,7 @@ function HPWDStudio() {
                     : `rounded-md bg-white shadow-sm ${isSel ? 'ring-2 ring-cyan-500 ring-offset-1 shadow-md' : 'hover:shadow-md'}`
                   }`}
                   style={{
-                    left: block.x, top: block.y, width: 180, height,
+                    left: block.x, top: block.y, width, height,
                     border: def.image ? 'none' : `1px solid ${isSel ? def.color : '#e2e8f0'}`,
                     willChange: 'transform',
                   }}
@@ -1887,7 +1920,35 @@ function HPWDStudio() {
                     <div className="h-6 px-2 flex items-center gap-1.5 border-b rounded-t-md"
                          style={{ borderColor: def.color + '30', background: def.color + '0d' }}>
                       <Icon size={11} style={{ color: def.color }} />
-                      <span className="text-[10px] font-semibold text-slate-800 flex-1 truncate">{block.name}</span>
+                      {editingNameId === block.id ? (
+                        <input
+                          autoFocus
+                          value={editingName}
+                          onChange={(e) => setEditingName(e.target.value)}
+                          onBlur={() => {
+                            if (editingName.trim()) {
+                              setBlocks(bs => bs.map(b => b.id === block.id ? { ...b, name: editingName.trim() } : b));
+                            }
+                            setEditingNameId(null);
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') e.target.blur();
+                            if (e.key === 'Escape') { setEditingNameId(null); }
+                          }}
+                          onMouseDown={(e) => e.stopPropagation()}
+                          className="flex-1 text-[10px] font-semibold text-slate-800 bg-white border border-cyan-400 rounded px-1 outline-none min-w-0"
+                        />
+                      ) : (
+                        <span
+                          className="text-[10px] font-semibold text-slate-800 flex-1 truncate cursor-text"
+                          onDoubleClick={(e) => {
+                            e.stopPropagation();
+                            setEditingNameId(block.id);
+                            setEditingName(block.name);
+                          }}
+                          title="더블클릭하여 이름 수정"
+                        >{block.name}</span>
+                      )}
                       <span className="text-[9px] text-slate-400 font-mono">T{def.typeNo}</span>
                     </div>
                   )}
@@ -1940,19 +2001,6 @@ function HPWDStudio() {
 
                     {block.type !== 'display' && !def.image && (
                       <div className="absolute inset-0 px-2 pt-1.5 pb-1.5 flex flex-col pointer-events-none overflow-hidden">
-                        {def.inputs.length > 0 && (
-                          <div className="space-y-0.5">
-                            {def.inputs.slice(0, 5).map(p => (
-                              <div key={p.key} className="text-[9px] font-mono text-slate-500 truncate flex items-center gap-1" title={`${p.label} [${p.unit||''}]`}>
-                                <span className="text-cyan-600">◀</span>
-                                <span className="truncate">{p.label}</span>
-                              </div>
-                            ))}
-                            {def.inputs.length > 5 && (
-                              <div className="text-[8.5px] font-mono text-slate-400">+{def.inputs.length - 5}</div>
-                            )}
-                          </div>
-                        )}
                         <div className="flex-1"/>
                         {def.outputs.length > 0 && (
                           <div className="space-y-0.5 text-right">
@@ -2055,18 +2103,69 @@ function HPWDStudio() {
                       );
                     })()}
                   </div>
-                  {/* 이미지 블록 이름 라벨 (이미지 아래 floating) */}
+                  {/* 이미지 블록 이름 라벨 (이미지 아래 floating, 더블클릭으로 수정) */}
                   {def.image && (
+                    editingNameId === block.id ? (
+                      <input
+                        autoFocus
+                        value={editingName}
+                        onChange={(e) => setEditingName(e.target.value)}
+                        onBlur={() => {
+                          if (editingName.trim()) {
+                            setBlocks(bs => bs.map(b => b.id === block.id ? { ...b, name: editingName.trim() } : b));
+                          }
+                          setEditingNameId(null);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') e.target.blur();
+                          if (e.key === 'Escape') { setEditingNameId(null); }
+                        }}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        className="absolute left-0 right-0 -bottom-5 mx-auto text-center text-[10px] font-mono font-semibold bg-white border border-cyan-400 rounded px-1 outline-none"
+                        style={{ maxWidth: width }}
+                      />
+                    ) : (
+                      <div
+                        onDoubleClick={(e) => {
+                          e.stopPropagation();
+                          setEditingNameId(block.id);
+                          setEditingName(block.name);
+                        }}
+                        className="absolute left-0 right-0 -bottom-5 text-center text-[10px] font-mono font-semibold truncate select-none cursor-text"
+                        style={{
+                          color: isSel ? '#0891b2' : '#334155',
+                          textShadow: '0 1px 2px white, 0 -1px 2px white, 1px 0 2px white, -1px 0 2px white, 0 0 4px white',
+                        }}
+                        title="더블클릭하여 이름 수정"
+                      >
+                        {block.name}
+                        <span className="ml-1.5 text-[8.5px] text-slate-400 font-normal">T{def.typeNo}</span>
+                      </div>
+                    )
+                  )}
+
+                  {/* 이미지 블록 resize 핸들 — 우하단, hover 또는 selected 시 보임 */}
+                  {def.image && (hoveredBlockId === block.id || isSel || resizing?.blockId === block.id) && (
                     <div
-                      className="absolute left-0 right-0 -bottom-5 text-center text-[10px] font-mono font-semibold truncate pointer-events-none select-none"
-                      style={{
-                        color: isSel ? '#0891b2' : '#334155',
-                        textShadow: '0 1px 2px white, 0 -1px 2px white, 1px 0 2px white, -1px 0 2px white, 0 0 4px white',
+                      onMouseDown={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        setResizing({
+                          blockId: block.id,
+                          startSize: block.imageSize || 160,
+                          startX: e.clientX,
+                          startY: e.clientY,
+                        });
                       }}
-                    >
-                      {block.name}
-                      <span className="ml-1.5 text-[8.5px] text-slate-400 font-normal">T{def.typeNo}</span>
-                    </div>
+                      className="absolute bottom-0 right-0 cursor-nwse-resize"
+                      style={{
+                        width: 16, height: 16,
+                        borderRight: '3px solid #06b6d4',
+                        borderBottom: '3px solid #06b6d4',
+                        borderBottomRightRadius: 3,
+                      }}
+                      title="드래그하여 크기 조절 (1:1 비율)"
+                    />
                   )}
                 </div>
               );
