@@ -1441,14 +1441,16 @@ function HPWDStudio() {
   const getBlockHeight = (block) => {
     const def = TYPES[block.type];
     const numIO = Math.max(def.inputs.length, def.outputs.length);
-    const baseMin = block.type === 'display' ? 70 : (def.image ? 130 : 80);
-    return Math.max(baseMin, 45 + numIO * 20 + 10);
+    if (block.type === 'display') return Math.max(70, 45 + numIO * 20 + 10);
+    if (def.image) return 160; // 이미지 블록은 정사각에 가깝게 — 헤더 없음, 슬롯 4개 균등
+    return Math.max(80, 45 + numIO * 20 + 10);
   };
   const getBlockConnectorPos = (block, direction, slot = 0) => {
     if (!block) return null;
+    const def = TYPES[block.type];
     const h = getBlockHeight(block);
-    // 슬롯은 헤더(24px) 아래의 (h-24) 영역에서 균등 분배
-    const slotY = 24 + (h - 24) * ((slot ?? 0) + 1) / (SLOTS_PER_SIDE + 1);
+    const headerH = def.image ? 0 : 24; // 이미지 블록은 헤더 없음
+    const slotY = headerH + (h - headerH) * ((slot ?? 0) + 1) / (SLOTS_PER_SIDE + 1);
     return {
       x: direction === 'in' ? block.x : block.x + 180,
       y: block.y + slotY,
@@ -1867,23 +1869,29 @@ function HPWDStudio() {
                 <div
                   key={block.id}
                   ref={(el) => { if (el) blockRefsMap.current[block.id] = el; }}
-                  className={`absolute rounded-md bg-white shadow-sm ${isSel ? 'ring-2 ring-cyan-500 ring-offset-1 shadow-md' : 'hover:shadow-md'}`}
+                  className={`absolute ${def.image
+                    ? '' /* 이미지 블록: 박스 없음 (이미지만) */
+                    : `rounded-md bg-white shadow-sm ${isSel ? 'ring-2 ring-cyan-500 ring-offset-1 shadow-md' : 'hover:shadow-md'}`
+                  }`}
                   style={{
                     left: block.x, top: block.y, width: 180, height,
-                    border: `1px solid ${isSel ? def.color : '#e2e8f0'}`,
+                    border: def.image ? 'none' : `1px solid ${isSel ? def.color : '#e2e8f0'}`,
                     willChange: 'transform',
                   }}
                   onMouseDown={(e) => handleBlockMouseDown(e, block.id)}
                   onMouseEnter={() => setHoveredBlockId(block.id)}
                   onMouseLeave={() => setHoveredBlockId(prev => prev === block.id ? null : prev)}
                 >
-                  <div className="h-6 px-2 flex items-center gap-1.5 border-b rounded-t-md"
-                       style={{ borderColor: def.color + '30', background: def.color + '0d' }}>
-                    <Icon size={11} style={{ color: def.color }} />
-                    <span className="text-[10px] font-semibold text-slate-800 flex-1 truncate">{block.name}</span>
-                    <span className="text-[9px] text-slate-400 font-mono">T{def.typeNo}</span>
-                  </div>
-                  <div className="relative" style={{ height: height - 24 }}>
+                  {/* 헤더 — 이미지 없는 블록만 */}
+                  {!def.image && (
+                    <div className="h-6 px-2 flex items-center gap-1.5 border-b rounded-t-md"
+                         style={{ borderColor: def.color + '30', background: def.color + '0d' }}>
+                      <Icon size={11} style={{ color: def.color }} />
+                      <span className="text-[10px] font-semibold text-slate-800 flex-1 truncate">{block.name}</span>
+                      <span className="text-[9px] text-slate-400 font-mono">T{def.typeNo}</span>
+                    </div>
+                  )}
+                  <div className="relative" style={{ height: def.image ? height : height - 24 }}>
                     {/* Display 블록: 현재 값을 크게 표시 */}
                     {block.type === 'display' && (() => {
                       const val = block.lastInputs?.x;
@@ -1902,67 +1910,67 @@ function HPWDStudio() {
                     {def.inputs.map((p, i) => null)}
                     {def.outputs.map((p, i) => null)}
 
-                    {/* Block 내부: image가 있으면 이미지를 본체로, 없으면 시그널 list. display는 큰 값. */}
-                    {block.type !== 'display' && (
+                    {/* Block 내부: image가 있으면 이미지가 본체로 (박스 없음), 없으면 시그널 list. display는 큰 값. */}
+                    {block.type !== 'display' && def.image && (
+                      <>
+                        <img
+                          src={def.image}
+                          alt={def.name}
+                          className="absolute inset-0 w-full h-full object-contain pointer-events-none select-none"
+                          draggable={false}
+                          style={{
+                            filter: isSel
+                              ? 'drop-shadow(0 0 6px #06b6d4) drop-shadow(0 2px 4px rgba(0,0,0,0.2))'
+                              : 'drop-shadow(0 2px 4px rgba(0,0,0,0.18))',
+                          }}
+                        />
+                        {/* 실시간 출력값 mini overlay (이미지 상단) */}
+                        {def.outputs.length > 0 && def.outputs.some(p => block.outputs[p.key] !== undefined) && (
+                          <div className="absolute left-1 right-1 top-1 flex flex-wrap justify-end gap-x-1 gap-y-0 text-[8.5px] font-mono leading-tight pointer-events-none">
+                            {def.outputs.slice(0, 4).map(p => block.outputs[p.key] !== undefined && (
+                              <span key={p.key} className="bg-white/90 rounded px-1 truncate border border-slate-200/60 shadow-sm">
+                                <span className="text-slate-500">{p.label}=</span>
+                                <span className="text-amber-700 font-semibold">{typeof block.outputs[p.key] === 'number' ? block.outputs[p.key].toFixed(1) : String(block.outputs[p.key])}</span>
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </>
+                    )}
+
+                    {block.type !== 'display' && !def.image && (
                       <div className="absolute inset-0 px-2 pt-1.5 pb-1.5 flex flex-col pointer-events-none overflow-hidden">
-                        {def.image ? (
-                          <>
-                            <div className="flex-1 flex items-center justify-center min-h-0">
-                              <img
-                                src={def.image}
-                                alt={def.name}
-                                className="max-w-full max-h-full object-contain"
-                                draggable={false}
-                                style={{ filter: 'drop-shadow(0 1px 1px rgba(0,0,0,0.08))' }}
-                              />
-                            </div>
-                            {/* 실시간 출력값 mini overlay (이미지 하단) */}
-                            {def.outputs.length > 0 && def.outputs.some(p => block.outputs[p.key] !== undefined) && (
-                              <div className="absolute left-1.5 right-1.5 bottom-1 flex flex-wrap justify-end gap-x-1.5 gap-y-0 text-[8.5px] font-mono leading-tight bg-white/85 rounded px-1 py-0.5">
-                                {def.outputs.slice(0, 4).map(p => block.outputs[p.key] !== undefined && (
-                                  <span key={p.key} className="truncate">
-                                    <span className="text-slate-500">{p.label}=</span>
-                                    <span className="text-amber-700 font-semibold">{typeof block.outputs[p.key] === 'number' ? block.outputs[p.key].toFixed(1) : String(block.outputs[p.key])}</span>
+                        {def.inputs.length > 0 && (
+                          <div className="space-y-0.5">
+                            {def.inputs.slice(0, 5).map(p => (
+                              <div key={p.key} className="text-[9px] font-mono text-slate-500 truncate flex items-center gap-1" title={`${p.label} [${p.unit||''}]`}>
+                                <span className="text-cyan-600">◀</span>
+                                <span className="truncate">{p.label}</span>
+                              </div>
+                            ))}
+                            {def.inputs.length > 5 && (
+                              <div className="text-[8.5px] font-mono text-slate-400">+{def.inputs.length - 5}</div>
+                            )}
+                          </div>
+                        )}
+                        <div className="flex-1"/>
+                        {def.outputs.length > 0 && (
+                          <div className="space-y-0.5 text-right">
+                            {def.outputs.slice(0, 5).map(p => (
+                              <div key={p.key} className="text-[9px] font-mono truncate" title={`${p.label} [${p.unit||''}]`}>
+                                <span className="text-slate-500 truncate">{p.label}</span>
+                                <span className="text-amber-600 ml-1">▶</span>
+                                {block.outputs[p.key] !== undefined && (
+                                  <span className="ml-1 text-amber-700 font-semibold">
+                                    {typeof block.outputs[p.key] === 'number' ? block.outputs[p.key].toFixed(1) : ''}
                                   </span>
-                                ))}
-                              </div>
-                            )}
-                          </>
-                        ) : (
-                          <>
-                            {def.inputs.length > 0 && (
-                              <div className="space-y-0.5">
-                                {def.inputs.slice(0, 5).map(p => (
-                                  <div key={p.key} className="text-[9px] font-mono text-slate-500 truncate flex items-center gap-1" title={`${p.label} [${p.unit||''}]`}>
-                                    <span className="text-cyan-600">◀</span>
-                                    <span className="truncate">{p.label}</span>
-                                  </div>
-                                ))}
-                                {def.inputs.length > 5 && (
-                                  <div className="text-[8.5px] font-mono text-slate-400">+{def.inputs.length - 5}</div>
                                 )}
                               </div>
+                            ))}
+                            {def.outputs.length > 5 && (
+                              <div className="text-[8.5px] font-mono text-slate-400">+{def.outputs.length - 5}</div>
                             )}
-                            <div className="flex-1"/>
-                            {def.outputs.length > 0 && (
-                              <div className="space-y-0.5 text-right">
-                                {def.outputs.slice(0, 5).map(p => (
-                                  <div key={p.key} className="text-[9px] font-mono truncate" title={`${p.label} [${p.unit||''}]`}>
-                                    <span className="text-slate-500 truncate">{p.label}</span>
-                                    <span className="text-amber-600 ml-1">▶</span>
-                                    {block.outputs[p.key] !== undefined && (
-                                      <span className="ml-1 text-amber-700 font-semibold">
-                                        {typeof block.outputs[p.key] === 'number' ? block.outputs[p.key].toFixed(1) : ''}
-                                      </span>
-                                    )}
-                                  </div>
-                                ))}
-                                {def.outputs.length > 5 && (
-                                  <div className="text-[8.5px] font-mono text-slate-400">+{def.outputs.length - 5}</div>
-                                )}
-                              </div>
-                            )}
-                          </>
+                          </div>
                         )}
                       </div>
                     )}
@@ -1978,7 +1986,7 @@ function HPWDStudio() {
                         if (direction === 'in' && def.inputs.length === 0) return null;
                         if (direction === 'out' && def.outputs.length === 0) return null;
 
-                        const innerH = height - 24; // 헤더 제외 영역
+                        const innerH = height - (def.image ? 0 : 24); // 헤더 제외 영역 (이미지 블록은 헤더 없음)
                         const usedSlots = new Set();
                         connections.forEach(c => {
                           const ref = direction === 'out' ? c.from : c.to;
@@ -2047,6 +2055,19 @@ function HPWDStudio() {
                       );
                     })()}
                   </div>
+                  {/* 이미지 블록 이름 라벨 (이미지 아래 floating) */}
+                  {def.image && (
+                    <div
+                      className="absolute left-0 right-0 -bottom-5 text-center text-[10px] font-mono font-semibold truncate pointer-events-none select-none"
+                      style={{
+                        color: isSel ? '#0891b2' : '#334155',
+                        textShadow: '0 1px 2px white, 0 -1px 2px white, 1px 0 2px white, -1px 0 2px white, 0 0 4px white',
+                      }}
+                    >
+                      {block.name}
+                      <span className="ml-1.5 text-[8.5px] text-slate-400 font-normal">T{def.typeNo}</span>
+                    </div>
+                  )}
                 </div>
               );
             })}
