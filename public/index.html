@@ -496,45 +496,12 @@
 
   <!-- ─── AIR COMPONENTS ─── -->
 
-  <!-- Drum (front view, circular with rotation) -->
-  <g class="comp" data-id="drum" transform="translate(55, 395)">
-    <!-- cabinet frame -->
-    <rect x="0" y="5" width="110" height="120" fill="#f8fafc" stroke="#0f172a" stroke-width="1.5" rx="3"/>
-    <!-- drum outer circle -->
-    <circle cx="55" cy="62" r="48" fill="white" stroke="#0f172a" stroke-width="1.5"/>
-    <!-- drum inner (perforated) -->
-    <circle cx="55" cy="62" r="40" fill="none" stroke="#0f172a" stroke-width="0.8" stroke-dasharray="3 2"/>
-    <!-- perforation dots (simulating drum holes) -->
-    <g fill="#94a3b8">
-      <circle cx="30" cy="50" r="0.8"/>
-      <circle cx="42" cy="38" r="0.8"/>
-      <circle cx="55" cy="32" r="0.8"/>
-      <circle cx="68" cy="38" r="0.8"/>
-      <circle cx="80" cy="50" r="0.8"/>
-      <circle cx="85" cy="62" r="0.8"/>
-      <circle cx="80" cy="74" r="0.8"/>
-      <circle cx="68" cy="86" r="0.8"/>
-      <circle cx="30" cy="74" r="0.8"/>
-      <circle cx="25" cy="62" r="0.8"/>
-    </g>
-    <!-- axle -->
-    <circle cx="55" cy="62" r="3" fill="#0f172a"/>
-    <circle cx="55" cy="62" r="5" fill="none" stroke="#0f172a" stroke-width="0.8"/>
-    <!-- rotation arrow -->
-    <path d="M 28 62 A 27 27 0 0 1 55 35" stroke="#64748b" stroke-width="1.2" fill="none" marker-end="url(#arr-rot)"/>
-    <!-- cloth hints (small curved shapes in drum) -->
-    <g fill="#e2e8f0" stroke="#475569" stroke-width="0.6">
-      <ellipse cx="40" cy="80" rx="6" ry="3" transform="rotate(-20 40 80)"/>
-      <ellipse cx="70" cy="78" rx="5" ry="2.5" transform="rotate(15 70 78)"/>
-      <ellipse cx="55" cy="85" rx="4" ry="2" transform="rotate(-5 55 85)"/>
-    </g>
-    <!-- air port indicators -->
-    <rect x="107" y="58" width="5" height="8" fill="#6b7280" stroke="#0f172a" stroke-width="0.8"/>
-    <rect x="-5" y="58" width="5" height="8" fill="#6b7280" stroke="#0f172a" stroke-width="0.8"/>
-    <!-- labels -->
-    <text x="55" y="18" class="comp-label-text">DRUM</text>
-    <text x="55" y="138" class="comp-tag-text">드럼 · #201 · 8kg cotton</text>
-    <rect class="hit-frame" x="-5" y="0" width="122" height="148" rx="3"/>
+  <!-- Drum (real product image) -->
+  <g class="comp" data-id="drum" transform="translate(45, 405)">
+    <image href="./images/drum.png" x="0" y="0" width="120" height="110" preserveAspectRatio="xMidYMid meet"/>
+    <text x="60" y="125" class="comp-label-text">DRUM</text>
+    <text x="60" y="135" class="comp-tag-text">드럼 · #201 · 8kg cotton</text>
+    <rect class="hit-frame" x="-5" y="-5" width="130" height="146" rx="3"/>
   </g>
 
   <!-- Filter -->
@@ -581,42 +548,12 @@
     <rect class="hit-frame" x="-5" y="-15" width="120" height="151" rx="3"/>
   </g>
 
-  <!-- Fan (centrifugal/sirocco with scroll housing) -->
-  <g class="comp" data-id="fan" transform="translate(720, 420)">
-    <!-- sirocco housing (spiral scroll) -->
-    <path d="M 45 5 Q 5 5 5 45 Q 5 85 45 85 L 85 85 L 85 55 L 90 55 Z"
-          fill="white" stroke="#0f172a" stroke-width="1.5"/>
-    <!-- inner blade cage -->
-    <circle cx="35" cy="45" r="24" fill="white" stroke="#0f172a" stroke-width="1"/>
-    <!-- backward-curved blades (12 blades) -->
-    <g stroke="#0f172a" stroke-width="0.9" fill="none">
-      <path d="M 35 21 Q 37 24 35 28"/>
-      <path d="M 47 25 Q 47 28 44 30"/>
-      <path d="M 55 35 Q 52 36 50 34"/>
-      <path d="M 57 45 Q 54 45 53 43"/>
-      <path d="M 55 55 Q 52 54 50 56"/>
-      <path d="M 47 65 Q 47 62 44 60"/>
-      <path d="M 35 69 Q 37 66 35 62"/>
-      <path d="M 23 65 Q 23 62 26 60"/>
-      <path d="M 15 55 Q 18 54 20 56"/>
-      <path d="M 13 45 Q 16 45 17 43"/>
-      <path d="M 15 35 Q 18 36 20 34"/>
-      <path d="M 23 25 Q 23 28 26 30"/>
-    </g>
-    <!-- hub -->
-    <circle cx="35" cy="45" r="4" fill="#0f172a"/>
-    <circle cx="35" cy="45" r="1.5" fill="white"/>
-    <!-- motor on side -->
-    <rect x="85" y="40" width="16" height="10" fill="#e2e8f0" stroke="#0f172a" stroke-width="1"/>
-    <text x="93" y="47" text-anchor="middle" font-family="JetBrains Mono" font-size="6" fill="#0f172a">M</text>
-    <!-- outlet arrow (showing air direction out) -->
-    <path d="M 85 60 L 85 70 L 90 70" fill="none" stroke="#334155" stroke-width="1" stroke-dasharray="2 1"/>
-    <!-- air ports -->
-    <rect x="-2" y="41" width="5" height="8" fill="#6b7280" stroke="#0f172a" stroke-width="0.8"/>
-    <rect x="86" y="82" width="8" height="5" fill="#6b7280" stroke="#0f172a" stroke-width="0.8"/>
-    <text x="50" y="103" class="comp-label-text">BLOWER FAN</text>
-    <text x="50" y="114" class="comp-tag-text">팬 · #200 · sirocco</text>
-    <rect class="hit-frame" x="-3" y="0" width="108" height="120" rx="3"/>
+  <!-- Fan (real product image) -->
+  <g class="comp" data-id="fan" transform="translate(715, 410)">
+    <image href="./images/fan.png" x="0" y="0" width="115" height="100" preserveAspectRatio="xMidYMid meet"/>
+    <text x="57" y="120" class="comp-label-text">BLOWER FAN</text>
+    <text x="57" y="130" class="comp-tag-text">팬 · #200 · sirocco</text>
+    <rect class="hit-frame" x="-4" y="-4" width="125" height="140" rx="3"/>
   </g>
 
   <!-- Shared HX cross-reference (위/아래가 같은 물리 HX임을 X자 점선으로 표시) -->
