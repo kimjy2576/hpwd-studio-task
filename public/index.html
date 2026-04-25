@@ -510,17 +510,88 @@ const GRID_SIZE = 20;
  * 한 블록이 여러 source / sink 모듈과 연결될 수 있다. */
 const SLOTS_PER_SIDE = 4;
 
-/* connections 중 해당 (block, direction)에서 가장 빠른 빈 slot index. 다 차면 마지막. */
-function findFreeSlot(cs, blockId, direction) {
+/* connections 중 해당 (block, side)에서 가장 빠른 빈 slot index. 다 차면 마지막. */
+function findFreeSlot(cs, blockId, side) {
   const used = new Set();
   cs.forEach(c => {
-    const ref = direction === 'out' ? c.from : c.to;
-    if (ref?.blockId === blockId && ref.slot !== undefined) used.add(ref.slot);
+    if (c.from?.blockId === blockId && c.from.side === side && c.from.slot !== undefined) used.add(c.from.slot);
+    if (c.to?.blockId === blockId && c.to.side === side && c.to.slot !== undefined) used.add(c.to.slot);
   });
   for (let i = 0; i < SLOTS_PER_SIDE; i++) {
     if (!used.has(i)) return i;
   }
-  return SLOTS_PER_SIDE - 1; // overflow → 마지막 slot 공유
+  return SLOTS_PER_SIDE - 1;
+}
+
+/* 슬롯 stub 끝 좌표 (slot에서 STUB만큼 면 바깥 방향) */
+function stubEnd(point, side, stub) {
+  switch (side) {
+    case 'right':  return { x: point.x + stub, y: point.y };
+    case 'left':   return { x: point.x - stub, y: point.y };
+    case 'top':    return { x: point.x, y: point.y - stub };
+    case 'bottom': return { x: point.x, y: point.y + stub };
+    default:       return { x: point.x + stub, y: point.y };
+  }
+}
+
+/* 두 슬롯 사이 직각 elbow 경로의 corner 점들. start/end 포함하지 않은 중간 corner만 반환. */
+function buildElbowPoints(fromPos, fromSide, toPos, toSide, stub) {
+  const fs = stubEnd(fromPos, fromSide, stub);
+  const ts = stubEnd(toPos, toSide, stub);
+  const fromH = fromSide === 'left' || fromSide === 'right';
+  const toH   = toSide === 'left' || toSide === 'right';
+  const points = [fromPos, fs];
+  if (fromH && toH) {
+    if (Math.abs(fs.y - ts.y) > 1) {
+      const midX = (fs.x + ts.x) / 2;
+      points.push({ x: midX, y: fs.y }, { x: midX, y: ts.y });
+    }
+  } else if (!fromH && !toH) {
+    if (Math.abs(fs.x - ts.x) > 1) {
+      const midY = (fs.y + ts.y) / 2;
+      points.push({ x: fs.x, y: midY }, { x: ts.x, y: midY });
+    }
+  } else if (fromH && !toH) {
+    points.push({ x: ts.x, y: fs.y });
+  } else {
+    points.push({ x: fs.x, y: ts.y });
+  }
+  points.push(ts, toPos);
+  return points;
+}
+
+/* points 배열을 SVG path로 — corner radius r 적용 (각 꺾임에 quadratic bezier). r=0이면 직각. */
+function smoothPath(points, r) {
+  if (points.length < 2) return '';
+  if (!r || r <= 0 || points.length < 3) {
+    return 'M ' + points.map(p => `${p.x} ${p.y}`).join(' L ');
+  }
+  let d = `M ${points[0].x} ${points[0].y}`;
+  for (let i = 1; i < points.length - 1; i++) {
+    const prev = points[i - 1];
+    const curr = points[i];
+    const next = points[i + 1];
+    const dPrev = Math.hypot(curr.x - prev.x, curr.y - prev.y);
+    const dNext = Math.hypot(next.x - curr.x, next.y - curr.y);
+    if (dPrev < 0.5 || dNext < 0.5) {
+      // skip degenerate
+      d += ` L ${curr.x} ${curr.y}`;
+      continue;
+    }
+    const radius = Math.min(r, dPrev / 2, dNext / 2);
+    const upx = (curr.x - prev.x) / dPrev;
+    const upy = (curr.y - prev.y) / dPrev;
+    const unx = (next.x - curr.x) / dNext;
+    const uny = (next.y - curr.y) / dNext;
+    const beforeX = curr.x - upx * radius;
+    const beforeY = curr.y - upy * radius;
+    const afterX  = curr.x + unx * radius;
+    const afterY  = curr.y + uny * radius;
+    d += ` L ${beforeX} ${beforeY} Q ${curr.x} ${curr.y} ${afterX} ${afterY}`;
+  }
+  const last = points[points.length - 1];
+  d += ` L ${last.x} ${last.y}`;
+  return d;
 }
 const snap = (v) => Math.round(v / GRID_SIZE) * GRID_SIZE;
 
@@ -877,40 +948,36 @@ function HPWDStudio() {
     }
   };
 
-  /* 블록 connector slot 클릭 핸들러.
-   * slot 인자가 주어지면 그 slot 사용, 없으면 다음 빈 slot 자동 할당.
-   * 같은 두 블록 사이 다중 라인 허용 (multi-source/sink). */
-  const handleBlockConnectorClick = (e, blockId, direction, slot) => {
+  /* 4면 슬롯 클릭. side: 'top'|'bottom'|'left'|'right'.
+   * 슬롯에 in/out 의미 없음 — 첫 클릭이 from, 두 번째가 to가 됨.
+   * 흐름 방향은 Properties에서 반전 가능. */
+  const handleBlockConnectorClick = (e, blockId, side, slot) => {
     e.stopPropagation();
     if (!connecting) {
-      const useSlot = slot !== undefined ? slot : findFreeSlot(connections, blockId, direction);
-      setConnecting({ blockId, direction, slot: useSlot });
+      const useSlot = slot !== undefined ? slot : findFreeSlot(connections, blockId, side);
+      setConnecting({ blockId, side, slot: useSlot });
       return;
     }
-    if (connecting.blockId === blockId || connecting.direction === direction) {
+    if (connecting.blockId === blockId) {
+      // 같은 블록 cancel
       setConnecting(null);
       return;
     }
-    const fromId = connecting.direction === 'out' ? connecting.blockId : blockId;
-    const toId   = connecting.direction === 'out' ? blockId : connecting.blockId;
+    const fromId = connecting.blockId;
+    const toId = blockId;
     const fromBlock = blocks.find(b => b.id === fromId);
     const toBlock   = blocks.find(b => b.id === toId);
     const kind = detectLineKind(fromBlock, toBlock);
     const signals = autoMapSignals(fromBlock, toBlock);
-    const fromSlot = connecting.direction === 'out'
-      ? connecting.slot
-      : (slot !== undefined ? slot : findFreeSlot(connections, fromId, 'out'));
-    const toSlot = connecting.direction === 'in'
-      ? connecting.slot
-      : (slot !== undefined ? slot : findFreeSlot(connections, toId, 'in'));
+    const useSlot = slot !== undefined ? slot : findFreeSlot(connections, toId, side);
     pushHistory(blocks, connections);
     setConnections(cs => [...cs, {
-      from: { blockId: fromId, slot: fromSlot },
-      to:   { blockId: toId,   slot: toSlot },
+      from: { blockId: fromId, side: connecting.side, slot: connecting.slot },
+      to:   { blockId: toId,   side: side,             slot: useSlot },
       kind,
       signals,
       lineParams: defaultLineParams(kind),
-      midOffsetX: 0,
+      cornerRadius: 8,
     }]);
     setConnecting(null);
   };
@@ -1475,17 +1542,28 @@ function HPWDStudio() {
     if (def.image) return block.imageSize || 160;
     return 180;
   };
-  const getBlockConnectorPos = (block, direction, slot = 0) => {
+  /* 슬롯 위치 (절대 좌표). side: 'top'|'bottom'|'left'|'right'.
+   * 가로 면(top/bottom)은 slot이 x 분포, 세로 면(left/right)은 y 분포.
+   * 비이미지 블록의 좌우 슬롯은 헤더(24px) 아래 영역 내에서만 분배. */
+  const getBlockSlotPos = (block, side, slot = 0) => {
     if (!block) return null;
     const def = TYPES[block.type];
     const w = getBlockWidth(block);
     const h = getBlockHeight(block);
-    const headerH = def.image ? 0 : 24; // 이미지 블록은 헤더 없음
-    const slotY = headerH + (h - headerH) * ((slot ?? 0) + 1) / (SLOTS_PER_SIDE + 1);
-    return {
-      x: direction === 'in' ? block.x : block.x + w,
-      y: block.y + slotY,
-    };
+    const headerH = def.image ? 0 : 24;
+    const N = SLOTS_PER_SIDE;
+    const s = slot ?? 0;
+    if (side === 'top') {
+      return { x: block.x + w * (s + 1) / (N + 1), y: block.y };
+    }
+    if (side === 'bottom') {
+      return { x: block.x + w * (s + 1) / (N + 1), y: block.y + h };
+    }
+    const slotY = headerH + (h - headerH) * (s + 1) / (N + 1);
+    if (side === 'left') {
+      return { x: block.x, y: block.y + slotY };
+    }
+    return { x: block.x + w, y: block.y + slotY };
   };
 
   const selectedBlock = blocks.find(b => b.id === selected);
@@ -1678,31 +1756,22 @@ function HPWDStudio() {
                 const fromBlock = blocks.find(b => b.id === c.from.blockId);
                 const toBlock = blocks.find(b => b.id === c.to.blockId);
                 if (!fromBlock || !toBlock) return null;
-                const fromPos = getBlockConnectorPos(fromBlock, 'out', c.from?.slot);
-                const toPos = getBlockConnectorPos(toBlock, 'in', c.to?.slot);
+                // 호환: 기존 데이터에 side 없으면 default
+                const fromSide = c.from.side || 'right';
+                const toSide   = c.to.side   || 'left';
+                const fromPos = getBlockSlotPos(fromBlock, fromSide, c.from?.slot);
+                const toPos   = getBlockSlotPos(toBlock,   toSide,   c.to?.slot);
                 if (!fromPos || !toPos) return null;
 
-                // 장애물: 자기 자신의 source/target을 제외한 다른 블록들
-                const obstacles = blocks
-                  .filter(b => b.id !== fromBlock.id && b.id !== toBlock.id)
-                  .map(b => {
-                    const h = getBlockHeight(b);
-                    const w = getBlockWidth(b);
-                    return { x: b.x, y: b.y, w, h };
-                  });
-
-                const path = getOrthogonalPath(fromPos, toPos, {
-                  midOffsetX: c.midOffsetX ?? 0,
-                  midOffsetY: c.midOffsetY ?? 0,
-                  outOffsetX: c.outOffsetX ?? 0,
-                  inOffsetX: c.inOffsetX ?? 0,
-                }, obstacles);
+                const elbowPoints = buildElbowPoints(fromPos, fromSide, toPos, toSide, 24);
+                const radius = c.cornerRadius ?? 8;
+                const pathD = smoothPath(elbowPoints, radius);
+                const path = { d: pathD, handles: [] };
+                const firstHandle = elbowPoints[1] || fromPos;
                 const isHovered = hoveredConn === i;
                 const isSelected = selectedConnIds.includes(i);
-                const isDraggingThis = draggingConn?.idx === i;
-                const highlight = isSelected || isHovered || isDraggingThis;
-
-                const firstHandle = path.handles[0] || { x: 0, y: 0 };
+                const highlight = isSelected || isHovered;
+                const isDraggingThis = false;
 
                 return (
                   <g
@@ -1866,14 +1935,14 @@ function HPWDStudio() {
               {connecting && (() => {
                 const block = blocks.find(b => b.id === connecting.blockId);
                 if (!block) return null;
-                const pos = getBlockConnectorPos(block, connecting.direction, connecting.slot);
+                const pos = getBlockSlotPos(block, connecting.side, connecting.slot);
                 if (!pos) return null;
                 const target = { x: mousePos.x, y: mousePos.y };
-                const path = connecting.direction === 'out'
-                  ? getOrthogonalPath(pos, target)
-                  : getOrthogonalPath(target, pos);
+                // 시작 슬롯 stub만 빼고 마우스로 직선
+                const fs = stubEnd(pos, connecting.side, 24);
+                const d = `M ${pos.x} ${pos.y} L ${fs.x} ${fs.y} L ${target.x} ${target.y}`;
                 return (
-                  <path d={path.d} stroke="#0891b2" strokeWidth="1.75" strokeDasharray="4 4" fill="none" />
+                  <path d={d} stroke="#0891b2" strokeWidth="1.75" strokeDasharray="4 4" fill="none" />
                 );
               })()}
               {/* 박스 선택 사각형 */}
@@ -2023,72 +2092,71 @@ function HPWDStudio() {
                       </div>
                     )}
 
-                    {/* ─── Multi-slot connectors ───
-                     * 좌측: input slot N개, 우측: output slot N개.
-                     * 사용 중 slot: 진한 dot. 빈 slot: hover 또는 connecting 모드일 때 ghost. */}
+                    {/* ─── 4-side multi-slot connectors ───
+                     * 4면(top/bottom/left/right) × 4 슬롯 = 16개. in/out 무관 — 양방향 연결 가능.
+                     * 흐름 방향은 Properties에서 별도 지정.
+                     * 사용 중 slot: 진한 dot. 빈 slot: hover/connecting 시 ghost. */}
                     {(() => {
                       const isHovered = hoveredBlockId === block.id;
                       const isConnectingFromThis = connecting && connecting.blockId === block.id;
-                      // 연결 진행 중인 경우, 호환 방향 (반대쪽)이 강조 대상
-                      const renderSlot = (direction) => {
-                        if (direction === 'in' && def.inputs.length === 0) return null;
-                        if (direction === 'out' && def.outputs.length === 0) return null;
-
-                        const innerH = height - (def.image ? 0 : 24); // 헤더 제외 영역 (이미지 블록은 헤더 없음)
+                      const headerH = def.image ? 0 : 24;
+                      const innerH = height - headerH;
+                      const renderSide = (side) => {
                         const usedSlots = new Set();
                         connections.forEach(c => {
-                          const ref = direction === 'out' ? c.from : c.to;
-                          if (ref?.blockId === block.id && ref.slot !== undefined) usedSlots.add(ref.slot);
+                          if (c.from?.blockId === block.id && (c.from.side || 'right') === side && c.from.slot !== undefined) usedSlots.add(c.from.slot);
+                          if (c.to?.blockId   === block.id && (c.to.side   || 'left')  === side && c.to.slot   !== undefined) usedSlots.add(c.to.slot);
                         });
-
-                        // 어느 slot을 보일지 결정
-                        const showAll = isHovered || (connecting && !isConnectingFromThis && connecting.direction !== direction);
-                        const colorOn = direction === 'in' ? '#06b6d4' : '#f59e0b';
-                        const borderOn = direction === 'in' ? '#0891b2' : '#d97706';
-                        const bgHover  = direction === 'in' ? 'hover:bg-cyan-50' : 'hover:bg-amber-50';
+                        const showAll = isHovered || (connecting && !isConnectingFromThis);
 
                         return Array.from({ length: SLOTS_PER_SIDE }, (_, slotIdx) => {
                           const used = usedSlots.has(slotIdx);
-                          const isActive = isConnectingFromThis &&
-                            connecting.direction === direction &&
-                            connecting.slot === slotIdx;
+                          const isActive = isConnectingFromThis && connecting.side === side && connecting.slot === slotIdx;
                           const visible = used || isActive || showAll;
                           if (!visible) return null;
 
-                          // slot Y center within the relative div: innerH * (slotIdx + 1) / (SLOTS_PER_SIDE + 1)
-                          const slotY = innerH * (slotIdx + 1) / (SLOTS_PER_SIDE + 1);
-                          const positionStyle = direction === 'in'
-                            ? { left: -10, top: slotY - 10 }
-                            : { right: -10, top: slotY - 10 };
+                          // 슬롯 위치 (외곽 div 기준 absolute)
+                          let cx, cy;
+                          if (side === 'top') {
+                            cx = width * (slotIdx + 1) / (SLOTS_PER_SIDE + 1);
+                            cy = 0;
+                          } else if (side === 'bottom') {
+                            cx = width * (slotIdx + 1) / (SLOTS_PER_SIDE + 1);
+                            cy = height;
+                          } else if (side === 'left') {
+                            cx = 0;
+                            cy = headerH + innerH * (slotIdx + 1) / (SLOTS_PER_SIDE + 1);
+                          } else {
+                            cx = width;
+                            cy = headerH + innerH * (slotIdx + 1) / (SLOTS_PER_SIDE + 1);
+                          }
 
-                          // 외관: 사용 중 = 진하게, ghost = 옅게 / 작게
                           const dotClass = used || isActive
                             ? `w-3.5 h-3.5 rounded-full border-2 bg-white shrink-0 pointer-events-none transition-all`
                             : `w-2.5 h-2.5 rounded-full border bg-white shrink-0 pointer-events-none opacity-50 transition-all`;
                           const dotStyle = isActive
-                            ? { backgroundColor: colorOn, borderColor: borderOn }
+                            ? { backgroundColor: '#06b6d4', borderColor: '#0891b2' }
                             : (used
                                 ? { borderColor: '#475569', borderWidth: 2 }
                                 : { borderColor: '#94a3b8' });
 
                           return (
                             <div
-                              key={`${direction}-${slotIdx}`}
-                              data-port={direction}
+                              key={`${side}-${slotIdx}`}
+                              data-side={side}
                               data-slot={slotIdx}
                               onMouseDown={(e) => e.stopPropagation()}
-                              onClick={(e) => handleBlockConnectorClick(e, block.id, direction, slotIdx)}
+                              onClick={(e) => handleBlockConnectorClick(e, block.id, side, slotIdx)}
                               className={`absolute flex items-center justify-center cursor-crosshair rounded-full transition-colors ${
-                                isActive
-                                  ? (direction === 'in' ? 'bg-cyan-100' : 'bg-amber-100')
-                                  : bgHover
+                                isActive ? 'bg-cyan-100' : 'hover:bg-cyan-50'
                               }`}
                               style={{
-                                ...positionStyle,
+                                left: cx - 10,
+                                top: cy - 10,
                                 width: 20,
                                 height: 20,
                               }}
-                              title={`${block.name} ${direction === 'in' ? '←' : '→'} slot ${slotIdx}${used ? ' (used)' : ''}`}
+                              title={`${block.name} · ${side} slot ${slotIdx}${used ? ' (used)' : ''}`}
                             >
                               <div className={dotClass} style={dotStyle}/>
                             </div>
@@ -2097,8 +2165,10 @@ function HPWDStudio() {
                       };
                       return (
                         <>
-                          {renderSlot('in')}
-                          {renderSlot('out')}
+                          {renderSide('top')}
+                          {renderSide('bottom')}
+                          {renderSide('left')}
+                          {renderSide('right')}
                         </>
                       );
                     })()}
@@ -2360,6 +2430,54 @@ function HPWDStudio() {
                       onClick={addSignal}
                       className="mt-1.5 w-full text-[10px] font-mono py-1 text-slate-600 border border-slate-200 border-dashed rounded hover:bg-slate-50 hover:border-slate-300"
                     >+ 시그널 추가</button>
+                  </div>
+
+                  {/* Flow direction & curvature */}
+                  <div>
+                    <div className="text-[10px] font-semibold uppercase tracking-widest text-slate-500 mb-1.5">
+                      Flow & Routing
+                    </div>
+                    <div className="space-y-2 bg-slate-50 rounded border border-slate-200 p-2">
+                      {/* 흐름 방향 반전 */}
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[10.5px] text-slate-600">흐름 방향</span>
+                        <button
+                          onClick={() => {
+                            // from / to 스왑 (signals의 fromPort/toPort도 스왑)
+                            const swappedSignals = (conn.signals || []).map(s => ({
+                              fromPort: s.toPort,
+                              toPort: s.fromPort,
+                            }));
+                            updateConn({
+                              from: conn.to,
+                              to: conn.from,
+                              signals: swappedSignals,
+                            });
+                          }}
+                          className="text-[10px] font-mono px-2 py-0.5 text-cyan-700 border border-cyan-200 rounded hover:bg-cyan-50 flex items-center gap-1"
+                          title="from / to 방향 반전"
+                        >
+                          <span className="font-mono">{fromBlock?.name || '?'}</span>
+                          <span>→</span>
+                          <span className="font-mono">{toBlock?.name || '?'}</span>
+                          <span className="text-slate-400 ml-1">⇄</span>
+                        </button>
+                      </div>
+                      {/* 곡률 */}
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10.5px] text-slate-600 w-16 shrink-0">곡률 R</span>
+                        <input
+                          type="range"
+                          min={0}
+                          max={32}
+                          step={1}
+                          value={conn.cornerRadius ?? 8}
+                          onChange={e => updateConn({ cornerRadius: parseInt(e.target.value, 10) })}
+                          className="flex-1 accent-cyan-600"
+                        />
+                        <span className="text-[10px] font-mono text-slate-700 w-8 text-right">{conn.cornerRadius ?? 8}px</span>
+                      </div>
+                    </div>
                   </div>
 
                   {/* Line physical parameters */}
