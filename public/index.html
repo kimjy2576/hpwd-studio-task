@@ -401,10 +401,10 @@ const LINE_KINDS = {
   refrigerant: {
     name: '냉매배관 (동관)',
     short: 'REFRIG',
-    color: '#dc2626',
-    width: 2.5,
+    color: '#b87333',
+    width: 4,
     dasharray: undefined,
-    desc: '동관 — 냉매 사이클. 양상(액/기/2상) 변화',
+    desc: '구리 동관 — 냉매 사이클. 양상(액/기/2상) 변화',
     fields: [
       { key: 'L', label: '길이', unit: 'mm', value: 300 },
       { key: 'di', label: '내경', unit: 'mm', value: 6.35 },
@@ -1427,9 +1427,10 @@ function HPWDStudio() {
   const getBlockConnectorPos = (block, direction) => {
     if (!block) return null;
     const h = getBlockHeight(block);
+    // connector 원의 실제 절대 위치 = block.y + 24(header) + (h-24)/2 = block.y + h/2 + 12
     return {
       x: direction === 'in' ? block.x : block.x + 180,
-      y: block.y + h / 2,
+      y: block.y + h / 2 + 12,
     };
   };
 
@@ -1661,18 +1662,25 @@ function HPWDStudio() {
                     {/* 가시 라인 — kind에 따라 layered design */}
                     {(() => {
                       const lk = LINE_KINDS[c.kind || 'refrigerant'] || LINE_KINDS.refrigerant;
-                      // selected/highlight 상태 색상 오버레이
                       const overlay = isSelected ? '#0284c7' : (highlight ? '#0891b2' : null);
-                      const baseColor = lk.color;
 
                       if ((c.kind || 'refrigerant') === 'refrigerant') {
-                        // 동관: 외곽 진한 + 본체 빨강 + 상단 하이라이트
+                        // 구리 동관: 외곽 그림자 + 짙은 구리 + 메인 구리 + 광택 highlight
                         return (
                           <g>
-                            <path d={path.d} stroke="#7f1d1d" strokeWidth={7} fill="none" strokeLinejoin="round" strokeLinecap="round"/>
-                            <path d={path.d} stroke={overlay || baseColor} strokeWidth={5} fill="none" strokeLinejoin="round" strokeLinecap="round" className="transition-colors"/>
-                            <path d={path.d} stroke="#fca5a5" strokeWidth={1.4} fill="none" opacity={0.65} strokeLinejoin="round" strokeLinecap="round"
-                              transform="translate(0,-1.2)"/>
+                            {overlay && (
+                              <path d={path.d} stroke={overlay} strokeWidth={12} fill="none" strokeLinejoin="round" strokeLinecap="round" opacity={0.35}/>
+                            )}
+                            {/* 외곽 그림자 (어두운 갈색) */}
+                            <path d={path.d} stroke="#3a1c0a" strokeWidth={8} fill="none" strokeLinejoin="round" strokeLinecap="round"/>
+                            {/* 짙은 구리 */}
+                            <path d={path.d} stroke="#7c3a14" strokeWidth={6.4} fill="none" strokeLinejoin="round" strokeLinecap="round"/>
+                            {/* 메인 구리 */}
+                            <path d={path.d} stroke="#b87333" strokeWidth={5} fill="none" strokeLinejoin="round" strokeLinecap="round" className="transition-colors"/>
+                            {/* 밝은 구리 사이드 */}
+                            <path d={path.d} stroke="#d49a5b" strokeWidth={2.6} fill="none" strokeLinejoin="round" strokeLinecap="round" transform="translate(0,-0.6)"/>
+                            {/* 광택 highlight */}
+                            <path d={path.d} stroke="#fde68a" strokeWidth={1.1} fill="none" opacity={0.9} strokeLinejoin="round" strokeLinecap="round" transform="translate(0,-1.5)"/>
                           </g>
                         );
                       }
@@ -1680,19 +1688,24 @@ function HPWDStudio() {
                         // 덕트: 두꺼운 외곽 + 회색 body + 중심선 점선
                         return (
                           <g>
+                            {overlay && (
+                              <path d={path.d} stroke={overlay} strokeWidth={15} fill="none" strokeLinejoin="round" strokeLinecap="butt" opacity={0.35}/>
+                            )}
                             <path d={path.d} stroke="#1f2937" strokeWidth={11} fill="none" strokeLinejoin="round" strokeLinecap="butt"/>
-                            <path d={path.d} stroke={overlay || '#cbd5e1'} strokeWidth={9} fill="none" strokeLinejoin="round" strokeLinecap="butt" className="transition-colors"/>
+                            <path d={path.d} stroke="#cbd5e1" strokeWidth={9} fill="none" strokeLinejoin="round" strokeLinecap="butt" className="transition-colors"/>
                             <path d={path.d} stroke="#475569" strokeWidth={1} strokeDasharray="5 4" fill="none" strokeLinejoin="round" strokeLinecap="butt"/>
                           </g>
                         );
                       }
-                      // water (rubber hose): 진한 파랑 외곽 + 메인 파랑 + 옅은 내부 라인
+                      // water (rubber hose)
                       return (
                         <g>
+                          {overlay && (
+                            <path d={path.d} stroke={overlay} strokeWidth={10} fill="none" strokeLinejoin="round" strokeLinecap="round" opacity={0.35}/>
+                          )}
                           <path d={path.d} stroke="#1e3a8a" strokeWidth={6} fill="none" strokeLinejoin="round" strokeLinecap="round"/>
-                          <path d={path.d} stroke={overlay || baseColor} strokeWidth={4} fill="none" strokeLinejoin="round" strokeLinecap="round" className="transition-colors"/>
-                          <path d={path.d} stroke="#bfdbfe" strokeWidth={1} fill="none" opacity={0.7} strokeLinejoin="round" strokeLinecap="round"
-                            transform="translate(0,-0.8)"/>
+                          <path d={path.d} stroke="#3b82f6" strokeWidth={4} fill="none" strokeLinejoin="round" strokeLinecap="round" className="transition-colors"/>
+                          <path d={path.d} stroke="#bfdbfe" strokeWidth={1} fill="none" opacity={0.7} strokeLinejoin="round" strokeLinecap="round" transform="translate(0,-0.8)"/>
                         </g>
                       );
                     })()}
