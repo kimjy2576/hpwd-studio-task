@@ -549,23 +549,23 @@ function segmentHitsRect(a, b, rect, margin = 0) {
 }
 
 /* points 경로 중 obstacles와 충돌하는 segment가 하나라도 있는지.
- * obstacles의 ownEndpoint=true는 라인의 양 끝 stub에 더해, endpoint 좌표와 같은 line상에
- * 놓인 segment(=stub의 직선 연장)까지 충돌 무시. */
+ * obstacles의 ownEndpoint=true는 segment 한 끝이 라인의 from/to point와 정확히 일치하는
+ * 경우(=stub segment)에만 충돌 무시. 본체 가로지르는 segment는 항상 검사. */
 function pathHitsObstacles(points, obstacles, margin = 8) {
   const fromP = points[0];
   const toP = points[points.length - 1];
+  const eq = (a, b) => Math.abs(a.x - b.x) < 0.5 && Math.abs(a.y - b.y) < 0.5;
   for (let i = 0; i < points.length - 1; i++) {
     const a = points[i];
     const b = points[i + 1];
+    const isFromStub = eq(a, fromP) || eq(b, fromP);
+    const isToStub   = eq(a, toP)   || eq(b, toP);
     for (const r of obstacles) {
-      if (r.ownEndpoint) {
-        // segment가 from 또는 to의 stub 연장선상이면 (같은 x 또는 같은 y) skip.
-        // 즉 stub이 자기 면에서 충분히 빠져나가는 동안은 자기 블록 위 통과 OK.
-        const blockMatchesFrom = (a.x === fromP.x && b.x === fromP.x) || (a.y === fromP.y && b.y === fromP.y);
-        const blockMatchesTo   = (a.x === toP.x   && b.x === toP.x)   || (a.y === toP.y   && b.y === toP.y);
-        if (blockMatchesFrom || blockMatchesTo) continue;
-      }
-      if (segmentHitsRect(a, b, r, margin)) return true;
+      // ownEndpoint stub segment는 무시
+      if (r.ownEndpoint && (isFromStub || isToStub)) continue;
+      // ownEndpoint 블록 자체는 margin=0 (가장자리에서 빠져나가는 것 허용)
+      const m = r.ownEndpoint ? 0 : margin;
+      if (segmentHitsRect(a, b, r, m)) return true;
     }
   }
   return false;
@@ -585,9 +585,16 @@ function buildElbowPoints(fromPos, fromSide, toPos, toSide, stub) {
     const opposing = (fromSide === 'right' && toSide === 'left') || (fromSide === 'left' && toSide === 'right');
     const sameSide = fromSide === toSide;
     if (sameSide) {
-      // ㄷ자: 같은 방향으로 stub 빼서 가장 멀리 있는 x로 우회
-      const outX = fromSide === 'right' ? Math.max(fs.x, ts.x) : Math.min(fs.x, ts.x);
-      points.push({ x: outX, y: fs.y }, { x: outX, y: ts.y });
+      // ㄷ자: stub 면 바깥으로 두 stub end 모두를 넘어가는 outX
+      // fromSide==='right'면 outX는 max(fs.x, ts.x). 단 둘 중 더 안쪽인 것이 stub만큼 더 가까울 수 있어
+      // 안전하게 stub 추가.
+      const outDir = fromSide === 'right' ? 1 : -1;
+      const outX = outDir > 0
+        ? Math.max(fs.x, ts.x)
+        : Math.min(fs.x, ts.x);
+      // 안쪽 stub end → outX 가는 segment가 자기 면 안쪽으로 후진하지 않도록 검사:
+      // fs, ts 둘 다 outX와 같은 방향 (outDir>0이면 outX >= fs.x && outX >= ts.x). OK.
+      points.push(fs, { x: outX, y: fs.y }, { x: outX, y: ts.y }, ts);
     } else if (opposing) {
       // 마주보기: 두 stub 끝 사이가 양수면 ㄹ자, 음수(서로 침범)면 우회
       const fromOut = fromSide === 'right' ? 1 : -1;
@@ -612,8 +619,11 @@ function buildElbowPoints(fromPos, fromSide, toPos, toSide, stub) {
     const opposing = (fromSide === 'bottom' && toSide === 'top') || (fromSide === 'top' && toSide === 'bottom');
     const sameSide = fromSide === toSide;
     if (sameSide) {
-      const outY = fromSide === 'bottom' ? Math.max(fs.y, ts.y) : Math.min(fs.y, ts.y);
-      points.push({ x: fs.x, y: outY }, { x: ts.x, y: outY });
+      const outDir = fromSide === 'bottom' ? 1 : -1;
+      const outY = outDir > 0
+        ? Math.max(fs.y, ts.y)
+        : Math.min(fs.y, ts.y);
+      points.push(fs, { x: fs.x, y: outY }, { x: ts.x, y: outY }, ts);
     } else if (opposing) {
       const fromOut = fromSide === 'bottom' ? 1 : -1;
       const gap = (ts.y - fs.y) * fromOut;
@@ -781,6 +791,7 @@ function HPWDStudio() {
   const [editingName, setEditingName] = useState('');
   const [endpointDrag, setEndpointDrag] = useState(null); // {connIdx, end:'from'|'to'}
   const [waypointDrag, setWaypointDrag] = useState(null); // {connIdx, wpIdx}
+  const [segmentDrag, setSegmentDrag] = useState(null); // {connIdx, segIdx, axis, startPoints}
   const suppressSlotClickRef = useRef(false);
   const [bottomPanelOpen, setBottomPanelOpen] = useState(true);
   const [zoom, setZoom] = useState(1);
@@ -1343,6 +1354,55 @@ function HPWDStudio() {
       window.removeEventListener('mouseup', onUp);
     };
   }, [waypointDrag, zoom]);
+
+  /* Segment 드래그 — 라인의 한 직각 segment를 평행 이동.
+   * 자동 모드면 우선 corner들을 manual waypoints로 commit한 다음 두 corner를 같이 이동.
+   * 수직 segment(axis='x')는 x 방향으로 이동, 수평 segment(axis='y')는 y 방향. */
+  useEffect(() => {
+    if (!segmentDrag) return;
+    const onMove = (e) => {
+      const rect = canvasRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const cx = (e.clientX - rect.left + canvasRef.current.scrollLeft) / zoom;
+      const cy = (e.clientY - rect.top + canvasRef.current.scrollTop) / zoom;
+      const sx = Math.round(cx / GRID_SIZE) * GRID_SIZE;
+      const sy = Math.round(cy / GRID_SIZE) * GRID_SIZE;
+      setConnections(cs => cs.map((c, i) => {
+        if (i !== segmentDrag.connIdx) return c;
+        // segmentDrag.startWaypoints에서 segIdx에 해당하는 두 corner 이동
+        // pts = [from, ...waypoints, to] 이므로 segment k는 pts[k]~pts[k+1]
+        // 수직 segment: pts[k].x === pts[k+1].x → 둘 다 x를 sx로
+        // 수평 segment: pts[k].y === pts[k+1].y → 둘 다 y를 sy로
+        const baseWps = segmentDrag.startWaypoints.slice();
+        // pts 인덱스 → waypoints 인덱스: pts[k]는 k=0이면 from, k=len-1이면 to, 그 외 waypoints[k-1]
+        const aPtsIdx = segmentDrag.segIdx;
+        const bPtsIdx = segmentDrag.segIdx + 1;
+        const updateWp = (ptsIdx) => {
+          if (ptsIdx === 0 || ptsIdx === baseWps.length + 1) return; // endpoint는 못 옮김
+          const wpIdx = ptsIdx - 1;
+          if (segmentDrag.axis === 'x') {
+            baseWps[wpIdx] = { x: sx, y: baseWps[wpIdx].y };
+          } else {
+            baseWps[wpIdx] = { x: baseWps[wpIdx].x, y: sy };
+          }
+        };
+        updateWp(aPtsIdx);
+        updateWp(bPtsIdx);
+        return { ...c, waypoints: baseWps, routeMode: 'manual' };
+      }));
+    };
+    const onUp = () => {
+      setSegmentDrag(null);
+      suppressSlotClickRef.current = true;
+      setTimeout(() => { suppressSlotClickRef.current = false; }, 50);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, [segmentDrag, zoom]);
 
   /* 이미지 블록 리사이즈 — 우하단 핸들 드래그 시 imageSize 업데이트. */
   useEffect(() => {
@@ -2216,6 +2276,78 @@ function HPWDStudio() {
                             </g>
                           );
                         })}
+
+                        {/* Segment 평행이동 핸들 — 직각 segment 가운데 잡고 끌어서 길이 조절 */}
+                        {(() => {
+                          const pts = path.points || [];
+                          if (pts.length < 2) return null;
+                          const handles = [];
+                          for (let k = 0; k < pts.length - 1; k++) {
+                            const a = pts[k];
+                            const b = pts[k + 1];
+                            const dx = Math.abs(a.x - b.x);
+                            const dy = Math.abs(a.y - b.y);
+                            const segLen = Math.hypot(b.x - a.x, b.y - a.y);
+                            if (segLen < 28) continue; // 너무 짧은 segment skip
+                            // 직각 segment 판정: 수직(dx<0.5) 또는 수평(dy<0.5)
+                            const axis = dx < 0.5 ? 'x' : (dy < 0.5 ? 'y' : null);
+                            if (!axis) continue; // 사선은 skip
+                            handles.push({
+                              cx: (a.x + b.x) / 2,
+                              cy: (a.y + b.y) / 2,
+                              segIdx: k,
+                              axis, // 'x' = 수직 segment (x값 같음, x방향으로 평행이동)
+                            });
+                          }
+                          return handles.map((h, hIdx) => (
+                            <g
+                              key={`seg-${hIdx}`}
+                              className={h.axis === 'x' ? 'cursor-ew-resize' : 'cursor-ns-resize'}
+                              style={{ pointerEvents: 'auto' }}
+                              onMouseDown={(e) => {
+                                e.stopPropagation();
+                                e.preventDefault();
+                                pushHistory(blocks, connections);
+                                // 자동 모드면 우선 corner들을 manual로 commit
+                                let startWaypoints;
+                                if ((c.routeMode || 'auto') === 'auto' || (c.waypoints || []).length === 0) {
+                                  startWaypoints = pts.slice(1, -1).map(p => ({ x: p.x, y: p.y }));
+                                  // 즉시 manual로 전환
+                                  setConnections(cs => cs.map((cc, ci) =>
+                                    ci === i ? { ...cc, waypoints: startWaypoints, routeMode: 'manual' } : cc
+                                  ));
+                                } else {
+                                  startWaypoints = (c.waypoints || []).slice();
+                                }
+                                setSegmentDrag({
+                                  connIdx: i,
+                                  segIdx: h.segIdx,
+                                  axis: h.axis,
+                                  startWaypoints,
+                                });
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {/* 클릭 영역 */}
+                              <rect
+                                x={h.cx - 14} y={h.cy - 14}
+                                width={28} height={28}
+                                fill="transparent"
+                              />
+                              {/* 시각 핸들 */}
+                              <rect
+                                x={h.axis === 'x' ? h.cx - 4 : h.cx - 8}
+                                y={h.axis === 'x' ? h.cy - 8 : h.cy - 4}
+                                width={h.axis === 'x' ? 8 : 16}
+                                height={h.axis === 'x' ? 16 : 8}
+                                fill="white"
+                                stroke="#0284c7"
+                                strokeWidth={1.5}
+                                rx={2}
+                              />
+                            </g>
+                          ));
+                        })()}
 
                         {/* Segment midpoint "+" 버튼 — 클릭으로 새 waypoint 추가.
                          * 자동 모드(waypoints=[])에서는 기존 elbow의 모든 중간 corner를 waypoints로
