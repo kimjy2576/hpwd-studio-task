@@ -1938,6 +1938,8 @@ function HPWDStudio() {
                   }
                 }
 
+                const isDraggingThis = isDraggingFrom || isDraggingTo;
+
                 let pathD;
                 let elbowPoints;
                 const waypoints = c.waypoints || [];
@@ -1964,7 +1966,6 @@ function HPWDStudio() {
                 const isHovered = hoveredConn === i;
                 const isSelected = selectedConnIds.includes(i);
                 const highlight = isSelected || isHovered;
-                const isDraggingThis = isDraggingFrom || isDraggingTo;
 
                 return (
                   <g
