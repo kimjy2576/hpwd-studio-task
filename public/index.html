@@ -898,6 +898,125 @@ function HPWDStudio() {
     setSelected(id);
   };
 
+  /* ════════ Preset: 히트펌프 세탁건조기 사이클 일괄 생성 ════════
+   * 6개 컴포넌트 + 5개 라인을 한 번에 캔버스에 배치.
+   * AI Chat에서 호출되거나 사용자가 직접 트리거 가능. */
+  const loadPreset = (presetName) => {
+    if (presetName !== 'heat-pump-cycle' && presetName !== 'hpwd' && presetName !== 'heat-pump-washer-dryer') {
+      return { ok: false, error: `Unknown preset: ${presetName}` };
+    }
+    pushHistory(blocks, connections);
+    // 그리드 스냅된 좌표로 6개 블록 배치 (캔버스 좌상단 기준)
+    const layout = [
+      { type: 'compressor', x: 380,  y: 120, name: 'Compressor' },
+      { type: 'condenser',  x: 700,  y: 120, name: 'Condenser' },
+      { type: 'exv',        x: 700,  y: 380, name: 'EEV' },
+      { type: 'evaporator', x: 380,  y: 380, name: 'Evaporator' },
+      { type: 'fan',        x: 80,   y: 380, name: 'Fan' },
+      { type: 'drum',       x: 380,  y: 640, name: 'Drum' },
+    ];
+    const ts = Date.now();
+    const newBlocks = layout.map((b, i) => {
+      const def = TYPES[b.type];
+      const params = Object.fromEntries(def.parameters.map(p => [p.key, p.value]));
+      return {
+        id: `b${ts}_${i}_${Math.random().toString(36).slice(2, 5)}`,
+        type: b.type,
+        x: b.x, y: b.y,
+        name: `${b.name}_1`,
+        params,
+        outputs: {},
+        state: def.stateInit ? JSON.parse(JSON.stringify(def.stateInit)) : {},
+        imageSize: def.image ? 160 : undefined,
+      };
+    });
+    const idx = Object.fromEntries(newBlocks.map((b, i) => [layout[i].type, b.id]));
+
+    // 5개 라인: 냉매 사이클 (compressor→condenser→eev→evaporator→compressor) + 공기(fan→evap→drum)
+    const mkConn = (fromId, fromSide, fromSlot, toId, toSide, toSlot, kind) => {
+      const fromBlk = newBlocks.find(b => b.id === fromId);
+      const toBlk = newBlocks.find(b => b.id === toId);
+      const signals = autoMapSignals(fromBlk, toBlk);
+      return {
+        from: { blockId: fromId, side: fromSide, slot: fromSlot },
+        to:   { blockId: toId,   side: toSide,   slot: toSlot },
+        kind,
+        signals,
+        lineParams: defaultLineParams(kind),
+        cornerRadius: 8,
+        routeMode: 'auto',
+      };
+    };
+    const newConnections = [
+      // 냉매 사이클 (구리)
+      mkConn(idx.compressor, 'right', 1, idx.condenser, 'left', 1, 'refrigerant'),  // 압축→응축
+      mkConn(idx.condenser, 'bottom', 1, idx.exv, 'top', 1, 'refrigerant'),         // 응축→EEV
+      mkConn(idx.exv, 'left', 1, idx.evaporator, 'right', 1, 'refrigerant'),        // EEV→증발
+      mkConn(idx.evaporator, 'top', 1, idx.compressor, 'bottom', 1, 'refrigerant'), // 증발→압축
+      // 공기 라인 (덕트)
+      mkConn(idx.fan, 'right', 1, idx.evaporator, 'left', 1, 'air'),                // 팬→증발
+      mkConn(idx.evaporator, 'bottom', 1, idx.drum, 'top', 1, 'air'),               // 증발→드럼
+      mkConn(idx.drum, 'left', 2, idx.fan, 'bottom', 1, 'air'),                     // 드럼→팬 (return)
+    ];
+
+    setBlocks(newBlocks);
+    setConnections(newConnections);
+    setSelectedIds([]);
+    setSelectedConnIds([]);
+    return { ok: true, summary: `${newBlocks.length} blocks, ${newConnections.length} connections` };
+  };
+
+  /* ════════ Mock AI: 사용자 메시지를 키워드로 분석해서 도구 호출 시뮬레이션 ════════
+   * 실제 LLM 백엔드 없이도 데모 가능. 향후 백엔드 추가 시 같은 인터페이스 유지. */
+  const chatExecuteMock = (userText) => {
+    const text = userText.toLowerCase();
+    // 키워드 매칭 — 우선순위 순
+    if (/히트\s*펌프|hpwd|사이클|cycle|heat\s*pump|만들어|생성|preset/.test(text)) {
+      const result = loadPreset('heat-pump-cycle');
+      if (result.ok) {
+        return {
+          tool: 'load_preset',
+          args: { name: 'heat-pump-cycle' },
+          result,
+          reply: `히트펌프 세탁건조기 사이클 만들었음. ${result.summary}.\n\n구성: 압축기 → 응축기 → EEV → 증발기 → 압축기 (냉매 사이클) + 팬 ↔ 증발기 ↔ 드럼 (공기 순환). 각 컴포넌트 더블클릭으로 이름 수정, 캔버스에서 자유롭게 재배치 가능.`,
+        };
+      }
+      return { reply: `Preset 로드 실패: ${result.error}` };
+    }
+    if (/clear|초기화|지워|delete\s*all|모두\s*삭제/.test(text)) {
+      pushHistory(blocks, connections);
+      setBlocks([]);
+      setConnections([]);
+      setSelectedIds([]);
+      setSelectedConnIds([]);
+      return {
+        tool: 'clear_canvas',
+        args: {},
+        reply: '캔버스 초기화 완료. 모든 블록과 연결을 지움.',
+      };
+    }
+    if (/run|실행|시뮬|시작/.test(text) && !simState.running && blocks.length > 0) {
+      runSimulation();
+      return {
+        tool: 'run',
+        args: {},
+        reply: `시뮬레이션 시작. dt=${simState.dt}s, t_final=${simState.tFinal}s.`,
+      };
+    }
+    if (/stop|정지|멈춰/.test(text) && simState.running) {
+      stopSimulation();
+      return { tool: 'stop', args: {}, reply: `시뮬레이션 정지. t = ${simState.t.toFixed(1)}s.` };
+    }
+    if (/reset|리셋/.test(text)) {
+      resetSimulation();
+      return { tool: 'reset', args: {}, reply: '시뮬레이션 리셋 — t=0으로 복귀.' };
+    }
+    // fallback
+    return {
+      reply: `(Mock) 아직 처리 못하는 명령. 지원하는 키워드:\n· "히트펌프 만들어줘" — 사이클 일괄 생성\n· "초기화" — 캔버스 비우기\n· "실행" / "정지" / "리셋" — 시뮬 제어`,
+    };
+  };
+
   const handleBlockMouseDown = (e, blockId) => {
     // Port 클릭 시에도 이벤트 전파는 막아야 함 (안 그러면 캔버스 박스 드래그 시작됨)
     e.stopPropagation();
@@ -3312,30 +3431,26 @@ function HPWDStudio() {
           currentConnectionCount={connections.length}
         />
       )}
-      <ChatFAB />
+      <ChatFAB onSend={chatExecuteMock} />
     </div>
   );
 }
 
 /* ═══════════ AI Chat Floating Button + Popup ═══════════ */
-function ChatFAB() {
+function ChatFAB({ onSend }) {
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState([
     {
       role: 'assistant',
-      text: 'HPWD Studio AI 어시스턴트입니다. 자연어로 1D 시뮬레이션 구조를 자동 생성하는 것이 목표예요.',
+      text: 'HPWD Studio AI 어시스턴트 (Mock 모드).\n자연어 명령으로 캔버스 조작 가능. 키워드 매칭으로 동작.',
     },
     {
       role: 'assistant',
-      text: '현재는 UI shell만 — 백엔드는 미연결. 다음 도구를 호출하도록 설계됨:',
+      text: '현재 지원하는 명령:',
       tools: [
-        'add_block(type, x, y) — 블록 추가',
-        'connect(from_block, from_port, to_block, to_port) — 포트 연결',
-        'set_param(block_id, key, value) — 파라미터 설정',
-        'delete_block(id) / clear_canvas() — 정리',
-        'load_preset("heat-pump-washer-dryer") — 프리셋 일괄 로드',
-        'run() / stop() / reset() — 시뮬레이션 제어',
-        'explain_result() — 결과 해석·리포트',
+        '"히트펌프 만들어줘" — 사이클 일괄 생성 (load_preset)',
+        '"초기화" — 캔버스 비우기 (clear_canvas)',
+        '"실행" / "정지" / "리셋" — 시뮬레이션 제어',
       ],
     },
   ]);
@@ -3349,22 +3464,25 @@ function ChatFAB() {
   const send = () => {
     const t = input.trim();
     if (!t) return;
-    setMessages(m => [
-      ...m,
-      { role: 'user', text: t },
-      {
-        role: 'assistant',
-        text: '⚠️ AI 백엔드 미연결. 향후 LLM이 위 도구들을 호출해서 캔버스를 자동 조작하도록 연결 예정입니다.',
-      },
-    ]);
+    // user 메시지 먼저 추가
+    setMessages(m => [...m, { role: 'user', text: t }]);
     setInput('');
+    // mock 처리 — 실제 LLM이면 여기서 API call. 약간의 지연으로 thinking 느낌
+    setTimeout(() => {
+      const result = onSend ? onSend(t) : { reply: 'No handler.' };
+      const msg = { role: 'assistant', text: result.reply };
+      if (result.tool) {
+        msg.toolCall = { name: result.tool, args: result.args || {}, ok: result.result?.ok !== false };
+      }
+      setMessages(m => [...m, msg]);
+    }, 200);
   };
 
   const examples = [
     '히트펌프 세탁건조기 사이클 만들어줘',
-    'R290 적용 시 최적 운전점',
-    '드럼 부하 5kg으로 변경',
-    '결과 해석해줘',
+    '초기화',
+    '실행',
+    '정지',
   ];
 
   if (!open) {
@@ -3411,9 +3529,25 @@ function ChatFAB() {
               {m.role === 'user' ? 'YOU' : 'ASSISTANT'}
               {m.role === 'user' && <span className="w-1.5 h-1.5 rounded-full bg-cyan-600"></span>}
             </div>
-            <div className={m.role === 'user' ? 'bg-cyan-50 border border-cyan-200 rounded-lg rounded-tr-sm px-3 py-2 ml-8 text-slate-800' : 'text-slate-700 mr-4'}>
+            <div className={m.role === 'user' ? 'bg-cyan-50 border border-cyan-200 rounded-lg rounded-tr-sm px-3 py-2 ml-8 text-slate-800 whitespace-pre-wrap' : 'text-slate-700 mr-4 whitespace-pre-wrap'}>
               {m.text}
             </div>
+            {m.toolCall && (
+              <div className="mr-4 mt-1.5 flex items-center gap-1.5">
+                <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded font-semibold tracking-wider ${
+                  m.toolCall.ok
+                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                    : 'bg-red-50 text-red-700 border border-red-200'
+                }`}>
+                  {m.toolCall.ok ? '✓' : '✗'} {m.toolCall.name}
+                </span>
+                {Object.keys(m.toolCall.args).length > 0 && (
+                  <span className="text-[9px] font-mono text-slate-500 truncate">
+                    {Object.entries(m.toolCall.args).map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(', ')}
+                  </span>
+                )}
+              </div>
+            )}
             {m.tools && (
               <div className="bg-white border border-amber-200 border-l-2 border-l-amber-500 rounded-r px-3 py-2 mt-1.5 font-mono text-[10px] text-slate-600 leading-relaxed mr-4">
                 {m.tools.map((tt, j) => (
