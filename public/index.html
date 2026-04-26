@@ -2185,22 +2185,23 @@ function HPWDStudio() {
                           );
                         })}
 
-                        {/* Segment midpoint "+" 버튼 — 더블클릭/클릭으로 새 waypoint 추가.
-                         * elbowPoints 사이의 각 segment 중간점. */}
+                        {/* Segment midpoint "+" 버튼 — 클릭으로 새 waypoint 추가.
+                         * 자동 모드(waypoints=[])에서는 기존 elbow의 모든 중간 corner를 waypoints로
+                         * commit한 뒤 클릭한 segment에 새 점 삽입 → 모양 유지. 좌표는 직각 정렬 보존. */}
                         {(() => {
                           const pts = path.points || [];
                           if (pts.length < 2) return null;
-                          // 각 segment 중간점 계산
+                          // 각 segment 중간점 계산. round corner 때문에 너무 짧은 건 skip.
                           const midpoints = [];
                           for (let k = 0; k < pts.length - 1; k++) {
                             const a = pts[k];
                             const b = pts[k + 1];
-                            // 너무 짧은 segment는 skip
-                            if (Math.hypot(b.x - a.x, b.y - a.y) < 30) continue;
+                            if (Math.hypot(b.x - a.x, b.y - a.y) < 12) continue;
+                            // 직각 segment면 정확히 중점, 사선이면 그래도 중점 (직각이 정상 케이스)
                             midpoints.push({
                               x: (a.x + b.x) / 2,
                               y: (a.y + b.y) / 2,
-                              insertIdx: k, // 새 waypoint 삽입 인덱스 (waypoints 배열 기준)
+                              segIdx: k, // pts 배열 기준 segment 인덱스
                             });
                           }
                           return midpoints.map((mp, mIdx) => (
@@ -2211,15 +2212,27 @@ function HPWDStudio() {
                               onClick={(e) => {
                                 e.stopPropagation();
                                 pushHistory(blocks, connections);
-                                // waypoints에서 이 위치를 어느 인덱스로 넣을지: 기존 점들 사이에서 mp.insertIdx
-                                // pts = [from, ...wps, to] 이므로 wp 삽입 인덱스 = insertIdx
-                                const wpInsertIdx = Math.min(mp.insertIdx, (c.waypoints || []).length);
                                 const sx = Math.round(mp.x / GRID_SIZE) * GRID_SIZE;
                                 const sy = Math.round(mp.y / GRID_SIZE) * GRID_SIZE;
                                 setConnections(cs => cs.map((cc, ci) => {
                                   if (ci !== i) return cc;
-                                  const wps = (cc.waypoints || []).slice();
-                                  wps.splice(wpInsertIdx, 0, { x: sx, y: sy });
+                                  const existing = cc.waypoints || [];
+                                  if (existing.length === 0) {
+                                    // 자동 모드 → 자동 elbow의 중간 corner들을 모두 waypoints로 commit
+                                    // pts = [from, ...corners, to] 이므로 corner = pts.slice(1, -1)
+                                    const autoCorners = pts.slice(1, -1).map(p => ({
+                                      x: Math.round(p.x / GRID_SIZE) * GRID_SIZE,
+                                      y: Math.round(p.y / GRID_SIZE) * GRID_SIZE,
+                                    }));
+                                    // 클릭한 segment 인덱스 = pts 기준 segIdx → autoCorners(=waypoints) 기준 삽입 인덱스
+                                    // pts segment k는 autoCorners[k-1] 다음에 위치. 따라서 삽입 인덱스 = k.
+                                    const insertAt = mp.segIdx;
+                                    autoCorners.splice(insertAt, 0, { x: sx, y: sy });
+                                    return { ...cc, waypoints: autoCorners };
+                                  }
+                                  // 이미 사용자 모드 — pts = [from, ...wps, to] → segIdx → waypoints 삽입 인덱스
+                                  const wps = existing.slice();
+                                  wps.splice(mp.segIdx, 0, { x: sx, y: sy });
                                   return { ...cc, waypoints: wps };
                                 }));
                               }}
