@@ -548,10 +548,14 @@ function segmentHitsRect(a, b, rect, margin = 0) {
   return a.x > x1 && a.x < x2 && ey > y1 && sy < y2;
 }
 
-/* points 경로 중 obstacles와 충돌하는 segment가 하나라도 있는지. */
+/* points 경로 중 obstacles와 충돌하는 segment가 하나라도 있는지.
+ * obstacles의 ownEndpoint=true는 라인의 양 끝 stub segment에서 충돌 무시. */
 function pathHitsObstacles(points, obstacles, margin = 8) {
+  const lastSegIdx = points.length - 2;
   for (let i = 0; i < points.length - 1; i++) {
+    const isStub = (i === 0) || (i === lastSegIdx);
     for (const r of obstacles) {
+      if (r.ownEndpoint && isStub) continue; // 자기 블록 위 stub 통과는 OK
       if (segmentHitsRect(points[i], points[i + 1], r, margin)) return true;
     }
   }
@@ -660,9 +664,11 @@ function buildElbowPoints(fromPos, fromSide, toPos, toSide, stub) {
 function buildAvoidingRoute(fromPos, fromSide, toPos, toSide, stub, obstacles) {
   const base = buildElbowPoints(fromPos, fromSide, toPos, toSide, stub);
   if (!obstacles || obstacles.length === 0) return base;
-  // 충돌하는 장애물만 추출
+  // 충돌하는 장애물만 추출 (ownEndpoint는 base의 첫/마지막 segment에서 무시)
+  const lastBaseIdx = base.length - 2;
   const hit = obstacles.filter(r => {
     for (let i = 0; i < base.length - 1; i++) {
+      if (r.ownEndpoint && (i === 0 || i === lastBaseIdx)) continue;
       if (segmentHitsRect(base[i], base[i + 1], r, 8)) return true;
     }
     return false;
@@ -1940,10 +1946,12 @@ function HPWDStudio() {
                     // 사용자 지정 waypoints — 우회 알고리즘 우회 (직접 지정)
                     elbowPoints = [drawFromPos, ...waypoints, drawToPos];
                   } else {
-                    // 다른 블록을 장애물로 (자기 양 끝은 제외)
-                    const obstacles = blocks
-                      .filter(b => b.id !== c.from.blockId && b.id !== c.to.blockId)
-                      .map(b => ({ x: b.x, y: b.y, w: getBlockWidth(b), h: getBlockHeight(b) }));
+                    // 모든 블록을 장애물로 (자기 양 끝도 포함). 단, endpoint 슬롯 면이 닿는
+                    // 작은 영역은 회피 알고리즘이 알아서 stub으로 빠져나가므로 OK.
+                    const obstacles = blocks.map(b => ({
+                      x: b.x, y: b.y, w: getBlockWidth(b), h: getBlockHeight(b),
+                      ownEndpoint: b.id === c.from.blockId || b.id === c.to.blockId,
+                    }));
                     elbowPoints = buildAvoidingRoute(drawFromPos, drawFromSide, drawToPos, drawToSide, 24, obstacles);
                   }
                   pathD = smoothPath(elbowPoints, c.cornerRadius ?? 8);
@@ -1965,35 +1973,28 @@ function HPWDStudio() {
                     onMouseEnter={() => setHoveredConn(i)}
                     onMouseLeave={() => setHoveredConn(h => h === i ? null : h)}
                   >
-                    {/* 가시 라인 — kind에 따라 layered design */}
+                    {/* 가시 라인 — kind에 따라 layered design (pointer-events 차단 → hit area로만 클릭) */}
                     {(() => {
                       const lk = LINE_KINDS[c.kind || 'refrigerant'] || LINE_KINDS.refrigerant;
                       const overlay = isSelected ? '#0284c7' : (highlight ? '#0891b2' : null);
 
                       if ((c.kind || 'refrigerant') === 'refrigerant') {
-                        // 구리 동관: 외곽 그림자 + 짙은 구리 + 메인 구리 + 광택 highlight
                         return (
-                          <g>
+                          <g style={{ pointerEvents: 'none' }}>
                             {overlay && (
                               <path d={path.d} stroke={overlay} strokeWidth={12} fill="none" strokeLinejoin="round" strokeLinecap="round" opacity={0.35}/>
                             )}
-                            {/* 외곽 그림자 (어두운 갈색) */}
                             <path d={path.d} stroke="#3a1c0a" strokeWidth={8} fill="none" strokeLinejoin="round" strokeLinecap="round"/>
-                            {/* 짙은 구리 */}
                             <path d={path.d} stroke="#7c3a14" strokeWidth={6.4} fill="none" strokeLinejoin="round" strokeLinecap="round"/>
-                            {/* 메인 구리 */}
                             <path d={path.d} stroke="#b87333" strokeWidth={5} fill="none" strokeLinejoin="round" strokeLinecap="round" className="transition-colors"/>
-                            {/* 밝은 구리 사이드 */}
                             <path d={path.d} stroke="#d49a5b" strokeWidth={2.6} fill="none" strokeLinejoin="round" strokeLinecap="round" transform="translate(0,-0.6)"/>
-                            {/* 광택 highlight */}
                             <path d={path.d} stroke="#fde68a" strokeWidth={1.1} fill="none" opacity={0.9} strokeLinejoin="round" strokeLinecap="round" transform="translate(0,-1.5)"/>
                           </g>
                         );
                       }
                       if (c.kind === 'air') {
-                        // 덕트: 두꺼운 외곽 + 회색 body + 중심선 점선
                         return (
-                          <g>
+                          <g style={{ pointerEvents: 'none' }}>
                             {overlay && (
                               <path d={path.d} stroke={overlay} strokeWidth={15} fill="none" strokeLinejoin="round" strokeLinecap="butt" opacity={0.35}/>
                             )}
@@ -2003,9 +2004,8 @@ function HPWDStudio() {
                           </g>
                         );
                       }
-                      // water (rubber hose)
                       return (
-                        <g>
+                        <g style={{ pointerEvents: 'none' }}>
                           {overlay && (
                             <path d={path.d} stroke={overlay} strokeWidth={10} fill="none" strokeLinejoin="round" strokeLinecap="round" opacity={0.35}/>
                           )}
@@ -2019,7 +2019,7 @@ function HPWDStudio() {
                     <path
                       d={path.d}
                       stroke="transparent"
-                      strokeWidth="12"
+                      strokeWidth="18"
                       fill="none"
                       className="cursor-pointer"
                       onClick={(e) => {
@@ -3434,8 +3434,31 @@ function SlotModal({ mode, slots, onClose, onSave, onLoad, onDelete, onRename, o
 }
 
 
+    class ErrorBoundary extends React.Component {
+      constructor(props) { super(props); this.state = { error: null }; }
+      static getDerivedStateFromError(error) { return { error }; }
+      componentDidCatch(error, info) { console.error('Render error:', error, info); }
+      render() {
+        if (this.state.error) {
+          return (
+            <div style={{ padding: 24, fontFamily: 'monospace', color: '#dc2626', whiteSpace: 'pre-wrap' }}>
+              <h2 style={{ marginBottom: 12 }}>⚠ Render Error</h2>
+              <div style={{ marginBottom: 16, fontSize: 14 }}>{String(this.state.error?.message || this.state.error)}</div>
+              <pre style={{ fontSize: 11, color: '#475569', background: '#f8fafc', padding: 12, borderRadius: 4, overflow: 'auto' }}>
+                {this.state.error?.stack}
+              </pre>
+              <button
+                onClick={() => location.reload()}
+                style={{ marginTop: 16, padding: '6px 16px', background: '#06b6d4', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer' }}
+              >Reload</button>
+            </div>
+          );
+        }
+        return this.props.children;
+      }
+    }
     const root = ReactDOM.createRoot(document.getElementById('root'));
-    root.render(<HPWDStudio />);
+    root.render(<ErrorBoundary><HPWDStudio /></ErrorBoundary>);
   </script>
 </body>
 </html>
