@@ -534,29 +534,103 @@ function stubEnd(point, side, stub) {
   }
 }
 
-/* 두 슬롯 사이 직각 elbow 경로의 corner 점들. start/end 포함하지 않은 중간 corner만 반환. */
+/* 두 슬롯 사이 직각 elbow 경로 corner 점들.
+ * 두 면이 마주보는 경우(opposing parallel: right↔left, bottom↔top, top↔bottom, left↔right) +
+ * 같은 면(both right, both top 등)을 모두 ㄹ자로 깔끔하게 처리. */
 function buildElbowPoints(fromPos, fromSide, toPos, toSide, stub) {
   const fs = stubEnd(fromPos, fromSide, stub);
   const ts = stubEnd(toPos, toSide, stub);
   const fromH = fromSide === 'left' || fromSide === 'right';
   const toH   = toSide === 'left' || toSide === 'right';
-  const points = [fromPos, fs];
+  const points = [fromPos];
+
+  // 면이 같은 방향(둘 다 horizontal or 둘 다 vertical) — same-axis case
   if (fromH && toH) {
-    if (Math.abs(fs.y - ts.y) > 1) {
-      const midX = (fs.x + ts.x) / 2;
-      points.push({ x: midX, y: fs.y }, { x: midX, y: ts.y });
+    // horizontal 면 두 개. y는 다를 수 있음. 면 반대 방향이면 ㄹ자, 같은 방향이면 ㄷ자.
+    const opposing = (fromSide === 'right' && toSide === 'left') || (fromSide === 'left' && toSide === 'right');
+    const sameSide = fromSide === toSide;
+    if (sameSide) {
+      // ㄷ자: 같은 방향으로 stub 빼서 가장 멀리 있는 x로 우회
+      const outX = fromSide === 'right' ? Math.max(fs.x, ts.x) : Math.min(fs.x, ts.x);
+      points.push({ x: outX, y: fs.y }, { x: outX, y: ts.y });
+    } else if (opposing) {
+      // 마주보기: 두 stub 끝 사이가 양수면 ㄹ자, 음수(서로 침범)면 우회
+      const fromOut = fromSide === 'right' ? 1 : -1;
+      const gap = (ts.x - fs.x) * fromOut;
+      if (gap >= 0) {
+        // 정상 ㄹ자 — 중간 midX
+        const midX = (fs.x + ts.x) / 2;
+        points.push(fs, { x: midX, y: fs.y }, { x: midX, y: ts.y }, ts);
+      } else {
+        // stub이 서로 침범 → 위/아래로 우회 (ㄷ자 회피)
+        const detourY = fs.y < ts.y
+          ? Math.min(fs.y, ts.y) - stub
+          : Math.max(fs.y, ts.y) + stub;
+        points.push(fs, { x: fs.x, y: detourY }, { x: ts.x, y: detourY }, ts);
+      }
+    } else {
+      // 잘못된 조합 (실제 발생 X)
+      points.push(fs, ts);
     }
   } else if (!fromH && !toH) {
-    if (Math.abs(fs.x - ts.x) > 1) {
-      const midY = (fs.y + ts.y) / 2;
-      points.push({ x: fs.x, y: midY }, { x: ts.x, y: midY });
+    // vertical 면 두 개
+    const opposing = (fromSide === 'bottom' && toSide === 'top') || (fromSide === 'top' && toSide === 'bottom');
+    const sameSide = fromSide === toSide;
+    if (sameSide) {
+      const outY = fromSide === 'bottom' ? Math.max(fs.y, ts.y) : Math.min(fs.y, ts.y);
+      points.push({ x: fs.x, y: outY }, { x: ts.x, y: outY });
+    } else if (opposing) {
+      const fromOut = fromSide === 'bottom' ? 1 : -1;
+      const gap = (ts.y - fs.y) * fromOut;
+      if (gap >= 0) {
+        // 정상 ㄹ자
+        const midY = (fs.y + ts.y) / 2;
+        points.push(fs, { x: fs.x, y: midY }, { x: ts.x, y: midY }, ts);
+      } else {
+        // 우회 (좌/우)
+        const detourX = fs.x < ts.x
+          ? Math.min(fs.x, ts.x) - stub
+          : Math.max(fs.x, ts.x) + stub;
+        points.push(fs, { x: detourX, y: fs.y }, { x: detourX, y: ts.y }, ts);
+      }
+    } else {
+      points.push(fs, ts);
     }
   } else if (fromH && !toH) {
-    points.push({ x: ts.x, y: fs.y });
+    // horizontal → vertical: 한 corner. 단 stub이 침범하면 우회 추가
+    const fromOut = fromSide === 'right' ? 1 : -1;
+    const toOut = toSide === 'bottom' ? 1 : -1;
+    const xOk = (ts.x - fs.x) * fromOut >= 0;
+    const yOk = (fs.y - ts.y) * toOut >= 0;
+    if (xOk && yOk) {
+      points.push(fs, { x: ts.x, y: fs.y }, ts);
+    } else if (!xOk && yOk) {
+      points.push(fs, { x: fs.x, y: ts.y }, ts);
+    } else if (xOk && !yOk) {
+      points.push(fs, { x: ts.x, y: fs.y }, ts);
+    } else {
+      // 둘 다 stub 안쪽 — 4-corner 우회
+      const detourX = fs.x;
+      const detourY = ts.y;
+      points.push(fs, { x: detourX, y: detourY }, ts);
+    }
   } else {
-    points.push({ x: fs.x, y: ts.y });
+    // vertical → horizontal
+    const fromOut = fromSide === 'bottom' ? 1 : -1;
+    const toOut = toSide === 'right' ? 1 : -1;
+    const yOk = (ts.y - fs.y) * fromOut >= 0;
+    const xOk = (fs.x - ts.x) * toOut >= 0;
+    if (yOk && xOk) {
+      points.push(fs, { x: fs.x, y: ts.y }, ts);
+    } else if (!yOk && xOk) {
+      points.push(fs, { x: ts.x, y: fs.y }, ts);
+    } else if (yOk && !xOk) {
+      points.push(fs, { x: fs.x, y: ts.y }, ts);
+    } else {
+      points.push(fs, { x: ts.x, y: fs.y }, ts);
+    }
   }
-  points.push(ts, toPos);
+  points.push(toPos);
   return points;
 }
 
