@@ -534,9 +534,31 @@ function stubEnd(point, side, stub) {
   }
 }
 
-/* 두 슬롯 사이 직각 elbow 경로 corner 점들.
- * 두 면이 마주보는 경우(opposing parallel: right↔left, bottom↔top, top↔bottom, left↔right) +
- * 같은 면(both right, both top 등)을 모두 ㄹ자로 깔끔하게 처리. */
+/* 직각 segment (수평 또는 수직)와 axis-aligned rect 교차 여부. margin: rect 주변 padding. */
+function segmentHitsRect(a, b, rect, margin = 0) {
+  const x1 = rect.x - margin, x2 = rect.x + rect.w + margin;
+  const y1 = rect.y - margin, y2 = rect.y + rect.h + margin;
+  if (Math.abs(a.y - b.y) < 0.5) {
+    // 수평
+    const sx = Math.min(a.x, b.x), ex = Math.max(a.x, b.x);
+    return a.y > y1 && a.y < y2 && ex > x1 && sx < x2;
+  }
+  // 수직
+  const sy = Math.min(a.y, b.y), ey = Math.max(a.y, b.y);
+  return a.x > x1 && a.x < x2 && ey > y1 && sy < y2;
+}
+
+/* points 경로 중 obstacles와 충돌하는 segment가 하나라도 있는지. */
+function pathHitsObstacles(points, obstacles, margin = 8) {
+  for (let i = 0; i < points.length - 1; i++) {
+    for (const r of obstacles) {
+      if (segmentHitsRect(points[i], points[i + 1], r, margin)) return true;
+    }
+  }
+  return false;
+}
+
+/* 두 슬롯 사이 직각 elbow 경로 corner 점들. */
 function buildElbowPoints(fromPos, fromSide, toPos, toSide, stub) {
   const fs = stubEnd(fromPos, fromSide, stub);
   const ts = stubEnd(toPos, toSide, stub);
@@ -632,6 +654,58 @@ function buildElbowPoints(fromPos, fromSide, toPos, toSide, stub) {
   }
   points.push(toPos);
   return points;
+}
+
+/* obstacles 회피 라우팅. 기본 elbow가 충돌하면 위/아래/좌/우 4가지 우회를 시도해 가장 짧은 것 반환. */
+function buildAvoidingRoute(fromPos, fromSide, toPos, toSide, stub, obstacles) {
+  const base = buildElbowPoints(fromPos, fromSide, toPos, toSide, stub);
+  if (!obstacles || obstacles.length === 0) return base;
+  // 충돌하는 장애물만 추출
+  const hit = obstacles.filter(r => {
+    for (let i = 0; i < base.length - 1; i++) {
+      if (segmentHitsRect(base[i], base[i + 1], r, 8)) return true;
+    }
+    return false;
+  });
+  if (hit.length === 0) return base;
+
+  // 충돌 장애물 통합 bbox + padding
+  const PAD = 16;
+  let xmin = Infinity, ymin = Infinity, xmax = -Infinity, ymax = -Infinity;
+  for (const r of hit) {
+    if (r.x < xmin) xmin = r.x;
+    if (r.y < ymin) ymin = r.y;
+    if (r.x + r.w > xmax) xmax = r.x + r.w;
+    if (r.y + r.h > ymax) ymax = r.y + r.h;
+  }
+  const aboveY = ymin - PAD;
+  const belowY = ymax + PAD;
+  const leftX  = xmin - PAD;
+  const rightX = xmax + PAD;
+
+  const fs = stubEnd(fromPos, fromSide, stub);
+  const ts = stubEnd(toPos, toSide, stub);
+
+  // 4가지 우회 후보. 첫 segment(from→fs)는 stub 강제 보장.
+  const candidates = [
+    [fromPos, fs, { x: fs.x, y: aboveY }, { x: ts.x, y: aboveY }, ts, toPos],
+    [fromPos, fs, { x: fs.x, y: belowY }, { x: ts.x, y: belowY }, ts, toPos],
+    [fromPos, fs, { x: leftX,  y: fs.y }, { x: leftX,  y: ts.y }, ts, toPos],
+    [fromPos, fs, { x: rightX, y: fs.y }, { x: rightX, y: ts.y }, ts, toPos],
+  ];
+
+  // 모든 obstacles에 대해 충돌 없는 후보 중 길이 최소
+  let best = null;
+  let bestLen = Infinity;
+  for (const cand of candidates) {
+    if (pathHitsObstacles(cand, obstacles)) continue;
+    let L = 0;
+    for (let k = 0; k < cand.length - 1; k++) {
+      L += Math.abs(cand[k].x - cand[k + 1].x) + Math.abs(cand[k].y - cand[k + 1].y);
+    }
+    if (L < bestLen) { bestLen = L; best = cand; }
+  }
+  return best || base;
 }
 
 /* points 배열을 SVG path로 — corner radius r 적용 (각 꺾임에 quadratic bezier). r=0이면 직각. */
@@ -1985,14 +2059,17 @@ function HPWDStudio() {
                 const waypoints = c.waypoints || [];
                 if (drawFromSide && drawToSide) {
                   if (waypoints.length > 0 && !isDraggingThis) {
-                    // 사용자 지정 waypoints 사용 — start/end 자동, 사이는 사용자 정의
+                    // 사용자 지정 waypoints — 우회 알고리즘 우회 (직접 지정)
                     elbowPoints = [drawFromPos, ...waypoints, drawToPos];
                   } else {
-                    elbowPoints = buildElbowPoints(drawFromPos, drawFromSide, drawToPos, drawToSide, 24);
+                    // 다른 블록을 장애물로 (자기 양 끝은 제외)
+                    const obstacles = blocks
+                      .filter(b => b.id !== c.from.blockId && b.id !== c.to.blockId)
+                      .map(b => ({ x: b.x, y: b.y, w: getBlockWidth(b), h: getBlockHeight(b) }));
+                    elbowPoints = buildAvoidingRoute(drawFromPos, drawFromSide, drawToPos, drawToSide, 24, obstacles);
                   }
                   pathD = smoothPath(elbowPoints, c.cornerRadius ?? 8);
                 } else {
-                  // side 미정 (마우스 자유 위치) — 직선
                   pathD = `M ${drawFromPos.x} ${drawFromPos.y} L ${drawToPos.x} ${drawToPos.y}`;
                   elbowPoints = [drawFromPos, drawToPos];
                 }
