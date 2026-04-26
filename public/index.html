@@ -739,6 +739,9 @@ function HPWDStudio() {
   const [editingNameId, setEditingNameId] = useState(null);
   const [editingName, setEditingName] = useState('');
   const [endpointDrag, setEndpointDrag] = useState(null); // {connIdx, end:'from'|'to'}
+  const [waypointDrag, setWaypointDrag] = useState(null); // {connIdx, wpIdx}
+  const [bottomPanelOpen, setBottomPanelOpen] = useState(true);
+  const [zoom, setZoom] = useState(1);
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
 
   // 박스 드래그 선택 상태: {startX, startY, curX, curY}
@@ -790,7 +793,11 @@ function HPWDStudio() {
     const typeKey = e.dataTransfer.getData('typeKey');
     if (!typeKey || !TYPES[typeKey]) return;
     const rect = canvasRef.current.getBoundingClientRect();
-    addBlock(typeKey, e.clientX - rect.left, e.clientY - rect.top);
+    addBlock(
+      typeKey,
+      (e.clientX - rect.left + canvasRef.current.scrollLeft) / zoom,
+      (e.clientY - rect.top + canvasRef.current.scrollTop) / zoom
+    );
   };
 
   const addBlock = (typeKey, x, y) => {
@@ -844,15 +851,15 @@ function HPWDStudio() {
       blockIds: dragIds,
       primaryId: blockId,
       startPositions,
-      offsetX: e.clientX - rect.left - block.x,
-      offsetY: e.clientY - rect.top - block.y,
+      offsetX: (e.clientX - rect.left + canvasRef.current.scrollLeft) / zoom - block.x,
+      offsetY: (e.clientY - rect.top + canvasRef.current.scrollTop) / zoom - block.y,
     };
   };
 
   const handleCanvasMouseMove = (e) => {
     const rect = canvasRef.current.getBoundingClientRect();
-    const mx = e.clientX - rect.left;
-    const my = e.clientY - rect.top;
+    const mx = (e.clientX - rect.left + canvasRef.current.scrollLeft) / zoom;
+    const my = (e.clientY - rect.top + canvasRef.current.scrollTop) / zoom;
     mousePosRef.current = { x: mx, y: my };
 
     // 블록 드래그: DOM 직접 조작, 다중 블록 동시 이동 지원
@@ -1219,8 +1226,8 @@ function HPWDStudio() {
     const onUp = (e) => {
       const rect = canvasRef.current?.getBoundingClientRect();
       if (!rect) { setEndpointDrag(null); return; }
-      const cx = e.clientX - rect.left;
-      const cy = e.clientY - rect.top;
+      const cx = (e.clientX - rect.left + canvasRef.current.scrollLeft) / zoom;
+      const cy = (e.clientY - rect.top + canvasRef.current.scrollTop) / zoom;
       const target = findNearestSlot(cx, cy, 28);
       if (target) {
         const conn = connections[endpointDrag.connIdx];
@@ -1256,6 +1263,32 @@ function HPWDStudio() {
     window.addEventListener('mouseup', onUp);
     return () => window.removeEventListener('mouseup', onUp);
   }, [endpointDrag, connections, blocks]);
+
+  /* Waypoint 드래그 — 라이브 위치 업데이트, grid snap. */
+  useEffect(() => {
+    if (!waypointDrag) return;
+    const onMove = (e) => {
+      const rect = canvasRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const cx = (e.clientX - rect.left + canvasRef.current.scrollLeft) / zoom;
+      const cy = (e.clientY - rect.top + canvasRef.current.scrollTop) / zoom;
+      const sx = Math.round(cx / GRID_SIZE) * GRID_SIZE;
+      const sy = Math.round(cy / GRID_SIZE) * GRID_SIZE;
+      setConnections(cs => cs.map((c, i) => {
+        if (i !== waypointDrag.connIdx) return c;
+        const wps = (c.waypoints || []).slice();
+        wps[waypointDrag.wpIdx] = { x: sx, y: sy };
+        return { ...c, waypoints: wps };
+      }));
+    };
+    const onUp = () => setWaypointDrag(null);
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, [waypointDrag, zoom]);
 
   /* 이미지 블록 리사이즈 — 우하단 핸들 드래그 시 imageSize 업데이트. */
   useEffect(() => {
@@ -1802,8 +1835,8 @@ function HPWDStudio() {
               // 여기 도달한다는 건 진짜 빈 공간이라는 뜻
               if (e.button !== 0) return; // 왼쪽 버튼만
               const rect = canvasRef.current.getBoundingClientRect();
-              const x = e.clientX - rect.left;
-              const y = e.clientY - rect.top;
+              const x = (e.clientX - rect.left + canvasRef.current.scrollLeft) / zoom;
+              const y = (e.clientY - rect.top + canvasRef.current.scrollTop) / zoom;
               if (!(e.shiftKey || e.ctrlKey || e.metaKey)) {
                 setSelectedIds([]);
                 setSelectedConnIds([]);
@@ -1813,7 +1846,23 @@ function HPWDStudio() {
             }}
             onMouseMove={handleCanvasMouseMove}
             onMouseUp={handleCanvasMouseUp}
+            onWheel={(e) => {
+              if (e.ctrlKey || e.metaKey) {
+                e.preventDefault();
+                const delta = e.deltaY > 0 ? -0.1 : 0.1;
+                setZoom(z => Math.max(0.25, Math.min(3, +(z + delta).toFixed(2))));
+              }
+            }}
           >
+            <div
+              className="absolute top-0 left-0"
+              style={{
+                width: 5000,
+                height: 5000,
+                transform: `scale(${zoom})`,
+                transformOrigin: '0 0',
+              }}
+            >
             <svg className="absolute inset-0 pointer-events-none" width="100%" height="100%">
               {/* 블록 높이를 미리 계산 (연결선 충돌 감지용 장애물 rect) */}
               {(() => { return null; })()}
@@ -1858,14 +1907,22 @@ function HPWDStudio() {
                 }
 
                 let pathD;
+                let elbowPoints;
+                const waypoints = c.waypoints || [];
                 if (drawFromSide && drawToSide) {
-                  const elbowPoints = buildElbowPoints(drawFromPos, drawFromSide, drawToPos, drawToSide, 24);
+                  if (waypoints.length > 0 && !isDraggingThis) {
+                    // 사용자 지정 waypoints 사용 — start/end 자동, 사이는 사용자 정의
+                    elbowPoints = [drawFromPos, ...waypoints, drawToPos];
+                  } else {
+                    elbowPoints = buildElbowPoints(drawFromPos, drawFromSide, drawToPos, drawToSide, 24);
+                  }
                   pathD = smoothPath(elbowPoints, c.cornerRadius ?? 8);
                 } else {
                   // side 미정 (마우스 자유 위치) — 직선
                   pathD = `M ${drawFromPos.x} ${drawFromPos.y} L ${drawToPos.x} ${drawToPos.y}`;
+                  elbowPoints = [drawFromPos, drawToPos];
                 }
-                const path = { d: pathD, handles: [] };
+                const path = { d: pathD, handles: [], points: elbowPoints };
                 const firstHandle = drawFromPos;
                 const isHovered = hoveredConn === i;
                 const isSelected = selectedConnIds.includes(i);
@@ -2057,6 +2114,92 @@ function HPWDStudio() {
                                   fill={isDraggingTo ? '#06b6d4' : 'white'}
                                   stroke="#0284c7" strokeWidth={2.5}/>
                         </g>
+
+                        {/* Waypoint 핸들 — 사용자 정의 corner들. 드래그=이동, alt+클릭=제거 */}
+                        {(c.waypoints || []).map((wp, wpIdx) => {
+                          const isWpDragging = waypointDrag?.connIdx === i && waypointDrag.wpIdx === wpIdx;
+                          return (
+                            <g
+                              key={`wp-${wpIdx}`}
+                              className="cursor-move"
+                              onMouseDown={(e) => {
+                                e.stopPropagation();
+                                if (e.altKey) {
+                                  // alt+click → 제거
+                                  pushHistory(blocks, connections);
+                                  setConnections(cs => cs.map((cc, ci) => ci === i
+                                    ? { ...cc, waypoints: (cc.waypoints || []).filter((_, wi) => wi !== wpIdx) }
+                                    : cc
+                                  ));
+                                } else {
+                                  setWaypointDrag({ connIdx: i, wpIdx });
+                                }
+                              }}
+                              onContextMenu={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                pushHistory(blocks, connections);
+                                setConnections(cs => cs.map((cc, ci) => ci === i
+                                  ? { ...cc, waypoints: (cc.waypoints || []).filter((_, wi) => wi !== wpIdx) }
+                                  : cc
+                                ));
+                              }}
+                            >
+                              <circle cx={wp.x} cy={wp.y} r={10} fill="transparent"/>
+                              <rect
+                                x={wp.x - 5} y={wp.y - 5} width={10} height={10}
+                                fill={isWpDragging ? '#06b6d4' : '#fef3c7'}
+                                stroke="#d97706" strokeWidth={1.5}
+                              />
+                            </g>
+                          );
+                        })}
+
+                        {/* Segment midpoint "+" 버튼 — 더블클릭/클릭으로 새 waypoint 추가.
+                         * elbowPoints 사이의 각 segment 중간점. */}
+                        {(() => {
+                          const pts = path.points || [];
+                          if (pts.length < 2) return null;
+                          // 각 segment 중간점 계산
+                          const midpoints = [];
+                          for (let k = 0; k < pts.length - 1; k++) {
+                            const a = pts[k];
+                            const b = pts[k + 1];
+                            // 너무 짧은 segment는 skip
+                            if (Math.hypot(b.x - a.x, b.y - a.y) < 30) continue;
+                            midpoints.push({
+                              x: (a.x + b.x) / 2,
+                              y: (a.y + b.y) / 2,
+                              insertIdx: k, // 새 waypoint 삽입 인덱스 (waypoints 배열 기준)
+                            });
+                          }
+                          return midpoints.map((mp, mIdx) => (
+                            <g
+                              key={`mid-${mIdx}`}
+                              className="cursor-pointer"
+                              onMouseDown={(e) => e.stopPropagation()}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                pushHistory(blocks, connections);
+                                // waypoints에서 이 위치를 어느 인덱스로 넣을지: 기존 점들 사이에서 mp.insertIdx
+                                // pts = [from, ...wps, to] 이므로 wp 삽입 인덱스 = insertIdx
+                                const wpInsertIdx = Math.min(mp.insertIdx, (c.waypoints || []).length);
+                                const sx = Math.round(mp.x / GRID_SIZE) * GRID_SIZE;
+                                const sy = Math.round(mp.y / GRID_SIZE) * GRID_SIZE;
+                                setConnections(cs => cs.map((cc, ci) => {
+                                  if (ci !== i) return cc;
+                                  const wps = (cc.waypoints || []).slice();
+                                  wps.splice(wpInsertIdx, 0, { x: sx, y: sy });
+                                  return { ...cc, waypoints: wps };
+                                }));
+                              }}
+                              opacity={0.7}
+                            >
+                              <circle cx={mp.x} cy={mp.y} r={9} fill="white" stroke="#06b6d4" strokeWidth={1.2} strokeDasharray="2 2"/>
+                              <text x={mp.x} y={mp.y + 3.5} textAnchor="middle" fill="#06b6d4" fontSize="13" fontWeight="bold" style={{ userSelect: 'none', pointerEvents: 'none' }}>+</text>
+                            </g>
+                          ));
+                        })()}
                       </>
                     )}
 
@@ -2276,10 +2419,11 @@ function HPWDStudio() {
                                 isActive ? 'bg-cyan-100' : 'hover:bg-cyan-50'
                               }`}
                               style={{
-                                left: cx - 10,
-                                top: cy - 10,
-                                width: 20,
-                                height: 20,
+                                left: cx - 14,
+                                top: cy - 14,
+                                width: 28,
+                                height: 28,
+                                zIndex: 20,
                               }}
                               title={`${block.name} · ${side} slot ${slotIdx}${used ? ' (used)' : ''}`}
                             >
@@ -2365,6 +2509,31 @@ function HPWDStudio() {
                 </div>
               );
             })}
+            </div>
+            {/* Zoom 컨트롤 (왼쪽 하단, wrap 밖) */}
+            <div className="absolute bottom-3 left-3 flex items-center gap-1 bg-white/95 backdrop-blur border border-slate-200 rounded-md shadow-sm px-1 py-0.5 z-10 pointer-events-auto">
+              <button
+                onClick={() => setZoom(z => Math.max(0.25, +(z - 0.1).toFixed(2)))}
+                className="w-6 h-6 flex items-center justify-center text-slate-600 hover:bg-slate-100 rounded text-[14px] font-bold"
+                title="축소 (Ctrl + -)"
+              >−</button>
+              <button
+                onClick={() => setZoom(1)}
+                className="px-2 h-6 text-[10px] font-mono text-slate-700 hover:bg-slate-100 rounded min-w-[44px]"
+                title="100% 복귀"
+              >{(zoom * 100).toFixed(0)}%</button>
+              <button
+                onClick={() => setZoom(z => Math.min(3, +(z + 0.1).toFixed(2)))}
+                className="w-6 h-6 flex items-center justify-center text-slate-600 hover:bg-slate-100 rounded text-[14px] font-bold"
+                title="확대 (Ctrl + +)"
+              >+</button>
+              <div className="w-px h-4 bg-slate-200 mx-1"/>
+              <button
+                onClick={() => setZoom(z => Math.max(0.25, +(z - 0.1).toFixed(2)))}
+                className="w-6 h-6 hidden"
+              ></button>
+              <span className="text-[9px] text-slate-400 font-mono pr-1">⌃ scroll</span>
+            </div>
 
             {blocks.length === 0 && (
               <div className="absolute inset-0 flex items-center justify-center text-slate-400 pointer-events-none">
@@ -2377,8 +2546,22 @@ function HPWDStudio() {
             )}
           </div>
 
-          {/* Bottom: Plot + Log */}
-          <div className="h-52 bg-white border-t border-slate-200 flex shrink-0">
+          {/* Bottom: Plot + Log (폴딩 가능) */}
+          <div className={`bg-white border-t border-slate-200 shrink-0 transition-all ${bottomPanelOpen ? 'h-52' : 'h-7'}`}>
+            <div className="h-7 px-3 flex items-center gap-3 border-b border-slate-100 bg-slate-50/60 select-none">
+              <button
+                onClick={() => setBottomPanelOpen(o => !o)}
+                className="text-slate-500 hover:text-slate-800 transition-colors flex items-center gap-1.5"
+                title={bottomPanelOpen ? '하단 패널 접기' : '하단 패널 펼치기'}
+              >
+                <span className="text-[10px] font-mono">{bottomPanelOpen ? '▾' : '▸'}</span>
+                <span className="text-[10px] font-semibold uppercase tracking-widest">Output</span>
+              </button>
+              <span className="text-[10px] text-slate-400">·</span>
+              <span className="text-[10px] text-slate-500 font-mono">{plotterData.flatMap(pd => pd.series).length} signals · {simState.log.length} events</span>
+            </div>
+            {bottomPanelOpen && (
+            <div className="flex" style={{ height: 'calc(100% - 28px)' }}>
             <div className="flex-1 p-3 overflow-hidden">
               <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest mb-2">Output Plot</div>
               {plotterData.length === 0 ? (
@@ -2409,6 +2592,8 @@ function HPWDStudio() {
               ))}
               {simState.log.length === 0 && <div className="text-[10px] text-slate-400">No events yet</div>}
             </div>
+            </div>
+            )}
           </div>
         </div>
 
