@@ -141,8 +141,8 @@ const TYPES = {
     },
   },
   exv: {
-    typeNo: 102, name: 'Expansion Valve', category: 'refrigerant', color: '#d97706', icon: Zap, image: './images/eev.png',
-    desc: '전자팽창밸브 (EEV)',
+    typeNo: 102, name: 'EEV', category: 'refrigerant', color: '#d97706', icon: Zap, image: './images/eev.png',
+    desc: '전자팽창밸브 (Electronic EEV)',
     parameters: [
       { key: 'A_orifice', label: 'A_orifice', value: 0.5, unit: 'mm²' },
       { key: 'opening', label: 'Opening', value: 100, unit: '%' },
@@ -167,6 +167,42 @@ const TYPES = {
       const dP = Math.max((P_in - P_out) * 1000, 0);
       const m_dot = par.Cd * A_eff * Math.sqrt(2 * rho * dP) * 1000;
       return { m_dot, T_out: 0.03 * P_out - 20, P_out };
+    },
+  },
+  txv: {
+    typeNo: 104, name: 'TXV', category: 'refrigerant', color: '#b45309', icon: Zap, image: './images/txv.png',
+    desc: '온도식 팽창밸브 (TXV) — superheat 자기조절',
+    parameters: [
+      { key: 'SH_target', label: 'SH_target', value: 7, unit: 'K' },
+      { key: 'A_max', label: 'A_max', value: 0.6, unit: 'mm²' },
+      { key: 'Cd', label: 'Cd', value: 0.62, unit: '-' },
+      { key: 'gain', label: 'gain', value: 0.15, unit: '1/K' },
+    ],
+    inputs: [
+      { key: 'P_in', label: 'P_in', unit: 'kPa' },
+      { key: 'T_in', label: 'T_in', unit: '°C' },
+      { key: 'P_out_target', label: 'P_out', unit: 'kPa' },
+      { key: 'SH_meas', label: 'SH_meas', unit: 'K' },
+    ],
+    outputs: [
+      { key: 'm_dot', label: 'm_dot', unit: 'g/s' },
+      { key: 'T_out', label: 'T_out', unit: '°C' },
+      { key: 'P_out', label: 'P_out', unit: 'kPa' },
+      { key: 'opening', label: 'opening', unit: '%' },
+    ],
+    compute: (inp, par) => {
+      // TXV: SH_meas와 SH_target 차이로 opening 자기조절 (간이 모델)
+      const P_in = inp.P_in ?? 1800;
+      const P_out = inp.P_out_target ?? 500;
+      const T_in = inp.T_in ?? 35;
+      const SH_meas = inp.SH_meas ?? par.SH_target;
+      // SH가 target보다 높으면 더 열고, 낮으면 더 닫음 (시뮬 안정성을 위해 0~100% clamp)
+      const opening = Math.max(0, Math.min(100, 70 + par.gain * (SH_meas - par.SH_target) * 100));
+      const A_eff = par.A_max * (opening / 100) * 1e-6;
+      const rho = (P_in * 1000) / (120 * (T_in + 273.15));
+      const dP = Math.max((P_in - P_out) * 1000, 0);
+      const m_dot = par.Cd * A_eff * Math.sqrt(2 * rho * dP) * 1000;
+      return { m_dot, T_out: 0.03 * P_out - 20, P_out, opening };
     },
   },
   evaporator: {
