@@ -642,37 +642,42 @@ function buildElbowPoints(fromPos, fromSide, toPos, toSide, stub) {
       points.push(fs, ts);
     }
   } else if (fromH && !toH) {
-    // horizontal → vertical: 한 corner. 단 stub이 침범하면 우회 추가
+    // horizontal → vertical: corner 후보 4가지 중 후진 없는 best
     const fromOut = fromSide === 'right' ? 1 : -1;
     const toOut = toSide === 'bottom' ? 1 : -1;
-    const xOk = (ts.x - fs.x) * fromOut >= 0;
-    const yOk = (fs.y - ts.y) * toOut >= 0;
-    if (xOk && yOk) {
+    // 두 stub end는 각자 면 바깥으로 나감. corner 후보:
+    //  C1: {ts.x, fs.y}  — to-stub 라인 따라 fs.y에서 만남 (1-corner)
+    //  C2: {fs.x, ts.y}  — from-stub 라인 따라 ts.y에서 만남 (1-corner)
+    // 어느 쪽이 두 stub 모두를 후진시키지 않는가?
+    //   C1 OK: corner.x를 ts.x에서 fs.x로 가는 segment(fs→C1)가 fromOut 방향이면 OK,
+    //          C1→ts segment가 toOut 방향이면 OK
+    //   C2 마찬가지
+    const c1Ok = (ts.x - fs.x) * fromOut >= 0 && (fs.y - ts.y) * toOut >= 0;
+    const c2Ok = (fs.x - ts.x) * fromOut * -1 >= 0 && (ts.y - fs.y) * toOut * -1 >= 0;
+    if (c1Ok) {
       points.push(fs, { x: ts.x, y: fs.y }, ts);
-    } else if (!xOk && yOk) {
+    } else if (c2Ok) {
       points.push(fs, { x: fs.x, y: ts.y }, ts);
-    } else if (xOk && !yOk) {
-      points.push(fs, { x: ts.x, y: fs.y }, ts);
     } else {
-      // 둘 다 stub 안쪽 — 4-corner 우회
-      const detourX = fs.x;
-      const detourY = ts.y;
-      points.push(fs, { x: detourX, y: detourY }, ts);
+      // 둘 다 stub 후진 — 2-corner ㄹ자: from-stub 끝 너머로 빠진 후 ts.x로
+      const extX = fs.x + fromOut * stub;
+      const extY = ts.y + toOut * stub;
+      points.push(fs, { x: extX, y: fs.y }, { x: extX, y: extY }, { x: ts.x, y: extY }, ts);
     }
   } else {
     // vertical → horizontal
     const fromOut = fromSide === 'bottom' ? 1 : -1;
     const toOut = toSide === 'right' ? 1 : -1;
-    const yOk = (ts.y - fs.y) * fromOut >= 0;
-    const xOk = (fs.x - ts.x) * toOut >= 0;
-    if (yOk && xOk) {
+    const c1Ok = (ts.y - fs.y) * fromOut >= 0 && (fs.x - ts.x) * toOut >= 0;
+    const c2Ok = (fs.y - ts.y) * fromOut * -1 >= 0 && (ts.x - fs.x) * toOut * -1 >= 0;
+    if (c1Ok) {
       points.push(fs, { x: fs.x, y: ts.y }, ts);
-    } else if (!yOk && xOk) {
+    } else if (c2Ok) {
       points.push(fs, { x: ts.x, y: fs.y }, ts);
-    } else if (yOk && !xOk) {
-      points.push(fs, { x: fs.x, y: ts.y }, ts);
     } else {
-      points.push(fs, { x: ts.x, y: fs.y }, ts);
+      const extY = fs.y + fromOut * stub;
+      const extX = ts.x + toOut * stub;
+      points.push(fs, { x: fs.x, y: extY }, { x: extX, y: extY }, { x: extX, y: ts.y }, ts);
     }
   }
   points.push(toPos);
@@ -683,22 +688,13 @@ function buildElbowPoints(fromPos, fromSide, toPos, toSide, stub) {
 function buildAvoidingRoute(fromPos, fromSide, toPos, toSide, stub, obstacles) {
   const base = buildElbowPoints(fromPos, fromSide, toPos, toSide, stub);
   if (!obstacles || obstacles.length === 0) return base;
-  // 충돌 장애물 추출 — pathHitsObstacles 로직 재사용 (ownEndpoint 처리 포함)
   const hit = obstacles.filter(r => pathHitsObstacles(base, [r], 8));
   if (hit.length === 0) return base;
 
-  // 충돌 장애물 통합 bbox + 모든 ownEndpoint 블록 bbox도 우회 시 회피해야 함
+  // 충돌 장애물 통합 bbox + padding (own block은 제외 — 너무 큰 우회 방지)
   const PAD = 16;
   let xmin = Infinity, ymin = Infinity, xmax = -Infinity, ymax = -Infinity;
   for (const r of hit) {
-    if (r.x < xmin) xmin = r.x;
-    if (r.y < ymin) ymin = r.y;
-    if (r.x + r.w > xmax) xmax = r.x + r.w;
-    if (r.y + r.h > ymax) ymax = r.y + r.h;
-  }
-  // ownEndpoint 블록도 detour 라우팅 좌표 후보에 포함 — 자기 블록과 부딪히지 않도록
-  for (const r of obstacles) {
-    if (!r.ownEndpoint) continue;
     if (r.x < xmin) xmin = r.x;
     if (r.y < ymin) ymin = r.y;
     if (r.x + r.w > xmax) xmax = r.x + r.w;
@@ -712,7 +708,6 @@ function buildAvoidingRoute(fromPos, fromSide, toPos, toSide, stub, obstacles) {
   const fs = stubEnd(fromPos, fromSide, stub);
   const ts = stubEnd(toPos, toSide, stub);
 
-  // 4가지 우회 후보. 첫 segment(from→fs)는 stub 강제 보장.
   const candidates = [
     [fromPos, fs, { x: fs.x, y: aboveY }, { x: ts.x, y: aboveY }, ts, toPos],
     [fromPos, fs, { x: fs.x, y: belowY }, { x: ts.x, y: belowY }, ts, toPos],
