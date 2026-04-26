@@ -549,14 +549,23 @@ function segmentHitsRect(a, b, rect, margin = 0) {
 }
 
 /* points 경로 중 obstacles와 충돌하는 segment가 하나라도 있는지.
- * obstacles의 ownEndpoint=true는 라인의 양 끝 stub segment에서 충돌 무시. */
+ * obstacles의 ownEndpoint=true는 라인의 양 끝 stub에 더해, endpoint 좌표와 같은 line상에
+ * 놓인 segment(=stub의 직선 연장)까지 충돌 무시. */
 function pathHitsObstacles(points, obstacles, margin = 8) {
-  const lastSegIdx = points.length - 2;
+  const fromP = points[0];
+  const toP = points[points.length - 1];
   for (let i = 0; i < points.length - 1; i++) {
-    const isStub = (i === 0) || (i === lastSegIdx);
+    const a = points[i];
+    const b = points[i + 1];
     for (const r of obstacles) {
-      if (r.ownEndpoint && isStub) continue; // 자기 블록 위 stub 통과는 OK
-      if (segmentHitsRect(points[i], points[i + 1], r, margin)) return true;
+      if (r.ownEndpoint) {
+        // segment가 from 또는 to의 stub 연장선상이면 (같은 x 또는 같은 y) skip.
+        // 즉 stub이 자기 면에서 충분히 빠져나가는 동안은 자기 블록 위 통과 OK.
+        const blockMatchesFrom = (a.x === fromP.x && b.x === fromP.x) || (a.y === fromP.y && b.y === fromP.y);
+        const blockMatchesTo   = (a.x === toP.x   && b.x === toP.x)   || (a.y === toP.y   && b.y === toP.y);
+        if (blockMatchesFrom || blockMatchesTo) continue;
+      }
+      if (segmentHitsRect(a, b, r, margin)) return true;
     }
   }
   return false;
@@ -664,21 +673,22 @@ function buildElbowPoints(fromPos, fromSide, toPos, toSide, stub) {
 function buildAvoidingRoute(fromPos, fromSide, toPos, toSide, stub, obstacles) {
   const base = buildElbowPoints(fromPos, fromSide, toPos, toSide, stub);
   if (!obstacles || obstacles.length === 0) return base;
-  // 충돌하는 장애물만 추출 (ownEndpoint는 base의 첫/마지막 segment에서 무시)
-  const lastBaseIdx = base.length - 2;
-  const hit = obstacles.filter(r => {
-    for (let i = 0; i < base.length - 1; i++) {
-      if (r.ownEndpoint && (i === 0 || i === lastBaseIdx)) continue;
-      if (segmentHitsRect(base[i], base[i + 1], r, 8)) return true;
-    }
-    return false;
-  });
+  // 충돌 장애물 추출 — pathHitsObstacles 로직 재사용 (ownEndpoint 처리 포함)
+  const hit = obstacles.filter(r => pathHitsObstacles(base, [r], 8));
   if (hit.length === 0) return base;
 
-  // 충돌 장애물 통합 bbox + padding
+  // 충돌 장애물 통합 bbox + 모든 ownEndpoint 블록 bbox도 우회 시 회피해야 함
   const PAD = 16;
   let xmin = Infinity, ymin = Infinity, xmax = -Infinity, ymax = -Infinity;
   for (const r of hit) {
+    if (r.x < xmin) xmin = r.x;
+    if (r.y < ymin) ymin = r.y;
+    if (r.x + r.w > xmax) xmax = r.x + r.w;
+    if (r.y + r.h > ymax) ymax = r.y + r.h;
+  }
+  // ownEndpoint 블록도 detour 라우팅 좌표 후보에 포함 — 자기 블록과 부딪히지 않도록
+  for (const r of obstacles) {
+    if (!r.ownEndpoint) continue;
     if (r.x < xmin) xmin = r.x;
     if (r.y < ymin) ymin = r.y;
     if (r.x + r.w > xmax) xmax = r.x + r.w;
@@ -700,7 +710,6 @@ function buildAvoidingRoute(fromPos, fromSide, toPos, toSide, stub, obstacles) {
     [fromPos, fs, { x: rightX, y: fs.y }, { x: rightX, y: ts.y }, ts, toPos],
   ];
 
-  // 모든 obstacles에 대해 충돌 없는 후보 중 길이 최소
   let best = null;
   let bestLen = Infinity;
   for (const cand of candidates) {
