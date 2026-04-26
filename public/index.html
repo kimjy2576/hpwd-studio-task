@@ -1917,7 +1917,7 @@ function HPWDStudio() {
                 transformOrigin: '0 0',
               }}
             >
-            <svg className="absolute inset-0 pointer-events-none" width="100%" height="100%">
+            <svg className="absolute inset-0 pointer-events-none" width="100%" height="100%" style={{ zIndex: 30 }}>
               {/* 블록 높이를 미리 계산 (연결선 충돌 감지용 장애물 rect) */}
               {(() => { return null; })()}
               {connections.map((c, i) => {
@@ -2045,6 +2045,7 @@ function HPWDStudio() {
                       strokeWidth="18"
                       fill="none"
                       className="cursor-pointer"
+                      style={{ pointerEvents: 'stroke' }}
                       onClick={(e) => {
                         e.stopPropagation();
                         if (e.shiftKey || e.ctrlKey || e.metaKey) {
@@ -2123,6 +2124,7 @@ function HPWDStudio() {
                     {isSelected && (
                       <g
                         className="cursor-pointer"
+                        style={{ pointerEvents: 'auto' }}
                         onClick={(e) => {
                           e.stopPropagation();
                           setConnections(cs => cs.filter((_, idx) => idx !== i));
@@ -2143,6 +2145,7 @@ function HPWDStudio() {
                         {/* From 끝점 */}
                         <g
                           className="cursor-grab"
+                          style={{ pointerEvents: 'auto' }}
                           onMouseDown={(e) => {
                             e.stopPropagation();
                             e.preventDefault();
@@ -2150,7 +2153,7 @@ function HPWDStudio() {
                           }}
                           onClick={(e) => e.stopPropagation()}
                         >
-                          <circle cx={drawFromPos.x} cy={drawFromPos.y} r={11} fill="transparent"/>
+                          <circle cx={drawFromPos.x} cy={drawFromPos.y} r={14} fill="transparent"/>
                           <circle cx={drawFromPos.x} cy={drawFromPos.y} r={7}
                                   fill={isDraggingFrom ? '#06b6d4' : 'white'}
                                   stroke="#0284c7" strokeWidth={2.5}/>
@@ -2158,6 +2161,7 @@ function HPWDStudio() {
                         {/* To 끝점 */}
                         <g
                           className="cursor-grab"
+                          style={{ pointerEvents: 'auto' }}
                           onMouseDown={(e) => {
                             e.stopPropagation();
                             e.preventDefault();
@@ -2165,7 +2169,7 @@ function HPWDStudio() {
                           }}
                           onClick={(e) => e.stopPropagation()}
                         >
-                          <circle cx={drawToPos.x} cy={drawToPos.y} r={11} fill="transparent"/>
+                          <circle cx={drawToPos.x} cy={drawToPos.y} r={14} fill="transparent"/>
                           <circle cx={drawToPos.x} cy={drawToPos.y} r={7}
                                   fill={isDraggingTo ? '#06b6d4' : 'white'}
                                   stroke="#0284c7" strokeWidth={2.5}/>
@@ -2178,8 +2182,10 @@ function HPWDStudio() {
                             <g
                               key={`wp-${wpIdx}`}
                               className="cursor-move"
+                              style={{ pointerEvents: 'auto' }}
                               onMouseDown={(e) => {
                                 e.stopPropagation();
+                                e.preventDefault();
                                 if (e.altKey) {
                                   // alt+click → 제거
                                   pushHistory(blocks, connections);
@@ -2201,7 +2207,7 @@ function HPWDStudio() {
                                 ));
                               }}
                             >
-                              <circle cx={wp.x} cy={wp.y} r={10} fill="transparent"/>
+                              <circle cx={wp.x} cy={wp.y} r={13} fill="transparent"/>
                               <rect
                                 x={wp.x - 5} y={wp.y - 5} width={10} height={10}
                                 fill={isWpDragging ? '#06b6d4' : '#fef3c7'}
@@ -2234,6 +2240,7 @@ function HPWDStudio() {
                             <g
                               key={`mid-${mIdx}`}
                               className="cursor-pointer"
+                              style={{ pointerEvents: 'auto' }}
                               onMouseDown={(e) => e.stopPropagation()}
                               onClick={(e) => {
                                 e.stopPropagation();
