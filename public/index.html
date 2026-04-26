@@ -900,64 +900,95 @@ function HPWDStudio() {
 
   /* ════════ Preset: 히트펌프 세탁건조기 사이클 일괄 생성 ════════
    * 6개 컴포넌트 + 5개 라인을 한 번에 캔버스에 배치.
-   * AI Chat에서 호출되거나 사용자가 직접 트리거 가능. */
+   * AI Chat에서 호출되거나 사용자가 직접 트리거 가능.
+   * 사용자가 export한 JSON layout을 그대로 baked-in으로 사용. */
   const loadPreset = (presetName) => {
-    if (presetName !== 'heat-pump-cycle' && presetName !== 'hpwd' && presetName !== 'heat-pump-washer-dryer') {
+    const PRESETS = {
+      'dryer-cycle': {
+        blocks: [
+          { type: 'compressor', x: 520, y: 80,  name: 'Compressor_1', imageSize: 80,
+            params: { V_disp: 10, RPM: 3000, eta_v: 0.85, eta_is: 0.7, PR: 3.5 } },
+          { type: 'condenser',  x: 560, y: 180, name: 'Condenser_1',  imageSize: 80,
+            params: { UA: 150, dP_ref: 20 } },
+          { type: 'exv',        x: 340, y: 60,  name: 'EEV_1',         imageSize: 80,
+            params: { A_orifice: 0.5, opening: 100, Cd: 0.65 } },
+          { type: 'evaporator', x: 380, y: 180, name: 'Evaporator_1', imageSize: 80,
+            params: { UA: 120, dP_ref: 15, SH: 5 } },
+          { type: 'fan',        x: 180, y: 180, name: 'Fan_1',         imageSize: 80,
+            params: { RPM: 2500, V_max: 0.15, eta: 0.55, dP_max: 300 } },
+          { type: 'drum',       x: 340, y: 280, name: 'Drum_1',
+            params: { m_fabric: 5, MC_init: 0.8, hA: 50, dP_drum: 100 } },
+        ],
+        // 'C', 'CD', 'EEV', 'EV', 'F', 'D' 약어로 connection 정의 (블록 array 인덱스)
+        connections: [
+          // 냉매 사이클
+          { from: ['EV', 'top', 3],    to: ['C', 'left', 3],     kind: 'refrigerant',
+            signals: [['T_out','T_suc'],['P_out','P_suc']] },
+          { from: ['C', 'right', 0],   to: ['CD', 'right', 0],   kind: 'refrigerant',
+            signals: [['m_dot','m_dot'],['T_dis','T_in'],['P_dis','P_in']] },
+          { from: ['CD', 'left', 0],   to: ['EEV', 'right', 2],  kind: 'refrigerant',
+            signals: [['T_out','T_in'],['P_out','P_in']] },
+          { from: ['EEV', 'left', 2],  to: ['EV', 'left', 0],    kind: 'refrigerant',
+            signals: [['m_dot','m_dot'],['T_out','T_in'],['P_out','P_in']] },
+          // 공기 라인
+          { from: ['D', 'left', 2],    to: ['F', 'left', 2],     kind: 'air',
+            signals: [['T_air_out','T_in'],['dP','dP_sys']] },
+          { from: ['F', 'right', 2],   to: ['EV', 'left', 2],    kind: 'air',
+            signals: [['m_air','m_air'],['T_out','T_in']] },
+          { from: ['EV', 'right', 2],  to: ['CD', 'left', 2],    kind: 'air',
+            signals: [['T_out','T_in'],['P_out','P_in'],['T_air_out','T_air']] },
+          { from: ['CD', 'right', 2],  to: ['D', 'right', 2],    kind: 'air',
+            signals: [['T_out','T_air_in']] },
+        ],
+      },
+    };
+
+    // alias 처리 — 다양한 preset 이름 매핑
+    const aliasMap = {
+      'dryer-cycle': 'dryer-cycle',
+      'heat-pump-cycle': 'dryer-cycle',
+      'hpwd': 'dryer-cycle',
+      'heat-pump-washer-dryer': 'dryer-cycle',
+    };
+    const resolved = aliasMap[presetName];
+    const preset = resolved && PRESETS[resolved];
+    if (!preset) {
       return { ok: false, error: `Unknown preset: ${presetName}` };
     }
     pushHistory(blocks, connections);
-    // 그리드 스냅된 좌표로 6개 블록 배치 (캔버스 좌상단 기준)
-    const layout = [
-      { type: 'compressor', x: 380,  y: 120, name: 'Compressor' },
-      { type: 'condenser',  x: 700,  y: 120, name: 'Condenser' },
-      { type: 'exv',        x: 700,  y: 380, name: 'EEV' },
-      { type: 'evaporator', x: 380,  y: 380, name: 'Evaporator' },
-      { type: 'fan',        x: 80,   y: 380, name: 'Fan' },
-      { type: 'drum',       x: 380,  y: 640, name: 'Drum' },
-    ];
     const ts = Date.now();
-    const newBlocks = layout.map((b, i) => {
+    // 약어 매핑: blocks 인덱스 순서대로 약어 부여
+    const codes = ['C', 'CD', 'EEV', 'EV', 'F', 'D'];
+    const newBlocks = preset.blocks.map((b, i) => {
       const def = TYPES[b.type];
-      const params = Object.fromEntries(def.parameters.map(p => [p.key, p.value]));
+      // 기본 파라미터에 preset의 params 덮어쓰기
+      const params = { ...Object.fromEntries(def.parameters.map(p => [p.key, p.value])), ...(b.params || {}) };
       return {
         id: `b${ts}_${i}_${Math.random().toString(36).slice(2, 5)}`,
         type: b.type,
         x: b.x, y: b.y,
-        name: `${b.name}_1`,
+        name: b.name,
         params,
         outputs: {},
         state: def.stateInit ? JSON.parse(JSON.stringify(def.stateInit)) : {},
-        imageSize: def.image ? 160 : undefined,
+        ...(b.imageSize ? { imageSize: b.imageSize } : {}),
       };
     });
-    const idx = Object.fromEntries(newBlocks.map((b, i) => [layout[i].type, b.id]));
+    const idMap = Object.fromEntries(codes.map((c, i) => [c, newBlocks[i]?.id]));
 
-    // 5개 라인: 냉매 사이클 (compressor→condenser→eev→evaporator→compressor) + 공기(fan→evap→drum)
-    const mkConn = (fromId, fromSide, fromSlot, toId, toSide, toSlot, kind) => {
-      const fromBlk = newBlocks.find(b => b.id === fromId);
-      const toBlk = newBlocks.find(b => b.id === toId);
-      const signals = autoMapSignals(fromBlk, toBlk);
+    const newConnections = preset.connections.map(c => {
+      const [fromCode, fromSide, fromSlot] = c.from;
+      const [toCode,   toSide,   toSlot]   = c.to;
       return {
-        from: { blockId: fromId, side: fromSide, slot: fromSlot },
-        to:   { blockId: toId,   side: toSide,   slot: toSlot },
-        kind,
-        signals,
-        lineParams: defaultLineParams(kind),
+        from: { blockId: idMap[fromCode], side: fromSide, slot: fromSlot },
+        to:   { blockId: idMap[toCode],   side: toSide,   slot: toSlot },
+        kind: c.kind,
+        signals: c.signals.map(([fp, tp]) => ({ fromPort: fp, toPort: tp })),
+        lineParams: defaultLineParams(c.kind),
         cornerRadius: 8,
         routeMode: 'auto',
       };
-    };
-    const newConnections = [
-      // 냉매 사이클 (구리)
-      mkConn(idx.compressor, 'right', 1, idx.condenser, 'left', 1, 'refrigerant'),  // 압축→응축
-      mkConn(idx.condenser, 'bottom', 1, idx.exv, 'top', 1, 'refrigerant'),         // 응축→EEV
-      mkConn(idx.exv, 'left', 1, idx.evaporator, 'right', 1, 'refrigerant'),        // EEV→증발
-      mkConn(idx.evaporator, 'top', 1, idx.compressor, 'bottom', 1, 'refrigerant'), // 증발→압축
-      // 공기 라인 (덕트)
-      mkConn(idx.fan, 'right', 1, idx.evaporator, 'left', 1, 'air'),                // 팬→증발
-      mkConn(idx.evaporator, 'bottom', 1, idx.drum, 'top', 1, 'air'),               // 증발→드럼
-      mkConn(idx.drum, 'left', 2, idx.fan, 'bottom', 1, 'air'),                     // 드럼→팬 (return)
-    ];
+    });
 
     setBlocks(newBlocks);
     setConnections(newConnections);
@@ -971,14 +1002,14 @@ function HPWDStudio() {
   const chatExecuteMock = (userText) => {
     const text = userText.toLowerCase();
     // 키워드 매칭 — 우선순위 순
-    if (/히트\s*펌프|hpwd|사이클|cycle|heat\s*pump|만들어|생성|preset/.test(text)) {
-      const result = loadPreset('heat-pump-cycle');
+    if (/건조기\s*사이클|dryer\s*cycle|히트\s*펌프|hpwd|heat\s*pump|만들어|생성|preset/.test(text)) {
+      const result = loadPreset('dryer-cycle');
       if (result.ok) {
         return {
           tool: 'load_preset',
-          args: { name: 'heat-pump-cycle' },
+          args: { name: 'dryer-cycle' },
           result,
-          reply: `히트펌프 세탁건조기 사이클 만들었음. ${result.summary}.\n\n구성: 압축기 → 응축기 → EEV → 증발기 → 압축기 (냉매 사이클) + 팬 ↔ 증발기 ↔ 드럼 (공기 순환). 각 컴포넌트 더블클릭으로 이름 수정, 캔버스에서 자유롭게 재배치 가능.`,
+          reply: `건조기 사이클 만들었음. ${result.summary}.\n\n구성: 압축기 → 응축기 → EEV → 증발기 → 압축기 (냉매 사이클) + 팬 → 증발기 → 응축기 → 드럼 → 팬 (공기 순환). 각 컴포넌트 더블클릭으로 이름 수정, 캔버스에서 자유롭게 재배치 가능.`,
         };
       }
       return { reply: `Preset 로드 실패: ${result.error}` };
@@ -1013,7 +1044,7 @@ function HPWDStudio() {
     }
     // fallback
     return {
-      reply: `(Mock) 아직 처리 못하는 명령. 지원하는 키워드:\n· "히트펌프 만들어줘" — 사이클 일괄 생성\n· "초기화" — 캔버스 비우기\n· "실행" / "정지" / "리셋" — 시뮬 제어`,
+      reply: `(Mock) 아직 처리 못하는 명령. 지원하는 키워드:\n· "건조기 사이클 만들어줘" — 사이클 일괄 생성\n· "초기화" — 캔버스 비우기\n· "실행" / "정지" / "리셋" — 시뮬 제어`,
     };
   };
 
@@ -3448,7 +3479,7 @@ function ChatFAB({ onSend }) {
       role: 'assistant',
       text: '현재 지원하는 명령:',
       tools: [
-        '"히트펌프 만들어줘" — 사이클 일괄 생성 (load_preset)',
+        '"건조기 사이클 만들어줘" — 사이클 일괄 생성 (load_preset)',
         '"초기화" — 캔버스 비우기 (clear_canvas)',
         '"실행" / "정지" / "리셋" — 시뮬레이션 제어',
       ],
@@ -3479,7 +3510,7 @@ function ChatFAB({ onSend }) {
   };
 
   const examples = [
-    '히트펌프 세탁건조기 사이클 만들어줘',
+    '건조기 사이클 만들어줘',
     '초기화',
     '실행',
     '정지',
