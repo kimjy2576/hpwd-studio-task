@@ -781,6 +781,7 @@ function HPWDStudio() {
   const [editingName, setEditingName] = useState('');
   const [endpointDrag, setEndpointDrag] = useState(null); // {connIdx, end:'from'|'to'}
   const [waypointDrag, setWaypointDrag] = useState(null); // {connIdx, wpIdx}
+  const suppressSlotClickRef = useRef(false);
   const [bottomPanelOpen, setBottomPanelOpen] = useState(true);
   const [zoom, setZoom] = useState(1);
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
@@ -1002,6 +1003,8 @@ function HPWDStudio() {
    * 흐름 방향은 Properties에서 반전 가능. */
   const handleBlockConnectorClick = (e, blockId, side, slot) => {
     e.stopPropagation();
+    // endpoint/waypoint 드래그 직후엔 slot click을 무시 (드롭 위치에서 발생하는 click 제거)
+    if (endpointDrag || waypointDrag || suppressSlotClickRef.current) return;
     if (!connecting) {
       const useSlot = slot !== undefined ? slot : findFreeSlot(connections, blockId, side);
       setConnecting({ blockId, side, slot: useSlot });
@@ -1301,6 +1304,9 @@ function HPWDStudio() {
         }
       }
       setEndpointDrag(null);
+      // mouseup 직후 발화될 슬롯/캔버스 click을 한 tick만 차단
+      suppressSlotClickRef.current = true;
+      setTimeout(() => { suppressSlotClickRef.current = false; }, 50);
     };
     window.addEventListener('mouseup', onUp);
     return () => window.removeEventListener('mouseup', onUp);
@@ -1325,7 +1331,11 @@ function HPWDStudio() {
         return { ...c, waypoints: wps, routeMode: 'manual' };
       }));
     };
-    const onUp = () => setWaypointDrag(null);
+    const onUp = () => {
+      setWaypointDrag(null);
+      suppressSlotClickRef.current = true;
+      setTimeout(() => { suppressSlotClickRef.current = false; }, 50);
+    };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
     return () => {
@@ -2135,8 +2145,10 @@ function HPWDStudio() {
                           className="cursor-grab"
                           onMouseDown={(e) => {
                             e.stopPropagation();
+                            e.preventDefault();
                             setEndpointDrag({ connIdx: i, end: 'from' });
                           }}
+                          onClick={(e) => e.stopPropagation()}
                         >
                           <circle cx={drawFromPos.x} cy={drawFromPos.y} r={11} fill="transparent"/>
                           <circle cx={drawFromPos.x} cy={drawFromPos.y} r={7}
@@ -2148,8 +2160,10 @@ function HPWDStudio() {
                           className="cursor-grab"
                           onMouseDown={(e) => {
                             e.stopPropagation();
+                            e.preventDefault();
                             setEndpointDrag({ connIdx: i, end: 'to' });
                           }}
+                          onClick={(e) => e.stopPropagation()}
                         >
                           <circle cx={drawToPos.x} cy={drawToPos.y} r={11} fill="transparent"/>
                           <circle cx={drawToPos.x} cy={drawToPos.y} r={7}
