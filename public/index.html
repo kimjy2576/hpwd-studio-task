@@ -1018,6 +1018,7 @@ function HPWDStudio() {
       signals,
       lineParams: defaultLineParams(kind),
       cornerRadius: 8,
+      routeMode: 'auto',
     }]);
     setConnecting(null);
   };
@@ -1304,13 +1305,15 @@ function HPWDStudio() {
       if (!rect) return;
       const cx = (e.clientX - rect.left + canvasRef.current.scrollLeft) / zoom;
       const cy = (e.clientY - rect.top + canvasRef.current.scrollTop) / zoom;
+      // grid snap 유지 (사용자가 일부러 직각 정렬 원할 가능성 높음)
       const sx = Math.round(cx / GRID_SIZE) * GRID_SIZE;
       const sy = Math.round(cy / GRID_SIZE) * GRID_SIZE;
       setConnections(cs => cs.map((c, i) => {
         if (i !== waypointDrag.connIdx) return c;
         const wps = (c.waypoints || []).slice();
         wps[waypointDrag.wpIdx] = { x: sx, y: sy };
-        return { ...c, waypoints: wps };
+        // 드래그하면 자동으로 manual 모드 (블록 이동에 영향 안 받음)
+        return { ...c, waypoints: wps, routeMode: 'manual' };
       }));
     };
     const onUp = () => setWaypointDrag(null);
@@ -1943,13 +1946,13 @@ function HPWDStudio() {
                 let pathD;
                 let elbowPoints;
                 const waypoints = c.waypoints || [];
+                const routeMode = c.routeMode || (waypoints.length > 0 ? 'manual' : 'auto');
                 if (drawFromSide && drawToSide) {
-                  if (waypoints.length > 0 && !isDraggingThis) {
-                    // 사용자 지정 waypoints — 우회 알고리즘 우회 (직접 지정)
+                  if (routeMode === 'manual' && waypoints.length > 0 && !isDraggingThis) {
+                    // 수동 모드: 사용자 지정 waypoints 사용
                     elbowPoints = [drawFromPos, ...waypoints, drawToPos];
                   } else {
-                    // 모든 블록을 장애물로 (자기 양 끝도 포함). 단, endpoint 슬롯 면이 닿는
-                    // 작은 영역은 회피 알고리즘이 알아서 stub으로 빠져나가므로 OK.
+                    // 자동 모드: 블록 회피 라우팅
                     const obstacles = blocks.map(b => ({
                       x: b.x, y: b.y, w: getBlockWidth(b), h: getBlockHeight(b),
                       ownEndpoint: b.id === c.from.blockId || b.id === c.to.blockId,
@@ -2212,28 +2215,21 @@ function HPWDStudio() {
                               onClick={(e) => {
                                 e.stopPropagation();
                                 pushHistory(blocks, connections);
-                                const sx = Math.round(mp.x / GRID_SIZE) * GRID_SIZE;
-                                const sy = Math.round(mp.y / GRID_SIZE) * GRID_SIZE;
                                 setConnections(cs => cs.map((cc, ci) => {
                                   if (ci !== i) return cc;
                                   const existing = cc.waypoints || [];
-                                  if (existing.length === 0) {
-                                    // 자동 모드 → 자동 elbow의 중간 corner들을 모두 waypoints로 commit
-                                    // pts = [from, ...corners, to] 이므로 corner = pts.slice(1, -1)
-                                    const autoCorners = pts.slice(1, -1).map(p => ({
-                                      x: Math.round(p.x / GRID_SIZE) * GRID_SIZE,
-                                      y: Math.round(p.y / GRID_SIZE) * GRID_SIZE,
-                                    }));
-                                    // 클릭한 segment 인덱스 = pts 기준 segIdx → autoCorners(=waypoints) 기준 삽입 인덱스
-                                    // pts segment k는 autoCorners[k-1] 다음에 위치. 따라서 삽입 인덱스 = k.
+                                  if ((cc.routeMode || 'auto') === 'auto' || existing.length === 0) {
+                                    // 자동 모드 → 자동 elbow의 중간 corner들을 모두 waypoints로 commit.
+                                    // grid snap 안 함 (stub end 좌표 그대로 보존해야 직각 정렬 유지)
+                                    const autoCorners = pts.slice(1, -1).map(p => ({ x: p.x, y: p.y }));
                                     const insertAt = mp.segIdx;
-                                    autoCorners.splice(insertAt, 0, { x: sx, y: sy });
-                                    return { ...cc, waypoints: autoCorners };
+                                    autoCorners.splice(insertAt, 0, { x: mp.x, y: mp.y });
+                                    return { ...cc, waypoints: autoCorners, routeMode: 'manual' };
                                   }
-                                  // 이미 사용자 모드 — pts = [from, ...wps, to] → segIdx → waypoints 삽입 인덱스
+                                  // 이미 수동 모드 — segment 인덱스로 삽입
                                   const wps = existing.slice();
-                                  wps.splice(mp.segIdx, 0, { x: sx, y: sy });
-                                  return { ...cc, waypoints: wps };
+                                  wps.splice(mp.segIdx, 0, { x: mp.x, y: mp.y });
+                                  return { ...cc, waypoints: wps, routeMode: 'manual' };
                                 }));
                               }}
                               opacity={0.7}
@@ -2816,6 +2812,49 @@ function HPWDStudio() {
                           <span className="text-slate-400 ml-1">⇄</span>
                         </button>
                       </div>
+                      {/* 라우팅 모드 토글 */}
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[10.5px] text-slate-600">경로 모드</span>
+                        <div className="flex border border-slate-300 rounded overflow-hidden">
+                          <button
+                            onClick={() => updateConn({ routeMode: 'auto', waypoints: [] })}
+                            className={`text-[10px] font-mono px-2 py-0.5 transition-colors ${
+                              (conn.routeMode || 'auto') === 'auto'
+                                ? 'bg-cyan-600 text-white'
+                                : 'bg-white text-slate-600 hover:bg-slate-50'
+                            }`}
+                            title="블록 따라 자동 라우팅 (블록 이동 시 같이 따라옴)"
+                          >AUTO</button>
+                          <button
+                            onClick={() => {
+                              // 현재 자동 elbow 모양을 그대로 manual로 commit
+                              const fromBlk = blocks.find(b => b.id === conn.from.blockId);
+                              const toBlk = blocks.find(b => b.id === conn.to.blockId);
+                              if (!fromBlk || !toBlk) return;
+                              const fp = getBlockSlotPos(fromBlk, conn.from.side || 'right', conn.from.slot);
+                              const tp = getBlockSlotPos(toBlk, conn.to.side || 'left', conn.to.slot);
+                              const obs = blocks.map(b => ({
+                                x: b.x, y: b.y, w: getBlockWidth(b), h: getBlockHeight(b),
+                                ownEndpoint: b.id === conn.from.blockId || b.id === conn.to.blockId,
+                              }));
+                              const pts = buildAvoidingRoute(fp, conn.from.side || 'right', tp, conn.to.side || 'left', 24, obs);
+                              const wps = pts.slice(1, -1).map(p => ({ x: p.x, y: p.y }));
+                              updateConn({ routeMode: 'manual', waypoints: wps });
+                            }}
+                            className={`text-[10px] font-mono px-2 py-0.5 transition-colors ${
+                              conn.routeMode === 'manual'
+                                ? 'bg-cyan-600 text-white'
+                                : 'bg-white text-slate-600 hover:bg-slate-50'
+                            }`}
+                            title="현재 모양을 고정 (블록 이동해도 corner 위치 유지)"
+                          >MANUAL</button>
+                        </div>
+                      </div>
+                      {(conn.routeMode || 'auto') === 'manual' && (conn.waypoints || []).length > 0 && (
+                        <div className="text-[9px] text-slate-400 leading-snug">
+                          🟡 {conn.waypoints.length} corner 고정 · AUTO 클릭하면 자동 라우팅으로 복귀
+                        </div>
+                      )}
                       {/* 곡률 */}
                       <div className="flex items-center gap-2">
                         <span className="text-[10.5px] text-slate-600 w-16 shrink-0">곡률 R</span>
