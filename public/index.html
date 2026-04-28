@@ -56,6 +56,61 @@
     const Redo       = _mkIcon(<g><path d="M21 7v6h-6" /><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6.7 3L21 13" /></g>);
 
 
+/* ════════ Python Backend 통합 ════════
+ * 컴포넌트의 modelDescription에 backend: 'python'이 있으면 시뮬 엔진이
+ * 이 헬퍼를 통해 백엔드(FastAPI on localhost:8000)에 동기 호출.
+ * 백엔드 다운 시 컴포넌트의 JS compute()로 fallback. */
+const BACKEND_URL = 'http://localhost:8000';
+
+// 백엔드 health 상태 — UI status indicator가 참조
+window.HPWD_BACKEND = {
+  url: BACKEND_URL,
+  connected: false,
+  components: [],
+  lastError: null,
+};
+
+// 비동기 health check — 5초마다 폴링
+async function checkBackendHealth() {
+  try {
+    const r = await fetch(`${BACKEND_URL}/health`, { method: 'GET' });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const data = await r.json();
+    window.HPWD_BACKEND.connected = true;
+    window.HPWD_BACKEND.components = data.components || [];
+    window.HPWD_BACKEND.lastError = null;
+  } catch (e) {
+    window.HPWD_BACKEND.connected = false;
+    window.HPWD_BACKEND.lastError = e.message;
+  }
+  // 변경 알림 (status indicator가 re-render 트리거)
+  window.dispatchEvent(new Event('hpwd-backend-status'));
+}
+checkBackendHealth();
+setInterval(checkBackendHealth, 5000);
+
+/* 동기 호출 — XMLHttpRequest로 매 step마다 호출.
+ * 향후 async + 캐시로 진화 가능하지만 검증 단계는 단순함이 우선. */
+function callBackendSync(componentName, input, params, state, dt) {
+  const xhr = new XMLHttpRequest();
+  xhr.open('POST', `${BACKEND_URL}/compute`, false); // 동기 호출
+  xhr.setRequestHeader('Content-Type', 'application/json');
+  try {
+    xhr.send(JSON.stringify({ component: componentName, input, params, state, dt }));
+    if (xhr.status !== 200) {
+      throw new Error(`Backend returned ${xhr.status}: ${xhr.responseText}`);
+    }
+    const data = JSON.parse(xhr.responseText);
+    if (data.error) throw new Error(data.error);
+    return { outputs: data.outputs || {}, newState: data.newState || state };
+  } catch (e) {
+    window.HPWD_BACKEND.connected = false;
+    window.HPWD_BACKEND.lastError = e.message;
+    window.dispatchEvent(new Event('hpwd-backend-status'));
+    throw e;
+  }
+}
+
 const TYPES = {
   ambient: {
     typeNo: 1, name: 'Ambient', category: 'source', color: '#475569', icon: Thermometer,
@@ -389,6 +444,27 @@ const TYPES = {
     compute: (inp) => {
       const b = inp.b ?? 1;
       return { y: Math.abs(b) < 1e-12 ? 0 : (inp.a ?? 0) / b };
+    },
+  },
+  adder_py: {
+    typeNo: 500, name: 'Adder (Py)', category: 'math', color: '#0891b2', icon: Plus,
+    desc: 'Python 백엔드 — (a + b) × gain + offset',
+    backend: 'python',                  // ← 백엔드 마커. 시뮬 엔진이 이 필드 보고 분기
+    pythonComponent: 'adder',           // ← 백엔드의 component 이름
+    parameters: [
+      { key: 'gain',   label: 'Gain',   value: 1.0, unit: '' },
+      { key: 'offset', label: 'Offset', value: 0.0, unit: '' },
+    ],
+    inputs: [
+      { key: 'a', label: 'a', unit: '' },
+      { key: 'b', label: 'b', unit: '' },
+    ],
+    outputs: [{ key: 'sum', label: '(a+b)·g+o', unit: '' }],
+    // compute는 fallback (백엔드 다운 시 사용). 같은 식이라 결과 일치 검증 가능
+    compute: (inp, par) => {
+      const a = inp.a ?? 0, b = inp.b ?? 0;
+      const g = par.gain ?? 1, o = par.offset ?? 0;
+      return { sum: (a + b) * g + o };
     },
   },
 
@@ -1383,7 +1459,26 @@ function HPWDStudio() {
         }
       });
       const newState = b.state ? { ...b.state } : {};
-      const outputs = def.compute(inputs, b.params, t, newState, dt);
+      // ─── Python 백엔드 분기 ───
+      // def.backend === 'python' && def.pythonComponent → callBackendSync()
+      // 백엔드 실패 시 JS compute()로 fallback (시뮬은 끊기지 않음)
+      let outputs;
+      if (def.backend === 'python' && def.pythonComponent) {
+        try {
+          const result = callBackendSync(def.pythonComponent, inputs, b.params, newState, dt);
+          outputs = result.outputs;
+          // newState도 백엔드가 갱신했으면 반영
+          if (result.newState) {
+            Object.keys(result.newState).forEach(k => { newState[k] = result.newState[k]; });
+          }
+        } catch (e) {
+          // fallback to JS
+          console.warn(`[Backend] ${def.pythonComponent} 호출 실패, JS compute로 fallback:`, e.message);
+          outputs = def.compute(inputs, b.params, t, newState, dt);
+        }
+      } else {
+        outputs = def.compute(inputs, b.params, t, newState, dt);
+      }
       return { ...b, outputs, state: newState, lastInputs: inputs };
     });
   };
@@ -2024,6 +2119,8 @@ function HPWDStudio() {
                  className="w-16 bg-white border border-slate-300 px-1.5 py-0.5 rounded text-slate-900 font-mono focus:outline-none focus:border-cyan-500" />
         </div>
         <div className="flex-1" />
+        <BackendStatus />
+        <div className="w-px h-5 bg-slate-200 mx-1.5" />
         <div className="text-[11px] text-slate-500 font-mono">
           blocks <span className="text-slate-900 font-semibold">{blocks.length}</span>
           <span className="mx-1.5 text-slate-300">·</span>
@@ -3618,6 +3715,41 @@ function ChatFAB({ onSend }) {
           className="px-3 text-[10px] font-mono font-semibold bg-cyan-600 text-white rounded hover:bg-cyan-700 self-stretch tracking-wider disabled:opacity-50 disabled:cursor-not-allowed"
         >SEND</button>
       </div>
+    </div>
+  );
+}
+
+/* ═══════════ Backend Status Indicator ═══════════ */
+function BackendStatus() {
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const handler = () => setTick(t => t + 1);
+    window.addEventListener('hpwd-backend-status', handler);
+    return () => window.removeEventListener('hpwd-backend-status', handler);
+  }, []);
+  const status = window.HPWD_BACKEND || { connected: false, components: [], lastError: null };
+  const tooltip = status.connected
+    ? `Backend OK · ${status.url}\n등록된 컴포넌트: ${status.components.join(', ')}`
+    : `Backend 연결 안 됨 · ${status.url}\n${status.lastError || '서버 미실행 — backend 폴더에서 start.bat 실행'}`;
+  return (
+    <div
+      className="flex items-center gap-1.5 text-[11px] font-mono px-2 py-1 rounded border cursor-help"
+      style={{
+        background: status.connected ? '#ecfdf5' : '#fef2f2',
+        borderColor: status.connected ? '#a7f3d0' : '#fecaca',
+        color: status.connected ? '#065f46' : '#991b1b',
+      }}
+      title={tooltip}
+    >
+      <span
+        className="w-2 h-2 rounded-full"
+        style={{
+          background: status.connected ? '#10b981' : '#ef4444',
+          boxShadow: status.connected ? '0 0 4px #10b981' : 'none',
+        }}
+      />
+      <span>Backend</span>
+      <span className="opacity-70">{status.connected ? `(${status.components.length})` : 'OFF'}</span>
     </div>
   );
 }
