@@ -211,6 +211,17 @@ function Stepper({ step, setStep }) {
   );
 }
 
+/* ───────────── Helpers ───────────── */
+function Field({ label, hint, children }) {
+  return (
+    <div>
+      <label className="block text-sm font-semibold text-slate-800 mb-1">{label}</label>
+      {children}
+      {hint && <div className="text-[11px] text-slate-500 mt-1.5">{hint}</div>}
+    </div>
+  );
+}
+
 /* ───────────── Step 1: Identity ───────────── */
 function Step1Identity({ identity, setIdentity }) {
   const setField = (k, v) => setIdentity({ ...identity, [k]: v });
