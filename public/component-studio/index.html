@@ -78,22 +78,68 @@
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
 <script>
-  // 라이브러리 로드 확인
-  document.addEventListener('DOMContentLoaded', () => {
+  // 라이브러리 로드 + JSX 수동 처리
+  // Babel auto-script 대신 직접 fetch → transform → execute
+  // 자동 처리가 일부 환경/CSP에서 침묵 실패하는 문제 회피
+  function setStatus(msg, isError) {
     const status = document.getElementById('load-status');
+    if (status) {
+      status.textContent = msg;
+      if (isError) status.style.color = '#dc2626';
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', async () => {
+    // Step 1: 라이브러리 확인
+    setStatus('1/4 — 라이브러리 확인 중...');
     const checks = [];
-    if (typeof React === 'undefined') checks.push('React 미로드');
-    if (typeof ReactDOM === 'undefined') checks.push('ReactDOM 미로드');
-    if (typeof Babel === 'undefined') checks.push('Babel 미로드');
+    if (typeof React === 'undefined') checks.push('React');
+    if (typeof ReactDOM === 'undefined') checks.push('ReactDOM');
+    if (typeof Babel === 'undefined') checks.push('Babel');
     if (checks.length > 0) {
-      showError('라이브러리 로드 실패: ' + checks.join(', ') + '\n\nCDN 차단 가능성 — 네트워크 또는 보안 정책 확인');
-    } else if (status) {
-      status.textContent = 'JSX 컴파일 중...';
+      showError('라이브러리 로드 실패: ' + checks.join(', ') + ' 미로드\n\nCDN 차단 가능성 — 네트워크/보안 정책 확인');
+      return;
+    }
+
+    // Step 2: app.jsx fetch
+    setStatus('2/4 — app.jsx 파일 로드 중...');
+    let jsxText;
+    try {
+      const res = await fetch('app.jsx');
+      if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
+      jsxText = await res.text();
+      console.log('[Studio] Fetched app.jsx:', jsxText.length, 'chars');
+    } catch (e) {
+      showError('app.jsx fetch 실패:\n' + e.message + '\n\n같은 폴더에 app.jsx 파일이 있는지 확인.');
+      return;
+    }
+
+    // Step 3: Babel 컴파일
+    setStatus('3/4 — Babel JSX 컴파일 중...');
+    let compiled;
+    try {
+      const result = Babel.transform(jsxText, {
+        presets: ['env', 'react'],
+        filename: 'app.jsx',
+      });
+      compiled = result.code;
+      console.log('[Studio] Babel compiled:', compiled.length, 'chars');
+    } catch (e) {
+      showError('Babel 컴파일 실패:\n' + e.message);
+      return;
+    }
+
+    // Step 4: 실행
+    setStatus('4/4 — React 마운트 중...');
+    try {
+      // Function constructor로 안전하게 실행
+      // (eval 대신 — 글로벌 스코프에서 동작하면서도 strict-mode 격리)
+      new Function(compiled)();
+      console.log('[Studio] App mounted successfully');
+    } catch (e) {
+      showError('App 실행 실패:\n' + (e.stack || e.message));
     }
   });
 </script>
-
-<!-- 사용자 JSX (app.jsx) — Babel이 컴파일해서 실행 -->
-<script type="text/babel" data-presets="env,react" src="app.jsx"></script>
 </body>
 </html>
