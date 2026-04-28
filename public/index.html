@@ -520,6 +520,72 @@ const TYPES = {
     },
   },
 
+  // ================ 물성치 (CoolProp 백엔드) ================
+  refrigerant_props: {
+    typeNo: 110, name: 'Refrigerant Props', category: 'refrigerant', color: '#b87333', icon: Droplet,
+    desc: 'CoolProp R290 물성치. 두 기준 자유 선택 (T,P,Q,H,S,D,U)',
+    backend: 'python',
+    pythonComponent: 'refrigerant_props',
+    parameters: [
+      { key: 'input1_kind', label: 'Input 1 종류', value: 'T', options: ['T','P','Q','H','S','D','U'], unit: '' },
+      { key: 'input2_kind', label: 'Input 2 종류', value: 'P', options: ['T','P','Q','H','S','D','U'], unit: '' },
+    ],
+    inputs: [
+      { key: 'input1_value', label: 'Input 1', unit: '' },
+      { key: 'input2_value', label: 'Input 2', unit: '' },
+    ],
+    outputs: [
+      { key: 'T',     label: 'T',     unit: '°C' },
+      { key: 'P',     label: 'P',     unit: 'bar' },
+      { key: 'rho',   label: 'ρ',     unit: 'kg/m³' },
+      { key: 'h',     label: 'h',     unit: 'kJ/kg' },
+      { key: 's',     label: 's',     unit: 'kJ/kg·K' },
+      { key: 'cp',    label: 'cp',    unit: 'kJ/kg·K' },
+      { key: 'cv',    label: 'cv',    unit: 'kJ/kg·K' },
+      { key: 'mu',    label: 'μ',     unit: 'Pa·s' },
+      { key: 'k',     label: 'k',     unit: 'W/m·K' },
+      { key: 'Q',     label: 'Q',     unit: '-' },
+      { key: 'T_sat', label: 'T_sat', unit: '°C' },
+      { key: 'P_sat', label: 'P_sat', unit: 'bar' },
+      { key: 'phase', label: 'phase', unit: '' },
+    ],
+    // CoolProp 없으면 JS로 흉내내기 불가 — NaN 반환
+    compute: () => ({ T: NaN, P: NaN, rho: NaN, h: NaN, s: NaN, cp: NaN, cv: NaN,
+                      mu: NaN, k: NaN, Q: NaN, T_sat: NaN, P_sat: NaN, phase: 'backend-off' }),
+  },
+  air_props: {
+    typeNo: 210, name: 'Air Props', category: 'air', color: '#475569', icon: Wind,
+    desc: 'CoolProp 습공기 물성치. 세 기준 자유 선택 (T,P,R,W,B,D,H)',
+    backend: 'python',
+    pythonComponent: 'air_props',
+    parameters: [
+      { key: 'input1_kind', label: 'Input 1 종류', value: 'T', options: ['T','P','R','W','B','D','H'], unit: '' },
+      { key: 'input2_kind', label: 'Input 2 종류', value: 'P', options: ['T','P','R','W','B','D','H'], unit: '' },
+      { key: 'input3_kind', label: 'Input 3 종류', value: 'R', options: ['T','P','R','W','B','D','H'], unit: '' },
+    ],
+    inputs: [
+      { key: 'input1_value', label: 'Input 1', unit: '' },
+      { key: 'input2_value', label: 'Input 2', unit: '' },
+      { key: 'input3_value', label: 'Input 3', unit: '' },
+    ],
+    outputs: [
+      { key: 'T_db', label: 'T_db', unit: '°C' },
+      { key: 'P',    label: 'P',    unit: 'bar' },
+      { key: 'RH',   label: 'RH',   unit: '%' },
+      { key: 'W',    label: 'W',    unit: 'kg/kg' },
+      { key: 'T_wb', label: 'T_wb', unit: '°C' },
+      { key: 'T_dp', label: 'T_dp', unit: '°C' },
+      { key: 'h',    label: 'h',    unit: 'kJ/kg' },
+      { key: 'rho',  label: 'ρ',    unit: 'kg/m³' },
+      { key: 'cp',   label: 'cp',   unit: 'kJ/kg·K' },
+      { key: 'mu',   label: 'μ',    unit: 'Pa·s' },
+      { key: 'k',    label: 'k',    unit: 'W/m·K' },
+      { key: 'P_w',  label: 'P_w',  unit: 'bar' },
+    ],
+    compute: () => ({ T_db: NaN, P: NaN, RH: NaN, W: NaN, T_wb: NaN, T_dp: NaN,
+                      h: NaN, rho: NaN, cp: NaN, mu: NaN, k: NaN, P_w: NaN }),
+  },
+
   // ================ 결과 디스플레이 ================
   display: {
     typeNo: 901, name: 'Display', category: 'output', color: '#7c3aed', icon: Eye,
@@ -3518,14 +3584,26 @@ function HPWDStudio() {
                     {selectedDef.parameters.map(p => (
                       <div key={p.key} className="flex items-center gap-2">
                         <label className="flex-1 text-[11px] text-slate-700">{p.label}</label>
-                        <input
-                          type={typeof p.value === 'number' ? 'number' : 'text'}
-                          value={selectedBlock.params[p.key]}
-                          step={typeof p.value === 'number' ? (p.value < 1 ? 0.01 : p.value < 10 ? 0.1 : 1) : undefined}
-                          onChange={(e) => updateParam(selectedBlock.id, p.key,
-                            typeof p.value === 'number' ? (parseFloat(e.target.value) || 0) : e.target.value)}
-                          className="w-20 bg-white border border-slate-300 px-1.5 py-0.5 rounded text-[11px] text-slate-900 font-mono text-right focus:outline-none focus:border-cyan-500"
-                        />
+                        {p.options ? (
+                          <select
+                            value={selectedBlock.params[p.key]}
+                            onChange={(e) => updateParam(selectedBlock.id, p.key, e.target.value)}
+                            className="w-20 bg-white border border-slate-300 px-1.5 py-0.5 rounded text-[11px] text-slate-900 font-mono text-right focus:outline-none focus:border-cyan-500"
+                          >
+                            {p.options.map(opt => (
+                              <option key={opt} value={opt}>{opt}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          <input
+                            type={typeof p.value === 'number' ? 'number' : 'text'}
+                            value={selectedBlock.params[p.key]}
+                            step={typeof p.value === 'number' ? (p.value < 1 ? 0.01 : p.value < 10 ? 0.1 : 1) : undefined}
+                            onChange={(e) => updateParam(selectedBlock.id, p.key,
+                              typeof p.value === 'number' ? (parseFloat(e.target.value) || 0) : e.target.value)}
+                            className="w-20 bg-white border border-slate-300 px-1.5 py-0.5 rounded text-[11px] text-slate-900 font-mono text-right focus:outline-none focus:border-cyan-500"
+                          />
+                        )}
                         <span className="text-[10px] text-slate-400 w-10 font-mono">{p.unit}</span>
                       </div>
                     ))}
