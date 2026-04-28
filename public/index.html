@@ -562,6 +562,18 @@ const CATEGORY_STYLES = {
  * 향후 multi-signal로 확장 예정). lineParams는 라인 자체의 속성
  * (길이, 내경, 재질 등) — 시뮬레이션이 활용 가능. */
 const LINE_KINDS = {
+  signal: {
+    name: '신호 (Signal)',
+    short: 'SIGNAL',
+    color: '#0891b2',
+    width: 1.8,
+    dasharray: undefined,
+    desc: '단순 신호선 — 물리 배관 아님. Adder·PID·Constant 등 추상 컴포넌트 연결용',
+    fields: [
+      // 신호선은 물리적 의미 없음 — 라벨/색상 정도만 옵션으로
+      { key: 'label', label: '라벨', value: '' },
+    ],
+  },
   refrigerant: {
     name: '냉매배관 (동관)',
     short: 'REFRIG',
@@ -612,16 +624,25 @@ const LINE_KINDS = {
   },
 };
 
-/* 두 블록 카테고리로부터 default 라인 종류 결정 */
+/* 두 블록 카테고리로부터 default 라인 종류 결정.
+ * 물리 배관 카테고리(refrigerant/air/water)끼리는 그 종류로,
+ * 추상 카테고리(math/control/source/output)가 끼면 signal로 default. */
 function detectLineKind(fromBlock, toBlock) {
-  if (!fromBlock || !toBlock) return 'refrigerant';
+  if (!fromBlock || !toBlock) return 'signal';
   const fromCat = TYPES[fromBlock.type]?.category;
   const toCat = TYPES[toBlock.type]?.category;
-  if (fromCat === 'refrigerant' && toCat === 'refrigerant') return 'refrigerant';
-  if (fromCat === 'air' && toCat === 'air') return 'air';
-  if (fromCat === 'refrigerant' || toCat === 'refrigerant') return 'refrigerant';
-  if (fromCat === 'air' || toCat === 'air') return 'air';
-  return 'refrigerant';
+  const PHYSICAL = new Set(['refrigerant', 'air', 'water']);
+  // 양쪽 모두 같은 물리 배관 → 그 종류
+  if (fromCat === toCat && PHYSICAL.has(fromCat)) return fromCat;
+  // 한쪽만 물리 배관, 다른쪽이 source/output 같은 중립 → 물리 배관 종류
+  // (단, 다른 추상 카테고리(math/control)와 섞이면 signal 우선)
+  const ABSTRACT = new Set(['math', 'control']);
+  const fromAbs = ABSTRACT.has(fromCat);
+  const toAbs = ABSTRACT.has(toCat);
+  if (fromAbs || toAbs) return 'signal';
+  if (PHYSICAL.has(fromCat)) return fromCat;
+  if (PHYSICAL.has(toCat)) return toCat;
+  return 'signal';
 }
 
 /* 라인 종류의 default lineParams 생성 */
