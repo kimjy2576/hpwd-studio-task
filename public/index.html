@@ -58,22 +58,72 @@
 
 /* ════════ Python Backend 통합 ════════
  * 컴포넌트의 modelDescription에 backend: 'python'이 있으면 시뮬 엔진이
- * 이 헬퍼를 통해 백엔드(FastAPI on localhost:8000)에 동기 호출.
- * 백엔드 다운 시 컴포넌트의 JS compute()로 fallback. */
-const BACKEND_URL = 'http://localhost:8000';
+ * 이 헬퍼를 통해 백엔드(FastAPI)에 동기 호출.
+ * 백엔드 다운 시 컴포넌트의 JS compute()로 fallback.
+ *
+ * URL 자동 결정 (우선순위):
+ *   1. URL 파라미터 ?backend=...      — 일회성 override
+ *   2. localStorage 'hpwd_backend_url' — 사용자가 토글 UI로 지정
+ *   3. 자동 — localhost 접속 시 localhost, Railway 접속 시 배포 URL
+ */
+const DEFAULT_BACKENDS = {
+  cloud: 'https://hpwd-backend-production.up.railway.app',  // Railway 배포 URL
+  local: 'http://localhost:8000',
+};
+
+function resolveBackendUrl() {
+  // 1. URL 파라미터
+  try {
+    const param = new URLSearchParams(window.location.search).get('backend');
+    if (param) return param;
+  } catch (e) { /* ignore */ }
+  // 2. localStorage
+  try {
+    const stored = localStorage.getItem('hpwd_backend_url');
+    if (stored) return stored;
+  } catch (e) { /* ignore */ }
+  // 3. 자동 — hostname 기반
+  const host = window.location.hostname;
+  if (host === 'localhost' || host === '127.0.0.1' || host === '' || host === 'file') {
+    return DEFAULT_BACKENDS.local;
+  }
+  return DEFAULT_BACKENDS.cloud;
+}
 
 // 백엔드 health 상태 — UI status indicator가 참조
+// url을 가변으로 두고, 사용자가 토글하면 갱신
 window.HPWD_BACKEND = {
-  url: BACKEND_URL,
+  url: resolveBackendUrl(),
   connected: false,
   components: [],
   lastError: null,
+  presets: DEFAULT_BACKENDS,
+};
+
+// 사용자가 backend URL 변경 시 호출되는 setter
+window.HPWD_setBackend = function(newUrl) {
+  newUrl = (newUrl || '').trim();
+  if (!newUrl) {
+    // 비우면 자동 모드로 복귀
+    try { localStorage.removeItem('hpwd_backend_url'); } catch (e) {}
+    window.HPWD_BACKEND.url = resolveBackendUrl();
+  } else {
+    // 끝의 / 제거
+    newUrl = newUrl.replace(/\/+$/, '');
+    try { localStorage.setItem('hpwd_backend_url', newUrl); } catch (e) {}
+    window.HPWD_BACKEND.url = newUrl;
+  }
+  window.HPWD_BACKEND.connected = false;
+  window.HPWD_BACKEND.lastError = null;
+  window.dispatchEvent(new Event('hpwd-backend-status'));
+  checkBackendHealth();  // 즉시 다시 체크
 };
 
 // 비동기 health check — 5초마다 폴링
 async function checkBackendHealth() {
+  const url = window.HPWD_BACKEND.url;
   try {
-    const r = await fetch(`${BACKEND_URL}/health`, { method: 'GET' });
+    const r = await fetch(`${url}/health`, { method: 'GET' });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const data = await r.json();
     window.HPWD_BACKEND.connected = true;
@@ -90,10 +140,12 @@ checkBackendHealth();
 setInterval(checkBackendHealth, 5000);
 
 /* 동기 호출 — XMLHttpRequest로 매 step마다 호출.
- * 향후 async + 캐시로 진화 가능하지만 검증 단계는 단순함이 우선. */
+ * 향후 async + 캐시로 진화 가능하지만 검증 단계는 단순함이 우선.
+ * URL은 매 호출마다 window.HPWD_BACKEND.url에서 가져옴 (사용자 토글 즉시 반영). */
 function callBackendSync(componentName, input, params, state, dt) {
   const xhr = new XMLHttpRequest();
-  xhr.open('POST', `${BACKEND_URL}/compute`, false); // 동기 호출
+  const url = window.HPWD_BACKEND.url;
+  xhr.open('POST', `${url}/compute`, false); // 동기 호출
   xhr.setRequestHeader('Content-Type', 'application/json');
   try {
     xhr.send(JSON.stringify({ component: componentName, input, params, state, dt }));
@@ -3720,37 +3772,154 @@ function ChatFAB({ onSend }) {
   );
 }
 
-/* ═══════════ Backend Status Indicator ═══════════ */
+/* ═══════════ Backend Status Indicator + Switcher ═══════════ */
 function BackendStatus() {
   const [tick, setTick] = useState(0);
+  const [open, setOpen] = useState(false);
+  const [customUrl, setCustomUrl] = useState('');
+  const dropdownRef = useRef(null);
+
   useEffect(() => {
     const handler = () => setTick(t => t + 1);
     window.addEventListener('hpwd-backend-status', handler);
     return () => window.removeEventListener('hpwd-backend-status', handler);
   }, []);
-  const status = window.HPWD_BACKEND || { connected: false, components: [], lastError: null };
+
+  // dropdown 외부 클릭 시 닫기
+  useEffect(() => {
+    if (!open) return;
+    const onDocClick = (e) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onDocClick);
+    return () => document.removeEventListener('mousedown', onDocClick);
+  }, [open]);
+
+  const status = window.HPWD_BACKEND || { connected: false, components: [], lastError: null, url: '', presets: {} };
+  const presets = status.presets || { cloud: '', local: 'http://localhost:8000' };
+  const isLocal = status.url === presets.local;
+  const isCloud = status.url === presets.cloud;
+  const isCustom = !isLocal && !isCloud;
+
   const tooltip = status.connected
     ? `Backend OK · ${status.url}\n등록된 컴포넌트: ${status.components.join(', ')}`
-    : `Backend 연결 안 됨 · ${status.url}\n${status.lastError || '서버 미실행 — backend 폴더에서 start.bat 실행'}`;
+    : `Backend 연결 안 됨 · ${status.url}\n${status.lastError || '서버 미실행'}`;
+
+  const switchTo = (url) => {
+    if (typeof window.HPWD_setBackend === 'function') {
+      window.HPWD_setBackend(url);
+    }
+    setOpen(false);
+  };
+  const applyCustom = () => {
+    if (customUrl.trim()) {
+      switchTo(customUrl.trim());
+      setCustomUrl('');
+    }
+  };
+
   return (
-    <div
-      className="flex items-center gap-1.5 text-[11px] font-mono px-2 py-1 rounded border cursor-help"
-      style={{
-        background: status.connected ? '#ecfdf5' : '#fef2f2',
-        borderColor: status.connected ? '#a7f3d0' : '#fecaca',
-        color: status.connected ? '#065f46' : '#991b1b',
-      }}
-      title={tooltip}
-    >
-      <span
-        className="w-2 h-2 rounded-full"
+    <div className="relative" ref={dropdownRef}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="flex items-center gap-1.5 text-[11px] font-mono px-2 py-1 rounded border transition-colors hover:bg-opacity-80"
         style={{
-          background: status.connected ? '#10b981' : '#ef4444',
-          boxShadow: status.connected ? '0 0 4px #10b981' : 'none',
+          background: status.connected ? '#ecfdf5' : '#fef2f2',
+          borderColor: status.connected ? '#a7f3d0' : '#fecaca',
+          color: status.connected ? '#065f46' : '#991b1b',
         }}
-      />
-      <span>Backend</span>
-      <span className="opacity-70">{status.connected ? `(${status.components.length})` : 'OFF'}</span>
+        title={tooltip}
+      >
+        <span
+          className="w-2 h-2 rounded-full"
+          style={{
+            background: status.connected ? '#10b981' : '#ef4444',
+            boxShadow: status.connected ? '0 0 4px #10b981' : 'none',
+          }}
+        />
+        <span>Backend</span>
+        <span className="opacity-70">{status.connected ? `(${status.components.length})` : 'OFF'}</span>
+        <span className="text-[8px] opacity-50">▾</span>
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-full mt-1 z-50 bg-white border border-slate-200 rounded-lg shadow-xl w-72 p-2 text-[11px] font-mono">
+          <div className="px-2 py-1 text-slate-500 text-[10px] uppercase tracking-wider">Backend URL</div>
+
+          {/* Cloud */}
+          <button
+            onClick={() => switchTo(presets.cloud)}
+            disabled={!presets.cloud}
+            className={`w-full text-left px-2 py-1.5 rounded flex items-center gap-2 transition-colors ${
+              isCloud ? 'bg-cyan-50 text-cyan-900' : 'hover:bg-slate-50 text-slate-700'
+            } disabled:opacity-40 disabled:cursor-not-allowed`}
+          >
+            <span className="w-3 text-center">{isCloud ? '●' : '○'}</span>
+            <div className="flex-1 min-w-0">
+              <div className="font-semibold">Cloud (Railway)</div>
+              <div className="text-[9px] text-slate-500 truncate">{presets.cloud || '(not configured)'}</div>
+            </div>
+          </button>
+
+          {/* Local */}
+          <button
+            onClick={() => switchTo(presets.local)}
+            className={`w-full text-left px-2 py-1.5 rounded flex items-center gap-2 transition-colors ${
+              isLocal ? 'bg-cyan-50 text-cyan-900' : 'hover:bg-slate-50 text-slate-700'
+            }`}
+          >
+            <span className="w-3 text-center">{isLocal ? '●' : '○'}</span>
+            <div className="flex-1 min-w-0">
+              <div className="font-semibold">Local (내 PC)</div>
+              <div className="text-[9px] text-slate-500 truncate">{presets.local}</div>
+            </div>
+          </button>
+
+          {/* Custom */}
+          <div className={`mt-1 px-2 py-1.5 rounded ${isCustom ? 'bg-cyan-50' : ''}`}>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="w-3 text-center">{isCustom ? '●' : '○'}</span>
+              <span className={`font-semibold ${isCustom ? 'text-cyan-900' : 'text-slate-700'}`}>Custom URL</span>
+            </div>
+            <div className="flex gap-1">
+              <input
+                type="text"
+                value={customUrl}
+                onChange={e => setCustomUrl(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') applyCustom(); }}
+                placeholder={isCustom ? status.url : 'http://192.168.10.5:8000'}
+                className="flex-1 px-2 py-0.5 text-[10px] border border-slate-300 rounded bg-white text-slate-700 outline-none focus:border-cyan-500"
+              />
+              <button
+                onClick={applyCustom}
+                disabled={!customUrl.trim()}
+                className="px-2 text-[9px] font-bold bg-cyan-600 text-white rounded hover:bg-cyan-700 disabled:opacity-40 disabled:cursor-not-allowed"
+              >SET</button>
+            </div>
+          </div>
+
+          {/* 상태 정보 */}
+          <div className="mt-2 px-2 py-1.5 bg-slate-50 rounded text-[10px]">
+            <div className="flex justify-between">
+              <span className="text-slate-500">Status</span>
+              <span className={status.connected ? 'text-emerald-700 font-semibold' : 'text-red-700 font-semibold'}>
+                {status.connected ? '● Connected' : '○ Disconnected'}
+              </span>
+            </div>
+            {status.connected && (
+              <div className="flex justify-between mt-0.5">
+                <span className="text-slate-500">Components</span>
+                <span className="text-slate-700">{status.components.length}</span>
+              </div>
+            )}
+            {!status.connected && status.lastError && (
+              <div className="mt-1 text-red-700 break-words">{status.lastError}</div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

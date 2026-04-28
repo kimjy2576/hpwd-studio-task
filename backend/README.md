@@ -176,4 +176,32 @@ pip install -r requirements.txt --index-url https://your-internal-pypi/
 
 ---
 
+## Railway 배포 (선택적 — 클라우드에서 24/7 가능)
+
+브라우저로 Studio 접속하는 사용자가 본인 PC에 백엔드를 안 띄워도 동작하게 하려면
+백엔드를 Railway에 배포.
+
+### 절차
+1. https://railway.app 로그인 → 기존 hpwd-studio-task 프로젝트 열기
+2. `+ New` → `GitHub Repo` → 같은 `kimjy2576/hpwd-studio-task` 선택
+3. 새 서비스 생성 후 **Settings → Root Directory를 `backend`로 지정**
+4. 자동으로 `backend/Dockerfile`과 `backend/railway.json` 인식
+5. Deploy 클릭 → 빌드 후 `https://hpwd-backend-production.up.railway.app` 같은 URL 부여
+
+### 검증
+브라우저에서:
+```
+https://<배포된-URL>/health
+```
+→ `{"status":"ok","components":["adder"]}` 응답이면 OK.
+
+### Studio가 자동으로 사용
+Studio의 `BACKEND_URL`은 환경 자동 인식:
+- localhost 접속 → `http://localhost:8000` 사용 (개발 모드)
+- Railway URL 접속 → 배포된 백엔드 URL 사용
+
+URL 토글 UI는 Studio 상단 BackendStatus 옆 dropdown.
+
+---
+
 **Maintainer**: HPWD Platform Team
