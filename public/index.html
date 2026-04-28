@@ -1587,13 +1587,21 @@ function HPWDStudio() {
   };
 
   const stepSimulation = useCallback(() => {
+    // t_final 도달 후 step 호출은 no-op + running 정지
+    // (runSim의 guard가 1차 방어, 이건 race condition 안전망)
+    if (simRef.current.t >= simRef.current.t_final) {
+      if (simRef.current.running) {
+        setSimState(s => ({ ...s, running: false }));
+      }
+      return;
+    }
     setBlocks(prevBlocks => {
       const conns = connectionsRef.current;
       return evaluateBlocks(prevBlocks, conns, simRef.current.t, simRef.current.dt);
     });
 
     setSimState(s => {
-      const t_new = s.t + s.dt;
+      const t_new = Math.min(s.t + s.dt, s.t_final);  // t_final 초과 방지
       const snapshot = makeSnapshot(blocksRef.current, t_new);
       return { ...s, t: t_new, history: [...s.history, snapshot], running: t_new < s.t_final && s.running };
     });
@@ -1863,6 +1871,16 @@ function HPWDStudio() {
   ]);
 
   const runSim = () => {
+    // 이미 t_final 도달 상태면 Run 거부 — Reset 후 다시 시도 안내
+    // (이전 동작: t_new = t + dt 한 후에야 running:false 처리되므로
+    //  Run 누를 때마다 t가 dt씩 t_final을 넘어 증가하는 버그 있었음)
+    if (simState.t >= simState.t_final) {
+      setSimState(s => ({
+        ...s,
+        log: [...s.log, `⚠ t = ${s.t.toFixed(1)}s 이미 t_final = ${s.t_final}s 도달. Reset 후 Run 가능.`],
+      }));
+      return;
+    }
     // history가 비어있으면(초기 로드 직후) t=0 스냅샷 먼저 기록
     if (simState.history.length === 0) {
       initSim();
