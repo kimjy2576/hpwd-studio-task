@@ -1,0 +1,936 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Design Studio · UI 프로토타입</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<script src="https://cdn.tailwindcss.com" onload="setupTailwind()"></script>
+<script>
+  function setupTailwind() {
+    if (typeof tailwind === 'undefined') return;
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Pretendard', 'system-ui', 'sans-serif'],
+            mono: ['JetBrains Mono', 'ui-monospace', 'monospace'],
+          },
+        },
+      },
+    };
+  }
+</script>
+<style>
+  body { font-family: 'Pretendard', system-ui, sans-serif; }
+  .mono { font-family: 'JetBrains Mono', monospace; }
+  .step-pill { transition: all 0.25s ease; }
+  .step-pill.active { background: #0891b2; color: white; }
+  .step-pill.done { background: #d1fae5; color: #065f46; }
+  .step-pill.todo { background: #f1f5f9; color: #94a3b8; }
+  .code-bg { background: #0f172a; color: #e2e8f0; font-family: 'JetBrains Mono', monospace; font-size: 11.5px; line-height: 1.6; }
+  .code-bg .kw { color: #c084fc; }
+  .code-bg .str { color: #86efac; }
+  .code-bg .num { color: #fbbf24; }
+  .code-bg .com { color: #64748b; }
+  .code-bg .fn { color: #60a5fa; }
+  .code-bg .todo { background: #fef9c3; color: #713f12; padding: 0 4px; border-radius: 2px; font-weight: 600; }
+  .table-row:hover { background: #f8fafc; }
+  .slider-track { -webkit-appearance: none; appearance: none; height: 4px; background: #cbd5e1; border-radius: 2px; }
+  .slider-track::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 14px; height: 14px; background: #0891b2; border-radius: 50%; cursor: pointer; }
+</style>
+</head>
+<body class="bg-slate-100 min-h-screen">
+<div id="app">
+  <div style="padding:40px;font-family:Pretendard,system-ui,sans-serif">
+    <div style="font-size:20px;font-weight:700;color:#0f172a">Design Studio loading...</div>
+    <div id="load-status" style="margin-top:12px;color:#64748b;font-size:13px">스크립트 로드 중 (약 2~3초 소요)</div>
+    <div id="load-error" style="margin-top:16px;padding:12px;border:1px solid #fca5a5;background:#fef2f2;color:#991b1b;border-radius:6px;display:none;font-family:'JetBrains Mono',monospace;font-size:11px;white-space:pre-wrap"></div>
+  </div>
+</div>
+
+<!-- Global error catcher (흰화면 대신 메시지 표시) -->
+<script>
+  function showError(msg) {
+    const el = document.getElementById('load-error');
+    const status = document.getElementById('load-status');
+    if (el) {
+      el.style.display = 'block';
+      el.textContent = msg;
+    }
+    if (status) status.style.color = '#dc2626';
+    console.error('[Studio]', msg);
+  }
+  window.addEventListener('error', e => {
+    showError('JS Error: ' + (e.message || 'unknown') + '\n' + (e.filename || '') + ':' + (e.lineno || '?'));
+  });
+  window.addEventListener('unhandledrejection', e => {
+    showError('Promise rejection: ' + (e.reason?.message || e.reason || 'unknown'));
+  });
+</script>
+
+<!-- React development build (CDN) -->
+<script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+<!-- 인라인 JSX (단일 파일 — 로컬에서 file:// 로 열어도 동작) -->
+<script id="app-jsx" type="text/plain">
+/* eslint-disable */
+const { useState, useEffect, useMemo, useRef } = React;
+
+/* ═══════════════════════════════════════════════════════════════════
+   Design Studio — fitting parameter calibration + validation
+   ─────────────────────────────────────────────────────────────────
+   4 탭:
+     1. Setup     — 컴포넌트 + CSV 데이터 업로드
+     2. Calibrate — fitting params LSQ 최적화 (또는 manual)
+     3. Validate  — train/test split, metrics, parity plot
+     4. Report    — markdown 요약 + Apply
+   
+   Backend: /design/* endpoints
+   ═══════════════════════════════════════════════════════════════════ */
+
+const BACKEND_URL = (() => {
+  // localhost면 :8000, Railway면 동일 호스트의 backend 서비스
+  // HPWD Studio의 BackendStatus와 같은 로직
+  const u = new URL(window.location.href);
+  if (localStorage.getItem('HPWD_BACKEND_URL')) {
+    return localStorage.getItem('HPWD_BACKEND_URL');
+  }
+  if (u.hostname === 'localhost' || u.hostname === '127.0.0.1') {
+    return 'http://localhost:8000';
+  }
+  // Railway: 사용자가 설정한 URL을 HPWD Studio에서 저장하므로 동일 사용
+  // 없으면 fallback (개발 환경)
+  return 'http://localhost:8000';
+})();
+
+async function api(path, options = {}) {
+  const res = await fetch(BACKEND_URL + path, {
+    headers: { 'Content-Type': 'application/json' },
+    ...options,
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`${res.status}: ${text}`);
+  }
+  return res.json();
+}
+
+/* ───────────── App Switcher ───────────── */
+function AppSwitcher({ current }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [open]);
+
+  const apps = [
+    { id: 'studio',           label: 'HPWD Studio',      desc: '시뮬 캔버스',          href: '/' },
+    { id: 'component-studio', label: 'Component Studio', desc: '컴포넌트 작성',         href: '/component-studio/' },
+    { id: 'design-studio',    label: 'Design Studio',    desc: 'Calibration & Validation', href: '/design-studio/' },
+  ];
+  const active = apps.find(a => a.id === current) || apps[0];
+
+  return (
+    <div className="relative" ref={ref}>
+      <button onClick={() => setOpen(o => !o)}
+        className="flex items-center gap-2 px-2 py-1 rounded hover:bg-slate-100 transition-colors">
+        <div className="w-2 h-2 rounded-sm bg-amber-600 shrink-0"></div>
+        <span className="font-bold text-slate-900 tracking-wide text-sm">{active.label}</span>
+        <span className="text-slate-400 text-[10px]">▾</span>
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full mt-1 z-50 bg-white border border-slate-200 rounded-lg shadow-xl w-56 p-1">
+          {apps.map(a => {
+            const isActive = a.id === current;
+            return (
+              <button key={a.id}
+                onClick={() => { if (!isActive) window.location.href = a.href; }}
+                className={`w-full text-left px-2.5 py-1.5 rounded flex items-start gap-2 transition-colors ${
+                  isActive ? 'bg-amber-50 cursor-default' : 'hover:bg-slate-50'
+                }`}>
+                <span className={`mt-0.5 w-3 text-center text-[11px] ${isActive ? 'text-amber-700' : 'text-slate-300'}`}>
+                  {isActive ? '●' : '○'}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <div className={`font-semibold text-[12px] ${isActive ? 'text-amber-900' : 'text-slate-800'}`}>{a.label}</div>
+                  <div className="text-[10px] text-slate-500">{a.desc}</div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ───────────── Setup Tab ───────────── */
+function SetupTab({ state, setState }) {
+  const [components, setComponents] = useState([]);
+  const [error, setError] = useState(null);
+  const [loadingMeta, setLoadingMeta] = useState(false);
+
+  // Component list 로드
+  useEffect(() => {
+    api('/design/components')
+      .then(d => setComponents(d.components))
+      .catch(e => setError('컴포넌트 목록 로드 실패: ' + e.message));
+  }, []);
+
+  // Component 선택 시 detail 가져오기
+  const selectComponent = async (name) => {
+    if (!name) {
+      setState(s => ({ ...s, component: null, componentMeta: null }));
+      return;
+    }
+    setLoadingMeta(true);
+    setError(null);
+    try {
+      const meta = await api('/design/components/' + name);
+      // fitting params 초기값 (start) — 사용자 편집 가능
+      const fittingInit = {};
+      const fittingKeys = [];
+      const fixedParams = {};
+      Object.entries(meta.parameter_groups).forEach(([group, params]) => {
+        params.forEach(p => {
+          if (group === 'Fitting') {
+            fittingInit[p.name] = p.start;
+            fittingKeys.push(p.name);
+          } else {
+            fixedParams[p.name] = p.start;
+          }
+        });
+      });
+      setState(s => ({
+        ...s, component: name, componentMeta: meta,
+        fittingInit, fittingKeys, fixedParams,
+        fittingSelected: [...fittingKeys],  // default: 모두 선택
+      }));
+    } catch (e) {
+      setError('Component meta 로드 실패: ' + e.message);
+    } finally {
+      setLoadingMeta(false);
+    }
+  };
+
+  const onFileUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const text = await file.text();
+    setError(null);
+    try {
+      const parsed = await api('/design/csv/parse', {
+        method: 'POST',
+        body: JSON.stringify({ csv_text: text, component: state.component }),
+      });
+      setState(s => ({ ...s, csvFile: file.name, csvParsed: parsed }));
+    } catch (err) {
+      setError('CSV 파싱 실패: ' + err.message);
+    }
+  };
+
+  const updateFixedParam = (key, val) => {
+    setState(s => ({ ...s, fixedParams: { ...s.fixedParams, [key]: val } }));
+  };
+
+  const updateFittingInit = (key, val) => {
+    setState(s => ({ ...s, fittingInit: { ...s.fittingInit, [key]: val } }));
+  };
+
+  const toggleFittingSelected = (key) => {
+    setState(s => {
+      const set = new Set(s.fittingSelected);
+      if (set.has(key)) set.delete(key); else set.add(key);
+      return { ...s, fittingSelected: Array.from(set) };
+    });
+  };
+
+  return (
+    <div className="space-y-4">
+      {error && (
+        <div className="p-3 bg-red-50 border border-red-200 rounded text-sm text-red-800">{error}</div>
+      )}
+
+      {/* 1. Component 선택 */}
+      <div className="bg-white border border-slate-200 rounded-lg p-4">
+        <div className="text-[11px] uppercase tracking-wider text-slate-500 font-semibold mb-2">① Component</div>
+        <select value={state.component || ''} onChange={(e) => selectComponent(e.target.value)}
+          className="w-full px-3 py-2 border border-slate-300 rounded text-sm font-mono">
+          <option value="">— 선택 —</option>
+          {components.map(c => (
+            <option key={c.name} value={c.name}>
+              {c.displayName} ({c.modelType}, fitting {c.n_fitting}개)
+            </option>
+          ))}
+        </select>
+        {state.componentMeta && (
+          <div className="mt-2 text-[12px] text-slate-600">{state.componentMeta.description}</div>
+        )}
+      </div>
+
+      {/* 2. CSV 업로드 */}
+      {state.component && (
+        <div className="bg-white border border-slate-200 rounded-lg p-4">
+          <div className="text-[11px] uppercase tracking-wider text-slate-500 font-semibold mb-2">② 시험 데이터 (CSV)</div>
+          <input type="file" accept=".csv,.txt" onChange={onFileUpload}
+            className="block text-sm text-slate-700" />
+          {state.csvParsed && (
+            <div className="mt-3 space-y-2">
+              <div className="text-[12px]">
+                <b>{state.csvFile}</b> — {state.csvParsed.rows} 행
+                {state.csvParsed.errors?.length > 0 && (
+                  <span className="text-red-600 ml-2">⚠ {state.csvParsed.errors.join(', ')}</span>
+                )}
+              </div>
+
+              {/* Column 매핑 표 */}
+              <div className="border border-slate-200 rounded overflow-hidden">
+                <table className="w-full text-[11px]">
+                  <thead className="bg-slate-50">
+                    <tr>
+                      <th className="text-left p-1.5">CSV Column</th>
+                      <th className="text-left p-1.5">→ Port</th>
+                      <th className="text-left p-1.5">단위 변환</th>
+                      <th className="text-left p-1.5">상태</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {state.csvParsed.columns.map(c => (
+                      <tr key={c.original} className="border-t border-slate-100">
+                        <td className="p-1.5 font-mono">{c.original}</td>
+                        <td className="p-1.5 font-mono text-cyan-700">{c.mapped || '—'}</td>
+                        <td className="p-1.5 font-mono text-slate-500">
+                          {c.unit_src && c.unit_tgt ? `${c.unit_src} → ${c.unit_tgt}` : '-'}
+                        </td>
+                        <td className="p-1.5">
+                          {c.matched
+                            ? <span className="text-green-700">✓ matched</span>
+                            : <span className="text-amber-600">⚠ unmapped</span>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {state.csvParsed.split && (
+                <div className="text-[11px] text-slate-600 grid grid-cols-3 gap-2">
+                  <div className="bg-blue-50 rounded p-2">
+                    <div className="font-semibold text-blue-900">Inputs ({Object.keys(state.csvParsed.split.inputs).length})</div>
+                    <div className="font-mono text-[10px] mt-0.5">{Object.keys(state.csvParsed.split.inputs).join(', ') || '없음'}</div>
+                  </div>
+                  <div className="bg-green-50 rounded p-2">
+                    <div className="font-semibold text-green-900">Outputs 측정 ({Object.keys(state.csvParsed.split.outputs_meas).length})</div>
+                    <div className="font-mono text-[10px] mt-0.5">{Object.keys(state.csvParsed.split.outputs_meas).join(', ') || '없음'}</div>
+                  </div>
+                  <div className="bg-slate-50 rounded p-2">
+                    <div className="font-semibold text-slate-700">Unmatched ({state.csvParsed.split.unmatched.length})</div>
+                    <div className="font-mono text-[10px] mt-0.5">{state.csvParsed.split.unmatched.join(', ') || '없음'}</div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 3. Parameter 설정 */}
+      {state.componentMeta && (
+        <div className="bg-white border border-slate-200 rounded-lg p-4">
+          <div className="text-[11px] uppercase tracking-wider text-slate-500 font-semibold mb-2">③ Parameters</div>
+
+          {/* Material/Operating/Geometry: 고정 (사용자 입력) */}
+          {Object.entries(state.componentMeta.parameter_groups).map(([group, params]) => {
+            if (group === 'Fitting') return null;
+            return (
+              <div key={group} className="mb-3">
+                <div className="text-[11px] font-semibold text-slate-700 mb-1.5">{group} <span className="text-slate-400">(고정)</span></div>
+                <div className="space-y-1">
+                  {params.map(p => (
+                    <div key={p.name} className="flex items-center gap-2 text-[11px]">
+                      <label className="flex-1 text-slate-700">{p.name}</label>
+                      {p.options ? (
+                        <select value={state.fixedParams[p.name]}
+                          onChange={(e) => updateFixedParam(p.name, e.target.value)}
+                          className="w-32 border border-slate-300 px-2 py-0.5 rounded font-mono">
+                          {p.options.map(o => <option key={o}>{o}</option>)}
+                        </select>
+                      ) : (
+                        <input type="number" value={state.fixedParams[p.name] ?? ''}
+                          onChange={(e) => updateFixedParam(p.name, parseFloat(e.target.value) || 0)}
+                          className="w-32 border border-slate-300 px-2 py-0.5 rounded font-mono text-right" />
+                      )}
+                      <span className="text-slate-400 w-12 font-mono text-[10px]">{p.unit}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+
+          {/* Fitting: 최적화 대상 (체크박스 + 시작값 + bounds 추후) */}
+          {state.componentMeta.parameter_groups.Fitting && (
+            <div>
+              <div className="text-[11px] font-semibold text-amber-700 mb-1.5">
+                Fitting <span className="text-slate-400">(최적화 대상 — 체크된 것만 fitting)</span>
+              </div>
+              <div className="space-y-1 bg-amber-50 rounded p-2">
+                {state.componentMeta.parameter_groups.Fitting.map(p => {
+                  const checked = state.fittingSelected?.includes(p.name);
+                  return (
+                    <div key={p.name} className="flex items-center gap-2 text-[11px]">
+                      <input type="checkbox" checked={checked}
+                        onChange={() => toggleFittingSelected(p.name)}
+                        className="w-3 h-3 accent-amber-600" />
+                      <label className={`flex-1 ${checked ? 'text-slate-900 font-semibold' : 'text-slate-500'}`}>
+                        {p.name}
+                      </label>
+                      <input type="number" value={state.fittingInit[p.name] ?? ''}
+                        onChange={(e) => updateFittingInit(p.name, parseFloat(e.target.value) || 0)}
+                        disabled={!checked}
+                        className="w-28 border border-slate-300 px-2 py-0.5 rounded font-mono text-right disabled:bg-slate-100 disabled:text-slate-400" />
+                      <span className="text-slate-400 w-12 font-mono text-[10px]">{p.unit}</span>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="text-[10px] text-slate-500 mt-1">
+                ※ {state.fittingSelected?.length || 0}개 fitting params 선택됨
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ───────────── Calibrate Tab ───────────── */
+function CalibrateTab({ state, setState }) {
+  const [running, setRunning] = useState(false);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState(null);
+  const [maxIter, setMaxIter] = useState(100);
+  const [method, setMethod] = useState('trf');
+
+  const canRun = state.component && state.csvParsed?.split &&
+                 state.fittingSelected?.length > 0 &&
+                 Object.keys(state.csvParsed.split.outputs_meas).length > 0;
+
+  const runCalibration = async () => {
+    setRunning(true);
+    setError(null);
+    setResult(null);
+    try {
+      const res = await api('/design/calibrate', {
+        method: 'POST',
+        body: JSON.stringify({
+          component: state.component,
+          fixed_params: state.fixedParams,
+          fitting_init: state.fittingInit,
+          fitting_keys: state.fittingSelected,
+          inputs: state.csvParsed.split.inputs,
+          outputs_meas: state.csvParsed.split.outputs_meas,
+          method,
+          max_iter: maxIter,
+        }),
+      });
+      setResult(res);
+      // 최적화 결과를 state에도 저장 (Validate 탭에서 사용)
+      setState(s => ({ ...s, calibrationResult: res }));
+    } catch (e) {
+      setError('Calibration 실패: ' + e.message);
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const applyOptimized = () => {
+    if (!result?.fitting_optimized) return;
+    setState(s => ({
+      ...s,
+      fittingInit: { ...s.fittingInit, ...result.fitting_optimized },
+    }));
+  };
+
+  if (!canRun) {
+    return (
+      <div className="bg-amber-50 border border-amber-200 rounded p-4 text-sm text-amber-900">
+        Calibration을 실행하려면 Setup에서 다음을 완료해야 합니다:
+        <ul className="list-disc ml-5 mt-1 text-[12px]">
+          <li>Component 선택</li>
+          <li>CSV 데이터 업로드 (input + output 측정값 포함)</li>
+          <li>Fitting params 1개 이상 선택</li>
+        </ul>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* 옵션 */}
+      <div className="bg-white border border-slate-200 rounded-lg p-4">
+        <div className="text-[11px] uppercase tracking-wider text-slate-500 font-semibold mb-2">최적화 옵션</div>
+        <div className="grid grid-cols-2 gap-3 text-[12px]">
+          <div>
+            <label className="block text-slate-700 mb-1">알고리즘</label>
+            <select value={method} onChange={(e) => setMethod(e.target.value)}
+              className="w-full border border-slate-300 px-2 py-1 rounded font-mono">
+              <option value="trf">TRF (bounded, 추천)</option>
+              <option value="lm">Levenberg-Marquardt (unbounded, 빠름)</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-slate-700 mb-1">최대 함수 호출</label>
+            <input type="number" value={maxIter} onChange={(e) => setMaxIter(parseInt(e.target.value) || 100)}
+              className="w-full border border-slate-300 px-2 py-1 rounded font-mono" />
+          </div>
+        </div>
+      </div>
+
+      {/* 데이터 요약 */}
+      <div className="bg-slate-50 rounded p-3 text-[12px] text-slate-700 grid grid-cols-3 gap-2">
+        <div><b>{state.csvParsed.rows}</b> 시험점</div>
+        <div><b>{state.fittingSelected.length}</b> fitting params</div>
+        <div><b>{Object.keys(state.csvParsed.split.outputs_meas).length}</b> outputs 비교</div>
+      </div>
+
+      {/* 실행 */}
+      <button onClick={runCalibration} disabled={running}
+        className="w-full px-4 py-2.5 bg-amber-600 hover:bg-amber-700 disabled:bg-slate-300 text-white rounded font-semibold transition-colors">
+        {running ? '⏳ 최적화 중...' : '🎯 Calibration 실행'}
+      </button>
+
+      {error && <div className="p-3 bg-red-50 border border-red-200 rounded text-sm text-red-800">{error}</div>}
+
+      {/* 결과 */}
+      {result && (
+        <div className="bg-white border border-slate-200 rounded-lg p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="text-[11px] uppercase tracking-wider text-slate-500 font-semibold">결과</div>
+            <span className={`text-[11px] px-2 py-0.5 rounded ${
+              result.success ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'
+            }`}>
+              {result.success ? '✓ 수렴' : '⚠ 부분 수렴'}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-3 gap-3 text-[12px]">
+            <div className="bg-slate-50 rounded p-2">
+              <div className="text-[10px] text-slate-500">반복 횟수</div>
+              <div className="font-mono font-bold">{result.n_iter}</div>
+            </div>
+            <div className="bg-slate-50 rounded p-2">
+              <div className="text-[10px] text-slate-500">소요 시간</div>
+              <div className="font-mono font-bold">{result.duration_s.toFixed(1)}s</div>
+            </div>
+            <div className="bg-amber-50 rounded p-2">
+              <div className="text-[10px] text-amber-700">Cost 감소</div>
+              <div className="font-mono font-bold text-amber-900">{result.cost_reduction_pct.toFixed(1)}%</div>
+            </div>
+          </div>
+
+          <div>
+            <div className="text-[11px] font-semibold text-slate-700 mb-1.5">Fitting params 변화</div>
+            <table className="w-full text-[11px] border border-slate-200 rounded overflow-hidden">
+              <thead className="bg-slate-50">
+                <tr>
+                  <th className="text-left p-1.5">Param</th>
+                  <th className="text-right p-1.5">Initial</th>
+                  <th className="text-right p-1.5">Optimized</th>
+                  <th className="text-right p-1.5">Δ</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Object.entries(result.fitting_optimized).map(([k, v]) => {
+                  const init = state.fittingInit[k];
+                  const delta = init !== 0 ? ((v - init) / Math.abs(init)) * 100 : 0;
+                  return (
+                    <tr key={k} className="border-t border-slate-100">
+                      <td className="p-1.5 font-mono">{k}</td>
+                      <td className="p-1.5 text-right font-mono text-slate-500">{init?.toExponential(3)}</td>
+                      <td className="p-1.5 text-right font-mono font-bold text-amber-700">{v.toExponential(3)}</td>
+                      <td className={`p-1.5 text-right font-mono ${
+                        Math.abs(delta) > 50 ? 'text-red-600' : Math.abs(delta) > 10 ? 'text-amber-600' : 'text-slate-500'
+                      }`}>{delta > 0 ? '+' : ''}{delta.toFixed(1)}%</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <button onClick={applyOptimized}
+            className="w-full px-3 py-1.5 bg-cyan-600 hover:bg-cyan-700 text-white rounded text-[12px] font-semibold transition-colors">
+            ↓ Initial을 Optimized로 업데이트 (Validate 탭에서 검증)
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ───────────── Validate Tab ───────────── */
+function ValidateTab({ state }) {
+  const [running, setRunning] = useState(false);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState(null);
+  const [testRatio, setTestRatio] = useState(0.2);
+  const [useOptimized, setUseOptimized] = useState(true);
+
+  const canRun = state.component && state.csvParsed?.split &&
+                 Object.keys(state.csvParsed.split.outputs_meas).length > 0;
+
+  const runValidation = async () => {
+    setRunning(true);
+    setError(null);
+    try {
+      const fittingForEval = useOptimized && state.calibrationResult?.fitting_optimized
+        ? { ...state.fittingInit, ...state.calibrationResult.fitting_optimized }
+        : state.fittingInit;
+      const params = { ...state.fixedParams, ...fittingForEval };
+      const res = await api('/design/validate', {
+        method: 'POST',
+        body: JSON.stringify({
+          component: state.component,
+          params,
+          inputs: state.csvParsed.split.inputs,
+          outputs_meas: state.csvParsed.split.outputs_meas,
+          test_ratio: testRatio,
+        }),
+      });
+      setResult(res);
+    } catch (e) {
+      setError('Validation 실패: ' + e.message);
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  if (!canRun) {
+    return (
+      <div className="bg-amber-50 border border-amber-200 rounded p-4 text-sm text-amber-900">
+        Setup에서 component + CSV 데이터를 먼저 준비하세요.
+      </div>
+    );
+  }
+
+  const renderMetrics = (evalResult, label) => {
+    if (!evalResult) return null;
+    const m = evalResult.metrics || evalResult.evaluation?.metrics;
+    if (!m) return null;
+    return (
+      <div className="bg-white border border-slate-200 rounded p-3 space-y-2">
+        <div className="text-[11px] font-semibold text-slate-700">{label}</div>
+        <table className="w-full text-[11px] border border-slate-200">
+          <thead className="bg-slate-50">
+            <tr>
+              <th className="text-left p-1.5">Output</th>
+              <th className="text-right p-1.5">RMSE</th>
+              <th className="text-right p-1.5">MAPE</th>
+              <th className="text-right p-1.5">R²</th>
+              <th className="text-right p-1.5">Max err</th>
+              <th className="text-right p-1.5">N</th>
+            </tr>
+          </thead>
+          <tbody>
+            {Object.entries(m).map(([port, met]) => (
+              <tr key={port} className="border-t border-slate-100">
+                <td className="p-1.5 font-mono">{port}</td>
+                <td className="p-1.5 text-right font-mono">{met.rmse?.toExponential(3) ?? '-'}</td>
+                <td className={`p-1.5 text-right font-mono ${
+                  met.mape && met.mape > 10 ? 'text-amber-700' : 'text-slate-700'
+                }`}>{met.mape ? met.mape.toFixed(2) + '%' : '-'}</td>
+                <td className={`p-1.5 text-right font-mono ${
+                  met.r2 && met.r2 > 0.99 ? 'text-green-700' : met.r2 && met.r2 > 0.95 ? 'text-amber-700' : 'text-red-700'
+                }`}>{met.r2?.toFixed(4) ?? '-'}</td>
+                <td className="p-1.5 text-right font-mono">{met.max_err?.toExponential(2) ?? '-'}</td>
+                <td className="p-1.5 text-right font-mono text-slate-500">{met.n}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-white border border-slate-200 rounded-lg p-4">
+        <div className="text-[11px] uppercase tracking-wider text-slate-500 font-semibold mb-2">옵션</div>
+        <div className="grid grid-cols-2 gap-3 text-[12px]">
+          <div>
+            <label className="block text-slate-700 mb-1">Test 비율 (0=전체)</label>
+            <input type="number" step="0.1" min="0" max="0.5" value={testRatio}
+              onChange={(e) => setTestRatio(parseFloat(e.target.value) || 0)}
+              className="w-full border border-slate-300 px-2 py-1 rounded font-mono" />
+          </div>
+          <div className="flex items-end">
+            <label className="text-slate-700 flex items-center gap-2">
+              <input type="checkbox" checked={useOptimized}
+                onChange={(e) => setUseOptimized(e.target.checked)}
+                disabled={!state.calibrationResult}
+                className="w-3 h-3 accent-amber-600" />
+              <span>Optimized fitting 사용 {!state.calibrationResult && <span className="text-slate-400">(아직 calibration 없음)</span>}</span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <button onClick={runValidation} disabled={running}
+        className="w-full px-4 py-2.5 bg-cyan-600 hover:bg-cyan-700 disabled:bg-slate-300 text-white rounded font-semibold transition-colors">
+        {running ? '⏳ 평가 중...' : '🔍 Validation 실행'}
+      </button>
+
+      {error && <div className="p-3 bg-red-50 border border-red-200 rounded text-sm text-red-800">{error}</div>}
+
+      {result && (
+        <div className="space-y-2">
+          {result.mode === 'split' ? (
+            <>
+              <div className="text-[11px] text-slate-600">
+                Train {result.split.train_n}점 / Test {result.split.test_n}점 (random split, seed=42)
+              </div>
+              {renderMetrics(result.train, '🟢 Train metrics')}
+              {renderMetrics(result.test, '🔵 Test metrics')}
+            </>
+          ) : (
+            <>
+              <div className="text-[11px] text-slate-600">전체 데이터 평가</div>
+              {renderMetrics(result.evaluation, '평가 결과')}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ───────────── Report Tab ───────────── */
+function ReportTab({ state }) {
+  const [savedId, setSavedId] = useState(null);
+  const [error, setError] = useState(null);
+  const [sessionName, setSessionName] = useState('');
+
+  const canReport = state.component && state.calibrationResult;
+
+  const saveSession = async () => {
+    setError(null);
+    try {
+      const payload = {
+        name: sessionName || `${state.component}_${new Date().toISOString().slice(0, 10)}`,
+        component: state.component,
+        fixed_params: state.fixedParams,
+        fitting_init: state.fittingInit,
+        fitting_keys: state.fittingSelected,
+        fitting_optimized: state.calibrationResult.fitting_optimized,
+        n_data: state.csvParsed?.rows ?? 0,
+        cost_initial: state.calibrationResult.cost_initial,
+        cost_final: state.calibrationResult.cost_final,
+        n_iter: state.calibrationResult.n_iter,
+        duration_s: state.calibrationResult.duration_s,
+      };
+      const res = await api('/design/sessions', {
+        method: 'POST', body: JSON.stringify(payload),
+      });
+      setSavedId(res.id);
+    } catch (e) {
+      setError('저장 실패: ' + e.message);
+    }
+  };
+
+  const generateMarkdown = () => {
+    if (!canReport) return '';
+    const r = state.calibrationResult;
+    const fixed = state.fixedParams;
+    const opt = r.fitting_optimized;
+    const date = new Date().toISOString().slice(0, 10);
+    const lines = [
+      `# Calibration Report — ${state.componentMeta.displayName}`,
+      ``,
+      `**Date**: ${date}`,
+      `**Component**: ${state.component}`,
+      `**Data points**: ${state.csvParsed?.rows}`,
+      `**Optimizer**: scipy least_squares (TRF)`,
+      ``,
+      `## Result`,
+      `- Iterations: ${r.n_iter}`,
+      `- Duration: ${r.duration_s.toFixed(1)}s`,
+      `- Cost reduction: **${r.cost_reduction_pct.toFixed(1)}%** (${r.cost_initial.toFixed(4)} → ${r.cost_final.toFixed(4)})`,
+      `- Status: ${r.success ? '✓ 수렴' : '⚠ 부분 수렴'}`,
+      ``,
+      `## Fixed Parameters`,
+      ...Object.entries(fixed).map(([k, v]) => `- \`${k}\` = ${v}`),
+      ``,
+      `## Optimized Fitting Parameters`,
+      `| Param | Initial | Optimized | Δ |`,
+      `|---|---|---|---|`,
+      ...Object.entries(opt).map(([k, v]) => {
+        const init = state.fittingInit[k];
+        const d = init !== 0 ? ((v - init) / Math.abs(init)) * 100 : 0;
+        return `| \`${k}\` | ${init?.toExponential(3)} | **${v.toExponential(3)}** | ${d > 0 ? '+' : ''}${d.toFixed(1)}% |`;
+      }),
+      ``,
+      `## Notes`,
+      `- Initial values were the component's default \`start\` values.`,
+      `- All fixed params (Material/Geometry/Operating) remained constant.`,
+      `- Bounds were component's validate() ranges (with sane defaults for new params).`,
+    ];
+    return lines.join('\n');
+  };
+
+  const md = generateMarkdown();
+
+  if (!canReport) {
+    return (
+      <div className="bg-amber-50 border border-amber-200 rounded p-4 text-sm text-amber-900">
+        Calibration을 먼저 실행하세요.
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Session 저장 */}
+      <div className="bg-white border border-slate-200 rounded-lg p-4">
+        <div className="text-[11px] uppercase tracking-wider text-slate-500 font-semibold mb-2">Session 저장</div>
+        <div className="flex gap-2">
+          <input type="text" value={sessionName} onChange={(e) => setSessionName(e.target.value)}
+            placeholder={`${state.component}_${new Date().toISOString().slice(0, 10)}`}
+            className="flex-1 border border-slate-300 px-2 py-1.5 rounded text-sm font-mono" />
+          <button onClick={saveSession}
+            className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-700 text-white rounded text-sm font-semibold">
+            💾 저장
+          </button>
+        </div>
+        {savedId && (
+          <div className="mt-2 text-[12px] text-green-700">✓ 저장됨 — ID: <code className="bg-green-50 px-1 rounded">{savedId}</code></div>
+        )}
+        {error && <div className="mt-2 text-[12px] text-red-700">{error}</div>}
+      </div>
+
+      {/* Markdown report */}
+      <div className="bg-white border border-slate-200 rounded-lg p-4">
+        <div className="flex items-center justify-between mb-2">
+          <div className="text-[11px] uppercase tracking-wider text-slate-500 font-semibold">Markdown Report</div>
+          <button onClick={() => navigator.clipboard.writeText(md)}
+            className="text-[11px] px-2 py-0.5 bg-slate-100 hover:bg-slate-200 rounded">📋 복사</button>
+        </div>
+        <pre className="bg-slate-50 border border-slate-200 rounded p-3 text-[11px] font-mono overflow-x-auto whitespace-pre-wrap">{md}</pre>
+      </div>
+    </div>
+  );
+}
+
+/* ───────────── Top App ───────────── */
+function App() {
+  const [tab, setTab] = useState('setup');
+  const [state, setState] = useState({
+    component: null,
+    componentMeta: null,
+    csvFile: null,
+    csvParsed: null,
+    fixedParams: {},
+    fittingInit: {},
+    fittingKeys: [],
+    fittingSelected: [],
+    calibrationResult: null,
+  });
+
+  const tabs = [
+    { id: 'setup',     label: '① Setup',     desc: 'Component + Data' },
+    { id: 'calibrate', label: '② Calibrate', desc: 'LSQ 최적화' },
+    { id: 'validate',  label: '③ Validate',  desc: 'Metrics + Parity' },
+    { id: 'report',    label: '④ Report',    desc: '저장 + Markdown' },
+  ];
+
+  return (
+    <div className="min-h-screen bg-slate-100">
+      {/* Topbar */}
+      <div className="bg-white border-b border-slate-200 px-4 py-2 flex items-center gap-4">
+        <AppSwitcher current="design-studio" />
+        <div className="text-[11px] text-slate-500">Calibration · Validation · Reporting</div>
+      </div>
+
+      {/* Tabs */}
+      <div className="bg-white border-b border-slate-200 px-4 flex gap-1">
+        {tabs.map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)}
+            className={`px-4 py-2 text-sm font-semibold border-b-2 transition-colors ${
+              tab === t.id ? 'border-amber-600 text-amber-700' : 'border-transparent text-slate-500 hover:text-slate-700'
+            }`}>
+            {t.label} <span className="text-[10px] text-slate-400 ml-1 font-normal">{t.desc}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* Content */}
+      <div className="max-w-5xl mx-auto p-4">
+        {tab === 'setup'     && <SetupTab     state={state} setState={setState} />}
+        {tab === 'calibrate' && <CalibrateTab state={state} setState={setState} />}
+        {tab === 'validate'  && <ValidateTab  state={state} setState={setState} />}
+        {tab === 'report'    && <ReportTab    state={state} setState={setState} />}
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.render(<App />, document.getElementById('app'));
+
+</script>
+
+<script>
+  function setStatus(msg, isError) {
+    const el = document.getElementById('load-status');
+    if (el) {
+      el.textContent = msg;
+      if (isError) el.style.color = '#dc2626';
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    setStatus('1/3 — 라이브러리 확인 중...');
+    const checks = [];
+    if (typeof React === 'undefined') checks.push('React');
+    if (typeof ReactDOM === 'undefined') checks.push('ReactDOM');
+    if (typeof Babel === 'undefined') checks.push('Babel');
+    if (checks.length > 0) {
+      showError('CDN 로드 실패: ' + checks.join(', ') + '\n\n인터넷 연결 또는 회사 네트워크 확인 — CDN(unpkg.com) 차단 가능성');
+      return;
+    }
+
+    setStatus('2/3 — Babel JSX 컴파일 중...');
+    const jsxText = document.getElementById('app-jsx').textContent;
+    let compiled;
+    try {
+      const result = Babel.transform(jsxText, {
+        presets: ['env', 'react'],
+        filename: 'app.jsx',
+      });
+      compiled = result.code;
+      console.log('[Studio] Compiled', compiled.length, 'chars');
+    } catch (e) {
+      showError('Babel 컴파일 에러:\n' + e.message);
+      return;
+    }
+
+    setStatus('3/3 — React 마운트 중...');
+    try {
+      new Function(compiled)();
+      console.log('[Studio] Mounted');
+    } catch (e) {
+      showError('실행 에러:\n' + (e.stack || e.message));
+    }
+  });
+</script>
+</body>
+</html>

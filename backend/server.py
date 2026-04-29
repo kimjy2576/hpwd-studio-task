@@ -40,6 +40,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ─── Design Studio router 등록 ──────────────────────────────────────
+# /design/* 경로의 endpoint를 추가. fitting / calibration / validation /
+# session 관리.
+try:
+    from design import design_router
+    app.include_router(design_router)
+    print("[OK]   Design Studio router mounted at /design/*")
+except Exception as e:
+    print(f"[WARN] Design Studio router 마운트 실패: {e}")
+
 
 # ─── Request/Response 스키마 ───────────────────────────────────────
 class ComputeRequest(BaseModel):
