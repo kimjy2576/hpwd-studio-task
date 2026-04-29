@@ -43,7 +43,7 @@ COMPRESSOR_TYPES = ['reciprocating', 'scroll']
 
 
 modelDescription = {
-    'typeNo': 100,
+    'typeNo': 101,
     'name': 'Compressor (Winandy)',
     'category': 'refrigerant',
     'modelType': 'semi-empirical',

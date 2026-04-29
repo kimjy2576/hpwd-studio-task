@@ -596,7 +596,7 @@ const TYPES = {
   // 학계 표준 semi-empirical. R290 가변속 reciprocating/scroll.
   // 입력 4 (P_suc, T_suc, P_dis, N), 파라미터 11 (Winandy 9 + fluid + T_amb), 출력 10.
   compressor_winandy: {
-    typeNo: 100, name: 'Compressor (Winandy)', category: 'refrigerant', color: '#dc2626', icon: Gauge,
+    typeNo: 101, name: 'Compressor (Winandy)', category: 'refrigerant', color: '#dc2626', icon: Gauge, image: './images/compressor.png',
     desc: 'Winandy/Lebrun 정형 — 흡입가열 + 등엔트로피 + over/under-comp + 외부 열손실',
     backend: 'python',
     pythonComponent: 'compressor_winandy',
