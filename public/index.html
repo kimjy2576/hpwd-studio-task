@@ -642,6 +642,50 @@ const TYPES = {
                       Q_loss: NaN, eta_is: NaN, eta_v: NaN, T_wall: NaN, pi_ratio: NaN }),
   },
 
+  // ================ Compressor (AHRI 10-coefficient, Off-design L2) ================
+  // ARI/AHRI 540 polynomial. 가전 R&D 표준.
+  // 사내 시험 데이터 (10-coef set) 받으면 Properties에서 교체.
+  // Default 계수는 Winandy 결과를 회귀 fitting한 값 (RMSE: ṁ 0.06%, W 5.1%).
+  compressor_ahri: {
+    typeNo: 102, name: 'Compressor (AHRI)', category: 'refrigerant', color: '#dc2626', icon: Gauge, image: './images/compressor.png',
+    desc: 'AHRI 540 10-coef polynomial — 시험 데이터 기반 off-design 모델',
+    backend: 'python',
+    pythonComponent: 'compressor_ahri',
+    parameters: [
+      { key: 'fluid',       label: 'Fluid',       value: 'R290', options: ['R290'], unit: '' },
+      { key: 'N_rated',     label: 'N_rated',     value: 3000.0, unit: 'rpm' },
+      { key: 'SH_ref',      label: 'SH_ref',      value: 5.0,    unit: 'K' },
+      { key: 'SC_ref',      label: 'SC_ref',      value: 0.0,    unit: 'K' },
+      { key: 'eta_motor',   label: 'η_motor',     value: 0.92,   unit: '-' },
+      // 10-coef는 string으로 입력 (JSON list 또는 'default')
+      { key: 'm_coef',      label: 'ṁ coef',      value: 'default', unit: '' },
+      { key: 'w_coef',      label: 'W coef',      value: 'default', unit: '' },
+      { key: 'alpha_W_rpm', label: 'α_W (RPM)',   value: 1.0,    unit: '-' },
+      // Output toggle
+      { key: 'output_select', label: 'Outputs', value: ['m_dot', 'W_elec', 'T_dis', 'eta_is', 'T_e', 'T_c'],
+        multiSelect: ['m_dot', 'W_elec', 'W_shaft', 'T_dis', 'h_dis', 'eta_is', 'T_e', 'T_c', 'pi_ratio'], unit: '' },
+    ],
+    inputs: [
+      { key: 'P_suc', label: 'P_suc', unit: 'bar' },
+      { key: 'T_suc', label: 'T_suc', unit: '°C' },
+      { key: 'P_dis', label: 'P_dis', unit: 'bar' },
+      { key: 'N',     label: 'N',     unit: 'rpm' },
+    ],
+    outputs: [
+      { key: 'm_dot',    label: 'ṁ',       unit: 'kg/s' },
+      { key: 'W_elec',   label: 'W_elec',  unit: 'W' },
+      { key: 'W_shaft',  label: 'W_shaft', unit: 'W' },
+      { key: 'T_dis',    label: 'T_dis',   unit: '°C' },
+      { key: 'h_dis',    label: 'h_dis',   unit: 'kJ/kg' },
+      { key: 'eta_is',   label: 'η_is',    unit: '-' },
+      { key: 'T_e',      label: 'T_e',     unit: '°C' },
+      { key: 'T_c',      label: 'T_c',     unit: '°C' },
+      { key: 'pi_ratio', label: 'π',       unit: '-' },
+    ],
+    compute: () => ({ m_dot: NaN, W_elec: NaN, W_shaft: NaN, T_dis: NaN, h_dis: NaN,
+                      eta_is: NaN, T_e: NaN, T_c: NaN, pi_ratio: NaN }),
+  },
+
   // ================ 결과 디스플레이 ================
   display: {
     typeNo: 901, name: 'Display', category: 'output', color: '#7c3aed', icon: Eye,
