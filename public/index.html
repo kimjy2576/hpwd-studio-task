@@ -592,6 +592,56 @@ const TYPES = {
                       h: NaN, rho: NaN, cp: NaN, mu: NaN, k: NaN, P_w: NaN }),
   },
 
+  // ================ Compressor (Winandy semi-empirical) ================
+  // 학계 표준 semi-empirical. R290 가변속 reciprocating/scroll.
+  // 입력 4 (P_suc, T_suc, P_dis, N), 파라미터 11 (Winandy 9 + fluid + T_amb), 출력 10.
+  compressor_winandy: {
+    typeNo: 100, name: 'Compressor (Winandy)', category: 'refrigerant', color: '#dc2626', icon: Gauge,
+    desc: 'Winandy/Lebrun 정형 — 흡입가열 + 등엔트로피 + over/under-comp + 외부 열손실',
+    backend: 'python',
+    pythonComponent: 'compressor_winandy',
+    parameters: [
+      // 일반
+      { key: 'fluid',        label: 'Fluid',          value: 'R290', options: ['R290'], unit: '' },
+      { key: 'comp_type',    label: 'Type',           value: 'reciprocating', options: ['reciprocating', 'scroll'], unit: '' },
+      { key: 'T_amb',        label: 'T_amb',          value: 25.0, unit: '°C' },
+      // Winandy 9개 (literature default)
+      { key: 'V_disp',       label: 'V_disp',         value: 10.0, unit: 'cm³' },
+      { key: 'AU_loss',      label: 'AU_loss',        value: 5.0,  unit: 'W/K' },
+      { key: 'AU_su',        label: 'AU_su',          value: 3.0,  unit: 'W/K' },
+      { key: 'dP_su',        label: 'dP_su',          value: 0.05, unit: '-' },
+      { key: 'V_swept_eff',  label: 'V_swept_eff',    value: 0.95, unit: '-' },
+      { key: 'rv_in',        label: 'rv_in',          value: 2.5,  unit: '-' },
+      { key: 'W_loss_const', label: 'W_loss_const',   value: 30.0, unit: 'W' },
+      { key: 'alpha_loss',   label: 'α_loss',         value: 0.1,  unit: '-' },
+      { key: 'eta_motor',    label: 'η_motor',        value: 0.92, unit: '-' },
+      // Output toggle
+      { key: 'output_select', label: 'Outputs', value: ['m_dot', 'T_dis', 'W_elec', 'eta_is', 'eta_v'],
+        multiSelect: ['m_dot', 'T_dis', 'h_dis', 'W_elec', 'W_shaft', 'Q_loss', 'eta_is', 'eta_v', 'T_wall', 'pi_ratio'], unit: '' },
+    ],
+    inputs: [
+      { key: 'P_suc', label: 'P_suc', unit: 'bar' },
+      { key: 'T_suc', label: 'T_suc', unit: '°C' },
+      { key: 'P_dis', label: 'P_dis', unit: 'bar' },
+      { key: 'N',     label: 'N',     unit: 'rpm' },
+    ],
+    outputs: [
+      { key: 'm_dot',    label: 'ṁ',       unit: 'kg/s' },
+      { key: 'T_dis',    label: 'T_dis',   unit: '°C' },
+      { key: 'h_dis',    label: 'h_dis',   unit: 'kJ/kg' },
+      { key: 'W_elec',   label: 'W_elec',  unit: 'W' },
+      { key: 'W_shaft',  label: 'W_shaft', unit: 'W' },
+      { key: 'Q_loss',   label: 'Q_loss',  unit: 'W' },
+      { key: 'eta_is',   label: 'η_is',    unit: '-' },
+      { key: 'eta_v',    label: 'η_v',     unit: '-' },
+      { key: 'T_wall',   label: 'T_wall',  unit: '°C' },
+      { key: 'pi_ratio', label: 'π',       unit: '-' },
+    ],
+    // 백엔드 다운 시 fallback — NaN
+    compute: () => ({ m_dot: NaN, T_dis: NaN, h_dis: NaN, W_elec: NaN, W_shaft: NaN,
+                      Q_loss: NaN, eta_is: NaN, eta_v: NaN, T_wall: NaN, pi_ratio: NaN }),
+  },
+
   // ================ 결과 디스플레이 ================
   display: {
     typeNo: 901, name: 'Display', category: 'output', color: '#7c3aed', icon: Eye,
