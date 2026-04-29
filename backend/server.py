@@ -42,13 +42,18 @@ app.add_middleware(
 
 # ─── Design Studio router 등록 ──────────────────────────────────────
 # /design/* 경로의 endpoint를 추가. fitting / calibration / validation /
-# session 관리.
+# session 관리. mount 실패 시 health에 사유 노출.
+_design_status = {'mounted': False, 'error': None}
 try:
     from design import design_router
     app.include_router(design_router)
+    _design_status['mounted'] = True
     print("[OK]   Design Studio router mounted at /design/*")
 except Exception as e:
-    print(f"[WARN] Design Studio router 마운트 실패: {e}")
+    _design_status['error'] = f"{type(e).__name__}: {e}"
+    print(f"[WARN] Design Studio router 마운트 실패: {_design_status['error']}")
+    import traceback
+    traceback.print_exc()
 
 
 # ─── Request/Response 스키마 ───────────────────────────────────────
@@ -69,11 +74,15 @@ class ComputeResponse(BaseModel):
 # ─── Routes ─────────────────────────────────────────────────────────
 @app.get("/health")
 def health():
-    """서버가 살아있는지 + 등록된 컴포넌트 목록"""
+    """서버가 살아있는지 + 등록된 컴포넌트 목록 + design router 상태"""
     return {
         "status": "ok",
         "version": "0.1.0",
         "components": list_components(),
+        "design_studio": {
+            "mounted": _design_status['mounted'],
+            "error": _design_status['error'],
+        },
     }
 
 
