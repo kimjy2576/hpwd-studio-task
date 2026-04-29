@@ -686,6 +686,70 @@ const TYPES = {
                       eta_is: NaN, T_e: NaN, T_c: NaN, pi_ratio: NaN }),
   },
 
+  // ================ Compressor (PDSim ROM, On-design L3) ================
+  // Bell ROM 변형 — chamber-resolved reciprocating, 1-cycle 평균.
+  // L1/L2 대비 차별: 누설 / 밸브 손실 / 마찰 별도 출력 (개별 chamber 거동).
+  compressor_pdsim_rom: {
+    typeNo: 103, name: 'Compressor (PDSim ROM)', category: 'refrigerant', color: '#dc2626', icon: Gauge, image: './images/compressor.png',
+    desc: 'Bell ROM — chamber-resolved on-design model with leakage, valve, friction breakdown',
+    backend: 'python',
+    pythonComponent: 'compressor_pdsim_rom',
+    parameters: [
+      // 일반
+      { key: 'fluid',     label: 'Fluid',     value: 'R290', options: ['R290'], unit: '' },
+      { key: 'comp_type', label: 'Type',      value: 'reciprocating', options: ['reciprocating'], unit: '' },
+      { key: 'T_amb',     label: 'T_amb',     value: 25.0, unit: '°C' },
+      // 기하
+      { key: 'V_disp',          label: 'V_disp',           value: 10.0, unit: 'cm³' },
+      { key: 'clearance_ratio', label: 'Clearance',        value: 0.04, unit: '-' },
+      { key: 'rv_in',           label: 'rv_in',            value: 2.5,  unit: '-' },
+      // 밸브/누설
+      { key: 'A_valve_in_mm2',  label: 'A_valve_in',       value: 8.0,  unit: 'mm²' },
+      { key: 'A_valve_out_mm2', label: 'A_valve_out',      value: 6.0,  unit: 'mm²' },
+      { key: 'zeta_valve',      label: 'ζ_valve',          value: 1.5,  unit: '-' },
+      { key: 'A_leak_mm2',      label: 'A_leak',           value: 0.02, unit: 'mm²' },
+      { key: 'Cd_leak',         label: 'Cd_leak',          value: 0.6,  unit: '-' },
+      { key: 'n_leak_rpm',      label: 'n_leak (RPM dep)', value: 0.5,  unit: '-' },
+      // 손실/모터
+      { key: 'n_poly_base',     label: 'n_poly',           value: 1.13, unit: '-' },
+      { key: 'W_f_const',       label: 'W_f0',             value: 20.0, unit: 'W' },
+      { key: 'alpha_f_rpm',     label: 'α_f',              value: 8e-6, unit: 'W/rpm²' },
+      { key: 'AU_loss',         label: 'AU_loss',          value: 5.0,  unit: 'W/K' },
+      { key: 'eta_motor',       label: 'η_motor',          value: 0.92, unit: '-' },
+      { key: 'eta_inv',         label: 'η_inv',            value: 0.95, unit: '-' },
+      // Output toggle
+      { key: 'output_select', label: 'Outputs',
+        value: ['m_dot', 'W_elec', 'T_dis', 'eta_is', 'eta_v', 'm_leak', 'W_friction', 'P_internal'],
+        multiSelect: ['m_dot', 'm_leak', 'T_dis', 'h_dis', 'W_elec', 'W_indicated', 'W_friction',
+                      'W_valve_in', 'W_valve_out', 'eta_v', 'eta_is', 'P_internal', 'pi_ratio'], unit: '' },
+    ],
+    inputs: [
+      { key: 'P_suc', label: 'P_suc', unit: 'bar' },
+      { key: 'T_suc', label: 'T_suc', unit: '°C' },
+      { key: 'P_dis', label: 'P_dis', unit: 'bar' },
+      { key: 'N',     label: 'N',     unit: 'rpm' },
+    ],
+    outputs: [
+      { key: 'm_dot',       label: 'ṁ',          unit: 'kg/s' },
+      { key: 'm_leak',      label: 'ṁ_leak',     unit: 'kg/s' },
+      { key: 'T_dis',       label: 'T_dis',      unit: '°C' },
+      { key: 'h_dis',       label: 'h_dis',      unit: 'kJ/kg' },
+      { key: 'W_elec',      label: 'W_elec',     unit: 'W' },
+      { key: 'W_indicated', label: 'W_ind',      unit: 'W' },
+      { key: 'W_friction',  label: 'W_friction', unit: 'W' },
+      { key: 'W_valve_in',  label: 'W_v,in',     unit: 'W' },
+      { key: 'W_valve_out', label: 'W_v,out',    unit: 'W' },
+      { key: 'eta_v',       label: 'η_v',        unit: '-' },
+      { key: 'eta_is',      label: 'η_is',       unit: '-' },
+      { key: 'P_internal',  label: 'P_int',      unit: 'bar' },
+      { key: 'pi_ratio',    label: 'π',          unit: '-' },
+    ],
+    compute: () => ({ m_dot: NaN, m_leak: NaN, T_dis: NaN, h_dis: NaN,
+                      W_elec: NaN, W_indicated: NaN, W_friction: NaN,
+                      W_valve_in: NaN, W_valve_out: NaN,
+                      eta_v: NaN, eta_is: NaN, P_internal: NaN, pi_ratio: NaN }),
+  },
+
   // ================ 결과 디스플레이 ================
   display: {
     typeNo: 901, name: 'Display', category: 'output', color: '#7c3aed', icon: Eye,
