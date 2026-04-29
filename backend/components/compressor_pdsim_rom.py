@@ -55,65 +55,72 @@ modelDescription = {
     'description': 'Bell ROM — chamber-resolved reciprocating, 1-cycle 평균',
     'backend': 'python',
     'variables': [
-        # ─── Parameters: 일반 ───
+        # ═══════ Parameters ═══════
+        # Group: Material
         {'name': 'fluid', 'causality': 'parameter', 'type': 'String',
-         'start': 'R290', 'unit': '-', 'options': FLUIDS,
+         'group': 'Material', 'start': 'R290', 'unit': '-', 'options': FLUIDS,
          'description': '냉매 종류'},
         {'name': 'comp_type', 'causality': 'parameter', 'type': 'String',
-         'start': 'reciprocating', 'unit': '-', 'options': COMPRESSOR_TYPES,
+         'group': 'Material', 'start': 'reciprocating', 'unit': '-', 'options': COMPRESSOR_TYPES,
          'description': '압축기 형태'},
-        {'name': 'T_amb', 'causality': 'parameter', 'type': 'Real',
-         'start': 25.0, 'unit': '°C', 'description': '주변 온도'},
 
-        # ─── Parameters: 기하 ───
+        # Group: Operating
+        {'name': 'T_amb', 'causality': 'parameter', 'type': 'Real',
+         'group': 'Operating', 'start': 25.0, 'unit': '°C', 'description': '주변 온도'},
+
+        # Group: Geometry (압축기 물리 치수)
         {'name': 'V_disp', 'causality': 'parameter', 'type': 'Real',
-         'start': 10.0, 'unit': 'cm³',
+         'group': 'Geometry', 'start': 10.0, 'unit': 'cm³',
          'description': '행정 체적 (BDC - TDC 차이)'},
         {'name': 'clearance_ratio', 'causality': 'parameter', 'type': 'Real',
-         'start': 0.04, 'unit': '-',
+         'group': 'Geometry', 'start': 0.04, 'unit': '-',
          'description': 'Clearance 체적 / V_disp (TDC 잔류 비율)'},
         {'name': 'rv_in', 'causality': 'parameter', 'type': 'Real',
-         'start': 2.5, 'unit': '-',
+         'group': 'Geometry', 'start': 2.5, 'unit': '-',
          'description': '내부 체적비 (built-in volume ratio)'},
-
-        # ─── Parameters: 밸브/누설 ───
         {'name': 'A_valve_in_mm2', 'causality': 'parameter', 'type': 'Real',
-         'start': 8.0, 'unit': 'mm²',
+         'group': 'Geometry', 'start': 8.0, 'unit': 'mm²',
          'description': '흡입 밸브 유효 면적'},
         {'name': 'A_valve_out_mm2', 'causality': 'parameter', 'type': 'Real',
-         'start': 6.0, 'unit': 'mm²',
+         'group': 'Geometry', 'start': 6.0, 'unit': 'mm²',
          'description': '토출 밸브 유효 면적'},
+        {'name': 'N_rated', 'causality': 'parameter', 'type': 'Real',
+         'group': 'Geometry', 'start': 3000.0, 'unit': 'rpm',
+         'description': '정격 회전수 (누설 RPM 보정의 기준)'},
+        {'name': 'eta_motor', 'causality': 'parameter', 'type': 'Real',
+         'group': 'Geometry', 'start': 0.92, 'unit': '-', 'description': '모터 효율'},
+        {'name': 'eta_inv', 'causality': 'parameter', 'type': 'Real',
+         'group': 'Geometry', 'start': 0.95, 'unit': '-', 'description': '인버터 효율'},
+
+        # Group: Fitting Parameters (실험 데이터로 calibration)
         {'name': 'zeta_valve', 'causality': 'parameter', 'type': 'Real',
-         'start': 1.5, 'unit': '-',
+         'group': 'Fitting', 'start': 1.5, 'unit': '-',
          'description': '밸브 손실 계수 (in/out 공통)'},
         {'name': 'A_leak_mm2', 'causality': 'parameter', 'type': 'Real',
-         'start': 0.02, 'unit': 'mm²',
-         'description': '누설 갭 등가 면적 (clearance + valve seat)'},
+         'group': 'Fitting', 'start': 0.02, 'unit': 'mm²',
+         'description': '누설 갭 등가 면적'},
         {'name': 'Cd_leak', 'causality': 'parameter', 'type': 'Real',
-         'start': 0.6, 'unit': '-',
+         'group': 'Fitting', 'start': 0.6, 'unit': '-',
          'description': '누설 discharge coefficient'},
         {'name': 'n_leak_rpm', 'causality': 'parameter', 'type': 'Real',
-         'start': 0.5, 'unit': '-',
+         'group': 'Fitting', 'start': 0.5, 'unit': '-',
          'description': '누설의 RPM 의존성 (저속에서 ↑)'},
-
-        # ─── Parameters: 손실 ───
+        {'name': 'over_comp_factor', 'causality': 'parameter', 'type': 'Real',
+         'group': 'Fitting', 'start': 0.3, 'unit': '-',
+         'description': 'Over-comp 손실 가중 (P_int > P_dis 시). 시험으로 fitting'},
         {'name': 'n_poly_base', 'causality': 'parameter', 'type': 'Real',
-         'start': 1.13, 'unit': '-',
-         'description': '폴리트로픽 지수 기본값 (R290은 γ ≈ 1.13)'},
+         'group': 'Fitting', 'start': 1.13, 'unit': '-',
+         'description': '폴리트로픽 지수 fallback (CoolProp 실패 시. 정상은 cp/cv 사용)'},
         {'name': 'W_f_const', 'causality': 'parameter', 'type': 'Real',
-         'start': 20.0, 'unit': 'W',
+         'group': 'Fitting', 'start': 20.0, 'unit': 'W',
          'description': '정수 마찰 손실 (오일/베어링)'},
         {'name': 'alpha_f_rpm', 'causality': 'parameter', 'type': 'Real',
-         'start': 8e-6, 'unit': 'W/rpm²',
+         'group': 'Fitting', 'start': 8e-6, 'unit': 'W/rpm²',
          'description': 'RPM² 비례 마찰 (점성)'},
         {'name': 'AU_loss', 'causality': 'parameter', 'type': 'Real',
-         'start': 5.0, 'unit': 'W/K', 'description': '외부 열손실 UA'},
-        {'name': 'eta_motor', 'causality': 'parameter', 'type': 'Real',
-         'start': 0.92, 'unit': '-', 'description': '모터 효율'},
-        {'name': 'eta_inv', 'causality': 'parameter', 'type': 'Real',
-         'start': 0.95, 'unit': '-', 'description': '인버터 효율'},
+         'group': 'Fitting', 'start': 5.0, 'unit': 'W/K', 'description': '외부 열손실 UA'},
 
-        # ─── Inputs ───
+        # ═══════ Inputs ═══════
         {'name': 'P_suc', 'causality': 'input', 'type': 'Real',
          'unit': 'bar', 'description': '흡입 압력 (abs)'},
         {'name': 'T_suc', 'causality': 'input', 'type': 'Real',
@@ -123,7 +130,7 @@ modelDescription = {
         {'name': 'N', 'causality': 'input', 'type': 'Real',
          'unit': 'rpm', 'description': '회전 속도'},
 
-        # ─── Outputs ───
+        # ═══════ Outputs ═══════
         {'name': 'm_dot', 'causality': 'output', 'type': 'Real',
          'unit': 'kg/s', 'description': '냉매 질량 유량 (실효, 누설 차감)'},
         {'name': 'm_leak', 'causality': 'output', 'type': 'Real',
@@ -192,6 +199,9 @@ def step(input, params, state, dt):
     AU_loss     = float(params.get('AU_loss', 5.0))
     eta_motor   = float(params.get('eta_motor', 0.92))
     eta_inv     = float(params.get('eta_inv', 0.95))
+    # 신규 fitting/geometry params (이전엔 하드코딩)
+    N_rated     = float(params.get('N_rated', 3000.0))
+    over_comp_factor = float(params.get('over_comp_factor', 0.3))
 
     # ── Inputs ──
     P_suc_bar = float(input.get('P_suc', 5.0))
@@ -241,8 +251,8 @@ def step(input, params, state, dt):
     # ── 2. 누설 (chamber → 흡입측, RPM 의존) ──
     # m_leak = Cd × A × √(2ρΔP) × (N_ref/N)^n_leak
     # 저속에서 사이클 시간 ↑ → 누설 누적 ↑
-    N_ref = 3000.0
-    rpm_factor = (N_rpm / N_ref) ** (-n_leak_rpm) if N_rpm > 0 else 1.0
+    # 누설 RPM 보정: 사용자가 N_rated parameter로 정의 (이전 하드코딩 3000 제거)
+    rpm_factor = (N_rpm / N_rated) ** (-n_leak_rpm) if N_rpm > 0 else 1.0
     dP_chamber = P_dis_Pa - P_suc_Pa
     rho_avg = rho_su * 1.5  # 압축 중 평균 밀도 추정 (rough)
     m_leak_kgs = Cd_leak * A_leak_m2 * math.sqrt(max(0.0, 2 * rho_avg * dP_chamber)) * rpm_factor
@@ -283,7 +293,7 @@ def step(input, params, state, dt):
     if P_int_Pa < P_dis_Pa:
         w_overunder = v_internal * (P_dis_Pa - P_int_Pa)
     else:
-        w_overunder = 0.3 * v_internal * (P_int_Pa - P_dis_Pa)
+        w_overunder = over_comp_factor * v_internal * (P_int_Pa - P_dis_Pa)
     
     # ── 9. 밸브 손실 ──
     # ΔP_valve = ζ × m_dot² / (ρ × A²)  → W = m_dot × ΔP / ρ
@@ -353,12 +363,14 @@ def validate(params):
         ('V_disp', 0.1, 1000),
         ('clearance_ratio', 0.001, 0.5),
         ('rv_in', 1.0, 10.0),
+        ('N_rated', 100, 20000),
         ('A_valve_in_mm2', 0.1, 100),
         ('A_valve_out_mm2', 0.1, 100),
         ('zeta_valve', 0.5, 5.0),
         ('A_leak_mm2', 0.001, 10),
         ('Cd_leak', 0.1, 1.0),
         ('n_leak_rpm', 0.0, 2.0),
+        ('over_comp_factor', 0.0, 2.0),
         ('n_poly_base', 1.0, 1.5),
         ('W_f_const', 0, 500),
         ('alpha_f_rpm', 0, 1e-3),

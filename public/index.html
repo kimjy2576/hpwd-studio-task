@@ -601,21 +601,25 @@ const TYPES = {
     backend: 'python',
     pythonComponent: 'compressor_winandy',
     parameters: [
-      // 일반
-      { key: 'fluid',        label: 'Fluid',          value: 'R290', options: ['R290'], unit: '' },
-      { key: 'comp_type',    label: 'Type',           value: 'reciprocating', options: ['reciprocating', 'scroll'], unit: '' },
-      { key: 'T_amb',        label: 'T_amb',          value: 25.0, unit: '°C' },
-      // Winandy 9개 (literature default)
-      { key: 'V_disp',       label: 'V_disp',         value: 10.0, unit: 'cm³' },
-      { key: 'AU_loss',      label: 'AU_loss',        value: 5.0,  unit: 'W/K' },
-      { key: 'AU_su',        label: 'AU_su',          value: 3.0,  unit: 'W/K' },
-      { key: 'dP_su',        label: 'dP_su',          value: 0.05, unit: '-' },
-      { key: 'V_swept_eff',  label: 'V_swept_eff',    value: 0.95, unit: '-' },
-      { key: 'rv_in',        label: 'rv_in',          value: 2.5,  unit: '-' },
-      { key: 'W_loss_const', label: 'W_loss_const',   value: 30.0, unit: 'W' },
-      { key: 'alpha_loss',   label: 'α_loss',         value: 0.1,  unit: '-' },
-      { key: 'eta_motor',    label: 'η_motor',        value: 0.92, unit: '-' },
-      // Output toggle
+      // ─── Material ───
+      { key: 'fluid',     group: 'Material', label: 'Fluid', value: 'R290', options: ['R290'], unit: '' },
+      { key: 'comp_type', group: 'Material', label: 'Type',  value: 'reciprocating', options: ['reciprocating', 'scroll'], unit: '' },
+      // ─── Operating ───
+      { key: 'T_amb', group: 'Operating', label: 'T_amb', value: 25.0, unit: '°C' },
+      // ─── Geometry ───
+      { key: 'V_disp',    group: 'Geometry', label: 'V_disp',    value: 10.0, unit: 'cm³' },
+      { key: 'rv_in',     group: 'Geometry', label: 'rv_in',     value: 2.5,  unit: '-' },
+      { key: 'eta_motor', group: 'Geometry', label: 'η_motor',   value: 0.92, unit: '-' },
+      // ─── Fitting Parameters (실험 데이터로 calibration) ───
+      { key: 'AU_loss',          group: 'Fitting', label: 'AU_loss',     value: 5.0,  unit: 'W/K' },
+      { key: 'AU_su',            group: 'Fitting', label: 'AU_su',       value: 3.0,  unit: 'W/K' },
+      { key: 'dP_su',            group: 'Fitting', label: 'dP_su',       value: 0.05, unit: '-' },
+      { key: 'V_swept_eff',      group: 'Fitting', label: 'V_swept_eff', value: 0.95, unit: '-' },
+      { key: 'clearance_factor', group: 'Fitting', label: 'Clearance f', value: 0.05, unit: '-' },
+      { key: 'over_comp_factor', group: 'Fitting', label: 'Over-comp f', value: 0.5,  unit: '-' },
+      { key: 'W_loss_const',     group: 'Fitting', label: 'W_loss_const',value: 30.0, unit: 'W' },
+      { key: 'alpha_loss',       group: 'Fitting', label: 'α_loss',      value: 0.1,  unit: '-' },
+      // ─── Output toggle ───
       { key: 'output_select', label: 'Outputs', value: ['m_dot', 'T_dis', 'W_elec', 'eta_is', 'eta_v'],
         multiSelect: ['m_dot', 'T_dis', 'h_dis', 'W_elec', 'W_shaft', 'Q_loss', 'eta_is', 'eta_v', 'T_wall', 'pi_ratio'], unit: '' },
     ],
@@ -637,7 +641,6 @@ const TYPES = {
       { key: 'T_wall',   label: 'T_wall',  unit: '°C' },
       { key: 'pi_ratio', label: 'π',       unit: '-' },
     ],
-    // 백엔드 다운 시 fallback — NaN
     compute: () => ({ m_dot: NaN, T_dis: NaN, h_dis: NaN, W_elec: NaN, W_shaft: NaN,
                       Q_loss: NaN, eta_is: NaN, eta_v: NaN, T_wall: NaN, pi_ratio: NaN }),
   },
@@ -652,15 +655,17 @@ const TYPES = {
     backend: 'python',
     pythonComponent: 'compressor_ahri',
     parameters: [
-      { key: 'fluid',       label: 'Fluid',       value: 'R290', options: ['R290'], unit: '' },
-      { key: 'N_rated',     label: 'N_rated',     value: 3000.0, unit: 'rpm' },
-      { key: 'SH_ref',      label: 'SH_ref',      value: 5.0,    unit: 'K' },
-      { key: 'SC_ref',      label: 'SC_ref',      value: 0.0,    unit: 'K' },
-      { key: 'eta_motor',   label: 'η_motor',     value: 0.92,   unit: '-' },
-      // 10-coef는 string으로 입력 (JSON list 또는 'default')
-      { key: 'm_coef',      label: 'ṁ coef',      value: 'default', unit: '' },
-      { key: 'w_coef',      label: 'W coef',      value: 'default', unit: '' },
-      { key: 'alpha_W_rpm', label: 'α_W (RPM)',   value: 1.0,    unit: '-' },
+      // ─── Material ───
+      { key: 'fluid',     group: 'Material', label: 'Fluid',     value: 'R290', options: ['R290'], unit: '' },
+      // ─── Geometry (정격 시험 조건) ───
+      { key: 'N_rated',   group: 'Geometry', label: 'N_rated',   value: 3000.0, unit: 'rpm' },
+      { key: 'SH_ref',    group: 'Geometry', label: 'SH_ref',    value: 5.0,    unit: 'K' },
+      { key: 'SC_ref',    group: 'Geometry', label: 'SC_ref',    value: 0.0,    unit: 'K' },
+      { key: 'eta_motor', group: 'Geometry', label: 'η_motor',   value: 0.92,   unit: '-' },
+      // ─── Fitting (10-coef은 시험 데이터 그 자체) ───
+      { key: 'm_coef',      group: 'Fitting', label: 'ṁ coef',    value: 'default', unit: '' },
+      { key: 'w_coef',      group: 'Fitting', label: 'W coef',    value: 'default', unit: '' },
+      { key: 'alpha_W_rpm', group: 'Fitting', label: 'α_W (RPM)', value: 1.0,       unit: '-' },
       // Output toggle
       { key: 'output_select', label: 'Outputs', value: ['m_dot', 'W_elec', 'T_dis', 'eta_is', 'T_e', 'T_c'],
         multiSelect: ['m_dot', 'W_elec', 'W_shaft', 'T_dis', 'h_dis', 'eta_is', 'T_e', 'T_c', 'pi_ratio'], unit: '' },
@@ -695,28 +700,30 @@ const TYPES = {
     backend: 'python',
     pythonComponent: 'compressor_pdsim_rom',
     parameters: [
-      // 일반
-      { key: 'fluid',     label: 'Fluid',     value: 'R290', options: ['R290'], unit: '' },
-      { key: 'comp_type', label: 'Type',      value: 'reciprocating', options: ['reciprocating'], unit: '' },
-      { key: 'T_amb',     label: 'T_amb',     value: 25.0, unit: '°C' },
-      // 기하
-      { key: 'V_disp',          label: 'V_disp',           value: 10.0, unit: 'cm³' },
-      { key: 'clearance_ratio', label: 'Clearance',        value: 0.04, unit: '-' },
-      { key: 'rv_in',           label: 'rv_in',            value: 2.5,  unit: '-' },
-      // 밸브/누설
-      { key: 'A_valve_in_mm2',  label: 'A_valve_in',       value: 8.0,  unit: 'mm²' },
-      { key: 'A_valve_out_mm2', label: 'A_valve_out',      value: 6.0,  unit: 'mm²' },
-      { key: 'zeta_valve',      label: 'ζ_valve',          value: 1.5,  unit: '-' },
-      { key: 'A_leak_mm2',      label: 'A_leak',           value: 0.02, unit: 'mm²' },
-      { key: 'Cd_leak',         label: 'Cd_leak',          value: 0.6,  unit: '-' },
-      { key: 'n_leak_rpm',      label: 'n_leak (RPM dep)', value: 0.5,  unit: '-' },
-      // 손실/모터
-      { key: 'n_poly_base',     label: 'n_poly',           value: 1.13, unit: '-' },
-      { key: 'W_f_const',       label: 'W_f0',             value: 20.0, unit: 'W' },
-      { key: 'alpha_f_rpm',     label: 'α_f',              value: 8e-6, unit: 'W/rpm²' },
-      { key: 'AU_loss',         label: 'AU_loss',          value: 5.0,  unit: 'W/K' },
-      { key: 'eta_motor',       label: 'η_motor',          value: 0.92, unit: '-' },
-      { key: 'eta_inv',         label: 'η_inv',            value: 0.95, unit: '-' },
+      // ─── Material ───
+      { key: 'fluid',     group: 'Material', label: 'Fluid',     value: 'R290', options: ['R290'], unit: '' },
+      { key: 'comp_type', group: 'Material', label: 'Type',      value: 'reciprocating', options: ['reciprocating'], unit: '' },
+      // ─── Operating ───
+      { key: 'T_amb',     group: 'Operating', label: 'T_amb',    value: 25.0, unit: '°C' },
+      // ─── Geometry ───
+      { key: 'V_disp',          group: 'Geometry', label: 'V_disp',      value: 10.0, unit: 'cm³' },
+      { key: 'clearance_ratio', group: 'Geometry', label: 'Clearance',   value: 0.04, unit: '-' },
+      { key: 'rv_in',           group: 'Geometry', label: 'rv_in',       value: 2.5,  unit: '-' },
+      { key: 'A_valve_in_mm2',  group: 'Geometry', label: 'A_valve_in',  value: 8.0,  unit: 'mm²' },
+      { key: 'A_valve_out_mm2', group: 'Geometry', label: 'A_valve_out', value: 6.0,  unit: 'mm²' },
+      { key: 'N_rated',         group: 'Geometry', label: 'N_rated',     value: 3000.0, unit: 'rpm' },
+      { key: 'eta_motor',       group: 'Geometry', label: 'η_motor',     value: 0.92, unit: '-' },
+      { key: 'eta_inv',         group: 'Geometry', label: 'η_inv',       value: 0.95, unit: '-' },
+      // ─── Fitting Parameters ───
+      { key: 'zeta_valve',       group: 'Fitting', label: 'ζ_valve',         value: 1.5,  unit: '-' },
+      { key: 'A_leak_mm2',       group: 'Fitting', label: 'A_leak',          value: 0.02, unit: 'mm²' },
+      { key: 'Cd_leak',          group: 'Fitting', label: 'Cd_leak',         value: 0.6,  unit: '-' },
+      { key: 'n_leak_rpm',       group: 'Fitting', label: 'n_leak (RPM dep)',value: 0.5,  unit: '-' },
+      { key: 'over_comp_factor', group: 'Fitting', label: 'Over-comp f',     value: 0.3,  unit: '-' },
+      { key: 'n_poly_base',      group: 'Fitting', label: 'n_poly fallback', value: 1.13, unit: '-' },
+      { key: 'W_f_const',        group: 'Fitting', label: 'W_f0',            value: 20.0, unit: 'W' },
+      { key: 'alpha_f_rpm',      group: 'Fitting', label: 'α_f',             value: 8e-6, unit: 'W/rpm²' },
+      { key: 'AU_loss',          group: 'Fitting', label: 'AU_loss',         value: 5.0,  unit: 'W/K' },
       // Output toggle
       { key: 'output_select', label: 'Outputs',
         value: ['m_dot', 'W_elec', 'T_dis', 'eta_is', 'eta_v', 'm_leak', 'W_friction', 'P_internal'],
@@ -1219,6 +1226,8 @@ function HPWDStudio() {
   const [connections, setConnections] = useState([]);
   const [selectedIds, setSelectedIds] = useState([]);       // 선택된 블록 id 배열
   const [selectedConnIds, setSelectedConnIds] = useState([]); // 선택된 연결선 index 배열
+  const [openGroups, setOpenGroups] = useState({});  // Properties 패널 group 펼침 상태
+                                                      // key: '{blockId}:{groupName}' → boolean
   const [connecting, setConnecting] = useState(null);
   const [draggingConn, setDraggingConn] = useState(null);
   const [hoveredConn, setHoveredConn] = useState(null);
@@ -1674,6 +1683,82 @@ function HPWDStudio() {
 
   const updateBlockName = (blockId, name) => {
     setBlocks(bs => bs.map(b => b.id === blockId ? { ...b, name } : b));
+  };
+
+  /* Properties 패널의 단일 parameter 렌더 헬퍼.
+     multiSelect는 checkbox 그리드, options는 dropdown, 그 외는 input.
+     unit이 '@otherKey' 형식이면 다른 param 값으로 동적 단위 결정. */
+  const renderParameter = (p, block, updateFn) => {
+    let unitDisplay = p.unit;
+    if (typeof p.unit === 'string' && p.unit.startsWith('@')) {
+      const refKey = p.unit.slice(1);
+      const kindVal = block.params[refKey];
+      unitDisplay = resolveDynamicUnit(block.type, kindVal);
+    }
+
+    // Multi-select (output_select 같은 것)
+    if (p.multiSelect) {
+      const current = block.params[p.key] || [];
+      const toggleOpt = (opt) => {
+        const set = new Set(current);
+        if (set.has(opt)) set.delete(opt); else set.add(opt);
+        updateFn(block.id, p.key, Array.from(set));
+      };
+      return (
+        <div key={p.key} className="flex flex-col gap-1">
+          <div className="flex items-center justify-between">
+            <label className="text-[11px] text-slate-700 font-semibold">{p.label}</label>
+            <div className="flex gap-1 text-[9px]">
+              <button onClick={() => updateFn(block.id, p.key, [...p.multiSelect])}
+                className="px-1.5 py-0.5 bg-slate-100 hover:bg-slate-200 rounded text-slate-700 font-mono">ALL</button>
+              <button onClick={() => updateFn(block.id, p.key, [])}
+                className="px-1.5 py-0.5 bg-slate-100 hover:bg-slate-200 rounded text-slate-700 font-mono">NONE</button>
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-x-2 gap-y-0.5">
+            {p.multiSelect.map(opt => {
+              const checked = current.includes(opt);
+              return (
+                <label key={opt}
+                  className={`flex items-center gap-1 px-1 py-0.5 rounded cursor-pointer text-[10px] font-mono ${
+                    checked ? 'bg-cyan-50 text-cyan-900' : 'text-slate-600 hover:bg-slate-50'
+                  }`}>
+                  <input type="checkbox" checked={checked} onChange={() => toggleOpt(opt)}
+                    className="w-2.5 h-2.5 accent-cyan-600" />
+                  <span className="truncate">{opt}</span>
+                </label>
+              );
+            })}
+          </div>
+        </div>
+      );
+    }
+
+    // 일반 parameter
+    return (
+      <div key={p.key} className="flex items-center gap-2">
+        <label className="flex-1 text-[11px] text-slate-700">{p.label}</label>
+        {p.options ? (
+          <select
+            value={block.params[p.key]}
+            onChange={(e) => updateFn(block.id, p.key, e.target.value)}
+            className="w-20 bg-white border border-slate-300 px-1.5 py-0.5 rounded text-[11px] text-slate-900 font-mono text-right focus:outline-none focus:border-cyan-500"
+          >
+            {p.options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+          </select>
+        ) : (
+          <input
+            type={typeof p.value === 'number' ? 'number' : 'text'}
+            value={block.params[p.key]}
+            step={typeof p.value === 'number' ? (p.value < 1 ? 0.01 : p.value < 10 ? 0.1 : 1) : undefined}
+            onChange={(e) => updateFn(block.id, p.key,
+              typeof p.value === 'number' ? (parseFloat(e.target.value) || 0) : e.target.value)}
+            className="w-20 bg-white border border-slate-300 px-1.5 py-0.5 rounded text-[11px] text-slate-900 font-mono text-right focus:outline-none focus:border-cyan-500"
+          />
+        )}
+        <span className="text-[10px] text-slate-400 w-10 font-mono">{unitDisplay}</span>
+      </div>
+    );
   };
 
   // 단일 시간 스텝 평가: blocks와 t가 주어지면 outputs 계산해서 반환
@@ -3895,102 +3980,71 @@ function HPWDStudio() {
                 </button>
               )}
 
-              {selectedDef.parameters.length > 0 && (
-                <div>
-                  <div className="text-[10px] uppercase tracking-wider text-slate-500 mb-1.5 flex items-center gap-1 font-semibold">
-                    <Settings size={10} /> Parameters
-                  </div>
-                  <div className="space-y-1">
-                    {selectedDef.parameters.map(p => {
-                      // unit이 '@otherKey' 형식이면 동적 — 다른 param의 현재 값으로 단위 결정
-                      // 예: { key:'input1_value', unit:'@input1_kind' }
-                      //     → 현재 input1_kind 값('T','P','Q' 등)에 따라 °C/bar/-/...
-                      let unitDisplay = p.unit;
-                      if (typeof p.unit === 'string' && p.unit.startsWith('@')) {
-                        const refKey = p.unit.slice(1);
-                        const kindVal = selectedBlock.params[refKey];
-                        unitDisplay = resolveDynamicUnit(selectedBlock.type, kindVal);
-                      }
+              {selectedDef.parameters.length > 0 && (() => {
+                // 파라미터를 group별로 묶음. group 없으면 'Other' 또는 multiSelect는 'Outputs'로.
+                const GROUP_ORDER = ['Material', 'Operating', 'Geometry', 'Fitting', 'Outputs', 'Other'];
+                const GROUP_ICONS = {
+                  Material:  '🧪',
+                  Operating: '🌡️',
+                  Geometry:  '📐',
+                  Fitting:   '🎯',
+                  Outputs:   '🎚️',
+                  Other:     '⚙️',
+                };
+                const GROUP_DESC = {
+                  Material:  '냉매·매질 선택',
+                  Operating: '운영 환경',
+                  Geometry:  '물리 치수 (변하지 않음)',
+                  Fitting:   '실험 데이터 fitting params',
+                  Outputs:   '출력 변수 선택',
+                  Other:     '',
+                };
+                // 기본 펼침: Geometry만 펼침 (사용자 첫 보기에 적당). 나머진 접힘.
+                const DEFAULT_OPEN = { Geometry: true };
 
-                      // === Multi-select (output_select 같은 것) ===
-                      if (p.multiSelect) {
-                        const current = selectedBlock.params[p.key] || [];
-                        const toggleOpt = (opt) => {
-                          const set = new Set(current);
-                          if (set.has(opt)) set.delete(opt); else set.add(opt);
-                          updateParam(selectedBlock.id, p.key, Array.from(set));
-                        };
-                        return (
-                          <div key={p.key} className="flex flex-col gap-1 py-1 border-t border-slate-100 mt-1 pt-2">
-                            <div className="flex items-center justify-between">
-                              <label className="text-[11px] text-slate-700 font-semibold">{p.label}</label>
-                              <div className="flex gap-1 text-[9px]">
-                                <button
-                                  onClick={() => updateParam(selectedBlock.id, p.key, [...p.multiSelect])}
-                                  className="px-1.5 py-0.5 bg-slate-100 hover:bg-slate-200 rounded text-slate-700 font-mono"
-                                >ALL</button>
-                                <button
-                                  onClick={() => updateParam(selectedBlock.id, p.key, [])}
-                                  className="px-1.5 py-0.5 bg-slate-100 hover:bg-slate-200 rounded text-slate-700 font-mono"
-                                >NONE</button>
-                              </div>
-                            </div>
-                            <div className="grid grid-cols-3 gap-x-2 gap-y-0.5">
-                              {p.multiSelect.map(opt => {
-                                const checked = current.includes(opt);
-                                return (
-                                  <label key={opt}
-                                    className={`flex items-center gap-1 px-1 py-0.5 rounded cursor-pointer text-[10px] font-mono ${
-                                      checked ? 'bg-cyan-50 text-cyan-900' : 'text-slate-600 hover:bg-slate-50'
-                                    }`}
-                                  >
-                                    <input
-                                      type="checkbox"
-                                      checked={checked}
-                                      onChange={() => toggleOpt(opt)}
-                                      className="w-2.5 h-2.5 accent-cyan-600"
-                                    />
-                                    <span className="truncate">{opt}</span>
-                                  </label>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        );
-                      }
+                // group 분류
+                const groups = {};
+                selectedDef.parameters.forEach(p => {
+                  let g = p.group || 'Other';
+                  if (p.multiSelect) g = 'Outputs';
+                  if (!groups[g]) groups[g] = [];
+                  groups[g].push(p);
+                });
 
-                      // === 일반 parameter (single value) ===
+                return (
+                  <div className="space-y-1.5">
+                    {GROUP_ORDER.filter(g => groups[g]).map(g => {
+                      const isOpen = openGroups[`${selectedBlock.id}:${g}`] ?? DEFAULT_OPEN[g] ?? false;
+                      const toggleGroup = () => {
+                        setOpenGroups(prev => ({ ...prev, [`${selectedBlock.id}:${g}`]: !isOpen }));
+                      };
                       return (
-                        <div key={p.key} className="flex items-center gap-2">
-                          <label className="flex-1 text-[11px] text-slate-700">{p.label}</label>
-                          {p.options ? (
-                            <select
-                              value={selectedBlock.params[p.key]}
-                              onChange={(e) => updateParam(selectedBlock.id, p.key, e.target.value)}
-                              className="w-20 bg-white border border-slate-300 px-1.5 py-0.5 rounded text-[11px] text-slate-900 font-mono text-right focus:outline-none focus:border-cyan-500"
-                            >
-                              {p.options.map(opt => (
-                                <option key={opt} value={opt}>{opt}</option>
-                              ))}
-                            </select>
-                          ) : (
-                            <input
-                              type={typeof p.value === 'number' ? 'number' : 'text'}
-                              value={selectedBlock.params[p.key]}
-                              step={typeof p.value === 'number' ? (p.value < 1 ? 0.01 : p.value < 10 ? 0.1 : 1) : undefined}
-                              onChange={(e) => updateParam(selectedBlock.id, p.key,
-                                typeof p.value === 'number' ? (parseFloat(e.target.value) || 0) : e.target.value)}
-                              className="w-20 bg-white border border-slate-300 px-1.5 py-0.5 rounded text-[11px] text-slate-900 font-mono text-right focus:outline-none focus:border-cyan-500"
-                            />
+                        <div key={g} className="border border-slate-200 rounded">
+                          <button
+                            onClick={toggleGroup}
+                            className="w-full flex items-center justify-between px-2 py-1 bg-slate-50 hover:bg-slate-100 rounded-t text-left transition-colors"
+                          >
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[11px]">{GROUP_ICONS[g]}</span>
+                              <span className="text-[11px] font-semibold text-slate-700">{g}</span>
+                              <span className="text-[9px] text-slate-400">({groups[g].length})</span>
+                            </div>
+                            <span className="text-[10px] text-slate-400">{isOpen ? '▾' : '▸'}</span>
+                          </button>
+                          {isOpen && (
+                            <div className="p-2 space-y-1">
+                              {GROUP_DESC[g] && (
+                                <div className="text-[9px] text-slate-400 italic mb-1">{GROUP_DESC[g]}</div>
+                              )}
+                              {groups[g].map(p => renderParameter(p, selectedBlock, updateParam))}
+                            </div>
                           )}
-                          <span className="text-[10px] text-slate-400 w-10 font-mono">{unitDisplay}</span>
                         </div>
                       );
                     })}
                   </div>
-                </div>
-              )}
-
+                );
+              })()}
               {selectedDef.inputs.length > 0 && (
                 <div>
                   <div className="text-[10px] uppercase tracking-wider text-slate-500 mb-1.5 flex items-center gap-1 font-semibold">

@@ -107,36 +107,36 @@ modelDescription = {
     'description': 'AHRI 540 10-coefficient polynomial. 가전 R&D 표준.',
     'backend': 'python',
     'variables': [
-        # ─── Parameters: 일반 ───
+        # ═══════ Parameters ═══════
+        # Group: Material
         {'name': 'fluid', 'causality': 'parameter', 'type': 'String',
-         'start': 'R290', 'unit': '-', 'options': FLUIDS,
+         'group': 'Material', 'start': 'R290', 'unit': '-', 'options': FLUIDS,
          'description': '냉매 종류'},
+        # Group: Geometry (정격 시험 조건은 변하지 않음)
         {'name': 'N_rated', 'causality': 'parameter', 'type': 'Real',
-         'start': 3000.0, 'unit': 'rpm',
+         'group': 'Geometry', 'start': 3000.0, 'unit': 'rpm',
          'description': 'AHRI 시험 정격 회전수'},
         {'name': 'SH_ref', 'causality': 'parameter', 'type': 'Real',
-         'start': 5.0, 'unit': 'K',
+         'group': 'Geometry', 'start': 5.0, 'unit': 'K',
          'description': 'AHRI 시험 흡입 과열도 (정보용 — 보정 안 함)'},
         {'name': 'SC_ref', 'causality': 'parameter', 'type': 'Real',
-         'start': 0.0, 'unit': 'K',
+         'group': 'Geometry', 'start': 0.0, 'unit': 'K',
          'description': 'AHRI 시험 과냉도 (정보용)'},
         {'name': 'eta_motor', 'causality': 'parameter', 'type': 'Real',
-         'start': 0.92, 'unit': '-',
+         'group': 'Geometry', 'start': 0.92, 'unit': '-',
          'description': '모터 효율 (W_shaft 추정 — AHRI W는 이미 포함)'},
-        # ─── Parameters: AHRI coefficients ───
-        # JSON 문자열 또는 'default' 입력. UI는 textarea 또는 textbox 사용.
+        # Group: Fitting (10-coef은 시험 데이터 그 자체)
         {'name': 'm_coef', 'causality': 'parameter', 'type': 'String',
-         'start': 'default', 'unit': '-',
+         'group': 'Fitting', 'start': 'default', 'unit': '-',
          'description': 'ṁ 10-coef (JSON list 또는 default). 단위: kg/h'},
         {'name': 'w_coef', 'causality': 'parameter', 'type': 'String',
-         'start': 'default', 'unit': '-',
+         'group': 'Fitting', 'start': 'default', 'unit': '-',
          'description': 'W_elec 10-coef (JSON list 또는 default). 단위: W'},
-        # ─── Parameters: RPM 보정 ───
         {'name': 'alpha_W_rpm', 'causality': 'parameter', 'type': 'Real',
-         'start': 1.0, 'unit': '-',
+         'group': 'Fitting', 'start': 1.0, 'unit': '-',
          'description': 'W_elec의 N 의존성 (W ∝ (N/N_rated)^α). 1.0=선형, 0.9~1.1 일반'},
 
-        # ─── Inputs ───
+        # ═══════ Inputs ═══════
         {'name': 'P_suc', 'causality': 'input', 'type': 'Real',
          'unit': 'bar', 'description': '흡입 압력 (abs)'},
         {'name': 'T_suc', 'causality': 'input', 'type': 'Real',

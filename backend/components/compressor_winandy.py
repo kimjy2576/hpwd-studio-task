@@ -51,47 +51,58 @@ modelDescription = {
     'description': 'Winandy/Lebrun 정형 — 흡입가열 + 등엔트로피 + over/under-comp + 외부 열손실',
     'backend': 'python',
     'variables': [
-        # ─── Parameters: 일반 ───
+        # ═══════ Parameters ═══════
+        # Group: Material/Fluid (매질 선택)
         {'name': 'fluid', 'causality': 'parameter', 'type': 'String',
-         'start': 'R290', 'unit': '-', 'options': FLUIDS,
+         'group': 'Material', 'start': 'R290', 'unit': '-', 'options': FLUIDS,
          'description': '냉매 종류'},
         {'name': 'comp_type', 'causality': 'parameter', 'type': 'String',
-         'start': 'reciprocating', 'unit': '-', 'options': COMPRESSOR_TYPES,
+         'group': 'Material', 'start': 'reciprocating', 'unit': '-', 'options': COMPRESSOR_TYPES,
          'description': '압축기 형태 (정보용 — 알고리즘은 동일)'},
+
+        # Group: Operating Conditions (운영 환경)
         {'name': 'T_amb', 'causality': 'parameter', 'type': 'Real',
-         'start': 25.0, 'unit': '°C',
+         'group': 'Operating', 'start': 25.0, 'unit': '°C',
          'description': '주변 공기 온도 (외부 열손실 기준)'},
 
-        # ─── Parameters: Winandy 9개 (literature default for R290 ~10cc reciprocating) ───
+        # Group: Geometry (압축기 물리 치수, 변하지 않음)
         {'name': 'V_disp', 'causality': 'parameter', 'type': 'Real',
-         'start': 10.0, 'unit': 'cm³',
+         'group': 'Geometry', 'start': 10.0, 'unit': 'cm³',
          'description': '행정 체적 (배제 용적)'},
+        {'name': 'rv_in', 'causality': 'parameter', 'type': 'Real',
+         'group': 'Geometry', 'start': 2.5, 'unit': '-',
+         'description': '내부 체적비 (built-in volume ratio)'},
+        {'name': 'eta_motor', 'causality': 'parameter', 'type': 'Real',
+         'group': 'Geometry', 'start': 0.92, 'unit': '-',
+         'description': '모터 효율 (정격, fitting 가능하지만 보통 데이터시트값)'},
+
+        # Group: Fitting Parameters (실험 데이터로 calibration)
         {'name': 'AU_loss', 'causality': 'parameter', 'type': 'Real',
-         'start': 5.0, 'unit': 'W/K',
+         'group': 'Fitting', 'start': 5.0, 'unit': 'W/K',
          'description': '외부 열손실 UA (cabinet → 주변 공기)'},
         {'name': 'AU_su', 'causality': 'parameter', 'type': 'Real',
-         'start': 3.0, 'unit': 'W/K',
+         'group': 'Fitting', 'start': 3.0, 'unit': 'W/K',
          'description': '흡입 가열 UA (T_wall → 흡입 가스). 소형 가전 ~3, 대형 ~30'},
         {'name': 'dP_su', 'causality': 'parameter', 'type': 'Real',
-         'start': 0.05, 'unit': '-',
+         'group': 'Fitting', 'start': 0.05, 'unit': '-',
          'description': '흡입 압력 손실 비율 (0=없음, 0.05=5%)'},
         {'name': 'V_swept_eff', 'causality': 'parameter', 'type': 'Real',
-         'start': 0.95, 'unit': '-',
+         'group': 'Fitting', 'start': 0.95, 'unit': '-',
          'description': '체적 효율 baseline (clearance 외 손실)'},
-        {'name': 'rv_in', 'causality': 'parameter', 'type': 'Real',
-         'start': 2.5, 'unit': '-',
-         'description': '내부 체적비 (built-in volume ratio)'},
+        {'name': 'clearance_factor', 'causality': 'parameter', 'type': 'Real',
+         'group': 'Fitting', 'start': 0.05, 'unit': '-',
+         'description': 'η_v 식의 clearance 항 가중 (η_v = V_se - factor × (rp^(1/γ) - 1))'},
+        {'name': 'over_comp_factor', 'causality': 'parameter', 'type': 'Real',
+         'group': 'Fitting', 'start': 0.5, 'unit': '-',
+         'description': 'Over-comp 손실 가중 (P_int > P_dis 시). 시험으로 fitting'},
         {'name': 'W_loss_const', 'causality': 'parameter', 'type': 'Real',
-         'start': 30.0, 'unit': 'W',
+         'group': 'Fitting', 'start': 30.0, 'unit': 'W',
          'description': '정수 기계 손실'},
         {'name': 'alpha_loss', 'causality': 'parameter', 'type': 'Real',
-         'start': 0.1, 'unit': '-',
+         'group': 'Fitting', 'start': 0.1, 'unit': '-',
          'description': '비례 기계 손실 계수 (W_shaft에 곱)'},
-        {'name': 'eta_motor', 'causality': 'parameter', 'type': 'Real',
-         'start': 0.92, 'unit': '-',
-         'description': '모터 효율'},
 
-        # ─── Inputs ───
+        # ═══════ Inputs ═══════
         {'name': 'P_suc', 'causality': 'input', 'type': 'Real',
          'unit': 'bar', 'description': '흡입 압력 (abs)'},
         {'name': 'T_suc', 'causality': 'input', 'type': 'Real',
@@ -101,7 +112,7 @@ modelDescription = {
         {'name': 'N', 'causality': 'input', 'type': 'Real',
          'unit': 'rpm', 'description': '회전 속도'},
 
-        # ─── Outputs ───
+        # ═══════ Outputs ═══════
         {'name': 'm_dot', 'causality': 'output', 'type': 'Real',
          'unit': 'kg/s', 'description': '냉매 질량 유량'},
         {'name': 'T_dis', 'causality': 'output', 'type': 'Real',
@@ -150,6 +161,9 @@ def step(input, params, state, dt):
     W_loss0   = float(params.get('W_loss_const', 30.0))
     alpha     = float(params.get('alpha_loss', 0.1))
     eta_motor = float(params.get('eta_motor', 0.92))
+    # Fitting params (이전엔 하드코딩, 이제 사용자 calibration 가능)
+    clearance_factor = float(params.get('clearance_factor', 0.05))
+    over_comp_factor = float(params.get('over_comp_factor', 0.5))
 
     # ── Inputs ──
     P_suc_bar = float(input.get('P_suc', 5.0))
@@ -236,7 +250,7 @@ def step(input, params, state, dt):
             clearance_term = max(0.0, rp_intern ** (1.0 / gamma_approx) - 1.0)
         except Exception:
             clearance_term = 0.0
-        eta_v = max(0.05, V_se - 0.05 * clearance_term)  # 보수적 floor
+        eta_v = max(0.05, V_se - clearance_factor * clearance_term)  # 0.05 floor는 수치 안정성
 
         # 3c. 질량 유량
         m_dot_swept = V_disp_m3 * omega * rho_su2  # 이론 질량유량
@@ -256,7 +270,7 @@ def step(input, params, state, dt):
         # under-compression: w_extra > 0 (추가 일 필요)
         # over-compression: w_extra < 0 (이미 충분 압축됨, 손실)
         if w_extra < 0:
-            w_extra = 0.5 * abs(w_extra)  # over-comp 손실은 절반 정도로
+            w_extra = over_comp_factor * abs(w_extra)  # over-comp 손실 fitting 가능
 
         w_actual = w_is + w_extra  # J/kg
         h_dis_J = h_su2_J + w_actual
@@ -344,6 +358,8 @@ def validate(params):
         ('dP_su', 0, 0.5),
         ('V_swept_eff', 0.1, 1.0),
         ('rv_in', 1.0, 10.0),
+        ('clearance_factor', 0.0, 1.0),
+        ('over_comp_factor', 0.0, 2.0),
         ('W_loss_const', 0, 1000),
         ('alpha_loss', 0, 1.0),
         ('eta_motor', 0.1, 1.0),
