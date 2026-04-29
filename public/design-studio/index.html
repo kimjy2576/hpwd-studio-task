@@ -94,23 +94,44 @@ const { useState, useEffect, useMemo, useRef } = React;
    Backend: /design/* endpoints
    ═══════════════════════════════════════════════════════════════════ */
 
-const BACKEND_URL = (() => {
-  // localhost면 :8000, Railway면 동일 호스트의 backend 서비스
-  // HPWD Studio의 BackendStatus와 같은 로직
-  const u = new URL(window.location.href);
-  if (localStorage.getItem('HPWD_BACKEND_URL')) {
-    return localStorage.getItem('HPWD_BACKEND_URL');
+/* Backend URL 해결 — HPWD Studio와 동일한 우선순위:
+   1. URL 파라미터 ?backend=...
+   2. localStorage 'hpwd_backend_url' (HPWD Studio가 저장한 값과 공유)
+   3. localhost면 localhost:8000, 그 외엔 Railway cloud URL */
+const DEFAULT_BACKENDS = {
+  cloud: 'https://hpwd-studio-task-production.up.railway.app',  // 실제로는 backend 별도 서비스 URL
+  local: 'http://localhost:8000',
+};
+
+function resolveBackendUrl() {
+  try {
+    const param = new URLSearchParams(window.location.search).get('backend');
+    if (param) return param;
+  } catch (e) {}
+  try {
+    const stored = localStorage.getItem('hpwd_backend_url');
+    if (stored) return stored;
+  } catch (e) {}
+  const host = window.location.hostname;
+  if (host === 'localhost' || host === '127.0.0.1' || host === '' || host === 'file') {
+    return DEFAULT_BACKENDS.local;
   }
-  if (u.hostname === 'localhost' || u.hostname === '127.0.0.1') {
-    return 'http://localhost:8000';
-  }
-  // Railway: 사용자가 설정한 URL을 HPWD Studio에서 저장하므로 동일 사용
-  // 없으면 fallback (개발 환경)
-  return 'http://localhost:8000';
-})();
+  return DEFAULT_BACKENDS.cloud;
+}
+
+let CURRENT_BACKEND = resolveBackendUrl();
+
+function setBackend(newUrl) {
+  CURRENT_BACKEND = newUrl;
+  try { localStorage.setItem('hpwd_backend_url', newUrl); } catch (e) {}
+}
+function resetBackend() {
+  try { localStorage.removeItem('hpwd_backend_url'); } catch (e) {}
+  CURRENT_BACKEND = resolveBackendUrl();
+}
 
 async function api(path, options = {}) {
-  const res = await fetch(BACKEND_URL + path, {
+  const res = await fetch(CURRENT_BACKEND + path, {
     headers: { 'Content-Type': 'application/json' },
     ...options,
   });
@@ -183,7 +204,10 @@ function SetupTab({ state, setState }) {
   useEffect(() => {
     api('/design/components')
       .then(d => setComponents(d.components))
-      .catch(e => setError('컴포넌트 목록 로드 실패: ' + e.message));
+      .catch(e => setError(
+        '컴포넌트 목록 로드 실패: ' + e.message +
+        '. 우측 상단 backend 표시기를 클릭해 backend URL을 확인/변경하세요.'
+      ));
   }, []);
 
   // Component 선택 시 detail 가져오기
@@ -831,6 +855,100 @@ function ReportTab({ state }) {
   );
 }
 
+/* ───────────── Backend Status Indicator ─────────────
+   현재 backend URL을 보여주고, 클릭 시 변경 가능. localStorage에서
+   HPWD Studio와 같은 키 'hpwd_backend_url' 사용 → 두 앱이 자동 공유. */
+function BackendStatus() {
+  const [url, setUrl] = useState(CURRENT_BACKEND);
+  const [open, setOpen] = useState(false);
+  const [editUrl, setEditUrl] = useState(url);
+  const [status, setStatus] = useState('checking'); // 'ok'|'fail'|'checking'
+  const [errMsg, setErrMsg] = useState('');
+  const ref = useRef(null);
+
+  // health check
+  useEffect(() => {
+    setStatus('checking');
+    setErrMsg('');
+    fetch(url + '/health', { method: 'GET' })
+      .then(r => r.ok ? r.json() : Promise.reject(`HTTP ${r.status}`))
+      .then(() => setStatus('ok'))
+      .catch(e => { setStatus('fail'); setErrMsg(String(e)); });
+  }, [url]);
+
+  // 외부 클릭 시 닫기
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [open]);
+
+  const apply = () => {
+    setBackend(editUrl);
+    setUrl(editUrl);
+    setOpen(false);
+  };
+  const reset = () => {
+    resetBackend();
+    setUrl(CURRENT_BACKEND);
+    setEditUrl(CURRENT_BACKEND);
+    setOpen(false);
+  };
+  const usePreset = (key) => {
+    setEditUrl(DEFAULT_BACKENDS[key]);
+  };
+
+  const dotColor = status === 'ok' ? 'bg-green-500' : status === 'fail' ? 'bg-red-500' : 'bg-amber-400';
+  const text = status === 'ok' ? 'OK' : status === 'fail' ? 'OFF' : '...';
+
+  return (
+    <div className="relative" ref={ref}>
+      <button onClick={() => setOpen(o => !o)}
+        className="flex items-center gap-1.5 px-2 py-1 rounded hover:bg-slate-100 transition-colors text-[11px] font-mono">
+        <div className={`w-2 h-2 rounded-full ${dotColor}`}></div>
+        <span className="text-slate-600">backend</span>
+        <span className={`font-bold ${status === 'ok' ? 'text-green-700' : status === 'fail' ? 'text-red-700' : 'text-amber-700'}`}>{text}</span>
+        <span className="text-slate-400">▾</span>
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1 z-50 bg-white border border-slate-200 rounded-lg shadow-xl w-96 p-3">
+          <div className="text-[11px] font-semibold text-slate-700 mb-1">Backend URL</div>
+          <input type="text" value={editUrl} onChange={(e) => setEditUrl(e.target.value)}
+            className="w-full border border-slate-300 px-2 py-1 rounded text-[11px] font-mono mb-2" />
+          <div className="flex gap-1.5 mb-2">
+            <button onClick={() => usePreset('local')}
+              className="text-[10px] px-2 py-0.5 bg-slate-100 hover:bg-slate-200 rounded font-mono">localhost</button>
+            <button onClick={() => usePreset('cloud')}
+              className="text-[10px] px-2 py-0.5 bg-slate-100 hover:bg-slate-200 rounded font-mono">cloud (default)</button>
+            <div className="flex-1"></div>
+            <button onClick={reset}
+              className="text-[10px] px-2 py-0.5 bg-slate-100 hover:bg-slate-200 rounded">초기화</button>
+          </div>
+          {status === 'fail' && (
+            <div className="text-[10px] text-red-700 bg-red-50 border border-red-200 rounded p-1.5 mb-2 font-mono break-all">
+              ✗ 연결 실패: {errMsg}
+            </div>
+          )}
+          {status === 'ok' && (
+            <div className="text-[10px] text-green-700 bg-green-50 border border-green-200 rounded p-1.5 mb-2">
+              ✓ 정상
+            </div>
+          )}
+          <button onClick={apply}
+            className="w-full px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded text-[12px] font-semibold transition-colors">
+            적용 + 저장
+          </button>
+          <div className="text-[10px] text-slate-500 mt-2 leading-relaxed">
+            ※ HPWD Studio와 같은 backend URL을 공유합니다. 변경 시
+            저장되어 모든 앱에 적용됩니다.
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ───────────── Top App ───────────── */
 function App() {
   const [tab, setTab] = useState('setup');
@@ -859,6 +977,8 @@ function App() {
       <div className="bg-white border-b border-slate-200 px-4 py-2 flex items-center gap-4">
         <AppSwitcher current="design-studio" />
         <div className="text-[11px] text-slate-500">Calibration · Validation · Reporting</div>
+        <div className="flex-1"></div>
+        <BackendStatus />
       </div>
 
       {/* Tabs */}
