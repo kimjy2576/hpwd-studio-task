@@ -3103,14 +3103,44 @@ function HPWDStudio() {
                     {block.type === 'display' && (() => {
                       const val = block.lastInputs?.x;
                       const digits = block.params.digits ?? 3;
-                      const label = block.params.label;
+                      const userLabel = block.params.label;
+
+                      // 자동 라벨/단위 — 연결된 source의 출력 메타에서 가져오기
+                      let autoLabel = '';
+                      let autoUnit = '';
+                      const incoming = connections.find(c =>
+                        c.to?.blockId === block.id && c.to?.portKey === 'x'
+                      );
+                      if (incoming) {
+                        const fromBlock = blocks.find(b => b.id === incoming.from?.blockId);
+                        if (fromBlock) {
+                          const fromDef = TYPES[fromBlock.type];
+                          const outDef = fromDef?.outputs?.find(o => o.key === incoming.from.portKey);
+                          if (outDef) {
+                            autoLabel = `${fromBlock.name || fromDef.name}.${outDef.label || outDef.key}`;
+                            autoUnit = outDef.unit || '';
+                          }
+                        }
+                      }
+                      // 사용자 라벨이 있으면 우선, 없으면 자동 라벨
+                      const headLabel = userLabel || autoLabel;
+
                       const text = val === undefined
                         ? '—'
                         : (typeof val === 'number' ? val.toFixed(digits) : String(val));
                       return (
                         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none px-2">
-                          {label && <div className="text-[9px] text-slate-500 mb-0.5 truncate w-full text-center">{label}</div>}
-                          <div className="text-lg font-bold text-violet-700 font-mono tabular-nums">{text}</div>
+                          {headLabel && (
+                            <div className="text-[9px] text-slate-500 mb-0.5 truncate w-full text-center" title={headLabel}>
+                              {headLabel}
+                            </div>
+                          )}
+                          <div className="flex items-baseline gap-1 justify-center">
+                            <div className="text-lg font-bold text-violet-700 font-mono tabular-nums">{text}</div>
+                            {autoUnit && (
+                              <div className="text-[10px] text-slate-500 font-mono">{autoUnit}</div>
+                            )}
+                          </div>
                         </div>
                       );
                     })()}
@@ -3689,6 +3719,75 @@ function HPWDStudio() {
                   연결선 <span className="font-semibold text-slate-900">{selectedConnIds.length}</span>개
                 </div>
               )}
+              {/* Auto-Connect: 두 블록만 선택된 상태에서만 노출 */}
+              {selectedIds.length === 2 && selectedConnIds.length === 0 && (() => {
+                const a = blocks.find(b => b.id === selectedIds[0]);
+                const b = blocks.find(b => b.id === selectedIds[1]);
+                if (!a || !b) return null;
+                // 우선순위: 첫 번째 선택 → 두 번째 선택
+                const fromBlock = a;
+                const toBlock = b;
+                const signals = autoMapSignals(fromBlock, toBlock);
+                const reverseSignals = autoMapSignals(toBlock, fromBlock);
+                const useReverse = reverseSignals.length > signals.length;
+                const finalFrom = useReverse ? toBlock : fromBlock;
+                const finalTo   = useReverse ? fromBlock : toBlock;
+                const finalSignals = useReverse ? reverseSignals : signals;
+                return (
+                  <div className="pt-2 border-t border-slate-200 space-y-1.5">
+                    <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Auto-Connect</div>
+                    {finalSignals.length === 0 ? (
+                      <div className="text-[10px] text-slate-400 italic">매칭되는 변수 없음</div>
+                    ) : (
+                      <>
+                        <div className="text-[10px] text-slate-600">
+                          <span className="font-semibold">{finalFrom.name || TYPES[finalFrom.type]?.name}</span>
+                          {' → '}
+                          <span className="font-semibold">{finalTo.name || TYPES[finalTo.type]?.name}</span>
+                        </div>
+                        <div className="text-[10px] text-slate-500 space-y-0.5 max-h-32 overflow-y-auto bg-slate-50 rounded p-1.5 font-mono">
+                          {finalSignals.map((s, i) => {
+                            const fromOut = TYPES[finalFrom.type]?.outputs?.find(o => o.key === s.fromPort);
+                            const toIn = TYPES[finalTo.type]?.inputs?.find(o => o.key === s.toPort);
+                            return (
+                              <div key={i} className="flex items-center gap-1">
+                                <span className="text-slate-700">{fromOut?.label || s.fromPort}</span>
+                                {fromOut?.unit && <span className="text-slate-400 text-[9px]">[{fromOut.unit}]</span>}
+                                <span className="text-cyan-600">→</span>
+                                <span className="text-slate-700">{toIn?.label || s.toPort}</span>
+                                {toIn?.unit && <span className="text-slate-400 text-[9px]">[{toIn.unit}]</span>}
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <button
+                          onClick={() => {
+                            // 가장 가까운 두 면을 자동 결정 — fromBlock 우측, toBlock 좌측 default
+                            const fromSide = 'right';
+                            const toSide = 'left';
+                            const fromSlot = findFreeSlot(connections, finalFrom.id, fromSide);
+                            const toSlot   = findFreeSlot(connections, finalTo.id, toSide);
+                            const kind = detectLineKind(finalFrom, finalTo);
+                            pushHistory(blocks, connections);
+                            setConnections(cs => [...cs, {
+                              from: { blockId: finalFrom.id, side: fromSide, slot: fromSlot },
+                              to:   { blockId: finalTo.id,   side: toSide,   slot: toSlot },
+                              kind,
+                              signals: finalSignals,
+                              lineParams: defaultLineParams(kind),
+                              cornerRadius: 8,
+                              routeMode: 'auto',
+                            }]);
+                          }}
+                          className="w-full px-2 py-1 bg-cyan-600 hover:bg-cyan-700 text-white rounded text-[11px] font-semibold transition-colors"
+                        >
+                          연결 ({finalSignals.length}개 변수)
+                        </button>
+                      </>
+                    )}
+                  </div>
+                );
+              })()}
               <div className="text-[10px] text-slate-400 italic pt-2 leading-relaxed">
                 단축키:<br/>
                 · Delete — 선택 항목 삭제<br/>
