@@ -757,6 +757,67 @@ const TYPES = {
                       eta_v: NaN, eta_is: NaN, P_internal: NaN, pi_ratio: NaN }),
   },
 
+  // ================ Evaporator (Off-design L1) ================
+  // 2-zone ε-NTU. 설계 변수 0개 — UA 또는 ε 직접 입력.
+  // HPWD에선 dehumidifier 역할 → Q_latent / condensate_rate 핵심 출력.
+  evaporator_off_design: {
+    typeNo: 120, name: 'Evaporator (Off-design)', category: 'refrigerant', color: '#0891b2', icon: Droplet, image: './images/evaporator.png',
+    desc: '2-zone ε-NTU — UA 또는 ε 직접 입력. 설계 변수 없음.',
+    backend: 'python',
+    pythonComponent: 'evaporator_off_design',
+    parameters: [
+      // ─── Material ───
+      { key: 'fluid',      group: 'Material',  label: 'Fluid',     value: 'R290', options: ['R290'], unit: '' },
+      // ─── Operating ───
+      { key: 'wet_coil',   group: 'Operating', label: 'Wet-coil',  value: 'auto', options: ['auto', 'off'], unit: '' },
+      // ─── Fitting ───
+      { key: 'input_mode', group: 'Fitting',   label: 'Input mode', value: 'UA', options: ['UA', 'epsilon'], unit: '' },
+      { key: 'UA_2ph',     group: 'Fitting',   label: 'UA_2ph',    value: 200.0, unit: 'W/K' },
+      { key: 'UA_SH',      group: 'Fitting',   label: 'UA_SH',     value: 30.0,  unit: 'W/K' },
+      { key: 'eps_2ph',    group: 'Fitting',   label: 'ε_2ph',     value: 0.85,  unit: '-' },
+      { key: 'eps_SH',     group: 'Fitting',   label: 'ε_SH',      value: 0.5,   unit: '-' },
+      { key: 'dP_ref',     group: 'Fitting',   label: 'dP_ref',    value: 0.02,  unit: '-' },
+      // ─── Outputs ───
+      { key: 'output_select', label: 'Outputs',
+        value: ['T_ref_out', 'T_air_out', 'Q_total', 'Q_latent', 'condensate_rate', 'is_wet'],
+        multiSelect: ['T_ref_out', 'h_ref_out', 'P_ref_out', 'quality_out', 'SH_out', 'T_evap',
+                      'T_air_out', 'RH_air_out', 'W_air_out',
+                      'Q_total', 'Q_sensible', 'Q_latent', 'condensate_rate',
+                      'L_2ph_fraction', 'is_wet'], unit: '' },
+    ],
+    inputs: [
+      { key: 'P_evap',     label: 'P_evap',     unit: 'bar' },
+      { key: 'h_in',       label: 'h_in',       unit: 'kJ/kg' },
+      { key: 'm_dot_ref',  label: 'ṁ_ref',     unit: 'kg/s' },
+      { key: 'T_air_in',   label: 'T_air_in',   unit: '°C' },
+      { key: 'RH_air_in',  label: 'RH_air_in',  unit: '%' },
+      { key: 'm_dot_air',  label: 'ṁ_air',     unit: 'kg/s' },
+    ],
+    outputs: [
+      { key: 'T_ref_out',       label: 'T_ref_out',  unit: '°C' },
+      { key: 'h_ref_out',       label: 'h_ref_out',  unit: 'kJ/kg' },
+      { key: 'P_ref_out',       label: 'P_ref_out',  unit: 'bar' },
+      { key: 'quality_out',     label: 'x_out',      unit: '-' },
+      { key: 'SH_out',          label: 'SH_out',     unit: 'K' },
+      { key: 'T_evap',          label: 'T_evap',     unit: '°C' },
+      { key: 'T_air_out',       label: 'T_air_out',  unit: '°C' },
+      { key: 'RH_air_out',      label: 'RH_air_out', unit: '%' },
+      { key: 'W_air_out',       label: 'W_air_out',  unit: 'kg/kg' },
+      { key: 'Q_total',         label: 'Q_total',    unit: 'W' },
+      { key: 'Q_sensible',      label: 'Q_sens',     unit: 'W' },
+      { key: 'Q_latent',        label: 'Q_lat',      unit: 'W' },
+      { key: 'condensate_rate', label: 'ṁ_cond',    unit: 'kg/s' },
+      { key: 'L_2ph_fraction',  label: 'L_2ph',      unit: '-' },
+      { key: 'is_wet',          label: 'is_wet',     unit: '-' },
+    ],
+    compute: () => ({
+      T_ref_out: NaN, h_ref_out: NaN, P_ref_out: NaN, quality_out: NaN, SH_out: NaN, T_evap: NaN,
+      T_air_out: NaN, RH_air_out: NaN, W_air_out: NaN,
+      Q_total: NaN, Q_sensible: NaN, Q_latent: NaN, condensate_rate: NaN,
+      L_2ph_fraction: NaN, is_wet: NaN,
+    }),
+  },
+
   // ================ 결과 디스플레이 ================
   display: {
     typeNo: 901, name: 'Display', category: 'output', color: '#7c3aed', icon: Eye,
