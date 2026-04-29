@@ -49,15 +49,20 @@ modelDescription = {
     'category': 'air',
     'modelType': 'on-design',
     'fidelity': 1.0,
-    'description': 'CoolProp HumidAirProp 기반 습공기 물성치 (단위: SI + °C + bar + %)',
+    'description': 'CoolProp HumidAirProp 기반 습공기 물성치. 모든 입력은 parameter (단위: SI + °C + bar + %)',
     'backend': 'python',
     'variables': [
-        # Parameters — 기준 물성 3개 선택
+        # Parameters — 모든 입력은 사용자가 직접 지정 (input port 없음)
         {
             'name': 'input1_kind', 'causality': 'parameter', 'type': 'String',
             'start': 'T', 'unit': '-',
             'options': INPUT_KINDS,
-            'description': '첫 번째 기준 (T,P,R,W,B,D,H 중 선택)',
+            'description': '첫 번째 기준 (T[°C],P[bar],R[%],W[kg/kg],B[°C],D[°C],H[kJ/kg] 중 선택)',
+        },
+        {
+            'name': 'input1_value', 'causality': 'parameter', 'type': 'Real',
+            'start': 25.0, 'unit': '-',
+            'description': '첫 번째 기준 값',
         },
         {
             'name': 'input2_kind', 'causality': 'parameter', 'type': 'String',
@@ -66,23 +71,20 @@ modelDescription = {
             'description': '두 번째 기준',
         },
         {
+            'name': 'input2_value', 'causality': 'parameter', 'type': 'Real',
+            'start': 1.01325, 'unit': '-',
+            'description': '두 번째 기준 값',
+        },
+        {
             'name': 'input3_kind', 'causality': 'parameter', 'type': 'String',
             'start': 'R', 'unit': '-',
             'options': INPUT_KINDS,
             'description': '세 번째 기준 (습공기는 자유도 3)',
         },
-        # Inputs — 세 기준의 실제 값
         {
-            'name': 'input1_value', 'causality': 'input', 'type': 'Real',
-            'unit': '-', 'description': '첫 번째 기준 값 (T[°C], P[bar], R[%], W[kg/kg], B[°C], D[°C], H[kJ/kg])',
-        },
-        {
-            'name': 'input2_value', 'causality': 'input', 'type': 'Real',
-            'unit': '-', 'description': '두 번째 기준 값',
-        },
-        {
-            'name': 'input3_value', 'causality': 'input', 'type': 'Real',
-            'unit': '-', 'description': '세 번째 기준 값',
+            'name': 'input3_value', 'causality': 'parameter', 'type': 'Real',
+            'start': 50.0, 'unit': '-',
+            'description': '세 번째 기준 값',
         },
         # Outputs
         {'name': 'T_db','causality': 'output','type': 'Real', 'unit': '°C',     'description': '건구온도'},
@@ -114,13 +116,14 @@ def init_state(params):
 
 
 def step(input, params, state, dt):
-    """주어진 세 기준 물성으로 모든 습공기 물성치를 한 번에 조회."""
+    """주어진 세 기준 물성으로 모든 습공기 물성치를 한 번에 조회.
+    모든 입력은 params에서 옴 (input port는 사용 안 함)."""
     k1 = params.get('input1_kind', 'T')
     k2 = params.get('input2_kind', 'P')
     k3 = params.get('input3_kind', 'R')
-    v1 = float(input.get('input1_value', 0))
-    v2 = float(input.get('input2_value', 0))
-    v3 = float(input.get('input3_value', 0))
+    v1 = float(params.get('input1_value', 25.0))
+    v2 = float(params.get('input2_value', 1.01325))
+    v3 = float(params.get('input3_value', 50.0))
 
     # 중복 거부
     kinds = [k1, k2, k3]

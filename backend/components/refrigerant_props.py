@@ -31,8 +31,6 @@ input1_value, input2_value 입력 포트로 실제 값을 넣음.
 
 import CoolProp.CoolProp as CP
 
-FLUID = 'R290'
-
 # ════════ 기준 물성 코드 ════════
 # 사용자가 dropdown으로 선택. CoolProp PropsSI의 첫 인자 형식.
 INPUT_KINDS = ['T', 'P', 'Q', 'H', 'S', 'D', 'U']
@@ -67,6 +65,9 @@ _PHASE_LABELS = {
 }
 
 
+FLUIDS = ['R290']  # 추후 R134a, R1234yf, R32, R744, R600a 등 확장
+
+
 # ════════ Model Description ════════
 modelDescription = {
     'typeNo': 110,
@@ -74,15 +75,26 @@ modelDescription = {
     'category': 'refrigerant',
     'modelType': 'on-design',
     'fidelity': 1.0,
-    'description': 'CoolProp 기반 R290 냉매 물성치 (단위: SI + °C + bar)',
+    'description': 'CoolProp 기반 냉매 물성치. 모든 입력은 parameter (단위: SI + °C + bar)',
     'backend': 'python',
     'variables': [
-        # Parameters — 기준 물성 두 개 선택
+        # Parameters — 모든 입력은 사용자가 직접 지정
+        {
+            'name': 'fluid', 'causality': 'parameter', 'type': 'String',
+            'start': 'R290', 'unit': '-',
+            'options': FLUIDS,
+            'description': '냉매 종류',
+        },
         {
             'name': 'input1_kind', 'causality': 'parameter', 'type': 'String',
             'start': 'T', 'unit': '-',
             'options': INPUT_KINDS,
-            'description': '첫 번째 기준 물성 (T,P,Q,H,S,D,U 중 선택)',
+            'description': '첫 번째 기준 물성 (T[°C],P[bar],Q[-],H[kJ/kg],S[kJ/kg·K],D[kg/m³],U[kJ/kg])',
+        },
+        {
+            'name': 'input1_value', 'causality': 'parameter', 'type': 'Real',
+            'start': 25.0, 'unit': '-',
+            'description': '첫 번째 기준 값 (단위는 kind에 따름)',
         },
         {
             'name': 'input2_kind', 'causality': 'parameter', 'type': 'String',
@@ -90,16 +102,12 @@ modelDescription = {
             'options': INPUT_KINDS,
             'description': '두 번째 기준 물성',
         },
-        # Inputs — 두 기준의 실제 값
         {
-            'name': 'input1_value', 'causality': 'input', 'type': 'Real',
-            'unit': '-', 'description': '첫 번째 기준 값 (단위는 kind에 따름: T[°C], P[bar], H[kJ/kg]...)',
+            'name': 'input2_value', 'causality': 'parameter', 'type': 'Real',
+            'start': 5.0, 'unit': '-',
+            'description': '두 번째 기준 값',
         },
-        {
-            'name': 'input2_value', 'causality': 'input', 'type': 'Real',
-            'unit': '-', 'description': '두 번째 기준 값',
-        },
-        # Outputs — 주요 물성치 모두
+        # Outputs — 주요 물성치 모두 (Studio 측에서 output_select로 토글)
         {'name': 'T', 'causality': 'output', 'type': 'Real', 'unit': '°C',     'description': '온도'},
         {'name': 'P', 'causality': 'output', 'type': 'Real', 'unit': 'bar',    'description': '압력 (abs)'},
         {'name': 'rho','causality': 'output','type': 'Real', 'unit': 'kg/m³',  'description': '밀도'},
@@ -120,7 +128,6 @@ modelDescription = {
         'canHandleEvents': False,
     },
     'metadata': {
-        'fluid': FLUID,
         'units_note': 'SI + Celsius + bar(abs). CoolProp 내부는 K + Pa로 자동 변환.',
     },
 }
@@ -131,11 +138,13 @@ def init_state(params):
 
 
 def step(input, params, state, dt):
-    """주어진 두 기준 물성으로 모든 물성치를 한 번에 조회."""
+    """주어진 두 기준 물성으로 모든 물성치를 한 번에 조회.
+    모든 입력은 params에서 옴 (input port는 사용 안 함 — 사용자가 모두 직접 지정)."""
+    fluid = params.get('fluid', 'R290')
     k1 = params.get('input1_kind', 'T')
     k2 = params.get('input2_kind', 'P')
-    v1 = float(input.get('input1_value', 0))
-    v2 = float(input.get('input2_value', 0))
+    v1 = float(params.get('input1_value', 25.0))
+    v2 = float(params.get('input2_value', 5.0))
 
     # 같은 기준 두 번 사용 거부
     if k1 == k2:
@@ -148,7 +157,7 @@ def step(input, params, state, dt):
     # 모든 출력 물성을 한 번에 조회
     def _props(out_code):
         try:
-            return CP.PropsSI(out_code, k1, v1_si, k2, v2_si, FLUID)
+            return CP.PropsSI(out_code, k1, v1_si, k2, v2_si, fluid)
         except Exception:
             return float('nan')
 
@@ -165,21 +174,19 @@ def step(input, params, state, dt):
 
     # 포화 물성 (단상/2상 구분 없이 시도)
     try:
-        T_sat_K = CP.PropsSI('T', 'P', P_Pa, 'Q', 0, FLUID)
+        T_sat_K = CP.PropsSI('T', 'P', P_Pa, 'Q', 0, fluid)
         T_sat_C = T_sat_K - 273.15
     except Exception:
         T_sat_C = float('nan')
     try:
-        P_sat_Pa = CP.PropsSI('P', 'T', T_K, 'Q', 0, FLUID)
+        P_sat_Pa = CP.PropsSI('P', 'T', T_K, 'Q', 0, fluid)
         P_sat_bar = P_sat_Pa / 1e5
     except Exception:
         P_sat_bar = float('nan')
 
     # Phase
     try:
-        phase_int = int(CP.PhaseSI(k1, v1_si, k2, v2_si, FLUID) if False else 7)
-        # PhaseSI는 string을 반환 — get_phase_index 사용
-        phase_str = CP.PhaseSI(k1, v1_si, k2, v2_si, FLUID)
+        phase_str = CP.PhaseSI(k1, v1_si, k2, v2_si, fluid)
     except Exception:
         phase_str = 'unknown'
 

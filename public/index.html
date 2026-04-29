@@ -521,19 +521,24 @@ const TYPES = {
   },
 
   // ================ 물성치 (CoolProp 백엔드) ================
+  // 입력 포트 없음 — 모든 설정값을 Properties 패널에서 직접 입력.
+  // output_select로 출력 포트 토글 가능 (체크된 것만 포트로 노출).
   refrigerant_props: {
     typeNo: 110, name: 'Refrigerant Props', category: 'refrigerant', color: '#b87333', icon: Droplet,
-    desc: 'CoolProp R290 물성치. 두 기준 자유 선택 (T,P,Q,H,S,D,U)',
+    desc: 'CoolProp 냉매 물성치. 모든 입력은 Properties에서 (포트 없음)',
     backend: 'python',
     pythonComponent: 'refrigerant_props',
     parameters: [
-      { key: 'input1_kind', label: 'Input 1 종류', value: 'T', options: ['T','P','Q','H','S','D','U'], unit: '' },
-      { key: 'input2_kind', label: 'Input 2 종류', value: 'P', options: ['T','P','Q','H','S','D','U'], unit: '' },
+      { key: 'fluid',        label: 'Fluid',        value: 'R290', options: ['R290'], unit: '' },
+      { key: 'input1_kind',  label: 'Input 1 종류', value: 'T',    options: ['T','P','Q','H','S','D','U'], unit: '' },
+      { key: 'input1_value', label: 'Input 1 값',   value: 25.0,   unit: '@input1_kind' },
+      { key: 'input2_kind',  label: 'Input 2 종류', value: 'P',    options: ['T','P','Q','H','S','D','U'], unit: '' },
+      { key: 'input2_value', label: 'Input 2 값',   value: 5.0,    unit: '@input2_kind' },
+      // output_select은 multiSelect로, 각 출력 포트 활성화 토글
+      { key: 'output_select', label: 'Outputs', value: ['T','P','rho','h','phase'],
+        multiSelect: ['T','P','rho','h','s','cp','cv','mu','k','Q','T_sat','P_sat','phase'], unit: '' },
     ],
-    inputs: [
-      { key: 'input1_value', label: 'Input 1', unit: '' },
-      { key: 'input2_value', label: 'Input 2', unit: '' },
-    ],
+    inputs: [],
     outputs: [
       { key: 'T',     label: 'T',     unit: '°C' },
       { key: 'P',     label: 'P',     unit: 'bar' },
@@ -555,19 +560,20 @@ const TYPES = {
   },
   air_props: {
     typeNo: 210, name: 'Air Props', category: 'air', color: '#475569', icon: Wind,
-    desc: 'CoolProp 습공기 물성치. 세 기준 자유 선택 (T,P,R,W,B,D,H)',
+    desc: 'CoolProp 습공기 물성치. 모든 입력은 Properties에서 (포트 없음)',
     backend: 'python',
     pythonComponent: 'air_props',
     parameters: [
-      { key: 'input1_kind', label: 'Input 1 종류', value: 'T', options: ['T','P','R','W','B','D','H'], unit: '' },
-      { key: 'input2_kind', label: 'Input 2 종류', value: 'P', options: ['T','P','R','W','B','D','H'], unit: '' },
-      { key: 'input3_kind', label: 'Input 3 종류', value: 'R', options: ['T','P','R','W','B','D','H'], unit: '' },
+      { key: 'input1_kind',  label: 'Input 1 종류', value: 'T',     options: ['T','P','R','W','B','D','H'], unit: '' },
+      { key: 'input1_value', label: 'Input 1 값',   value: 25.0,    unit: '@input1_kind' },
+      { key: 'input2_kind',  label: 'Input 2 종류', value: 'P',     options: ['T','P','R','W','B','D','H'], unit: '' },
+      { key: 'input2_value', label: 'Input 2 값',   value: 1.01325, unit: '@input2_kind' },
+      { key: 'input3_kind',  label: 'Input 3 종류', value: 'R',     options: ['T','P','R','W','B','D','H'], unit: '' },
+      { key: 'input3_value', label: 'Input 3 값',   value: 50.0,    unit: '@input3_kind' },
+      { key: 'output_select', label: 'Outputs', value: ['T_db','RH','W','h'],
+        multiSelect: ['T_db','P','RH','W','T_wb','T_dp','h','rho','cp','mu','k','P_w'], unit: '' },
     ],
-    inputs: [
-      { key: 'input1_value', label: 'Input 1', unit: '' },
-      { key: 'input2_value', label: 'Input 2', unit: '' },
-      { key: 'input3_value', label: 'Input 3', unit: '' },
-    ],
+    inputs: [],
     outputs: [
       { key: 'T_db', label: 'T_db', unit: '°C' },
       { key: 'P',    label: 'P',    unit: 'bar' },
@@ -689,6 +695,33 @@ const LINE_KINDS = {
     ],
   },
 };
+
+/* 동적 단위 매핑 (Properties 패널의 unit:'@otherKey' 해석용)
+ * 컴포넌트별 kind→unit 사전. refrigerant_props/air_props에서 사용. */
+const DYNAMIC_UNIT_MAP = {
+  refrigerant_props: {
+    T: '°C', P: 'bar', Q: '-', H: 'kJ/kg', S: 'kJ/kg·K', D: 'kg/m³', U: 'kJ/kg',
+  },
+  air_props: {
+    T: '°C', P: 'bar', R: '%', W: 'kg/kg', B: '°C', D: '°C', H: 'kJ/kg',
+  },
+};
+function resolveDynamicUnit(typeKey, kindValue) {
+  const m = DYNAMIC_UNIT_MAP[typeKey];
+  if (!m) return '';
+  return m[kindValue] || '';
+}
+
+/* 블록의 outputs 중 현재 활성된 것만 반환.
+ * params.output_select 배열이 있으면 그 항목만, 없으면 전부.
+ * Refrigerant Props / Air Props가 사용. */
+function getActiveOutputs(block) {
+  const def = TYPES[block.type];
+  if (!def || !def.outputs) return [];
+  const sel = block.params && block.params.output_select;
+  if (!Array.isArray(sel)) return def.outputs;
+  return def.outputs.filter(o => sel.includes(o.key));
+}
 
 /* 두 블록 카테고리로부터 default 라인 종류 결정.
  * 물리 배관 카테고리(refrigerant/air/water)끼리는 그 종류로,
@@ -1451,6 +1484,34 @@ function HPWDStudio() {
 
   const updateParam = (blockId, paramKey, value) => {
     setBlocks(bs => bs.map(b => b.id === blockId ? { ...b, params: { ...b.params, [paramKey]: value } } : b));
+
+    // output_select가 변경된 경우 — 비활성된 출력에 걸린 signal 자동 정리
+    // (연결선 자체는 signal이 비면 삭제. 다른 signal이 살아있으면 connection 유지.)
+    if (paramKey === 'output_select' && Array.isArray(value)) {
+      const activeSet = new Set(value);
+      setConnections(prev => {
+        const next = [];
+        let removedCount = 0;
+        for (const c of prev) {
+          if (c.from?.blockId !== blockId) {
+            next.push(c);
+            continue;
+          }
+          // 이 블록에서 나가는 connection — signals 중 비활성 출력에 걸린 것 제거
+          const keptSignals = (c.signals || []).filter(s => activeSet.has(s.fromPort));
+          const dropped = (c.signals || []).length - keptSignals.length;
+          if (dropped > 0) removedCount += dropped;
+          if (keptSignals.length > 0) {
+            next.push({ ...c, signals: keptSignals });
+          }
+          // 모든 signal이 비었으면 connection 자체 drop
+        }
+        if (removedCount > 0) {
+          console.log(`[output_select] ${removedCount}개 signal 자동 정리됨 (비활성 출력)`);
+        }
+        return next;
+      });
+    }
   };
 
   const updateBlockName = (blockId, name) => {
@@ -2887,6 +2948,8 @@ function HPWDStudio() {
               const isSel = selectedIds.includes(block.id);
               const height = getBlockHeight(block);
               const width = getBlockWidth(block);
+              // 동적 출력 — output_select param 적용. 없으면 def.outputs 그대로.
+              const activeOutputs = getActiveOutputs(block);
               return (
                 <div
                   key={block.id}
@@ -2980,14 +3043,14 @@ function HPWDStudio() {
                         <div className="flex-1"/>
                         {def.outputs.length > 0 && (
                           <div className="space-y-0.5 text-right">
-                            {def.outputs.slice(0, 5).map(p => (
+                            {activeOutputs.slice(0, 5).map(p => (
                               <div key={p.key} className="text-[9px] font-mono truncate" title={`${p.label} [${p.unit||''}]`}>
                                 <span className="text-slate-500 truncate">{p.label}</span>
                                 <span className="text-amber-600 ml-1">▶</span>
                               </div>
                             ))}
-                            {def.outputs.length > 5 && (
-                              <div className="text-[8.5px] font-mono text-slate-400">+{def.outputs.length - 5}</div>
+                            {activeOutputs.length > 5 && (
+                              <div className="text-[8.5px] font-mono text-slate-400">+{activeOutputs.length - 5}</div>
                             )}
                           </div>
                         )}
@@ -3581,32 +3644,92 @@ function HPWDStudio() {
                     <Settings size={10} /> Parameters
                   </div>
                   <div className="space-y-1">
-                    {selectedDef.parameters.map(p => (
-                      <div key={p.key} className="flex items-center gap-2">
-                        <label className="flex-1 text-[11px] text-slate-700">{p.label}</label>
-                        {p.options ? (
-                          <select
-                            value={selectedBlock.params[p.key]}
-                            onChange={(e) => updateParam(selectedBlock.id, p.key, e.target.value)}
-                            className="w-20 bg-white border border-slate-300 px-1.5 py-0.5 rounded text-[11px] text-slate-900 font-mono text-right focus:outline-none focus:border-cyan-500"
-                          >
-                            {p.options.map(opt => (
-                              <option key={opt} value={opt}>{opt}</option>
-                            ))}
-                          </select>
-                        ) : (
-                          <input
-                            type={typeof p.value === 'number' ? 'number' : 'text'}
-                            value={selectedBlock.params[p.key]}
-                            step={typeof p.value === 'number' ? (p.value < 1 ? 0.01 : p.value < 10 ? 0.1 : 1) : undefined}
-                            onChange={(e) => updateParam(selectedBlock.id, p.key,
-                              typeof p.value === 'number' ? (parseFloat(e.target.value) || 0) : e.target.value)}
-                            className="w-20 bg-white border border-slate-300 px-1.5 py-0.5 rounded text-[11px] text-slate-900 font-mono text-right focus:outline-none focus:border-cyan-500"
-                          />
-                        )}
-                        <span className="text-[10px] text-slate-400 w-10 font-mono">{p.unit}</span>
-                      </div>
-                    ))}
+                    {selectedDef.parameters.map(p => {
+                      // unit이 '@otherKey' 형식이면 동적 — 다른 param의 현재 값으로 단위 결정
+                      // 예: { key:'input1_value', unit:'@input1_kind' }
+                      //     → 현재 input1_kind 값('T','P','Q' 등)에 따라 °C/bar/-/...
+                      let unitDisplay = p.unit;
+                      if (typeof p.unit === 'string' && p.unit.startsWith('@')) {
+                        const refKey = p.unit.slice(1);
+                        const kindVal = selectedBlock.params[refKey];
+                        unitDisplay = resolveDynamicUnit(selectedBlock.type, kindVal);
+                      }
+
+                      // === Multi-select (output_select 같은 것) ===
+                      if (p.multiSelect) {
+                        const current = selectedBlock.params[p.key] || [];
+                        const toggleOpt = (opt) => {
+                          const set = new Set(current);
+                          if (set.has(opt)) set.delete(opt); else set.add(opt);
+                          updateParam(selectedBlock.id, p.key, Array.from(set));
+                        };
+                        return (
+                          <div key={p.key} className="flex flex-col gap-1 py-1 border-t border-slate-100 mt-1 pt-2">
+                            <div className="flex items-center justify-between">
+                              <label className="text-[11px] text-slate-700 font-semibold">{p.label}</label>
+                              <div className="flex gap-1 text-[9px]">
+                                <button
+                                  onClick={() => updateParam(selectedBlock.id, p.key, [...p.multiSelect])}
+                                  className="px-1.5 py-0.5 bg-slate-100 hover:bg-slate-200 rounded text-slate-700 font-mono"
+                                >ALL</button>
+                                <button
+                                  onClick={() => updateParam(selectedBlock.id, p.key, [])}
+                                  className="px-1.5 py-0.5 bg-slate-100 hover:bg-slate-200 rounded text-slate-700 font-mono"
+                                >NONE</button>
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-3 gap-x-2 gap-y-0.5">
+                              {p.multiSelect.map(opt => {
+                                const checked = current.includes(opt);
+                                return (
+                                  <label key={opt}
+                                    className={`flex items-center gap-1 px-1 py-0.5 rounded cursor-pointer text-[10px] font-mono ${
+                                      checked ? 'bg-cyan-50 text-cyan-900' : 'text-slate-600 hover:bg-slate-50'
+                                    }`}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={checked}
+                                      onChange={() => toggleOpt(opt)}
+                                      className="w-2.5 h-2.5 accent-cyan-600"
+                                    />
+                                    <span className="truncate">{opt}</span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      // === 일반 parameter (single value) ===
+                      return (
+                        <div key={p.key} className="flex items-center gap-2">
+                          <label className="flex-1 text-[11px] text-slate-700">{p.label}</label>
+                          {p.options ? (
+                            <select
+                              value={selectedBlock.params[p.key]}
+                              onChange={(e) => updateParam(selectedBlock.id, p.key, e.target.value)}
+                              className="w-20 bg-white border border-slate-300 px-1.5 py-0.5 rounded text-[11px] text-slate-900 font-mono text-right focus:outline-none focus:border-cyan-500"
+                            >
+                              {p.options.map(opt => (
+                                <option key={opt} value={opt}>{opt}</option>
+                              ))}
+                            </select>
+                          ) : (
+                            <input
+                              type={typeof p.value === 'number' ? 'number' : 'text'}
+                              value={selectedBlock.params[p.key]}
+                              step={typeof p.value === 'number' ? (p.value < 1 ? 0.01 : p.value < 10 ? 0.1 : 1) : undefined}
+                              onChange={(e) => updateParam(selectedBlock.id, p.key,
+                                typeof p.value === 'number' ? (parseFloat(e.target.value) || 0) : e.target.value)}
+                              className="w-20 bg-white border border-slate-300 px-1.5 py-0.5 rounded text-[11px] text-slate-900 font-mono text-right focus:outline-none focus:border-cyan-500"
+                            />
+                          )}
+                          <span className="text-[10px] text-slate-400 w-10 font-mono">{unitDisplay}</span>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -3640,13 +3763,16 @@ function HPWDStudio() {
                 </div>
               )}
 
-              {selectedDef.outputs.length > 0 && (
+              {selectedDef.outputs.length > 0 && (() => {
+                const activeOuts = getActiveOutputs(selectedBlock);
+                if (activeOuts.length === 0) return null;
+                return (
                 <div>
                   <div className="text-[10px] uppercase tracking-wider text-slate-500 mb-1.5 flex items-center gap-1 font-semibold">
                     <Zap size={10} /> Outputs
                   </div>
                   <div className="space-y-1">
-                    {selectedDef.outputs.map(p => {
+                    {activeOuts.map(p => {
                       const val = selectedBlock.outputs?.[p.key];
                       return (
                         <div key={p.key} className="flex items-center gap-2 text-[11px]">
@@ -3660,7 +3786,8 @@ function HPWDStudio() {
                     })}
                   </div>
                 </div>
-              )}
+                );
+              })()}
 
               {selectedBlock.state && Object.keys(selectedBlock.state).length > 0 && (
                 <div>
