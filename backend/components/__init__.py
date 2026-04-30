@@ -29,6 +29,9 @@ def _load_components():
     for finder, name, ispkg in pkgutil.iter_modules([str(components_dir)]):
         if name.startswith("_"):
             continue
+        if ispkg:
+            # Sub-package (예: correlations/) — 컴포넌트 아님, skip
+            continue
         try:
             mod = importlib.import_module(f"components.{name}")
             if not hasattr(mod, "step"):
