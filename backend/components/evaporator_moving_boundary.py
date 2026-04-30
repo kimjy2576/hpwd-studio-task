@@ -33,7 +33,7 @@ Fitting params (4개) — calibration용 보정 multiplier:
 import math
 import CoolProp.CoolProp as CP
 
-from .correlations import boiling, single_phase, air_side, fin_efficiency
+from .correlations import boiling, single_phase, air_side, fin_efficiency, pressure_drop
 
 FLUIDS = ['R290']
 
@@ -42,6 +42,7 @@ CORR_2PH_OPTIONS = list(boiling.CORR_REGISTRY.keys())
 CORR_SH_OPTIONS  = list(single_phase.CORR_REGISTRY.keys())
 CORR_AIR_OPTIONS = list(air_side.CORR_REGISTRY.keys())
 CORR_FIN_OPTIONS = list(fin_efficiency.CORR_REGISTRY.keys())
+CORR_DP_OPTIONS = list(pressure_drop.TWO_PHASE_REGISTRY.keys())
 
 
 modelDescription = {
@@ -115,6 +116,13 @@ modelDescription = {
          'group': 'Geometry', 'start': fin_efficiency.DEFAULT, 'unit': '-',
          'options': CORR_FIN_OPTIONS,
          'description': 'Fin 효율 correlation'},
+        {'name': 'corr_dp_2ph', 'causality': 'parameter', 'type': 'String',
+         'group': 'Geometry', 'start': pressure_drop.DEFAULT_2PH, 'unit': '-',
+         'options': CORR_DP_OPTIONS,
+         'description': '2-phase 압력강하 correlation (Acceleration은 항상 포함, Hydrostatic 제외)'},
+        {'name': 'eps_over_D', 'causality': 'parameter', 'type': 'Real',
+         'group': 'Geometry', 'start': 0.0, 'unit': '-',
+         'description': '튜브 내면 거칠기/직경 (0=smooth, 1.5e-6/D ~ 0.0002 일반 stainless)'},
 
         # ═══════ Fitting (calibration multipliers) ═══════
         {'name': 'htc_corr_2ph', 'causality': 'parameter', 'type': 'Real',
@@ -126,9 +134,12 @@ modelDescription = {
         {'name': 'htc_corr_air', 'causality': 'parameter', 'type': 'Real',
          'group': 'Fitting', 'start': 1.0, 'unit': '-',
          'description': '공기측 α 보정'},
-        {'name': 'dP_ref', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Fitting', 'start': 0.02, 'unit': '-',
-         'description': '냉매 압력 손실 비율'},
+        {'name': 'dp_corr_2ph', 'causality': 'parameter', 'type': 'Real',
+         'group': 'Fitting', 'start': 1.0, 'unit': '-',
+         'description': '2-phase 마찰 dP 보정'},
+        {'name': 'dp_corr_SH', 'causality': 'parameter', 'type': 'Real',
+         'group': 'Fitting', 'start': 1.0, 'unit': '-',
+         'description': 'SH 마찰 dP 보정'},
 
         # ═══════ Inputs (6) ═══════
         {'name': 'P_evap', 'causality': 'input', 'type': 'Real',
@@ -182,6 +193,17 @@ modelDescription = {
          'description': '응축 여부 (1=wet)'},
         {'name': 'newton_iter', 'causality': 'output', 'type': 'Real', 'unit': '-',
          'description': 'Newton iteration 횟수 (진단)'},
+        # 압력 강하 진단
+        {'name': 'dP_friction_2ph', 'causality': 'output', 'type': 'Real', 'unit': 'Pa',
+         'description': '2-phase zone 마찰 압력강하'},
+        {'name': 'dP_friction_SH', 'causality': 'output', 'type': 'Real', 'unit': 'Pa',
+         'description': 'SH zone 마찰 압력강하'},
+        {'name': 'dP_acceleration', 'causality': 'output', 'type': 'Real', 'unit': 'Pa',
+         'description': '가속 압력강하 (homogeneous)'},
+        {'name': 'dP_total', 'causality': 'output', 'type': 'Real', 'unit': 'Pa',
+         'description': '총 압력강하 (마찰 + 가속, hydrostatic 제외)'},
+        {'name': 'T_evap_avg', 'causality': 'output', 'type': 'Real', 'unit': '°C',
+         'description': '2-phase zone 평균 T_sat (P_avg 기반)'},
     ],
     'capabilities': {
         'canDoStep': True,
@@ -271,16 +293,19 @@ def step(input, params, state, dt):
     FPI = float(params.get('FPI', 12.0))
     k_fin = float(params.get('k_fin', 200.0))
     A_o_face = float(params.get('A_o_face', 0.05))
+    eps_over_D = float(params.get('eps_over_D', 0.0))
     # Correlations
     corr_2ph = params.get('corr_2ph', boiling.DEFAULT)
     corr_SH = params.get('corr_SH', single_phase.DEFAULT)
     corr_air = params.get('corr_air', air_side.DEFAULT)
     corr_fin = params.get('corr_fin', fin_efficiency.DEFAULT)
+    corr_dp_2ph = params.get('corr_dp_2ph', pressure_drop.DEFAULT_2PH)
     # Fitting
     htc_corr_2ph = float(params.get('htc_corr_2ph', 1.0))
     htc_corr_SH = float(params.get('htc_corr_SH', 1.0))
     htc_corr_air = float(params.get('htc_corr_air', 1.0))
-    dP_ref = float(params.get('dP_ref', 0.02))
+    dp_corr_2ph = float(params.get('dp_corr_2ph', 1.0))
+    dp_corr_SH = float(params.get('dp_corr_SH', 1.0))
 
     # ── Inputs ──
     P_evap_bar = float(input.get('P_evap', 4.0))
@@ -486,16 +511,75 @@ def step(input, params, state, dt):
     Q_sensible_total = Q_sensible_2ph + Q_SH
     Q_total = Q_sensible_total + Q_latent
 
-    # ── 12. 출구 상태 ──
-    P_ref_out_Pa = P_evap_Pa * (1 - dP_ref)
+    # ── 12. 압력 강하 계산 (마찰 + 가속) ──
+    # zone별 길이 = ζ × L_total / N_tubes (1 회로 길이 가정)
+    L_2ph_zone = L_tube_total * zeta
+    L_SH_zone = L_tube_total * (1 - zeta) if zeta < 0.99 else 0.0
+    
+    # 1 튜브당 유량 (병렬 회로면 N_tubes로 분배 — 단순 가정)
+    m_dot_per_tube = m_dot_ref  # 한 회로 가정. 여러 회로면 / N_circuits
+
+    # 2-phase 출구 quality (Q_2ph로 결정)
+    if m_dot_ref > 0 and h_fg > 0:
+        x_at_2ph_end = x_in + Q_sensible_2ph / (m_dot_ref * h_fg)
+        x_at_2ph_end = max(0.0, min(1.0, x_at_2ph_end))
+    else:
+        x_at_2ph_end = x_in
+
+    # 2-phase 마찰 dP
+    if L_2ph_zone > 0:
+        dP_friction_2ph = pressure_drop.evaluate_2phase(
+            corr_dp_2ph,
+            P_Pa=P_evap_Pa, x_in=x_in, x_out=x_at_2ph_end,
+            m_dot=m_dot_per_tube, D_i=D_i, L=L_2ph_zone, fluid=fluid
+        )
+        dP_friction_2ph *= dp_corr_2ph
+    else:
+        dP_friction_2ph = 0.0
+
+    # SH 마찰 dP (Churchill 단상)
+    if L_SH_zone > 0 and ref_fully_evap:
+        # Average T in SH zone
+        T_SH_avg_K = T_evap_K + 5.0  # 1차 추정 — 추후 개선 가능
+        dP_friction_SH = pressure_drop.single_phase_dp(
+            P_Pa=P_evap_Pa, T_K=T_SH_avg_K,
+            m_dot=m_dot_per_tube, D_i=D_i, L=L_SH_zone,
+            fluid=fluid, is_liquid=False, eps_over_D=eps_over_D
+        )
+        dP_friction_SH *= dp_corr_SH
+    else:
+        dP_friction_SH = 0.0
+
+    # Acceleration dP (homogeneous)
+    # 입구 → 2-phase 끝까지의 가속만 (SH은 단상이라 무시)
+    dP_acceleration = pressure_drop.acceleration_dp(
+        P_Pa=P_evap_Pa, x_in=x_in, x_out=x_at_2ph_end,
+        m_dot=m_dot_per_tube, D_i=D_i, fluid=fluid
+    )
+
+    dP_total_Pa = dP_friction_2ph + dP_friction_SH + dP_acceleration
+    
+    # 출구 압력
+    P_ref_out_Pa = P_evap_Pa - dP_total_Pa
+    P_ref_out_Pa = max(P_ref_out_Pa, 1e3)  # floor — 압력이 너무 낮으면 안 됨
     P_ref_out_bar = P_ref_out_Pa / 1e5
-    # Q_total로 h_ref_out 다시 (latent 더한 것 반영 — 냉매가 받은 총 열)
+
+    # ── 13. 출구 상태 ──
+    # Q_total로 h_ref_out 다시 (latent 더한 것 반영)
     h_ref_out_final_J = h_in_J + Q_total / m_dot_ref
     try:
         T_ref_out_K = CP.PropsSI('T', 'P', P_ref_out_Pa, 'H', h_ref_out_final_J, fluid)
         T_ref_out_C = T_ref_out_K - 273.15
     except Exception:
         T_ref_out_C = T_evap_C
+
+    # T_evap_avg (P_avg 기반 — 진단용)
+    P_avg_Pa = (P_evap_Pa + P_ref_out_Pa) / 2.0
+    try:
+        T_evap_avg_K = CP.PropsSI('T', 'P', P_avg_Pa, 'Q', 0.5, fluid)
+        T_evap_avg_C = T_evap_avg_K - 273.15
+    except Exception:
+        T_evap_avg_C = T_evap_C
 
     if h_ref_out_final_J >= h_v:
         quality_out = 1.0 + (h_ref_out_final_J - h_v) / max(h_fg, 1)
@@ -539,6 +623,11 @@ def step(input, params, state, dt):
         'BF_air': BF if is_wet else 1.0,
         'is_wet': 1.0 if is_wet else 0.0,
         'newton_iter': float(n_iter),
+        'dP_friction_2ph': dP_friction_2ph,
+        'dP_friction_SH': dP_friction_SH,
+        'dP_acceleration': dP_acceleration,
+        'dP_total': dP_total_Pa,
+        'T_evap_avg': T_evap_avg_C,
     }
     return {'outputs': outputs, 'newState': new_state}
 
@@ -554,7 +643,9 @@ def validate(params):
         ('t_fin', 0.05e-3, 1e-3), ('FPI', 4, 30), ('k_fin', 50, 500),
         ('A_o_face', 0.001, 10),
         ('htc_corr_2ph', 0.1, 5), ('htc_corr_SH', 0.1, 5),
-        ('htc_corr_air', 0.1, 5), ('dP_ref', 0, 0.5),
+        ('htc_corr_air', 0.1, 5),
+        ('dp_corr_2ph', 0.1, 5), ('dp_corr_SH', 0.1, 5),
+        ('eps_over_D', 0, 0.05),
     ]:
         v = params.get(key)
         if v is None: continue
