@@ -918,6 +918,137 @@ const TYPES = {
     ].map(k => [k, NaN])),
   },
 
+  // ================ Evaporator (On-Design L3) ================
+  // HX-Sim Tube-Segment Model wrapping (Phase 4-A).
+  // Nr × Nt × N_seg 세그먼트별 독립 계산 + T_wall 반복 수렴.
+  // 30+ correlation 학계 정통 (Wang/Chen/Shah/Friedel/Kim-Mudawar).
+  // 한계 #1~#10 + 하드코딩 audit + correlation 검증범위 모두 처리.
+  evaporator_on_design: {
+    typeNo: 122, name: 'Evaporator (On-Design)', category: 'refrigerant',
+    color: '#0e7490', icon: Droplet, image: './images/evaporator.png',
+    desc: 'HX-Sim Tube-Segment — Nr×Nt×N_seg, 30+ correlation, 학계 정통',
+    backend: 'python',
+    pythonComponent: 'evaporator_on_design',
+    parameters: [
+      // ─── Material ───
+      { key: 'fluid', group: 'Material', label: 'Fluid', value: 'R290',
+        options: ['R290','R134a','R410A','R32','R1234yf','R22','R407C'], unit: '' },
+      // ─── Operating mode ───
+      { key: 'mode', group: 'Operating', label: 'Mode', value: 'evap',
+        options: ['evap', 'cond'], unit: '' },
+      // ─── Geometry — 외관 ───
+      { key: 'W',  group: 'Geometry', label: 'W (코일 width)',  value: 0.40,  unit: 'm' },
+      { key: 'H',  group: 'Geometry', label: 'H (face 높이)',   value: 0.30,  unit: 'm' },
+      { key: 'D',  group: 'Geometry', label: 'D (depth)',       value: 0.044, unit: 'm' },
+      // ─── Tube ───
+      { key: 'D_o',             group: 'Tube', label: 'D_o',     value: 7.0e-3,  unit: 'm' },
+      { key: 'D_i',             group: 'Tube', label: 'D_i',     value: 6.5e-3,  unit: 'm' },
+      { key: 'P_t',             group: 'Tube', label: 'P_t',     value: 25.0e-3, unit: 'm' },
+      { key: 'P_l',             group: 'Tube', label: 'P_l',     value: 22.0e-3, unit: 'm' },
+      { key: 'N_rows',          group: 'Tube', label: 'N_rows',  value: 2,       unit: '-' },
+      { key: 'N_tubes_per_row', group: 'Tube', label: 'N_tubes/row', value: 12,  unit: '-' },
+      { key: 'layout',          group: 'Tube', label: 'Layout',  value: 'staggered',
+        options: ['staggered', 'inline'], unit: '' },
+      // ─── Fin ───
+      { key: 'FPI',     group: 'Fin', label: 'FPI',      value: 12,      unit: 'fins/in' },
+      { key: 't_fin',   group: 'Fin', label: 't_fin',    value: 0.12e-3, unit: 'm' },
+      { key: 'fin_type', group: 'Fin', label: 'Fin type', value: 'plain',
+        options: ['plain', 'wavy', 'louver', 'slit'], unit: '' },
+      { key: 'k_fin',   group: 'Fin', label: 'k_fin',    value: 200,     unit: 'W/(m·K)' },
+      { key: 'edge_type', group: 'Fin', label: 'Edge type', value: 'rounded',
+        options: ['sharp', 'rounded', 'chamfered'], unit: '' },
+      { key: 'wavy_amplitude',  group: 'Fin', label: 'Wavy 진폭', value: 1.0e-3,  unit: 'm' },
+      { key: 'wavy_wavelength', group: 'Fin', label: 'Wavy 파장', value: 10.0e-3, unit: 'm' },
+      { key: 'louver_pitch',    group: 'Fin', label: 'Louver Lp', value: 1.7e-3,  unit: 'm' },
+      { key: 'louver_angle',    group: 'Fin', label: 'Louver θ',  value: 27.0,    unit: 'deg' },
+      // ─── Circuit ───
+      { key: 'circuit_mode', group: 'Circuit', label: 'Circuit mode',
+        value: 'row_parallel',
+        options: ['row_parallel', 'serpentine_2', 'serpentine_4', 'single', 'custom'], unit: '' },
+      { key: 'custom_circuits', group: 'Circuit', label: 'Custom circuits (JSON)',
+        value: '', unit: '' },
+      // ─── Numerical ───
+      { key: 'N_seg',      group: 'Numerical', label: 'N_seg', value: 10, unit: '-' },
+      { key: 'N_seg_auto', group: 'Numerical', label: 'Auto N_seg', value: 'off',
+        options: ['off', 'on'], unit: '' },
+      // ─── Correlations ───
+      { key: 'evap_corr', group: 'Correlations', label: 'Evap HTC',
+        value: 'chen1966',
+        options: ['chen1966', 'gungor_winterton1986', 'kandlikar1990'], unit: '' },
+      { key: 'cond_corr', group: 'Correlations', label: 'Cond HTC',
+        value: 'shah1979',
+        options: ['shah1979', 'cavallini2006', 'dobson_chato1998'], unit: '' },
+      { key: 'dp_corr', group: 'Correlations', label: 'Ref dP',
+        value: 'friedel1979',
+        options: ['friedel1979', 'lockhart_martinelli1949', 'muller_steinhagen1986'], unit: '' },
+      { key: 'air_j_corr', group: 'Correlations', label: 'Air j-factor',
+        value: 'auto',
+        options: ['auto', 'wang2000_plain', 'gray_webb1986', 'kim1999_plain', 'kayansayan1993',
+                  'wang1999_wavy', 'wang2002_wavy', 'beecher_fagan1987', 'kim1997_wavy', 'jang1996_wavy',
+                  'wang2000_louver', 'chang2000_louver', 'achaichia_cowell1988', 'davenport1983',
+                  'wang2001_slit', 'manglik_bergles1995', 'nakayama_xu1983', 'du_wang2000'], unit: '' },
+      // ─── Tuning (학계 평균, 사용자 보정 가능) ───
+      { key: 'wet_dp_max', group: 'Tuning', label: 'Wet dP max', value: 1.20, unit: '-' },
+      { key: 'K_bend',     group: 'Tuning', label: 'K_bend',     value: 0.75, unit: '-' },
+      // ─── Fitting (calibration multipliers) ───
+      { key: 'cf_j',       group: 'Fitting', label: 'cf_j',       value: 1.0, unit: '-' },
+      { key: 'cf_f',       group: 'Fitting', label: 'cf_f',       value: 1.0, unit: '-' },
+      { key: 'cf_hi',      group: 'Fitting', label: 'cf_hi',      value: 1.0, unit: '-' },
+      { key: 'cf_dp_ref',  group: 'Fitting', label: 'cf_dp_ref',  value: 1.0, unit: '-' },
+      // ─── Outputs (multi-select for HPWD Studio) ───
+      { key: 'output_select', label: 'Outputs',
+        value: ['T_ref_out', 'T_air_out', 'Q_total', 'Q_latent', 'quality_out',
+                'dP_ref', 'wet_fraction', 'warnings_count'],
+        multiSelect: ['T_ref_out', 'h_ref_out', 'P_ref_out', 'quality_out', 'SH_out', 'T_evap',
+                      'T_air_out', 'RH_air_out', 'W_air_out',
+                      'Q_total', 'Q_sensible', 'Q_latent', 'SHR',
+                      'dP_ref', 'dP_bend', 'dP_air',
+                      'N_seg_used', 'wet_fraction', 'is_wet', 'wet_dp_factor',
+                      'outer_iter', 'converged', 'warnings_count'], unit: '' },
+    ],
+    inputs: [
+      { key: 'P_evap',     label: 'P_evap',     unit: 'bar' },
+      { key: 'h_in',       label: 'h_in',       unit: 'kJ/kg' },
+      { key: 'm_dot_ref',  label: 'ṁ_ref',     unit: 'kg/s' },
+      { key: 'T_air_in',   label: 'T_air_in',   unit: '°C' },
+      { key: 'RH_air_in',  label: 'RH_air_in',  unit: '%' },
+      { key: 'V_air',      label: 'V_air',      unit: 'm/s' },
+    ],
+    outputs: [
+      { key: 'T_ref_out',     label: 'T_ref_out',  unit: '°C' },
+      { key: 'h_ref_out',     label: 'h_ref_out',  unit: 'kJ/kg' },
+      { key: 'P_ref_out',     label: 'P_ref_out',  unit: 'bar' },
+      { key: 'quality_out',   label: 'x_out',      unit: '-' },
+      { key: 'SH_out',        label: 'SH_out',     unit: 'K' },
+      { key: 'T_evap',        label: 'T_evap',     unit: '°C' },
+      { key: 'T_air_out',     label: 'T_air_out',  unit: '°C' },
+      { key: 'RH_air_out',    label: 'RH_air_out', unit: '%' },
+      { key: 'W_air_out',     label: 'W_air_out',  unit: 'kg/kg' },
+      { key: 'Q_total',       label: 'Q_total',    unit: 'W' },
+      { key: 'Q_sensible',    label: 'Q_sens',     unit: 'W' },
+      { key: 'Q_latent',      label: 'Q_lat',      unit: 'W' },
+      { key: 'SHR',           label: 'SHR',        unit: '-' },
+      { key: 'dP_ref',        label: 'dP_ref',     unit: 'Pa' },
+      { key: 'dP_bend',       label: 'dP_bend',    unit: 'Pa' },
+      { key: 'dP_air',        label: 'dP_air',     unit: 'Pa' },
+      { key: 'N_seg_used',    label: 'N_seg',      unit: '-' },
+      { key: 'wet_fraction',  label: 'wet_frac',   unit: '-' },
+      { key: 'is_wet',        label: 'is_wet',     unit: '-' },
+      { key: 'wet_dp_factor', label: 'wet_factor', unit: '-' },
+      { key: 'outer_iter',    label: 'iter',       unit: '-' },
+      { key: 'converged',     label: 'conv',       unit: '-' },
+      { key: 'warnings_count', label: 'warns',     unit: '-' },
+    ],
+    compute: () => Object.fromEntries([
+      'T_ref_out','h_ref_out','P_ref_out','quality_out','SH_out','T_evap',
+      'T_air_out','RH_air_out','W_air_out',
+      'Q_total','Q_sensible','Q_latent','SHR',
+      'dP_ref','dP_bend','dP_air',
+      'N_seg_used','wet_fraction','is_wet','wet_dp_factor',
+      'outer_iter','converged','warnings_count'
+    ].map(k => [k, NaN])),
+  },
+
   // ================ 결과 디스플레이 ================
   display: {
     typeNo: 901, name: 'Display', category: 'output', color: '#7c3aed', icon: Eye,
