@@ -52,6 +52,14 @@ class FinTubeSpec:
     # 진영님 검토 결과 default 상향 (감소된 segment 길이 → in/out average 가정 유효).
     N_seg: int = 10
 
+    # 한계 #10 — Kc, Ke edge type (Kays-London Fig. 5-2):
+    #   "sharp"     — abrupt sharp edge (Kc=0.42), 보수적
+    #   "rounded"   — rounded edge (Kc=0.10), 일반 fin-tube
+    #   "chamfered" — chamfered edge (Kc=0.05), 최소
+    # 기본값 sharp (학계 default, 보수적).
+    # 실 코일은 보통 rounded — 사용자가 명시 권장.
+    edge_type: Literal["sharp", "rounded", "chamfered"] = "sharp"
+
     # Circuiting
     circuit_mode: str = "row_parallel"  # row_parallel, serpentine_2, serpentine_4, single, custom
     circuits: list = field(default_factory=list)  # custom: list of circuits, each = list of [row, col]

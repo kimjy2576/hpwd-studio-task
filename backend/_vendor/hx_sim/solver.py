@@ -16,6 +16,7 @@ from .correlations import (
     h_with_transition,
     h_single_gnielinski,
     compute_dp_ref_seg, recommend_dp_ref_correlation,
+    validate_re_range_wang2000,
 )
 
 
@@ -69,6 +70,14 @@ class SimulationInput:
     cf_f: float = 1.0         # air-side f-factor (friction)
     cf_hi: float = 1.0        # refrigerant-side HTC
     cf_dp_ref: float = 1.0    # refrigerant-side pressure drop
+    
+    # 한계 #8 — Wet coil dP correction 계수 (사용자 노출)
+    # Korte & Jacobi (2001): dry 대비 wet 코일 dP 1.10~1.30배 (학계 범위).
+    # default 1.20 (평균). 실 코일 데이터로 fitting 가능.
+    # wet_dp_max = 1.0 → wet 보정 비활성 (dry 모델만)
+    wet_dp_max: float = 1.20  # max factor when 100% wet
+    # K-bend coefficient (180° U-bend smooth). Idelchik 0.5~1.0, default 0.75.
+    K_bend: float = 0.75
 
 
 def recommend_N_seg(spec: FinTubeSpec, m_ref: float, fluid: str = "R290",
@@ -167,6 +176,7 @@ class SimulationResult:
     correlations_used: Dict = field(default_factory=dict)
     convergence: Dict = field(default_factory=dict)
     circuit_paths: List = field(default_factory=list)  # [[tube,row,seg], ...] per circuit
+    warnings: List = field(default_factory=list)  # 한계 #9 — 검증 범위 벗어남 등
     error: str = ""
 
 
@@ -364,7 +374,7 @@ class HXSolver:
                             rho_avg = 1.0 / (x_for_rho / rho_v_loc + (1 - x_for_rho) / rho_l_loc)
                         except:
                             rho_avg = 500.0  # fallback
-                        K_bend = 0.75  # 180° U-bend smooth
+                        K_bend = getattr(inp, 'K_bend', 0.75)  # default 0.75 (180° smooth)
                         dp_bend = K_bend * (G_ref_local ** 2) / (2 * max(rho_avg, 1.0))
                         dp_bend *= inp.cf_dp_ref
                         P_sat_local = max(P_sat_local - dp_bend, 1e3)
@@ -658,6 +668,20 @@ class HXSolver:
                                               T_dp=T_dp)
         result.dp_ref = dp_ref_max
         result.dp_bend_total = dp_bend_max
+
+        # 한계 #9 — Re 범위 검증 + warning 누적
+        if inp.hx_type == "FT":
+            mu_avg = self.air.mu_air((inp.T_air_in + T_air_out) / 2)
+            Re_Dc_check = G_air * self.geo.Dc / mu_avg if mu_avg > 0 else 0
+            re_check = validate_re_range_wang2000(Re_Dc_check)
+            if re_check['level'] != 'ok':
+                result.warnings.append({
+                    'category': 'air_side_correlation',
+                    'level': re_check['level'],
+                    'msg': re_check['msg'],
+                    'accuracy': re_check['accuracy'],
+                    'recommend': re_check['recommend'],
+                })
 
         # Outlet RH — handle supersaturation (condensate on coil)
         try:
@@ -954,8 +978,25 @@ class HXSolver:
             self.corr["Re_Dc_f"] = round(Re_Dc, 1)
 
             A_ratio = self.geo.A_total / self.geo.A_c if self.geo.A_c > 0 else 10
-            Kc = 0.42 * (1 - sigma ** 2)
-            Ke = max((1 - sigma ** 2 - 0.4 * (1 - sigma ** 2) ** 1.25), 0.0)
+            # 한계 #10 — Kc, Ke edge type별 (Kays-London Fig. 5-2)
+            edge_type = getattr(spec, 'edge_type', 'sharp')
+            if edge_type == 'rounded':
+                Kc_factor = 0.10  # rounded edge (Kc 약 25% of sharp)
+                Ke_factor = 0.10  # 동일 방식 보정
+            elif edge_type == 'chamfered':
+                Kc_factor = 0.05  # chamfered edge (가장 작음)
+                Ke_factor = 0.05
+            else:  # sharp
+                Kc_factor = 0.42
+                Ke_factor = 1.0  # 원식 그대로
+            
+            Kc = Kc_factor * (1 - sigma ** 2)
+            if edge_type == 'sharp':
+                Ke = max((1 - sigma ** 2 - 0.4 * (1 - sigma ** 2) ** 1.25), 0.0)
+            else:
+                # Rounded/chamfered: Ke도 낮음 (entry 회복 효과)
+                Ke = max(Ke_factor * (1 - sigma ** 2), 0.0)
+            self.corr["edge_type"] = edge_type
 
         else:
             spec = inp.mchx_spec
@@ -980,8 +1021,10 @@ class HXSolver:
 
             sigma = self.geo.sigma
             A_ratio = self.geo.A_total / self.geo.A_c if self.geo.A_c > 0 else 10
+            # MCHX는 louver fin — sharp edge가 학계 표준 (Chang-Wang 1997)
             Kc = 0.42 * (1 - sigma ** 2)
             Ke = max((1 - sigma ** 2 - 0.4 * (1 - sigma ** 2) ** 1.25), 0.0)
+            self.corr["edge_type"] = "sharp (MCHX louver)"
 
         # Apply correction factor to f
         f *= inp.cf_f
@@ -990,14 +1033,16 @@ class HXSolver:
         # Korte & Jacobi (2001) Int. J. Refrigeration: wet coil은 dry 대비 dP 1.1~1.3배.
         # 정확한 판정: segment 단위 is_wet의 비율로 wet fraction 계산.
         # Wet fraction을 사용하여 보간된 보정 factor 적용.
+        # max factor는 inp.wet_dp_max로 사용자 보정 가능 (default 1.20)
         wet_correction = 1.0
+        wet_dp_max = getattr(inp, 'wet_dp_max', 1.20)
         if inp.mode == "evap" and hasattr(self, '_wet_fraction'):
             wet_frac = max(0.0, min(1.0, self._wet_fraction))
-            # Linear interpolation between dry (1.0) and wet (1.20)
-            wet_correction = 1.0 + 0.20 * wet_frac
+            # Linear interpolation between dry (1.0) and wet (wet_dp_max)
+            wet_correction = 1.0 + (wet_dp_max - 1.0) * wet_frac
         elif inp.mode == "evap" and T_avg < T_dp:
             # Fallback: T_avg < T_dp이면 wet 가정 (보수적)
-            wet_correction = 1.20
+            wet_correction = wet_dp_max
         f *= wet_correction
         if wet_correction > 1.001:
             self.corr["wet_dp_factor"] = round(wet_correction, 3)

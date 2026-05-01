@@ -1455,7 +1455,16 @@ def recommend_f_correlation(fin_type: str, Re_Dc: float, hx_type: str = "FT") ->
 def f_wang2000_plain(Re_Dc: float, Nr: int, Dc: float,
                      Pt: float, Pl: float, FPI: float,
                      fin_thickness: float, **kw) -> float:
-    """Wang(2000) Table 6 — plain fin f-factor (original)."""
+    """Wang(2000) Table 6 — plain fin f-factor (original).
+    
+    Validity (Wang et al., IJHMT 43, 2000, Table 4):
+      Re_Dc: 300~10000  (검증 범위)
+      Nr:    1~6
+      Pt/Pl: 1.0~1.5
+      Fp/Dc: 0.05~0.5
+    
+    Re < 300 처리: laminar blending (Re < 100 신뢰성 낮음, 사용자 주의).
+    """
     Fp = 0.0254 / FPI
     Re = max(Re_Dc, 10.0)
     F1 = -0.764 + 0.739 * (Pt / Pl) + 0.177 * (Fp / Dc) - 0.00758 / Nr
@@ -1464,12 +1473,48 @@ def f_wang2000_plain(Re_Dc: float, Nr: int, Dc: float,
     f = 0.0267 * Re ** F1 * (Pt / Pl) ** F2 * (Fp / Dc) ** F3
 
     if Re < 300:
+        # Laminar blending — 학계 검증 부족 (±15% 정확도)
         f_300 = 0.0267 * 300 ** F1 * (Pt / Pl) ** F2 * (Fp / Dc) ** F3
         f_lam = f_300 * (300 / Re)
         w = Re / 300
         f = (1 - w) * f_lam + w * f
 
     return max(f, 1e-6)
+
+
+def validate_re_range_wang2000(Re_Dc: float) -> dict:
+    """
+    한계 #9 — Re 범위 검증.
+    Wang(2000) plain fin은 Re_Dc 300~10000에서 검증.
+    
+    Returns:
+      dict with 'valid' (bool), 'level' (ok/warn/error), 'msg' (str), 'accuracy' (str)
+    """
+    if Re_Dc < 100:
+        return {
+            'valid': False,
+            'level': 'error',
+            'msg': f'Re_Dc={Re_Dc:.0f} < 100 — Wang(2000) 신뢰성 매우 낮음',
+            'accuracy': '±30%+',
+            'recommend': 'V_air ↑ 또는 fin_pitch 변경 검토'
+        }
+    elif Re_Dc < 300:
+        return {
+            'valid': True,
+            'level': 'warn',
+            'msg': f'Re_Dc={Re_Dc:.0f} < 300 — Wang(2000) 검증 범위 밖 (laminar blending)',
+            'accuracy': '±15~20%',
+            'recommend': 'V_air ≥ 1 m/s 권장 (Re_Dc ≥ 300)'
+        }
+    elif Re_Dc > 10000:
+        return {
+            'valid': True,
+            'level': 'warn',
+            'msg': f'Re_Dc={Re_Dc:.0f} > 10000 — Wang(2000) 검증 범위 밖 (extrapolation)',
+            'accuracy': '±10%',
+            'recommend': 'Re 매우 높음 — 결과 보수적 검토'
+        }
+    return {'valid': True, 'level': 'ok', 'msg': '', 'accuracy': '±10%', 'recommend': ''}
 
 
 # ── Wavy f-factor (ORIGINAL from paper) ──
