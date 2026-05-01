@@ -1,0 +1,1139 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>On-Design Studio · UI 프로토타입</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<script src="https://cdn.tailwindcss.com" onload="setupTailwind()"></script>
+<script>
+  function setupTailwind() {
+    if (typeof tailwind === 'undefined') return;
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Pretendard', 'system-ui', 'sans-serif'],
+            mono: ['JetBrains Mono', 'ui-monospace', 'monospace'],
+          },
+        },
+      },
+    };
+  }
+</script>
+<style>
+  body { font-family: 'Pretendard', system-ui, sans-serif; }
+  .mono { font-family: 'JetBrains Mono', monospace; }
+  .step-pill { transition: all 0.25s ease; }
+  .step-pill.active { background: #0891b2; color: white; }
+  .step-pill.done { background: #d1fae5; color: #065f46; }
+  .step-pill.todo { background: #f1f5f9; color: #94a3b8; }
+  .code-bg { background: #0f172a; color: #e2e8f0; font-family: 'JetBrains Mono', monospace; font-size: 11.5px; line-height: 1.6; }
+  .code-bg .kw { color: #c084fc; }
+  .code-bg .str { color: #86efac; }
+  .code-bg .num { color: #fbbf24; }
+  .code-bg .com { color: #64748b; }
+  .code-bg .fn { color: #60a5fa; }
+  .code-bg .todo { background: #fef9c3; color: #713f12; padding: 0 4px; border-radius: 2px; font-weight: 600; }
+  .table-row:hover { background: #f8fafc; }
+  .slider-track { -webkit-appearance: none; appearance: none; height: 4px; background: #cbd5e1; border-radius: 2px; }
+  .slider-track::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 14px; height: 14px; background: #0891b2; border-radius: 50%; cursor: pointer; }
+</style>
+</head>
+<body class="bg-slate-100 min-h-screen">
+<div id="app">
+  <div style="padding:40px;font-family:Pretendard,system-ui,sans-serif">
+    <div style="font-size:20px;font-weight:700;color:#0f172a">On-Design Studio loading...</div>
+    <div id="load-status" style="margin-top:12px;color:#64748b;font-size:13px">스크립트 로드 중 (약 2~3초 소요)</div>
+    <div id="load-error" style="margin-top:16px;padding:12px;border:1px solid #fca5a5;background:#fef2f2;color:#991b1b;border-radius:6px;display:none;font-family:'JetBrains Mono',monospace;font-size:11px;white-space:pre-wrap"></div>
+  </div>
+</div>
+
+<!-- Global error catcher (흰화면 대신 메시지 표시) -->
+<script>
+  function showError(msg) {
+    const el = document.getElementById('load-error');
+    const status = document.getElementById('load-status');
+    if (el) {
+      el.style.display = 'block';
+      el.textContent = msg;
+    }
+    if (status) status.style.color = '#dc2626';
+    console.error('[Studio]', msg);
+  }
+  window.addEventListener('error', e => {
+    showError('JS Error: ' + (e.message || 'unknown') + '\n' + (e.filename || '') + ':' + (e.lineno || '?'));
+  });
+  window.addEventListener('unhandledrejection', e => {
+    showError('Promise rejection: ' + (e.reason?.message || e.reason || 'unknown'));
+  });
+</script>
+
+<!-- React development build (CDN) -->
+<script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+<!-- 인라인 JSX (단일 파일 — 로컬에서 file:// 로 열어도 동작) -->
+<script id="app-jsx" type="text/plain">
+/* eslint-disable */
+const { useState, useEffect, useMemo, useRef } = React;
+
+/* ═══════════════════════════════════════════════════════════════════
+   On-Design Studio — On-design 모델 설계 전용 앱
+   ─────────────────────────────────────────────────────────────────
+   현재 앱은 Calibration Studio와 별도로 on-design 모델만 다룸.
+   각 부품마다 sidebar (geometry/material/circuit) + main (Model design 시각화).
+   
+   현재 지원: Evaporator (Fin-tube)
+   추후: Condenser, Compressor, EEV ...
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ───────── Backend URL (HPWD Studio와 공유) ───────── */
+const DEFAULT_BACKENDS = {
+  cloud: 'https://hpwd-studio-task-production.up.railway.app',
+  local: 'http://localhost:8000',
+};
+
+function resolveBackendUrl() {
+  try {
+    const param = new URLSearchParams(window.location.search).get('backend');
+    if (param) return param;
+  } catch (e) {}
+  try {
+    const stored = localStorage.getItem('hpwd_backend_url');
+    if (stored) return stored;
+  } catch (e) {}
+  const host = window.location.hostname;
+  if (host === 'localhost' || host === '127.0.0.1' || host === '' || host === 'file') {
+    return DEFAULT_BACKENDS.local;
+  }
+  return DEFAULT_BACKENDS.cloud;
+}
+
+let CURRENT_BACKEND = resolveBackendUrl();
+function setBackend(u) { CURRENT_BACKEND = u; try { localStorage.setItem('hpwd_backend_url', u); } catch (e) {} }
+function resetBackend() { try { localStorage.removeItem('hpwd_backend_url'); } catch (e) {} CURRENT_BACKEND = resolveBackendUrl(); }
+
+async function api(path, options = {}) {
+  const res = await fetch(CURRENT_BACKEND + path, {
+    headers: { 'Content-Type': 'application/json' },
+    ...options,
+  });
+  if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+  return res.json();
+}
+
+/* ───────── App Switcher (4개 앱) ───────── */
+function AppSwitcher({ current }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [open]);
+
+  const apps = [
+    { id: 'studio',             label: 'HPWD Studio',         desc: '시뮬 캔버스',            href: '/' },
+    { id: 'component-studio',   label: 'Component Studio',    desc: '컴포넌트 작성',          href: '/component-studio/' },
+    { id: 'calibration-studio', label: 'Calibration Studio',  desc: 'Calibration & Validation', href: '/calibration-studio/' },
+    { id: 'on-design-studio',   label: 'On-Design Studio',    desc: 'On-design 모델 설계',    href: '/on-design-studio/' },
+  ];
+  const active = apps.find(a => a.id === current) || apps[0];
+
+  return (
+    <div className="relative" ref={ref}>
+      <button onClick={() => setOpen(o => !o)}
+        className="flex items-center gap-2 px-2 py-1 rounded hover:bg-slate-100 transition-colors">
+        <div className="w-2 h-2 rounded-sm bg-blue-600 shrink-0"></div>
+        <span className="font-bold text-slate-900 tracking-wide text-sm">{active.label}</span>
+        <span className="text-slate-400 text-[10px]">▾</span>
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full mt-1 z-50 bg-white border border-slate-200 rounded-lg shadow-xl w-60 p-1">
+          {apps.map(a => {
+            const isActive = a.id === current;
+            return (
+              <button key={a.id}
+                onClick={() => { if (!isActive) window.location.href = a.href; }}
+                className={`w-full text-left px-2.5 py-1.5 rounded flex items-start gap-2 transition-colors ${
+                  isActive ? 'bg-blue-50 cursor-default' : 'hover:bg-slate-50'
+                }`}>
+                <span className={`mt-0.5 w-3 text-center text-[11px] ${isActive ? 'text-blue-700' : 'text-slate-300'}`}>
+                  {isActive ? '●' : '○'}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <div className={`font-semibold text-[12px] ${isActive ? 'text-blue-900' : 'text-slate-800'}`}>{a.label}</div>
+                  <div className="text-[10px] text-slate-500">{a.desc}</div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ───────── BackendStatus ───────── */
+function BackendStatus() {
+  const [url, setUrl] = useState(CURRENT_BACKEND);
+  const [open, setOpen] = useState(false);
+  const [editUrl, setEditUrl] = useState(url);
+  const [status, setStatus] = useState('checking');
+  const [errMsg, setErrMsg] = useState('');
+  const ref = useRef(null);
+
+  useEffect(() => {
+    setStatus('checking');
+    fetch(url + '/health', { method: 'GET' })
+      .then(r => r.ok ? r.json() : Promise.reject(`HTTP ${r.status}`))
+      .then(body => {
+        if (body && body.status === 'ok') setStatus('ok');
+        else { setStatus('partial'); setErrMsg('unexpected response'); }
+      })
+      .catch(e => { setStatus('fail'); setErrMsg(String(e)); });
+  }, [url]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [open]);
+
+  const dotColor = status === 'ok' ? 'bg-green-500' : status === 'fail' ? 'bg-red-500' : 'bg-amber-400';
+  const text = status === 'ok' ? 'OK' : status === 'fail' ? 'OFF' : '...';
+
+  return (
+    <div className="relative" ref={ref}>
+      <button onClick={() => setOpen(o => !o)}
+        className="flex items-center gap-1.5 px-2 py-1 rounded hover:bg-slate-100 text-[11px] font-mono">
+        <div className={`w-2 h-2 rounded-full ${dotColor}`}></div>
+        <span className="text-slate-600">backend</span>
+        <span className={`font-bold ${status === 'ok' ? 'text-green-700' : status === 'fail' ? 'text-red-700' : 'text-amber-700'}`}>{text}</span>
+        <span className="text-slate-400">▾</span>
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1 z-50 bg-white border border-slate-200 rounded-lg shadow-xl w-96 p-3">
+          <div className="text-[11px] font-semibold text-slate-700 mb-1">Backend URL</div>
+          <input type="text" value={editUrl} onChange={(e) => setEditUrl(e.target.value)}
+            className="w-full border border-slate-300 px-2 py-1 rounded text-[11px] font-mono mb-2" />
+          <div className="flex gap-1.5 mb-2">
+            <button onClick={() => setEditUrl(DEFAULT_BACKENDS.local)} className="text-[10px] px-2 py-0.5 bg-slate-100 hover:bg-slate-200 rounded font-mono">localhost</button>
+            <button onClick={() => setEditUrl(DEFAULT_BACKENDS.cloud)} className="text-[10px] px-2 py-0.5 bg-slate-100 hover:bg-slate-200 rounded font-mono">cloud</button>
+            <div className="flex-1"></div>
+            <button onClick={() => { resetBackend(); setUrl(CURRENT_BACKEND); setEditUrl(CURRENT_BACKEND); setOpen(false); }}
+              className="text-[10px] px-2 py-0.5 bg-slate-100 hover:bg-slate-200 rounded">초기화</button>
+          </div>
+          {status === 'fail' && (
+            <div className="text-[10px] text-red-700 bg-red-50 border border-red-200 rounded p-1.5 mb-2 font-mono break-all">✗ {errMsg}</div>
+          )}
+          <button onClick={() => { setBackend(editUrl); setUrl(editUrl); setOpen(false); }}
+            className="w-full px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-[12px] font-semibold">적용 + 저장</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ───────── Slider 컴포넌트 (fan-sim 패턴) ───────── */
+function Slider({ label, sublabel, value, min, max, step, onChange, color = 'blue', unit = '', decimals = 0 }) {
+  const pct = ((value - min) / (max - min)) * 100;
+  const colorMap = {
+    blue:   { fill: '#2563EB', text: 'text-blue-700',   bg: 'bg-blue-600' },
+    green:  { fill: '#059669', text: 'text-green-700',  bg: 'bg-green-600' },
+    amber:  { fill: '#D97706', text: 'text-amber-700',  bg: 'bg-amber-600' },
+    purple: { fill: '#7C3AED', text: 'text-purple-700', bg: 'bg-purple-600' },
+    cyan:   { fill: '#0891B2', text: 'text-cyan-700',   bg: 'bg-cyan-600' },
+    slate:  { fill: '#475569', text: 'text-slate-700',  bg: 'bg-slate-600' },
+  };
+  const c = colorMap[color] || colorMap.blue;
+  return (
+    <div className="mb-3">
+      <div className="flex items-center justify-between mb-1">
+        <div className="flex items-baseline gap-1">
+          <span className="text-[12px] font-semibold text-slate-700">{label}</span>
+          {sublabel && <span className="text-[10px] text-slate-400 font-mono">{sublabel}</span>}
+        </div>
+        <input type="number" value={Number(value).toFixed(decimals)}
+          onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
+          step={step}
+          className={`w-20 text-right text-[12px] font-mono font-semibold ${c.text} bg-transparent border-0 outline-none px-1 py-0.5 rounded hover:bg-slate-50 focus:bg-slate-50`} />
+      </div>
+      <div className="relative">
+        <input type="range" min={min} max={max} step={step} value={value}
+          onChange={(e) => onChange(parseFloat(e.target.value))}
+          className="w-full h-1.5 rounded-full appearance-none cursor-pointer slider-thumb"
+          style={{ background: `linear-gradient(to right, ${c.fill} ${pct}%, #E2E8F0 ${pct}%)` }} />
+      </div>
+    </div>
+  );
+}
+
+/* ───────── Mode Toggle (Off-design / Semi-empirical / On-design) ───────── */
+function ModeToggle({ value, onChange, options = ['Off-design', 'Semi-empirical', 'On-design'] }) {
+  return (
+    <div className="flex gap-1 bg-slate-100 rounded-md p-0.5">
+      {options.map(opt => (
+        <button key={opt} onClick={() => onChange(opt)}
+          className={`px-3 py-1 text-[12px] font-semibold rounded transition-colors ${
+            value === opt
+              ? 'bg-white text-slate-900 shadow-sm'
+              : 'text-slate-500 hover:text-slate-700'
+          }`}>
+          {opt}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   System View — 부품 list
+   ═══════════════════════════════════════════════════════════════════ */
+const COMPONENTS = [
+  {
+    id: 'evaporator',
+    label: 'Evaporator',
+    type: 'Fin-tube HX',
+    desc: 'Plain-fin staggered tube — On-design 1D 모델',
+    icon: '◆',
+    color: 'cyan',
+    available: true,
+  },
+  {
+    id: 'condenser',
+    label: 'Condenser',
+    type: 'Fin-tube HX',
+    desc: 'Plain-fin staggered tube',
+    icon: '◆',
+    color: 'amber',
+    available: false,
+  },
+  {
+    id: 'compressor',
+    label: 'Compressor',
+    type: 'Rotary / Reciprocating',
+    desc: 'PDSim ROM 기반',
+    icon: '◆',
+    color: 'purple',
+    available: false,
+  },
+  {
+    id: 'eev',
+    label: 'EEV',
+    type: 'Expansion Valve',
+    desc: 'Orifice + flow coefficient',
+    icon: '◆',
+    color: 'green',
+    available: false,
+  },
+];
+
+function SystemView({ onSelect }) {
+  return (
+    <div className="max-w-5xl mx-auto p-6">
+      <div className="mb-6">
+        <h2 className="text-2xl font-bold text-slate-900 tracking-tight">부품 목록</h2>
+        <p className="text-[13px] text-slate-500 mt-1">On-design 모델을 설계하고 시각화할 부품을 선택하세요.</p>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        {COMPONENTS.map(c => {
+          const colorMap = {
+            cyan:   { border: 'border-cyan-300',   bg: 'bg-cyan-50',   text: 'text-cyan-700',   icon: 'text-cyan-600' },
+            amber:  { border: 'border-amber-300',  bg: 'bg-amber-50',  text: 'text-amber-700',  icon: 'text-amber-600' },
+            purple: { border: 'border-purple-300', bg: 'bg-purple-50', text: 'text-purple-700', icon: 'text-purple-600' },
+            green:  { border: 'border-green-300',  bg: 'bg-green-50',  text: 'text-green-700',  icon: 'text-green-600' },
+          };
+          const cc = colorMap[c.color] || colorMap.cyan;
+          return (
+            <button key={c.id}
+              onClick={() => c.available && onSelect(c.id)}
+              disabled={!c.available}
+              className={`text-left p-4 bg-white border rounded-lg transition-all ${
+                c.available
+                  ? `${cc.border} hover:shadow-md hover:${cc.bg} cursor-pointer`
+                  : 'border-slate-200 opacity-60 cursor-not-allowed'
+              }`}>
+              <div className="flex items-start justify-between mb-1">
+                <div className="flex items-baseline gap-2">
+                  <span className={`text-lg ${cc.icon}`}>{c.icon}</span>
+                  <span className="font-bold text-[15px] text-slate-900">{c.label}</span>
+                </div>
+                {!c.available && (
+                  <span className="text-[10px] px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded font-mono">coming</span>
+                )}
+              </div>
+              <div className={`text-[11px] font-mono mb-1 ${c.available ? cc.text : 'text-slate-400'}`}>{c.type}</div>
+              <div className="text-[12px] text-slate-500">{c.desc}</div>
+            </button>
+          );
+        })}
+      </div>
+      <div className="mt-8 pt-4 border-t border-slate-200">
+        <div className="text-[11px] text-slate-400 font-mono uppercase tracking-wider mb-2">Note</div>
+        <div className="text-[12px] text-slate-600">
+          On-Design Studio는 <b>설계 변수가 모두 정의된 on-design 모델</b>만 다룹니다.
+          Off-design (운전 조건 입력만) 또는 Semi-empirical (일부 설계 정보) 모델은
+          <a href="/" className="text-blue-600 hover:underline mx-1">HPWD Studio</a> 에서 사용하세요.
+          시험 데이터로 fitting parameter를 보정하려면
+          <a href="/calibration-studio/" className="text-blue-600 hover:underline mx-1">Calibration Studio</a>를 사용하세요.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Evaporator Component View — Sidebar + Model design
+   ═══════════════════════════════════════════════════════════════════ */
+function EvaporatorView({ onBack }) {
+  // ─── State (geometry + material + circuit) ───
+  const [tubeMaterial, setTubeMaterial] = useState('Cu');
+  const [finMaterial, setFinMaterial] = useState('Al');
+  
+  // Tube
+  const [D_o, setDo] = useState(7.0);     // mm
+  const [D_i, setDi] = useState(6.5);     // mm
+  const [L_tube, setLtube] = useState(400); // mm per tube
+  
+  // Fin
+  const [FPI, setFPI] = useState(12);
+  const [t_fin, setTfin] = useState(0.12); // mm
+  
+  // Circuit / layout
+  const [N_tubes, setNtubes] = useState(24);
+  const [N_rows, setNrows] = useState(2);
+  const [P_t, setPt] = useState(25.0);  // mm
+  const [P_l, setPl] = useState(22.0);  // mm
+  const [N_circuits, setNcircuits] = useState(2);
+
+  // View toggle (2D plan view)
+  const [view, setView] = useState('Top');
+  
+  // Save state (placeholder for now)
+  const [saveOpen, setSaveOpen] = useState(false);
+
+  // 검증 메시지
+  const validation = useMemo(() => {
+    const errs = [];
+    if (D_i >= D_o) errs.push({ level: 'error', msg: 'D_i는 D_o보다 작아야 합니다' });
+    if (D_o > P_t) errs.push({ level: 'error', msg: 'D_o가 P_t보다 큼 — 튜브 충돌' });
+    if (FPI < 4 || FPI > 30) errs.push({ level: 'warn', msg: `FPI=${FPI} 범위 확인 (일반 4~25)` });
+    if (N_tubes % N_rows !== 0) errs.push({ level: 'warn', msg: `N_tubes(${N_tubes})가 N_rows(${N_rows})로 나눠지지 않음` });
+    if (N_tubes % N_circuits !== 0) errs.push({ level: 'warn', msg: `N_tubes(${N_tubes})가 N_circuits(${N_circuits})로 나눠지지 않음` });
+    return errs;
+  }, [D_o, D_i, P_t, FPI, N_tubes, N_rows, N_circuits]);
+
+  return (
+    <div className="flex flex-col h-screen bg-slate-50">
+      {/* Header */}
+      <div className="bg-white border-b border-slate-200 px-4 py-2 flex items-center gap-3 shrink-0">
+        <button onClick={onBack}
+          className="flex items-center gap-1 text-[12px] text-slate-600 hover:text-slate-900 font-medium">
+          ← System
+        </button>
+        <span className="text-slate-300">|</span>
+        <span className="text-cyan-600 text-base">◆</span>
+        <span className="font-bold text-slate-900 text-[15px]">Evaporator</span>
+        <span className="text-[11px] font-mono text-slate-400">Fin-tube</span>
+
+        <div className="flex-1"></div>
+
+        {/* Mode toggle (현재 On-design만) */}
+        <ModeToggle value="On-design" onChange={() => {}} options={['On-design']} />
+        
+        <button onClick={() => setSaveOpen(s => !s)}
+          className="text-base px-2 py-1 rounded hover:bg-slate-100" title="Save / Load (coming soon)">💾</button>
+        <button className="text-base px-2 py-1 rounded hover:bg-slate-100" title="Settings">⚙</button>
+      </div>
+
+      {/* Body */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* Sidebar */}
+        <div className="w-72 bg-white border-r border-slate-200 flex flex-col shrink-0">
+          <div className="p-4 border-b border-slate-100">
+            <h3 className="text-[15px] font-bold text-slate-900">On-design (물리 모델)</h3>
+            <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+              Plain fin-tube 기하 + 회로 정의. Tube layout과 fin 패턴을 직접 입력합니다.
+            </p>
+          </div>
+
+          <div className="flex-1 overflow-y-auto px-4 py-3">
+            {/* Material */}
+            <SidebarSection title="MATERIAL">
+              <div className="mb-2">
+                <div className="text-[10px] text-slate-500 font-mono uppercase mb-1">Tube</div>
+                <ButtonGroup options={['Cu', 'Al', 'SS']} value={tubeMaterial} onChange={setTubeMaterial} />
+              </div>
+              <div>
+                <div className="text-[10px] text-slate-500 font-mono uppercase mb-1">Fin</div>
+                <ButtonGroup options={['Al', 'Cu']} value={finMaterial} onChange={setFinMaterial} />
+              </div>
+            </SidebarSection>
+
+            {/* Tube */}
+            <SidebarSection title="TUBE">
+              <Slider label="D_o" sublabel="[mm]" value={D_o} min={3} max={20} step={0.1} decimals={1} onChange={setDo} color="cyan" />
+              <Slider label="D_i" sublabel="[mm]" value={D_i} min={2} max={18} step={0.1} decimals={1} onChange={setDi} color="cyan" />
+              <Slider label="L_tube" sublabel="[mm]" value={L_tube} min={100} max={2000} step={10} onChange={setLtube} color="cyan" />
+            </SidebarSection>
+
+            {/* Fin */}
+            <SidebarSection title="FIN">
+              <Slider label="FPI" sublabel="[fins/in]" value={FPI} min={4} max={25} step={1} onChange={setFPI} color="green" />
+              <Slider label="t_fin" sublabel="[mm]" value={t_fin} min={0.05} max={0.5} step={0.01} decimals={2} onChange={setTfin} color="green" />
+            </SidebarSection>
+
+            {/* Circuit / Layout */}
+            <SidebarSection title="CIRCUIT / LAYOUT">
+              <Slider label="N_tubes" sublabel="총 본수" value={N_tubes} min={2} max={100} step={1} onChange={setNtubes} color="purple" />
+              <Slider label="N_rows" sublabel="공기 방향" value={N_rows} min={1} max={8} step={1} onChange={setNrows} color="purple" />
+              <Slider label="P_t" sublabel="[mm] transverse" value={P_t} min={10} max={50} step={0.5} decimals={1} onChange={setPt} color="amber" />
+              <Slider label="P_l" sublabel="[mm] longitudinal" value={P_l} min={10} max={50} step={0.5} decimals={1} onChange={setPl} color="amber" />
+              <Slider label="N_circuits" sublabel="병렬 회로" value={N_circuits} min={1} max={20} step={1} onChange={setNcircuits} color="purple" />
+            </SidebarSection>
+
+            {/* Validation messages */}
+            {validation.length > 0 && (
+              <div className="mt-3 space-y-1.5">
+                {validation.map((v, i) => (
+                  <div key={i} className={`text-[11px] px-2 py-1 rounded border flex items-start gap-1.5 ${
+                    v.level === 'error'
+                      ? 'bg-red-50 border-red-200 text-red-800'
+                      : 'bg-amber-50 border-amber-200 text-amber-800'
+                  }`}>
+                    <span className="font-bold mt-0.5">{v.level === 'error' ? '✗' : '⚠'}</span>
+                    <span>{v.msg}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Sticky bottom — SOLVE */}
+          <div className="border-t border-slate-200 p-3 bg-slate-50">
+            <button
+              disabled={validation.some(v => v.level === 'error')}
+              className="w-full px-3 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white rounded font-bold text-[13px] tracking-wide flex items-center justify-center gap-2">
+              <span>SOLVE</span>
+              <span>▶</span>
+            </button>
+            <div className="text-[10px] text-slate-400 text-center mt-1.5 font-mono">
+              On-design 모델은 추후 backend 연동 (HX-Sim wrapping)
+            </div>
+          </div>
+        </div>
+
+        {/* Main area — Model design */}
+        <div className="flex-1 overflow-y-auto bg-slate-100">
+          <div className="max-w-5xl mx-auto p-5">
+            {/* Tab indicator (Model design 만) */}
+            <div className="mb-4">
+              <div className="inline-block">
+                <div className="text-[15px] font-bold text-slate-900 pb-2 border-b-2 border-blue-600">
+                  Model design
+                </div>
+              </div>
+            </div>
+
+            {/* Status banner */}
+            <div className="mb-4 bg-green-50 border border-green-200 rounded-lg px-4 py-2 text-[12px] text-green-900">
+              ✓ <b>On-design 모드</b> — 사이드바에서 변수를 변경하면 Model design 에 <b>실시간 반영</b>됩니다.
+            </div>
+
+            {/* View toggle */}
+            <div className="mb-3 flex gap-1.5">
+              {['Top', 'Side', 'Front'].map(v => (
+                <button key={v} onClick={() => setView(v)}
+                  className={`px-4 py-1.5 text-[12px] font-semibold rounded-lg transition-colors ${
+                    view === v
+                      ? 'bg-blue-600 text-white shadow-sm'
+                      : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                  }`}>
+                  {v} view
+                </button>
+              ))}
+            </div>
+
+            {/* 2D viewer */}
+            <div className="bg-white border border-slate-200 rounded-lg p-4">
+              <div className="text-[12px] text-slate-500 mb-2 flex items-center justify-between">
+                <span><b>{view} view</b> — Tube layout + Fin pattern</span>
+                <span className="font-mono text-[10px] text-slate-400">
+                  {N_tubes} tubes / {N_rows} rows / {N_circuits} circuits
+                </span>
+              </div>
+              <div className="bg-slate-50 border border-slate-200 rounded">
+                <CoilViewer
+                  view={view}
+                  D_o={D_o}
+                  D_i={D_i}
+                  L_tube={L_tube}
+                  FPI={FPI}
+                  t_fin={t_fin}
+                  N_tubes={N_tubes}
+                  N_rows={N_rows}
+                  P_t={P_t}
+                  P_l={P_l}
+                  N_circuits={N_circuits}
+                  tubeMaterial={tubeMaterial}
+                  finMaterial={finMaterial}
+                />
+              </div>
+            </div>
+
+            {/* Derived properties */}
+            <DerivedStats
+              D_o={D_o}
+              D_i={D_i}
+              L_tube={L_tube}
+              FPI={FPI}
+              t_fin={t_fin}
+              N_tubes={N_tubes}
+              N_rows={N_rows}
+              P_t={P_t}
+              P_l={P_l}
+              N_circuits={N_circuits}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Status bar */}
+      <div className="bg-white border-t border-slate-200 px-4 py-1.5 flex items-center gap-4 text-[11px] text-slate-500 font-mono shrink-0">
+        <span className="flex items-center gap-1">
+          <span className="w-1.5 h-1.5 rounded-full bg-green-500"></span>
+          ready
+        </span>
+        <span>Mode: <b className="text-slate-700">on_design</b></span>
+        <span>Tube: <b className="text-slate-700">{tubeMaterial}</b></span>
+        <span>Fin: <b className="text-slate-700">{finMaterial}</b></span>
+        <span className="text-slate-400">|</span>
+        <span><b className="text-slate-700">{N_tubes}</b> tubes / <b className="text-slate-700">{N_rows}</b> rows / <b className="text-slate-700">{N_circuits}</b> circuits</span>
+      </div>
+    </div>
+  );
+}
+
+/* ───────── Sidebar section helper ───────── */
+function SidebarSection({ title, children }) {
+  return (
+    <div className="mb-5">
+      <div className="text-[10px] text-slate-500 font-mono uppercase tracking-wider mb-2 font-bold">{title}</div>
+      {children}
+    </div>
+  );
+}
+
+/* ───────── Button group ───────── */
+function ButtonGroup({ options, value, onChange }) {
+  return (
+    <div className="flex gap-1 flex-wrap">
+      {options.map(opt => (
+        <button key={opt} onClick={() => onChange(opt)}
+          className={`px-2.5 py-1 text-[11px] font-semibold rounded border transition-colors ${
+            value === opt
+              ? 'bg-blue-50 border-blue-400 text-blue-700'
+              : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-50'
+          }`}>
+          {opt}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   2D Coil Viewer — SVG plan view
+   ═══════════════════════════════════════════════════════════════════ */
+function CoilViewer({ view, D_o, D_i, L_tube, FPI, t_fin, N_tubes, N_rows, P_t, P_l, N_circuits,
+                     tubeMaterial, finMaterial }) {
+  const W = 700, H = 320;
+  
+  if (view === 'Top') {
+    return <TopView W={W} H={H} D_o={D_o} L_tube={L_tube} FPI={FPI} t_fin={t_fin}
+                    N_tubes={N_tubes} N_rows={N_rows} P_t={P_t} P_l={P_l}
+                    N_circuits={N_circuits} tubeMaterial={tubeMaterial} finMaterial={finMaterial} />;
+  }
+  if (view === 'Side') {
+    return <SideView W={W} H={H} D_o={D_o} D_i={D_i} N_tubes={N_tubes} N_rows={N_rows}
+                     P_t={P_t} P_l={P_l} tubeMaterial={tubeMaterial} />;
+  }
+  // Front
+  return <FrontView W={W} H={H} D_o={D_o} L_tube={L_tube} FPI={FPI} t_fin={t_fin}
+                    N_tubes={N_tubes} N_rows={N_rows} P_t={P_t} N_circuits={N_circuits}
+                    tubeMaterial={tubeMaterial} finMaterial={finMaterial} />;
+}
+
+/* ───── Top view — 위에서 본 그림 (튜브 길이 방향 + fin pattern) ───── */
+function TopView({ W, H, D_o, L_tube, FPI, t_fin, N_tubes, N_rows, P_t, P_l,
+                   N_circuits, tubeMaterial, finMaterial }) {
+  const tubesPerRow = Math.ceil(N_tubes / N_rows);
+  const coreW_mm = L_tube;
+  const coreH_mm = N_rows * P_l;
+
+  // Scale to fit
+  const margin = 50;
+  const scale = Math.min((W - 2 * margin) / coreW_mm, (H - 2 * margin) / coreH_mm);
+  const drawW = coreW_mm * scale;
+  const drawH = coreH_mm * scale;
+  const x0 = (W - drawW) / 2;
+  const y0 = (H - drawH) / 2;
+
+  // Fin pitch (mm)
+  const P_fin_mm = 25.4 / FPI;
+  const N_fins = Math.floor(L_tube / P_fin_mm);
+  
+  // Show every N-th fin to avoid clutter
+  const finStep = Math.max(1, Math.floor(N_fins / 60));
+
+  const tubeColor = { Cu: '#D97706', Al: '#94A3B8', SS: '#475569' }[tubeMaterial] || '#94A3B8';
+  const finColor = { Al: '#CBD5E1', Cu: '#FCD34D' }[finMaterial] || '#CBD5E1';
+
+  return (
+    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ background: '#FAFAFA' }}>
+      {/* Grid background */}
+      <defs>
+        <pattern id="grid-top" width="20" height="20" patternUnits="userSpaceOnUse">
+          <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#E2E8F0" strokeWidth="0.5" />
+        </pattern>
+      </defs>
+      <rect width={W} height={H} fill="url(#grid-top)" />
+
+      {/* Coil outline */}
+      <rect x={x0} y={y0} width={drawW} height={drawH} fill="white" stroke="#94A3B8" strokeWidth="1" />
+
+      {/* Fins (vertical lines along tube length, 일부만 표시) */}
+      {Array.from({ length: N_fins }, (_, i) => i).filter(i => i % finStep === 0).map(i => {
+        const x = x0 + (i * P_fin_mm) * scale;
+        return <line key={`fin-${i}`} x1={x} y1={y0} x2={x} y2={y0 + drawH}
+                     stroke={finColor} strokeWidth="0.4" opacity="0.7" />;
+      })}
+
+      {/* Tube projections (top view: 튜브가 가로 라인으로 보임) */}
+      {Array.from({ length: N_rows }, (_, r) =>
+        <g key={`row-${r}`}>
+          <line
+            x1={x0}
+            y1={y0 + (r + 0.5) * (drawH / N_rows)}
+            x2={x0 + drawW}
+            y2={y0 + (r + 0.5) * (drawH / N_rows)}
+            stroke={tubeColor}
+            strokeWidth={Math.max(2, D_o * scale)}
+            opacity="0.85"
+          />
+        </g>
+      )}
+
+      {/* Air flow arrow */}
+      <g transform={`translate(${x0 - 30}, ${y0 + drawH / 2})`}>
+        <line x1="0" y1="-30" x2="0" y2="30" stroke="#3B82F6" strokeWidth="1.5" markerEnd="url(#arrow-air)" />
+        <text x="-5" y="0" fill="#3B82F6" fontSize="10" textAnchor="end" fontFamily="monospace">Air</text>
+      </g>
+      <defs>
+        <marker id="arrow-air" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+          <polygon points="0 0, 8 4, 0 8" fill="#3B82F6" />
+        </marker>
+      </defs>
+
+      {/* Refrigerant flow indicators */}
+      <g transform={`translate(${x0 + 20}, ${y0 - 25})`}>
+        <text fill="#0891B2" fontSize="10" fontFamily="monospace">
+          ⟶ Refrigerant ({N_circuits} circuit{N_circuits > 1 ? 's' : ''})
+        </text>
+      </g>
+
+      {/* Dimensions */}
+      <g transform={`translate(${x0}, ${y0 + drawH + 25})`}>
+        <line x1="0" y1="0" x2={drawW} y2="0" stroke="#64748B" strokeWidth="0.5" />
+        <line x1="0" y1="-3" x2="0" y2="3" stroke="#64748B" strokeWidth="0.5" />
+        <line x1={drawW} y1="-3" x2={drawW} y2="3" stroke="#64748B" strokeWidth="0.5" />
+        <text x={drawW / 2} y="14" fill="#64748B" fontSize="10" textAnchor="middle" fontFamily="monospace">
+          L = {L_tube.toFixed(0)} mm
+        </text>
+      </g>
+      <g transform={`translate(${x0 - 15}, ${y0})`}>
+        <line x1="0" y1="0" x2="0" y2={drawH} stroke="#64748B" strokeWidth="0.5" />
+        <line x1="-3" y1="0" x2="3" y2="0" stroke="#64748B" strokeWidth="0.5" />
+        <line x1="-3" y1={drawH} x2="3" y2={drawH} stroke="#64748B" strokeWidth="0.5" />
+        <text x="-5" y={drawH / 2 + 3} fill="#64748B" fontSize="10" textAnchor="end" fontFamily="monospace">
+          H = {coreH_mm.toFixed(0)} mm
+        </text>
+      </g>
+
+      {/* Info text */}
+      <text x={W - 10} y="18" fill="#64748B" fontSize="10" textAnchor="end" fontFamily="monospace">
+        N_fins = {N_fins} (showing 1/{finStep})
+      </text>
+    </svg>
+  );
+}
+
+/* ───── Side view — 옆에서 본 그림 (튜브 단면 + 회로) ───── */
+function SideView({ W, H, D_o, D_i, N_tubes, N_rows, P_t, P_l, tubeMaterial }) {
+  const tubesPerRow = Math.ceil(N_tubes / N_rows);
+  const coreW_mm = tubesPerRow * P_t;
+  const coreH_mm = N_rows * P_l;
+
+  const margin = 60;
+  const scale = Math.min((W - 2 * margin) / coreW_mm, (H - 2 * margin) / coreH_mm);
+  const drawW = coreW_mm * scale;
+  const drawH = coreH_mm * scale;
+  const x0 = (W - drawW) / 2;
+  const y0 = (H - drawH) / 2;
+
+  const tubeR = (D_o / 2) * scale;
+  const innerR = (D_i / 2) * scale;
+  const tubeColor = { Cu: '#D97706', Al: '#94A3B8', SS: '#475569' }[tubeMaterial] || '#94A3B8';
+
+  // Generate tube positions (staggered)
+  const tubes = [];
+  let count = 0;
+  for (let r = 0; r < N_rows; r++) {
+    const offsetX = (r % 2) * (P_t / 2);
+    const tubesThisRow = (r % 2 === 0) ? tubesPerRow : Math.max(1, tubesPerRow - 1);
+    for (let i = 0; i < tubesThisRow; i++) {
+      if (count >= N_tubes) break;
+      const x_mm = (i + 0.5) * P_t + (r % 2 ? -P_t / 2 : 0) + offsetX;
+      const y_mm = (r + 0.5) * P_l;
+      tubes.push({ x: x0 + x_mm * scale, y: y0 + y_mm * scale, idx: count, row: r });
+      count++;
+    }
+  }
+
+  return (
+    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ background: '#FAFAFA' }}>
+      <defs>
+        <pattern id="grid-side" width="20" height="20" patternUnits="userSpaceOnUse">
+          <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#E2E8F0" strokeWidth="0.5" />
+        </pattern>
+      </defs>
+      <rect width={W} height={H} fill="url(#grid-side)" />
+
+      {/* Coil outline */}
+      <rect x={x0} y={y0} width={drawW} height={drawH} fill="white" stroke="#94A3B8" strokeWidth="1" />
+
+      {/* Tubes (cross-section) */}
+      {tubes.map((t, i) => (
+        <g key={`tube-${i}`}>
+          <circle cx={t.x} cy={t.y} r={tubeR} fill={tubeColor} opacity="0.3" stroke={tubeColor} strokeWidth="1" />
+          <circle cx={t.x} cy={t.y} r={innerR} fill="white" stroke={tubeColor} strokeWidth="0.5" />
+          {tubes.length <= 30 && (
+            <text x={t.x} y={t.y + 3} fill="#475569" fontSize="8" textAnchor="middle" fontFamily="monospace">
+              {t.idx + 1}
+            </text>
+          )}
+        </g>
+      ))}
+
+      {/* Air flow arrow (left to right) */}
+      <g transform={`translate(${x0 - 35}, ${y0 + drawH / 2})`}>
+        <line x1="0" y1="0" x2="20" y2="0" stroke="#3B82F6" strokeWidth="1.5" markerEnd="url(#arrow-air-side)" />
+        <text x="0" y="-5" fill="#3B82F6" fontSize="10" textAnchor="start" fontFamily="monospace">Air</text>
+      </g>
+      <defs>
+        <marker id="arrow-air-side" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+          <polygon points="0 0, 8 4, 0 8" fill="#3B82F6" />
+        </marker>
+      </defs>
+
+      {/* Dimensions */}
+      <g transform={`translate(${x0}, ${y0 + drawH + 25})`}>
+        <line x1="0" y1="0" x2={drawW} y2="0" stroke="#64748B" strokeWidth="0.5" />
+        <text x={drawW / 2} y="14" fill="#64748B" fontSize="10" textAnchor="middle" fontFamily="monospace">
+          W = {coreW_mm.toFixed(0)} mm ({tubesPerRow} × P_t={P_t}mm)
+        </text>
+      </g>
+      <g transform={`translate(${x0 - 15}, ${y0})`}>
+        <line x1="0" y1="0" x2="0" y2={drawH} stroke="#64748B" strokeWidth="0.5" />
+        <text x="-5" y={drawH / 2 + 3} fill="#64748B" fontSize="10" textAnchor="end" fontFamily="monospace">
+          H = {coreH_mm.toFixed(0)} mm
+        </text>
+      </g>
+
+      {/* Tube count label */}
+      <text x={W - 10} y="18" fill="#64748B" fontSize="10" textAnchor="end" fontFamily="monospace">
+        {N_tubes} tubes (staggered, {N_rows} rows)
+      </text>
+      <text x={W - 10} y="32" fill="#64748B" fontSize="10" textAnchor="end" fontFamily="monospace">
+        D_o = {D_o.toFixed(1)} / D_i = {D_i.toFixed(1)} mm
+      </text>
+    </svg>
+  );
+}
+
+/* ───── Front view — 앞에서 본 그림 (튜브 끝면 + circuit 라우팅) ───── */
+function FrontView({ W, H, D_o, L_tube, FPI, t_fin, N_tubes, N_rows, P_t, N_circuits,
+                    tubeMaterial, finMaterial }) {
+  const tubesPerRow = Math.ceil(N_tubes / N_rows);
+  const coreW_mm = tubesPerRow * P_t;
+  const coreH_mm = L_tube;
+
+  const margin = 60;
+  const scale = Math.min((W - 2 * margin) / coreW_mm, (H - 2 * margin) / coreH_mm);
+  const drawW = coreW_mm * scale;
+  const drawH = coreH_mm * scale;
+  const x0 = (W - drawW) / 2;
+  const y0 = (H - drawH) / 2;
+
+  const tubeColor = { Cu: '#D97706', Al: '#94A3B8', SS: '#475569' }[tubeMaterial] || '#94A3B8';
+  const tubeR = Math.max(2, (D_o / 2) * scale);
+
+  // Fins (horizontal lines)
+  const P_fin_mm = 25.4 / FPI;
+  const N_fins = Math.floor(L_tube / P_fin_mm);
+  const finStep = Math.max(1, Math.floor(N_fins / 50));
+  const finColor = { Al: '#CBD5E1', Cu: '#FCD34D' }[finMaterial] || '#CBD5E1';
+
+  return (
+    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ background: '#FAFAFA' }}>
+      <defs>
+        <pattern id="grid-front" width="20" height="20" patternUnits="userSpaceOnUse">
+          <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#E2E8F0" strokeWidth="0.5" />
+        </pattern>
+      </defs>
+      <rect width={W} height={H} fill="url(#grid-front)" />
+
+      {/* Coil outline */}
+      <rect x={x0} y={y0} width={drawW} height={drawH} fill="white" stroke="#94A3B8" strokeWidth="1" />
+
+      {/* Fins (horizontal lines) */}
+      {Array.from({ length: N_fins }, (_, i) => i).filter(i => i % finStep === 0).map(i => {
+        const y = y0 + (i * P_fin_mm) * scale;
+        return <line key={`fin-${i}`} x1={x0} y1={y} x2={x0 + drawW} y2={y}
+                     stroke={finColor} strokeWidth="0.4" opacity="0.7" />;
+      })}
+
+      {/* Tube cross-sections (only first row visible from front) */}
+      {Array.from({ length: tubesPerRow }, (_, i) => {
+        const x = x0 + (i + 0.5) * P_t * scale;
+        return (
+          <line key={`tube-${i}`} x1={x} y1={y0} x2={x} y2={y0 + drawH}
+                stroke={tubeColor} strokeWidth={tubeR * 2} opacity="0.6" />
+        );
+      })}
+
+      {/* Header / circuit indication */}
+      <g transform={`translate(${x0}, ${y0 - 20})`}>
+        <rect x="0" y="0" width={drawW} height="8" fill="#0891B2" opacity="0.3" stroke="#0891B2" strokeWidth="0.5" />
+        <text x={drawW / 2} y="-5" fill="#0891B2" fontSize="10" textAnchor="middle" fontFamily="monospace">
+          Refrigerant header (in) — {N_circuits} circuit{N_circuits > 1 ? 's' : ''}
+        </text>
+      </g>
+      <g transform={`translate(${x0}, ${y0 + drawH + 12})`}>
+        <rect x="0" y="0" width={drawW} height="8" fill="#0891B2" opacity="0.3" stroke="#0891B2" strokeWidth="0.5" />
+        <text x={drawW / 2} y="22" fill="#0891B2" fontSize="10" textAnchor="middle" fontFamily="monospace">
+          Refrigerant header (out)
+        </text>
+      </g>
+
+      {/* Dimensions */}
+      <g transform={`translate(${x0 - 15}, ${y0})`}>
+        <line x1="0" y1="0" x2="0" y2={drawH} stroke="#64748B" strokeWidth="0.5" />
+        <text x="-5" y={drawH / 2 + 3} fill="#64748B" fontSize="10" textAnchor="end" fontFamily="monospace" transform={`rotate(-90 -5 ${drawH / 2 + 3})`}>
+          L = {L_tube.toFixed(0)} mm
+        </text>
+      </g>
+
+      <text x={W - 10} y="18" fill="#64748B" fontSize="10" textAnchor="end" fontFamily="monospace">
+        Front view (1st row visible)
+      </text>
+    </svg>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Derived stats — 자동 계산되는 파생 properties
+   ═══════════════════════════════════════════════════════════════════ */
+function DerivedStats({ D_o, D_i, L_tube, FPI, t_fin, N_tubes, N_rows, P_t, P_l, N_circuits }) {
+  const stats = useMemo(() => {
+    const D_o_m = D_o / 1000, D_i_m = D_i / 1000;
+    const L_m = L_tube / 1000, P_t_m = P_t / 1000, P_l_m = P_l / 1000;
+    const t_fin_m = t_fin / 1000;
+    const P_fin_m = 0.0254 / FPI;
+    
+    const L_total = L_m * N_tubes; // 총 튜브 길이
+    const A_i = Math.PI * D_i_m * L_total; // 내부 면적
+    const A_tube_outer = Math.PI * D_o_m * L_total;
+    
+    const tubesPerRow = Math.ceil(N_tubes / N_rows);
+    const W_face = tubesPerRow * P_t_m;
+    const H_face = L_m;
+    const A_o_face = W_face * H_face;
+    const depth = N_rows * P_l_m;
+    
+    const N_fins = Math.floor(L_m / P_fin_m);
+    const A_per_fin = 2 * (P_t_m * P_l_m * N_rows - Math.PI * D_o_m * D_o_m / 4 * N_tubes / tubesPerRow);
+    const A_fin_total = Math.max(0, N_fins * A_per_fin);
+    
+    const A_o = A_tube_outer + A_fin_total;
+    const V_internal = Math.PI * (D_i_m / 2) ** 2 * L_total * 1000; // L
+    
+    return {
+      L_total: L_total.toFixed(1),
+      A_i: A_i.toFixed(3),
+      A_o: A_o.toFixed(3),
+      A_o_face: A_o_face.toFixed(4),
+      W_face: (W_face * 1000).toFixed(0),
+      H_face: (H_face * 1000).toFixed(0),
+      depth: (depth * 1000).toFixed(0),
+      N_fins,
+      A_fin_total: A_fin_total.toFixed(3),
+      V_internal: V_internal.toFixed(2),
+      tubes_per_circuit: (N_tubes / N_circuits).toFixed(1),
+      P_fin: (P_fin_m * 1000).toFixed(2),
+      A_face_ratio: (A_o / A_o_face).toFixed(0),
+    };
+  }, [D_o, D_i, L_tube, FPI, t_fin, N_tubes, N_rows, P_t, P_l, N_circuits]);
+
+  const groups = [
+    {
+      title: '면적 / 체적',
+      items: [
+        { label: 'A_o (외부 총)',     value: stats.A_o,         unit: 'm²' },
+        { label: 'A_i (내부 총)',     value: stats.A_i,         unit: 'm²' },
+        { label: 'A_o_face (정면)',   value: stats.A_o_face,    unit: 'm²' },
+        { label: 'A_o/A_face',        value: stats.A_face_ratio, unit: '-' },
+        { label: 'V_internal',         value: stats.V_internal,   unit: 'L' },
+      ],
+    },
+    {
+      title: '치수',
+      items: [
+        { label: 'W_face',             value: stats.W_face,       unit: 'mm' },
+        { label: 'H_face',             value: stats.H_face,       unit: 'mm' },
+        { label: 'Depth',              value: stats.depth,        unit: 'mm' },
+        { label: 'L_total',            value: stats.L_total,      unit: 'm' },
+      ],
+    },
+    {
+      title: 'Fin / Circuit',
+      items: [
+        { label: 'P_fin',              value: stats.P_fin,        unit: 'mm' },
+        { label: 'N_fins (per tube)',  value: stats.N_fins,       unit: '-' },
+        { label: 'A_fin_total',        value: stats.A_fin_total,  unit: 'm²' },
+        { label: 'Tubes/circuit',      value: stats.tubes_per_circuit, unit: '-' },
+      ],
+    },
+  ];
+
+  return (
+    <div className="mt-4 bg-white border border-slate-200 rounded-lg p-4">
+      <div className="text-[12px] font-bold text-slate-700 mb-3 uppercase tracking-wider font-mono">
+        Derived Properties
+      </div>
+      <div className="grid grid-cols-3 gap-4">
+        {groups.map((g, gi) => (
+          <div key={gi}>
+            <div className="text-[10px] text-slate-400 font-mono uppercase mb-1.5">{g.title}</div>
+            <div className="space-y-0.5">
+              {g.items.map((it, i) => (
+                <div key={i} className="flex items-baseline justify-between text-[12px]">
+                  <span className="text-slate-600">{it.label}</span>
+                  <span className="font-mono font-semibold text-slate-900 tabular-nums">
+                    {it.value}<span className="text-slate-400 font-normal ml-1">{it.unit}</span>
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Top App
+   ═══════════════════════════════════════════════════════════════════ */
+function App() {
+  const [selected, setSelected] = useState(null);
+
+  // System view
+  if (!selected) {
+    return (
+      <div className="min-h-screen bg-slate-50">
+        {/* Header */}
+        <div className="bg-white border-b border-slate-200 px-4 py-2 flex items-center gap-3">
+          <AppSwitcher current="on-design-studio" />
+          <div className="text-[11px] text-slate-500">On-design 모델 설계</div>
+          <div className="flex-1"></div>
+          <BackendStatus />
+        </div>
+        <SystemView onSelect={setSelected} />
+      </div>
+    );
+  }
+
+  // Component view
+  if (selected === 'evaporator') {
+    return <EvaporatorView onBack={() => setSelected(null)} />;
+  }
+
+  return (
+    <div className="p-8 text-center">
+      <div className="text-slate-500">아직 지원되지 않는 부품: {selected}</div>
+      <button onClick={() => setSelected(null)} className="mt-4 text-blue-600 hover:underline">
+        ← 부품 목록으로
+      </button>
+    </div>
+  );
+}
+
+ReactDOM.render(<App />, document.getElementById('app'));
+
+</script>
+
+<script>
+  function setStatus(msg, isError) {
+    const el = document.getElementById('load-status');
+    if (el) {
+      el.textContent = msg;
+      if (isError) el.style.color = '#dc2626';
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    setStatus('1/3 — 라이브러리 확인 중...');
+    const checks = [];
+    if (typeof React === 'undefined') checks.push('React');
+    if (typeof ReactDOM === 'undefined') checks.push('ReactDOM');
+    if (typeof Babel === 'undefined') checks.push('Babel');
+    if (checks.length > 0) {
+      showError('CDN 로드 실패: ' + checks.join(', ') + '\n\n인터넷 연결 또는 회사 네트워크 확인 — CDN(unpkg.com) 차단 가능성');
+      return;
+    }
+
+    setStatus('2/3 — Babel JSX 컴파일 중...');
+    const jsxText = document.getElementById('app-jsx').textContent;
+    let compiled;
+    try {
+      const result = Babel.transform(jsxText, {
+        presets: ['env', 'react'],
+        filename: 'app.jsx',
+      });
+      compiled = result.code;
+      console.log('[Studio] Compiled', compiled.length, 'chars');
+    } catch (e) {
+      showError('Babel 컴파일 에러:\n' + e.message);
+      return;
+    }
+
+    setStatus('3/3 — React 마운트 중...');
+    try {
+      new Function(compiled)();
+      console.log('[Studio] Mounted');
+    } catch (e) {
+      showError('실행 에러:\n' + (e.stack || e.message));
+    }
+  });
+</script>
+</body>
+</html>
