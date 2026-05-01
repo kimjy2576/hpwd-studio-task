@@ -17,6 +17,8 @@ from .correlations import (
     h_single_gnielinski,
     compute_dp_ref_seg, recommend_dp_ref_correlation,
     validate_re_range_wang2000,
+    validate_evap_correlation, validate_cond_correlation,
+    validate_dp_correlation, validate_single_phase_correlation,
 )
 
 
@@ -681,7 +683,7 @@ class HXSolver:
 
         # 한계 #9 — Re 범위 검증 + warning 누적
         if inp.hx_type == "FT":
-            mu_avg = self.air.mu_air((inp.T_air_in + T_air_out) / 2)
+            mu_avg = self.air.mu_air((inp.T_air_in + T_air_out) / 2, inp.P_atm)
             Re_Dc_check = G_air * self.geo.Dc / mu_avg if mu_avg > 0 else 0
             re_check = validate_re_range_wang2000(Re_Dc_check)
             if re_check['level'] != 'ok':
@@ -692,6 +694,92 @@ class HXSolver:
                     'accuracy': re_check['accuracy'],
                     'recommend': re_check['recommend'],
                 })
+
+        # 진영님 audit — refrigerant correlation 검증 범위 체크
+        # 한 번만 실행 (운전점 평균 기준), 모든 segment 검증은 비효율적
+        try:
+            P_r_check = P_sat / ref.P_crit
+            x_check = (inp.x_in + result.x_ref_out) / 2  # 평균 quality
+            
+            # x를 0.5 클립 (0~1 범위 내)
+            x_check = max(0.001, min(0.999, x_check))
+            
+            # mode별 식 검증
+            if inp.mode == "evap":
+                evap_corr_id = self.corr.get("evap", "chen1966")
+                # q_flux 추정 — Q_total / A_i_seg / N_seg
+                q_flux_avg = result.Q_total / max(self.geo.A_i, 0.001)
+                ev_check = validate_evap_correlation(
+                    corr_id=evap_corr_id,
+                    x=x_check, q_flux=q_flux_avg,
+                    P_r=P_r_check, Dh=self.Di,
+                    G=G_ref,
+                )
+                if ev_check['level'] != 'ok':
+                    result.warnings.append({
+                        'category': 'evap_correlation',
+                        'level': ev_check['level'],
+                        'msg': ev_check['msg'],
+                        'accuracy': ev_check['accuracy'],
+                        'recommend': ev_check['recommend'],
+                    })
+            else:  # cond
+                cond_corr_id = self.corr.get("cond", "shah1979")
+                cd_check = validate_cond_correlation(
+                    corr_id=cond_corr_id,
+                    x=x_check, P_r=P_r_check, Dh=self.Di,
+                    G=G_ref,
+                )
+                if cd_check['level'] != 'ok':
+                    result.warnings.append({
+                        'category': 'cond_correlation',
+                        'level': cd_check['level'],
+                        'msg': cd_check['msg'],
+                        'accuracy': cd_check['accuracy'],
+                        'recommend': cd_check['recommend'],
+                    })
+            
+            # dP correlation 검증
+            dp_corr_id = self.corr.get("dp_ref", "friedel1979")
+            mu_l_check = ref.mu_l(P_sat)
+            mu_v_check = ref.mu_v(P_sat)
+            dp_check = validate_dp_correlation(
+                corr_id=dp_corr_id,
+                mu_l=mu_l_check, mu_v=mu_v_check,
+                Dh=self.Di, G=G_ref, x=x_check,
+            )
+            if dp_check['level'] != 'ok':
+                result.warnings.append({
+                    'category': 'dp_ref_correlation',
+                    'level': dp_check['level'],
+                    'msg': dp_check['msg'],
+                    'accuracy': dp_check['accuracy'],
+                    'recommend': dp_check['recommend'],
+                })
+            
+            # Single-phase Gnielinski 검증 (단상 영역에서만 의미 있음)
+            # x_in이 단상 (0 또는 1) 가까우면 호출
+            if inp.x_in <= 0.05 or inp.x_in >= 0.95:
+                # Re_l (or Re_v) 추정
+                if inp.x_in <= 0.05:
+                    mu_phase = ref.mu_l(P_sat)
+                    Pr_phase = ref.Pr_l(P_sat)
+                else:
+                    mu_phase = ref.mu_v(P_sat)
+                    Pr_phase = ref.Pr_v(P_sat)
+                Re_check = G_ref * self.Di / mu_phase if mu_phase > 0 else 0
+                gn_check = validate_single_phase_correlation(Re_check, Pr_phase)
+                if gn_check['level'] not in ('ok', 'info'):
+                    result.warnings.append({
+                        'category': 'single_phase_correlation',
+                        'level': gn_check['level'],
+                        'msg': gn_check['msg'],
+                        'accuracy': gn_check['accuracy'],
+                        'recommend': gn_check['recommend'],
+                    })
+        except Exception as _e:
+            # 검증 실패는 simulation 실패가 아님 — silently skip
+            pass
 
         # Outlet RH — handle supersaturation (condensate on coil)
         try:

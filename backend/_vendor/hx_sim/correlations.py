@@ -1517,6 +1517,214 @@ def validate_re_range_wang2000(Re_Dc: float) -> dict:
     return {'valid': True, 'level': 'ok', 'msg': '', 'accuracy': '±10%', 'recommend': ''}
 
 
+# ============================================================
+# Refrigerant correlation 검증 범위 — 학계 출판된 검증 범위 기반
+# (진영님 audit: Phase 4-A 전 사전 검증)
+# ============================================================
+
+def validate_evap_correlation(corr_id: str, x: float, q_flux: float, P_r: float,
+                              Dh: float, G: float = 0.0) -> dict:
+    """
+    Evaporation correlation 검증 범위 체크.
+    
+    각 식의 학계 출판 검증 범위:
+      Chen 1966: x 0.01~0.95, P_r 0.001~0.1, q 5~500 kW/m²
+      Gungor-Winterton 1986: x 0.0~1.0, P_r 0.001~0.1
+      Kandlikar 1990: x 0.01~0.95
+      Bertsch 2009 (mini): Dh 0.16~2.92mm, x 0~1
+      Kim-Mudawar 2013 (mini): Dh < 3mm, x 0~1
+      Sun-Mishima 2009 (mini): Dh 0.21~6.5mm, x 0.01~0.95
+    """
+    issues = []
+    
+    # x 범위 (대부분 식 공통)
+    if x < 0.001:
+        issues.append({'param': 'x', 'value': x, 'msg': 'x < 0.001 (단상 영역, transition blending 사용)'})
+    elif x > 0.999:
+        issues.append({'param': 'x', 'value': x, 'msg': 'x > 0.999 (단상 영역, transition blending 사용)'})
+    
+    # P_r 범위
+    if P_r < 0.001:
+        issues.append({'param': 'P_r', 'value': P_r,
+                       'msg': f'P_r={P_r:.4f} < 0.001 (매우 저압, 신뢰성 낮음)'})
+    elif P_r > 0.5:
+        issues.append({'param': 'P_r', 'value': P_r,
+                       'msg': f'P_r={P_r:.3f} > 0.5 (임계점 가까움, near-critical 거동)'})
+    
+    # q_flux 범위 (Cooper pool boiling)
+    if q_flux < 1000:
+        issues.append({'param': 'q_flux', 'value': q_flux,
+                       'msg': f'q_flux={q_flux:.0f} W/m² < 1 kW/m² (very low heat flux)'})
+    elif q_flux > 1e6:
+        issues.append({'param': 'q_flux', 'value': q_flux,
+                       'msg': f'q_flux={q_flux/1000:.0f} kW/m² > 1 MW/m² (CHF 가까움)'})
+    
+    # MCHX 식들 — Dh 검증
+    if corr_id in ('kim_mudawar2013', 'bertsch2009', 'sun_mishima2009'):
+        if Dh > 0.003:
+            issues.append({'param': 'Dh', 'value': Dh,
+                           'msg': f'Dh={Dh*1000:.2f}mm > 3mm — {corr_id}는 mini-channel 전용 (Dh < 3mm)'})
+    
+    # Macro tube 식 — Dh 검증
+    if corr_id in ('chen1966', 'gungor_winterton1986', 'kandlikar1990'):
+        if Dh < 0.003:
+            issues.append({'param': 'Dh', 'value': Dh,
+                           'msg': f'Dh={Dh*1000:.2f}mm < 3mm — {corr_id}는 conventional tube (Dh ≥ 3mm)'})
+    
+    if not issues:
+        return {'valid': True, 'level': 'ok', 'msg': '', 'accuracy': '±20% (학계 표준)',
+                'recommend': '', 'issues': []}
+    
+    # 가장 심각한 issue 기준 level 결정
+    level = 'warn'
+    msgs = '; '.join(i['msg'] for i in issues[:2])  # 최대 2개
+    return {
+        'valid': True,  # warning이지 error는 아님
+        'level': level,
+        'msg': f'{corr_id}: {msgs}',
+        'accuracy': '±25~40% (검증 범위 외)',
+        'recommend': '운전점이 학계 검증 범위 안에 있는지 확인',
+        'issues': issues,
+    }
+
+
+def validate_cond_correlation(corr_id: str, x: float, P_r: float, Dh: float,
+                              G: float = 0.0) -> dict:
+    """
+    Condensation correlation 검증 범위 체크.
+    
+    각 식의 학계 출판 검증 범위:
+      Shah 1979: x 0.05~0.99, P_r 0.002~0.44
+      Cavallini 2006: x 0.01~0.99, P_r < 0.8
+      Dobson-Chato 1998: x 0.05~0.99 (수평관)
+      Kim-Mudawar 2012 (mini): Dh < 3mm, x 0.01~0.99
+      Koyama 2003 (mini): Dh 0.8~3mm
+    """
+    issues = []
+    
+    if x < 0.001 or x > 0.999:
+        issues.append({'param': 'x', 'value': x,
+                       'msg': f'x={x:.3f} 단상 영역 (transition blending 사용)'})
+    
+    # Shah 1979 — P_r 0.002~0.44만 검증
+    if corr_id == 'shah1979' and P_r > 0.44:
+        issues.append({'param': 'P_r', 'value': P_r,
+                       'msg': f'P_r={P_r:.3f} > 0.44 — Shah(1979) 검증 범위 외 (Cavallini 권장)'})
+    
+    # Cavallini 2006 — P_r < 0.8
+    if P_r > 0.8:
+        issues.append({'param': 'P_r', 'value': P_r,
+                       'msg': f'P_r={P_r:.3f} > 0.8 (임계점 매우 가까움)'})
+    
+    # MCHX
+    if corr_id in ('kim_mudawar2012', 'koyama2003'):
+        if Dh > 0.003:
+            issues.append({'param': 'Dh', 'value': Dh,
+                           'msg': f'Dh={Dh*1000:.2f}mm > 3mm — {corr_id}는 mini-channel 전용'})
+    
+    if corr_id in ('shah1979', 'cavallini2006', 'dobson_chato1998'):
+        if Dh < 0.003:
+            issues.append({'param': 'Dh', 'value': Dh,
+                           'msg': f'Dh={Dh*1000:.2f}mm < 3mm — {corr_id}는 conventional tube'})
+    
+    if not issues:
+        return {'valid': True, 'level': 'ok', 'msg': '', 'accuracy': '±20%',
+                'recommend': '', 'issues': []}
+    
+    level = 'warn'
+    msgs = '; '.join(i['msg'] for i in issues[:2])
+    return {
+        'valid': True, 'level': level,
+        'msg': f'{corr_id}: {msgs}',
+        'accuracy': '±25~40%',
+        'recommend': '운전점이 학계 검증 범위 안에 있는지 확인',
+        'issues': issues,
+    }
+
+
+def validate_dp_correlation(corr_id: str, mu_l: float, mu_v: float,
+                            Dh: float, G: float = 0.0, x: float = 0.5) -> dict:
+    """
+    Pressure drop correlation 검증 범위 체크.
+    
+    각 식의 학계 출판 검증 범위:
+      Friedel 1979: μ_l/μ_v < 1000, 25,000 data, 전 fluid
+      Lockhart-Martinelli 1949: 저압, x < 0.5에서 과대평가
+      Müller-Steinhagen-Heck 1986: 고건도 안정적, 9300 data
+      Kim-Mudawar 2012 dP: Dh < 3mm, mini-channel
+    """
+    issues = []
+    
+    # μ_l/μ_v ratio (Friedel)
+    if mu_v > 0:
+        ratio = mu_l / mu_v
+        if corr_id == 'friedel1979' and ratio > 1000:
+            issues.append({'param': 'mu_ratio', 'value': ratio,
+                           'msg': f'μ_l/μ_v={ratio:.0f} > 1000 — Friedel 검증 범위 초과'})
+    
+    # MCHX
+    if corr_id == 'kim_mudawar_dp2012':
+        if Dh > 0.003:
+            issues.append({'param': 'Dh', 'value': Dh,
+                           'msg': f'Dh={Dh*1000:.2f}mm > 3mm — Kim-Mudawar dP는 mini-channel 전용'})
+    
+    # Lockhart-Martinelli — 저건도에서 과대평가
+    if corr_id == 'lockhart_martinelli1949' and x < 0.1:
+        issues.append({'param': 'x', 'value': x,
+                       'msg': f'x={x:.3f} < 0.1 — Lockhart-Martinelli는 저건도 과대예측'})
+    
+    if not issues:
+        return {'valid': True, 'level': 'ok', 'msg': '', 'accuracy': '±30%',
+                'recommend': '', 'issues': []}
+    
+    level = 'warn'
+    msgs = '; '.join(i['msg'] for i in issues[:2])
+    return {
+        'valid': True, 'level': level,
+        'msg': f'{corr_id}: {msgs}',
+        'accuracy': '±40~60%',
+        'recommend': '검증 범위 안의 식으로 변경 고려',
+        'issues': issues,
+    }
+
+
+def validate_single_phase_correlation(Re: float, Pr: float, corr_id: str = 'gnielinski') -> dict:
+    """
+    Single-phase correlation (Gnielinski 1976) 검증 범위.
+    
+    Gnielinski: 2300 < Re < 5×10^6, 0.5 < Pr < 2000
+    """
+    issues = []
+    
+    if Re < 2300:
+        issues.append({'param': 'Re', 'value': Re,
+                       'msg': f'Re={Re:.0f} < 2300 (laminar, Nu=3.66 fixed 사용)'})
+    elif Re > 5e6:
+        issues.append({'param': 'Re', 'value': Re,
+                       'msg': f'Re={Re:.1e} > 5e6 — Gnielinski extrapolation'})
+    
+    if Pr < 0.5:
+        issues.append({'param': 'Pr', 'value': Pr,
+                       'msg': f'Pr={Pr:.2f} < 0.5 — Gnielinski 검증 외 (액체금속?)'})
+    elif Pr > 2000:
+        issues.append({'param': 'Pr', 'value': Pr,
+                       'msg': f'Pr={Pr:.0f} > 2000 — Gnielinski 검증 외 (고점도 액체)'})
+    
+    if not issues:
+        return {'valid': True, 'level': 'ok', 'msg': '', 'accuracy': '±10%',
+                'recommend': '', 'issues': []}
+    
+    level = 'info' if Re < 2300 else 'warn'  # laminar는 info (정상 처리)
+    msgs = '; '.join(i['msg'] for i in issues[:2])
+    return {
+        'valid': True, 'level': level,
+        'msg': f'gnielinski: {msgs}',
+        'accuracy': '±15%' if level == 'warn' else '±10%',
+        'recommend': '',
+        'issues': issues,
+    }
+
+
 # ── Wavy f-factor (ORIGINAL from paper) ──
 
 def f_wang1999_wavy_original(Re_Dc: float, Nr: int, Dc: float,
