@@ -372,8 +372,16 @@ class HXSolver:
                             rho_v_loc = ref.rho_v(P_sat_local)
                             x_for_rho = max(0.0, min(1.0, x_ref))
                             rho_avg = 1.0 / (x_for_rho / rho_v_loc + (1 - x_for_rho) / rho_l_loc)
-                        except:
-                            rho_avg = 500.0  # fallback
+                        except Exception:
+                            # 진영님 audit: 임의값 500 대신 CoolProp critical density 기반.
+                            # rho_crit는 fluid마다 다름 (R290 ~220, R410A ~459, R134a ~512 kg/m³).
+                            # CoolProp 호출 실패는 거의 발생 안 하지만, 도달해도 fluid에 맞는 값.
+                            try:
+                                import CoolProp.CoolProp as _CP
+                                rho_avg = _CP.PropsSI("rhocrit", ref.fluid)
+                            except Exception:
+                                # 최후의 안전 — 저밀도 vapor 대비 보수적
+                                rho_avg = 100.0
                         K_bend = getattr(inp, 'K_bend', 0.75)  # default 0.75 (180° smooth)
                         dp_bend = K_bend * (G_ref_local ** 2) / (2 * max(rho_avg, 1.0))
                         dp_bend *= inp.cf_dp_ref
@@ -551,7 +559,9 @@ class HXSolver:
             T_air_out_prev = T_air_out_this
 
             # ── Update per-(col, seg) air pencil with adaptive omega ──
-            h_fg_water = 2501000.0
+            # 진영님 audit: h_fg_water는 wall T에 따라 변함. 평균 air T로 호출.
+            T_air_for_hfg = (inp.T_air_in + T_air_out_this) / 2 if T_air_out_this > 0 else inp.T_air_in
+            h_fg_water = self.air.h_fg_water(T_air_for_hfg, inp.P_atm)
             # For MCHX multipass: map non-representative tubes to rep tube's Q
             _mp = getattr(self, '_mchx_multipass', False)
             for col_idx in range(self.Nt):
@@ -801,8 +811,11 @@ class HXSolver:
             if is_wet and inp.mode == "evap":
                 Ws_wall = self.air.Ws_from_T(T_w, inp.P_atm)
                 if W_air > Ws_wall:
-                    h_fg_w = 2501000.0
-                    Q_lat = eta_o * h_o * A_o_seg * h_fg_w * (W_air - Ws_wall) / 1006.0
+                    # 진영님 audit: hardcoded 2501000 (water h_fg) + 1006 (cp_air) → CoolProp
+                    # h_fg는 wall T 기반 (응축 일어나는 표면 T), cp는 air state 기반
+                    h_fg_w = self.air.h_fg_water(T_w, inp.P_atm)
+                    cp_a = self.air.cp_air(T_air, W_air, inp.P_atm)
+                    Q_lat = eta_o * h_o * A_o_seg * h_fg_w * (W_air - Ws_wall) / cp_a
                     Q_lat = max(Q_lat, 0)
 
             Q_total_seg = Q_air + Q_lat
@@ -843,9 +856,11 @@ class HXSolver:
     def _compute_h_o(self, G_air: float, T_air: float) -> float:
         """Compute air-side HTC using selected j-factor correlation."""
         inp = self.inp
-        mu = self.air.mu_air(T_air)
-        Pr = self.air.Pr_air(T_air)
-        cp = 1006.0
+        mu = self.air.mu_air(T_air, inp.P_atm)
+        Pr = self.air.Pr_air(T_air, inp.P_atm)
+        # 진영님 audit: hardcoded 1006 → CoolProp cp_air at T_air (dry air W=0 가정,
+        # j-factor 기반 h_o = j × G × cp / Pr^(2/3) 식에서 cp 사용)
+        cp = self.air.cp_air(T_air, 0.0, inp.P_atm)
 
         corr_id = self.corr["air_j"]
 
@@ -888,8 +903,11 @@ class HXSolver:
         b = cp_s/cp_a = 1 + h_fg × (dWs/dT) / cp_air
         Iterative: T_fin_avg → b → η_wet → T_fin_avg (3 iterations)
         """
-        cp_air = 1006.0
-        h_fg = 2501000.0
+        # 진영님 audit: cp_air, h_fg 모두 CoolProp로 (T_fin 기반 정확값)
+        # cp_air: air state (T_air, W_air) 기반
+        # h_fg: 응축 표면 T (T_fin) 기반
+        inp = self.inp
+        cp_air = self.air.cp_air(T_air, W_air, inp.P_atm)
 
         # Initial dry fin efficiency for T_fin estimate
         if self.inp.hx_type == "FT":
@@ -902,7 +920,9 @@ class HXSolver:
         for _ in range(3):
             T_fin = max(T_fin, 250.0)
             T_fin = min(T_fin, 370.0)
-            dWs_dT = self.air.dWs_dT(T_fin)
+            dWs_dT = self.air.dWs_dT(T_fin, inp.P_atm)
+            # h_fg는 T_fin (응축 표면) 기반 — iteration마다 재계산
+            h_fg = self.air.h_fg_water(T_fin, inp.P_atm)
             b = 1.0 + h_fg * dWs_dT / cp_air
             b = max(b, 1.0)
 

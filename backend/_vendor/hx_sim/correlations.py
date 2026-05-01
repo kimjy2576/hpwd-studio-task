@@ -1897,13 +1897,10 @@ def h_evap_chen1966(x, G, Di, ref, P, q_flux=5000.0, **kw):
 
     # h_nb: Cooper (1984) pool boiling (simplified, no surface roughness)
     # h_nb = 55 × P_r^(0.12) × (-log10(P_r))^(-0.55) × M^(-0.5) × q''^0.67
-    # Simplified: use Forster-Zuber style scaling
-    M_mol = 44.0  # approximate molecular weight
-    try:
-        import CoolProp.CoolProp as CP
-        M_mol = CP.PropsSI("M", ref.fluid) * 1000  # kg/mol → g/mol
-    except:
-        pass
+    # 진영님 audit: hardcoded fallback 44.0 (CO2 분자량 — R290만 우연히 비슷)
+    #   다른 fluid (R410A 72.6, R134a 102, R32 52)에서 silently 잘못됨.
+    #   해결: ref.M (RefrigerantProperties init에서 CoolProp으로 저장됨, kg/mol) 사용.
+    M_mol = ref.M * 1000.0  # kg/mol → g/mol (Cooper 식 단위)
     log_Pr = -math.log10(max(P_r, 1e-6))
     h_pool = 55.0 * P_r ** 0.12 * max(log_Pr, 0.01) ** (-0.55) * \
              M_mol ** (-0.5) * max(q_flux, 100) ** 0.67
@@ -1939,12 +1936,8 @@ def h_evap_gungor_winterton1986(x, G, Di, ref, P, q_flux=5000.0, **kw):
     S = 1.0 / (1.0 + 1.15e-6 * E ** 2 * Re_l ** 1.17)
 
     # Pool boiling (Cooper 1984)
-    M_mol = 44.0
-    try:
-        import CoolProp.CoolProp as CP
-        M_mol = CP.PropsSI("M", ref.fluid) * 1000
-    except:
-        pass
+    # 진영님 audit: ref.M 직접 사용 (fallback 44.0 제거)
+    M_mol = ref.M * 1000.0  # kg/mol → g/mol
     log_Pr = -math.log10(max(P_r, 1e-6))
     h_pool = 55.0 * P_r ** 0.12 * max(log_Pr, 0.01) ** (-0.55) * \
              M_mol ** (-0.5) * max(q_flux, 100) ** 0.67
@@ -2052,11 +2045,8 @@ def h_evap_bertsch2009(x, G, Di, ref, P, q_flux=5000.0, **kw):
     h_conv_tp = h_l * (1 - x) + h_v * x
 
     # Pool boiling (Cooper 1984)
-    M_mol = 44.0
-    try:
-        import CoolProp.CoolProp as CP
-        M_mol = CP.PropsSI("M", ref.fluid) * 1000
-    except: pass
+    # 진영님 audit: ref.M 직접 사용 (fallback 44.0 제거)
+    M_mol = ref.M * 1000.0  # kg/mol → g/mol
     log_Pr = -math.log10(max(P_r, 1e-6))
     h_nb = 55.0 * P_r ** 0.12 * max(log_Pr, 0.01) ** (-0.55) * \
            M_mol ** (-0.5) * max(q_flux, 100) ** 0.67

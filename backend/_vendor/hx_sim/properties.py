@@ -120,7 +120,14 @@ class RefrigerantProperties:
 # ============================================================
 
 class MoistAirProperties:
-    """Moist air property calculations using CoolProp HAPropsSI."""
+    """Moist air property calculations using CoolProp HAPropsSI.
+    
+    진영님 audit 결과 (R290 등 다른 fluid 호환성):
+      - 모든 물성을 CoolProp HAPropsSI로 통일
+      - 하드코딩 (1006, 1860, 2501000, Sutherland) 제거
+      - cp_air(T,W), h_simple(T,W), rho_air(T,W,P) 모두 CoolProp 사용
+      - mu_air(T), k_air(T): dry air properties from CoolProp 'Air'
+    """
 
     @staticmethod
     def W_from_TRH(T_db: float, RH: float, P_atm: float = 101325.0) -> float:
@@ -148,21 +155,27 @@ class MoistAirProperties:
         return CP.HAPropsSI("W", "T", T, "R", 1.0, "P", P_atm)
 
     @staticmethod
-    def cp_air(T_db: float, W: float) -> float:
-        """Specific heat of moist air [J/(kg_da·K)]."""
-        return 1006.0 + 1860.0 * W
+    def cp_air(T_db: float, W: float, P_atm: float = 101325.0) -> float:
+        """Specific heat of moist air [J/(kg_da·K)] from CoolProp.
+        
+        진영님 audit: 기존 '1006 + 1860×W' 단순식 → CoolProp HAPropsSI('Cha').
+        Cha = specific heat per kg of dry air (moist air basis).
+        """
+        return CP.HAPropsSI("Cha", "T", T_db, "W", W, "P", P_atm)
 
     @staticmethod
-    def h_simple(T_db: float, W: float) -> float:
-        """Simplified enthalpy [J/kg_da]: h = cp_a*(T-273.15) + W*(2501000 + 1860*(T-273.15))."""
-        T_c = T_db - 273.15
-        return 1006.0 * T_c + W * (2501000.0 + 1860.0 * T_c)
+    def h_simple(T_db: float, W: float, P_atm: float = 101325.0) -> float:
+        """Enthalpy [J/kg_da] — direct CoolProp call.
+        
+        진영님 audit: 기존 단순식 (1006×Tc + W×2501000 + ...) → CoolProp.
+        함수 이름은 'simple' 유지 (호환성), but 실제로는 정확한 CoolProp.
+        """
+        return CP.HAPropsSI("H", "T", T_db, "W", W, "P", P_atm)
 
     @staticmethod
-    def T_from_h_simple(h: float, W: float) -> float:
-        """Inverse of h_simple → T_db [K]."""
-        T_c = (h - W * 2501000.0) / (1006.0 + W * 1860.0)
-        return T_c + 273.15
+    def T_from_h_simple(h: float, W: float, P_atm: float = 101325.0) -> float:
+        """Inverse of h_simple → T_db [K], CoolProp."""
+        return CP.HAPropsSI("T", "H", h, "W", W, "P", P_atm)
 
     @staticmethod
     def dWs_dT(T: float, P_atm: float = 101325.0) -> float:
@@ -174,23 +187,62 @@ class MoistAirProperties:
 
     @staticmethod
     def rho_air(T_db: float, W: float, P_atm: float = 101325.0) -> float:
-        """Moist air density [kg/m³]."""
-        R_da = 287.058
-        T = T_db
-        rho_da = P_atm / (R_da * T * (1 + 1.6078 * W))
-        return rho_da * (1 + W)
+        """Moist air density [kg/m³] from CoolProp.
+        
+        진영님 audit: 기존 P/(R×T×(1+1.6078W)) 단순식 → CoolProp HAPropsSI.
+        Vha = volume per kg of dry air → ρ_ha = (1+W)/Vha (per kg moist air)
+        """
+        Vha = CP.HAPropsSI("Vha", "T", T_db, "W", W, "P", P_atm)  # m³/kg moist
+        return 1.0 / Vha if Vha > 0 else 1.2  # safety floor
 
     @staticmethod
-    def mu_air(T: float) -> float:
-        """Dynamic viscosity of air [Pa·s], Sutherland's law."""
-        return 1.716e-5 * (T / 273.15) ** 1.5 * (273.15 + 110.4) / (T + 110.4)
+    def mu_air(T: float, P_atm: float = 101325.0) -> float:
+        """Dynamic viscosity of dry air [Pa·s] from CoolProp.
+        
+        진영님 audit: Sutherland 식 → CoolProp 'Air'.
+        Note: dry air 가정 (W 영향 < 1%, 무시).
+        """
+        try:
+            return CP.PropsSI("V", "T", T, "P", P_atm, "Air")
+        except Exception as e:
+            # 진영님 audit: silent fallback 대신 명시 raise
+            raise RuntimeError(
+                f"CoolProp 'Air' viscosity 호출 실패 (T={T:.1f}K, P={P_atm:.0f}Pa): {e}"
+            )
 
     @staticmethod
-    def k_air(T: float) -> float:
-        """Thermal conductivity of air [W/(m·K)]."""
-        return 0.0241 * (T / 273.15) ** 0.81
+    def k_air(T: float, P_atm: float = 101325.0) -> float:
+        """Thermal conductivity of dry air [W/(m·K)] from CoolProp."""
+        try:
+            return CP.PropsSI("L", "T", T, "P", P_atm, "Air")
+        except Exception as e:
+            raise RuntimeError(
+                f"CoolProp 'Air' conductivity 호출 실패 (T={T:.1f}K, P={P_atm:.0f}Pa): {e}"
+            )
 
     @staticmethod
-    def Pr_air(T: float) -> float:
-        """Prandtl number of air."""
-        return 0.71  # approximately constant
+    def Pr_air(T: float, P_atm: float = 101325.0) -> float:
+        """Prandtl number of dry air from CoolProp."""
+        try:
+            return CP.PropsSI("Prandtl", "T", T, "P", P_atm, "Air")
+        except Exception as e:
+            raise RuntimeError(
+                f"CoolProp 'Air' Prandtl 호출 실패 (T={T:.1f}K, P={P_atm:.0f}Pa): {e}"
+            )
+
+    @staticmethod
+    def h_fg_water(T: float = 273.15, P_atm: float = 101325.0) -> float:
+        """Water vaporization enthalpy [J/kg] at given T from CoolProp.
+        
+        진영님 audit: solver.py에서 hardcoded '2501000' (water h_fg @ 0°C) 사용.
+        실제로는 T에 따라 변함 (10°C 2477 kJ/kg, 50°C 2382 kJ/kg).
+        wet coil에서 평균 wall T로 호출.
+        """
+        try:
+            h_v = CP.PropsSI("H", "T", T, "Q", 1, "Water")
+            h_l = CP.PropsSI("H", "T", T, "Q", 0, "Water")
+            return h_v - h_l
+        except Exception as e:
+            raise RuntimeError(
+                f"CoolProp 'Water' h_fg 호출 실패 (T={T:.1f}K): {e}"
+            )
