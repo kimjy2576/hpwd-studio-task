@@ -40,18 +40,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ─── Design Studio router 등록 ──────────────────────────────────────
+# ─── Calibration Studio router 등록 (legacy URL: /design/*) ──────────
 # /design/* 경로의 endpoint를 추가. fitting / calibration / validation /
-# session 관리. mount 실패 시 health에 사유 노출.
+# session 관리. 앱 이름은 'Calibration Studio'로 변경됐지만 외부 API는
+# /design/* 유지 (호환성).
 _design_status = {'mounted': False, 'error': None}
 try:
     from design import design_router
     app.include_router(design_router)
     _design_status['mounted'] = True
-    print("[OK]   Design Studio router mounted at /design/*")
+    print("[OK]   Calibration Studio router mounted at /design/*")
 except Exception as e:
     _design_status['error'] = f"{type(e).__name__}: {e}"
-    print(f"[WARN] Design Studio router 마운트 실패: {_design_status['error']}")
+    print(f"[WARN] Calibration router 마운트 실패: {_design_status['error']}")
     import traceback
     traceback.print_exc()
 

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Design Studio · UI 프로토타입</title>
+<title>Calibration Studio · UI 프로토타입</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css" rel="stylesheet" />
@@ -46,7 +46,7 @@
 <body class="bg-slate-100 min-h-screen">
 <div id="app">
   <div style="padding:40px;font-family:Pretendard,system-ui,sans-serif">
-    <div style="font-size:20px;font-weight:700;color:#0f172a">Design Studio loading...</div>
+    <div style="font-size:20px;font-weight:700;color:#0f172a">Calibration Studio loading...</div>
     <div id="load-status" style="margin-top:12px;color:#64748b;font-size:13px">스크립트 로드 중 (약 2~3초 소요)</div>
     <div id="load-error" style="margin-top:16px;padding:12px;border:1px solid #fca5a5;background:#fef2f2;color:#991b1b;border-radius:6px;display:none;font-family:'JetBrains Mono',monospace;font-size:11px;white-space:pre-wrap"></div>
   </div>
@@ -83,7 +83,7 @@
 const { useState, useEffect, useMemo, useRef } = React;
 
 /* ═══════════════════════════════════════════════════════════════════
-   Design Studio — fitting parameter calibration + validation
+   Calibration Studio — fitting parameter calibration + validation
    ─────────────────────────────────────────────────────────────────
    4 탭:
      1. Setup     — 컴포넌트 + CSV 데이터 업로드
@@ -156,7 +156,7 @@ function AppSwitcher({ current }) {
   const apps = [
     { id: 'studio',           label: 'HPWD Studio',      desc: '시뮬 캔버스',          href: '/' },
     { id: 'component-studio', label: 'Component Studio', desc: '컴포넌트 작성',         href: '/component-studio/' },
-    { id: 'design-studio',    label: 'Design Studio',    desc: 'Calibration & Validation', href: '/design-studio/' },
+    { id: 'calibration-studio', label: 'Calibration Studio', desc: 'Calibration & Validation', href: '/calibration-studio/' },
   ];
   const active = apps.find(a => a.id === current) || apps[0];
 
@@ -953,7 +953,7 @@ function BackendStatus() {
           </div>
           {status === 'ok' && (
             <div className="text-[10px] text-green-700 bg-green-50 border border-green-200 rounded p-1.5 mb-2">
-              ✓ 정상 — Design Studio router mounted
+              ✓ 정상 — Calibration router mounted
             </div>
           )}
           {status === 'partial' && (
@@ -1018,7 +1018,7 @@ function App() {
     <div className="min-h-screen bg-slate-100">
       {/* Topbar */}
       <div className="bg-white border-b border-slate-200 px-4 py-2 flex items-center gap-4">
-        <AppSwitcher current="design-studio" />
+        <AppSwitcher current="calibration-studio" />
         <div className="text-[11px] text-slate-500">Calibration · Validation · Reporting</div>
         <div className="flex-1"></div>
         <BackendStatus />

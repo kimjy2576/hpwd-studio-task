@@ -172,7 +172,7 @@ function AppSwitcher({ current }) {
   const apps = [
     { id: 'studio',           label: 'HPWD Studio',      desc: '시뮬 캔버스',   href: '/' },
     { id: 'component-studio', label: 'Component Studio', desc: '컴포넌트 작성', href: '/component-studio/' },
-    { id: 'design-studio',    label: 'Design Studio',    desc: 'Calibration & Validation', href: '/design-studio/' },
+    { id: 'calibration-studio', label: 'Calibration Studio', desc: 'Calibration & Validation', href: '/calibration-studio/' },
   ];
   const active = apps.find(a => a.id === current) || apps[0];
 
