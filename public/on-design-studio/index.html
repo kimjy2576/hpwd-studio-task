@@ -417,8 +417,107 @@ function EvaporatorView({ onBack }) {
   // View toggle (2D plan view)
   const [view, setView] = useState('Top');
   
-  // Save state (placeholder for now)
+  // Save panel
   const [saveOpen, setSaveOpen] = useState(false);
+  const [saves, setSaves] = useState({});  // {1: {...}, 2: {...}, ...}
+  const fileInputRef = useRef(null);
+
+  // ─── Save/Load helpers ───
+  const STORAGE_KEY = 'on_design_evaporator_slots';
+
+  // localStorage에서 slots 로드 (한번만)
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) setSaves(JSON.parse(raw));
+    } catch (e) {}
+  }, []);
+
+  const currentParams = () => ({
+    component: 'evaporator',
+    tubeMaterial, finMaterial,
+    D_o, D_i, L_tube,
+    FPI, t_fin,
+    N_tubes, N_rows, P_t, P_l, N_circuits,
+  });
+
+  const applyParams = (p) => {
+    if (!p) return;
+    if (p.tubeMaterial !== undefined) setTubeMaterial(p.tubeMaterial);
+    if (p.finMaterial !== undefined) setFinMaterial(p.finMaterial);
+    if (p.D_o !== undefined) setDo(p.D_o);
+    if (p.D_i !== undefined) setDi(p.D_i);
+    if (p.L_tube !== undefined) setLtube(p.L_tube);
+    if (p.FPI !== undefined) setFPI(p.FPI);
+    if (p.t_fin !== undefined) setTfin(p.t_fin);
+    if (p.N_tubes !== undefined) setNtubes(p.N_tubes);
+    if (p.N_rows !== undefined) setNrows(p.N_rows);
+    if (p.P_t !== undefined) setPt(p.P_t);
+    if (p.P_l !== undefined) setPl(p.P_l);
+    if (p.N_circuits !== undefined) setNcircuits(p.N_circuits);
+  };
+
+  const saveSlot = (slot, name) => {
+    const params = currentParams();
+    const entry = {
+      ...params,
+      _name: name || `Slot ${slot}`,
+      _timestamp: new Date().toISOString(),
+    };
+    const newSaves = { ...saves, [slot]: entry };
+    setSaves(newSaves);
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(newSaves)); } catch (e) {}
+  };
+
+  const loadSlot = (slot) => {
+    const entry = saves[slot];
+    if (!entry) return;
+    applyParams(entry);
+  };
+
+  const deleteSlot = (slot) => {
+    const newSaves = { ...saves };
+    delete newSaves[slot];
+    setSaves(newSaves);
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(newSaves)); } catch (e) {}
+  };
+
+  const exportJSON = () => {
+    const data = {
+      ...currentParams(),
+      _exported_at: new Date().toISOString(),
+      _version: '1.0',
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `evaporator_${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const importJSON = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const data = JSON.parse(ev.target.result);
+        if (data.component && data.component !== 'evaporator') {
+          alert(`다른 컴포넌트의 JSON: ${data.component}`);
+          return;
+        }
+        applyParams(data);
+      } catch (err) {
+        alert('JSON 파싱 실패: ' + err.message);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';  // 같은 파일 다시 import 가능하게
+  };
 
   // 검증 메시지
   const validation = useMemo(() => {
@@ -442,17 +541,103 @@ function EvaporatorView({ onBack }) {
         <span className="text-slate-300">|</span>
         <span className="text-cyan-600 text-base">◆</span>
         <span className="font-bold text-slate-900 text-[15px]">Evaporator</span>
-        <span className="text-[11px] font-mono text-slate-400">Fin-tube</span>
+        <span className="text-[11px] font-mono text-slate-400">Fin-tube · On-design</span>
 
         <div className="flex-1"></div>
 
-        {/* Mode toggle (현재 On-design만) */}
-        <ModeToggle value="On-design" onChange={() => {}} options={['On-design']} />
-        
         <button onClick={() => setSaveOpen(s => !s)}
-          className="text-base px-2 py-1 rounded hover:bg-slate-100" title="Save / Load (coming soon)">💾</button>
-        <button className="text-base px-2 py-1 rounded hover:bg-slate-100" title="Settings">⚙</button>
+          className={`text-base px-2.5 py-1 rounded transition-colors ${
+            saveOpen ? 'bg-blue-50 text-blue-700' : 'hover:bg-slate-100'
+          }`}
+          title="Save / Load">💾</button>
       </div>
+
+      {/* Save / Load panel (collapsible) */}
+      {saveOpen && (
+        <div className="bg-white border-b border-slate-200 px-4 py-3 shrink-0">
+          <div className="max-w-4xl mx-auto">
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-[11px] font-mono font-bold text-slate-700 uppercase tracking-wider">
+                Save / Load
+              </div>
+              <div className="text-[10px] text-slate-400 font-mono">
+                JSON: 파일로 내보내기/불러오기 · Slot: 브라우저 내 저장
+              </div>
+            </div>
+
+            {/* JSON export/import */}
+            <div className="flex gap-2 mb-3">
+              <button onClick={exportJSON}
+                className="flex-1 px-3 py-1.5 bg-green-50 hover:bg-green-100 text-green-700 border border-green-200 rounded text-[12px] font-semibold flex items-center justify-center gap-1.5 transition-colors">
+                <span>📥</span> JSON 내보내기
+              </button>
+              <button onClick={() => fileInputRef.current?.click()}
+                className="flex-1 px-3 py-1.5 bg-orange-50 hover:bg-orange-100 text-orange-700 border border-orange-200 rounded text-[12px] font-semibold flex items-center justify-center gap-1.5 transition-colors">
+                <span>📤</span> JSON 불러오기
+              </button>
+              <input ref={fileInputRef} type="file" accept=".json" onChange={importJSON} style={{ display: 'none' }} />
+            </div>
+
+            {/* Save slots */}
+            <div className="text-[10px] text-slate-500 font-mono uppercase mb-1.5">
+              Save Slots (브라우저 localStorage)
+            </div>
+            <div className="space-y-1">
+              {[1, 2, 3, 4, 5].map(slot => {
+                const s = saves[slot];
+                const isEmpty = !s;
+                return (
+                  <div key={slot} className="flex items-center gap-2">
+                    <span className="w-5 text-center text-[11px] font-mono font-bold text-slate-400">{slot}.</span>
+                    <div className={`flex-1 px-2.5 py-1 rounded border text-[11px] font-mono truncate ${
+                      isEmpty
+                        ? 'bg-slate-50 border-slate-200 text-slate-400'
+                        : 'bg-blue-50 border-blue-200 text-slate-800'
+                    }`}>
+                      {isEmpty ? (
+                        <span>— 비어 있음 —</span>
+                      ) : (
+                        <span>
+                          <b className="text-blue-900">{s._name || `Slot ${slot}`}</b>
+                          <span className="text-slate-400 ml-2">
+                            D_o={s.D_o}/N_t={s.N_tubes}/circ={s.N_circuits}
+                          </span>
+                          <span className="text-slate-400 ml-2 text-[10px]">
+                            {s._timestamp?.slice(5, 16)?.replace('T', ' ')}
+                          </span>
+                        </span>
+                      )}
+                    </div>
+                    <button onClick={() => {
+                      const name = prompt(`Slot ${slot} 이름 (기본: 자동)`, s?._name || '');
+                      if (name !== null) saveSlot(slot, name);
+                    }}
+                      className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded text-[11px] font-semibold transition-colors">
+                      저장
+                    </button>
+                    <button onClick={() => loadSlot(slot)} disabled={isEmpty}
+                      className={`px-2.5 py-1 rounded text-[11px] font-semibold transition-colors border ${
+                        isEmpty
+                          ? 'bg-slate-50 border-slate-200 text-slate-300 cursor-not-allowed'
+                          : 'bg-green-50 hover:bg-green-100 text-green-700 border-green-200'
+                      }`}>
+                      로드
+                    </button>
+                    {!isEmpty && (
+                      <button onClick={() => {
+                        if (confirm(`Slot ${slot} 삭제?`)) deleteSlot(slot);
+                      }}
+                        className="px-2 py-1 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 rounded text-[11px] font-semibold transition-colors">
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Body */}
       <div className="flex flex-1 overflow-hidden">
@@ -515,19 +700,6 @@ function EvaporatorView({ onBack }) {
                 ))}
               </div>
             )}
-          </div>
-
-          {/* Sticky bottom — SOLVE */}
-          <div className="border-t border-slate-200 p-3 bg-slate-50">
-            <button
-              disabled={validation.some(v => v.level === 'error')}
-              className="w-full px-3 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white rounded font-bold text-[13px] tracking-wide flex items-center justify-center gap-2">
-              <span>SOLVE</span>
-              <span>▶</span>
-            </button>
-            <div className="text-[10px] text-slate-400 text-center mt-1.5 font-mono">
-              On-design 모델은 추후 backend 연동 (HX-Sim wrapping)
-            </div>
           </div>
         </div>
 
