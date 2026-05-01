@@ -319,8 +319,8 @@ const COMPONENTS = [
   {
     id: 'compressor',
     label: 'Compressor',
-    type: 'Rotary / Reciprocating',
-    desc: 'PDSim ROM 기반 — 23 fitting params',
+    type: 'PDSim ROM',
+    desc: 'V_disp · clearance · valves · 누설 · 마찰 — 9 fitting params',
     icon: '◆',
     color: 'purple',
     available: true,
@@ -1396,6 +1396,9 @@ function CompressorView({ onBack }) {
   const [applyOpen, setApplyOpen] = useState(false);
   const [applyMsg, setApplyMsg] = useState('');
 
+  // Visualization sub-tab: 0=3D, 1=Top view, 2=Front view (compressor-sim 스타일)
+  const [vizSub, setVizSub] = useState(0);
+
   const STORAGE_KEY = 'on_design_compressor_slots';
 
   useEffect(() => {
@@ -1701,87 +1704,312 @@ function CompressorView({ onBack }) {
           </SidebarSection>
         </div>
 
-        {/* Main: 도식 + Stats */}
-        <div className="flex-1 overflow-y-auto p-6">
-          <div className="max-w-3xl mx-auto">
-            <h2 className="text-lg font-bold text-slate-900 mb-1">Compressor — PDSim ROM</h2>
-            <p className="text-[12px] text-slate-500 mb-4">
-              Bell ROM 기반: 체적/누설/마찰/모터-인버터 손실 모두 분리 모델링.
-              실험 데이터 fitting 시 Calibration Studio 사용.
-            </p>
+        {/* Main: View sub-tabs + Visualization + Stats + Status bar */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {/* Top hint */}
+          <div className="bg-emerald-50 border-b border-emerald-200 px-6 py-2 text-[12px] text-emerald-800 shrink-0">
+            ✓ <b>On-design (PDSim ROM)</b> — sidebar 변경 시 도식 + Derived 실시간 반영
+          </div>
 
-            {/* SVG 도식 */}
-            <div className="bg-white border border-slate-200 rounded-lg p-4 mb-4">
-              <div className="text-[11px] font-mono text-slate-500 uppercase tracking-wider mb-2">Schematic</div>
-              <svg viewBox="0 0 480 240" className="w-full h-auto">
-                <defs>
-                  <linearGradient id="cyl-grad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0" stopColor="#a78bfa" />
-                    <stop offset="1" stopColor="#7c3aed" />
-                  </linearGradient>
-                </defs>
-                {/* Suction */}
-                <line x1="20" y1="120" x2="80" y2="120" stroke="#3b82f6" strokeWidth="3" />
-                <text x="50" y="110" textAnchor="middle" fontSize="11" fill="#3b82f6" fontFamily="monospace">P_suc</text>
-                {/* Inlet valve */}
-                <rect x="80" y="105" width="20" height="30" rx="2" fill="#dbeafe" stroke="#3b82f6" strokeWidth="1.5" />
-                <text x="90" y="155" textAnchor="middle" fontSize="9" fill="#1e40af" fontFamily="monospace">A_v_in</text>
-                {/* Cylinder */}
-                <rect x="120" y="60" width="200" height="120" rx="4" fill="url(#cyl-grad)" stroke="#5b21b6" strokeWidth="2" />
-                <text x="220" y="125" textAnchor="middle" fontSize="14" fill="white" fontFamily="monospace" fontWeight="bold">V_disp = {V_disp.toFixed(1)} cm³</text>
-                <text x="220" y="145" textAnchor="middle" fontSize="11" fill="white" fontFamily="monospace">N = {N_rated} rpm</text>
-                <text x="220" y="50" textAnchor="middle" fontSize="11" fill="#5b21b6" fontFamily="monospace">η_v ≈ {derived.eta_v_est}</text>
-                {/* Outlet valve */}
-                <rect x="340" y="105" width="20" height="30" rx="2" fill="#fee2e2" stroke="#dc2626" strokeWidth="1.5" />
-                <text x="350" y="155" textAnchor="middle" fontSize="9" fill="#991b1b" fontFamily="monospace">A_v_out</text>
-                {/* Discharge */}
-                <line x1="360" y1="120" x2="460" y2="120" stroke="#dc2626" strokeWidth="3" />
-                <text x="430" y="110" textAnchor="middle" fontSize="11" fill="#dc2626" fontFamily="monospace">P_dis</text>
-                {/* Leakage indicator */}
-                <text x="220" y="200" textAnchor="middle" fontSize="10" fill="#92400e" fontFamily="monospace">A_leak = {A_leak_mm2.toFixed(3)} mm² (Cd = {Cd_leak.toFixed(2)})</text>
-                <text x="220" y="215" textAnchor="middle" fontSize="10" fill="#525252" fontFamily="monospace">W_f({N_rated}rpm) ≈ {derived.W_friction_at_rated} W</text>
-              </svg>
+          {/* View sub-tabs */}
+          <div className="bg-white border-b border-slate-200 px-6 py-3 shrink-0">
+            <div className="flex gap-2">
+              {['3D model', 'Top view', 'Front view'].map((label, idx) => (
+                <button key={idx}
+                  onClick={() => setVizSub(idx)}
+                  className={`px-4 py-1.5 text-[13px] rounded transition-colors ${
+                    vizSub === idx
+                      ? 'bg-purple-600 text-white font-semibold'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                  }`}>
+                  {label}
+                </button>
+              ))}
             </div>
+          </div>
 
-            {/* Derived stats */}
-            <div className="bg-white border border-slate-200 rounded-lg p-4">
-              <div className="text-[11px] font-mono text-slate-500 uppercase tracking-wider mb-3">Derived (P_suc=5 bar, T_suc=10°C, R290 추정)</div>
-              <div className="grid grid-cols-3 gap-3 text-[12px]">
-                <div className="border border-slate-200 rounded p-2">
-                  <div className="text-slate-500 text-[10px] uppercase">m_dot 이론</div>
-                  <div className="font-mono font-bold text-slate-900">{derived.m_dot_th} <span className="text-slate-400 font-normal">kg/s</span></div>
+          {/* Main scroll area */}
+          <div className="flex-1 overflow-y-auto p-6 bg-slate-50">
+            <div className="max-w-3xl mx-auto">
+              {/* Visualization based on vizSub */}
+              <div className="bg-white border border-slate-200 rounded-lg p-4 mb-4">
+                <div className="text-[11px] font-mono text-slate-500 uppercase tracking-wider mb-2">
+                  {vizSub === 0 && '3D model — isometric SVG (drag to rotate not yet)'}
+                  {vizSub === 1 && 'Top view — 위에서 본 단면'}
+                  {vizSub === 2 && 'Front view — 정면 단면'}
                 </div>
-                <div className="border border-slate-200 rounded p-2">
-                  <div className="text-slate-500 text-[10px] uppercase">η_v 추정</div>
-                  <div className="font-mono font-bold text-slate-900">{derived.eta_v_est}</div>
+                
+                {/* ─── 3D MODEL (isometric SVG) ─── */}
+                {vizSub === 0 && (
+                  <svg viewBox="0 0 480 320" className="w-full h-auto">
+                    <defs>
+                      <linearGradient id="cyl-iso-top" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0" stopColor="#c4b5fd" />
+                        <stop offset="1" stopColor="#8b5cf6" />
+                      </linearGradient>
+                      <linearGradient id="cyl-iso-side" x1="0" y1="0" x2="1" y2="0">
+                        <stop offset="0" stopColor="#7c3aed" />
+                        <stop offset="0.5" stopColor="#a78bfa" />
+                        <stop offset="1" stopColor="#5b21b6" />
+                      </linearGradient>
+                      <radialGradient id="piston-grad" cx="0.3" cy="0.3">
+                        <stop offset="0" stopColor="#f1f5f9" />
+                        <stop offset="1" stopColor="#475569" />
+                      </radialGradient>
+                    </defs>
+                    
+                    {/* Floor grid (등각투영) */}
+                    {[-2,-1,0,1,2].map(i => (
+                      <g key={`gx${i}`}>
+                        <line x1={170 + i*40} y1={260 + i*22}
+                              x2={310 + i*40} y2={260 - 18*22 + i*22}
+                              stroke="#e2e8f0" strokeWidth="0.5" />
+                      </g>
+                    ))}
+                    {[0,1,2,3,4,5].map(i => (
+                      <g key={`gy${i}`}>
+                        <line x1={90 + i*40} y1={194 + i*22}
+                              x2={250 + i*40} y2={194 + i*22}
+                              stroke="#e2e8f0" strokeWidth="0.5" />
+                      </g>
+                    ))}
+                    
+                    {/* Cylinder body — isometric */}
+                    {/* Side wall (rectangle) */}
+                    <path d={`M 180 90 L 320 90 L 360 130 L 360 230 L 320 270 L 180 270 L 140 230 L 140 130 Z`}
+                          fill="url(#cyl-iso-side)" stroke="#5b21b6" strokeWidth="1.5" opacity="0.85" />
+                    {/* Top ellipse */}
+                    <ellipse cx="250" cy="110" rx="110" ry="22"
+                          fill="url(#cyl-iso-top)" stroke="#5b21b6" strokeWidth="1.5" />
+                    
+                    {/* Suction port (top-left) */}
+                    <path d={`M 100 130 L 145 130 L 150 122 L 100 122 Z`}
+                          fill="#3b82f6" opacity="0.85" stroke="#1e40af" strokeWidth="1" />
+                    <text x="80" y="118" textAnchor="middle" fontSize="11" fill="#1e40af" fontFamily="monospace">SUC</text>
+                    <text x="80" y="135" textAnchor="middle" fontSize="9" fill="#1e40af" fontFamily="monospace">A={A_valve_in_mm2.toFixed(1)}mm²</text>
+                    
+                    {/* Discharge port (top-right) */}
+                    <path d={`M 355 130 L 400 130 L 400 122 L 350 122 Z`}
+                          fill="#dc2626" opacity="0.85" stroke="#7f1d1d" strokeWidth="1" />
+                    <text x="425" y="118" textAnchor="middle" fontSize="11" fill="#7f1d1d" fontFamily="monospace">DIS</text>
+                    <text x="425" y="135" textAnchor="middle" fontSize="9" fill="#7f1d1d" fontFamily="monospace">A={A_valve_out_mm2.toFixed(1)}mm²</text>
+                    
+                    {/* Inside label */}
+                    <text x="250" y="180" textAnchor="middle" fontSize="13" fill="white" fontFamily="monospace" fontWeight="bold">
+                      V_disp = {V_disp.toFixed(1)} cm³
+                    </text>
+                    <text x="250" y="200" textAnchor="middle" fontSize="11" fill="white" fontFamily="monospace">
+                      N = {N_rated} rpm · {comp_type}
+                    </text>
+                    <text x="250" y="218" textAnchor="middle" fontSize="10" fill="#e0e7ff" fontFamily="monospace">
+                      η_v ≈ {derived.eta_v_est} · clearance = {clearance_ratio.toFixed(3)}
+                    </text>
+                    
+                    {/* Bottom annotations */}
+                    <text x="250" y="295" textAnchor="middle" fontSize="10" fill="#92400e" fontFamily="monospace">
+                      A_leak = {A_leak_mm2.toFixed(3)} mm² (Cd = {Cd_leak.toFixed(2)})
+                    </text>
+                    <text x="250" y="310" textAnchor="middle" fontSize="10" fill="#525252" fontFamily="monospace">
+                      W_friction({N_rated}) ≈ {derived.W_friction_at_rated} W
+                    </text>
+                  </svg>
+                )}
+                
+                {/* ─── TOP VIEW (위에서 본 단면 — 원형 + valve 위치) ─── */}
+                {vizSub === 1 && (
+                  <svg viewBox="0 0 480 320" className="w-full h-auto">
+                    <defs>
+                      <radialGradient id="top-cyl-grad" cx="0.5" cy="0.5">
+                        <stop offset="0.7" stopColor="#a78bfa" stopOpacity="0.3" />
+                        <stop offset="1" stopColor="#7c3aed" stopOpacity="0.7" />
+                      </radialGradient>
+                    </defs>
+                    
+                    {/* Outer cylinder circle */}
+                    <circle cx="240" cy="160" r="120" fill="url(#top-cyl-grad)" stroke="#5b21b6" strokeWidth="2" />
+                    {/* Inner clearance circle (시각적으로 작은 차이) */}
+                    <circle cx="240" cy="160" r="115" fill="none" stroke="#7c3aed" strokeWidth="0.5" strokeDasharray="3,3" />
+                    
+                    {/* Suction valve (left side) */}
+                    {(() => {
+                      const sucR = 6 + Math.sqrt(A_valve_in_mm2);  // 면적 기반 크기
+                      return (<>
+                        <circle cx="120" cy="160" r={sucR} fill="#3b82f6" opacity="0.8" stroke="#1e40af" strokeWidth="1.5" />
+                        <text x="120" y="125" textAnchor="middle" fontSize="11" fontFamily="monospace" fill="#1e40af" fontWeight="bold">SUC</text>
+                        <text x="120" y="195" textAnchor="middle" fontSize="9" fontFamily="monospace" fill="#1e40af">{A_valve_in_mm2.toFixed(1)} mm²</text>
+                      </>);
+                    })()}
+                    
+                    {/* Discharge valve (right side) */}
+                    {(() => {
+                      const disR = 6 + Math.sqrt(A_valve_out_mm2);
+                      return (<>
+                        <circle cx="360" cy="160" r={disR} fill="#dc2626" opacity="0.8" stroke="#7f1d1d" strokeWidth="1.5" />
+                        <text x="360" y="125" textAnchor="middle" fontSize="11" fontFamily="monospace" fill="#7f1d1d" fontWeight="bold">DIS</text>
+                        <text x="360" y="195" textAnchor="middle" fontSize="9" fontFamily="monospace" fill="#7f1d1d">{A_valve_out_mm2.toFixed(1)} mm²</text>
+                      </>);
+                    })()}
+                    
+                    {/* Center label */}
+                    <text x="240" y="155" textAnchor="middle" fontSize="13" fill="#1e1b4b" fontFamily="monospace" fontWeight="bold">
+                      V_disp = {V_disp.toFixed(1)} cm³
+                    </text>
+                    <text x="240" y="173" textAnchor="middle" fontSize="11" fill="#3730a3" fontFamily="monospace">
+                      Top section
+                    </text>
+                    
+                    {/* Diameter dimension line */}
+                    <line x1="120" y1="290" x2="360" y2="290" stroke="#64748b" strokeWidth="1" markerStart="url(#arrow-l)" markerEnd="url(#arrow-r)" />
+                    <text x="240" y="285" textAnchor="middle" fontSize="10" fill="#64748b" fontFamily="monospace">
+                      D ≈ 2 × √(V_disp / π·H) (ref geometry)
+                    </text>
+                    
+                    {/* Leakage indication — small triangles around the perimeter */}
+                    {[40, 130, 220, 310].map(deg => {
+                      const rad = (deg * Math.PI) / 180;
+                      const x1 = 240 + 122 * Math.cos(rad);
+                      const y1 = 160 + 122 * Math.sin(rad);
+                      const x2 = 240 + 132 * Math.cos(rad);
+                      const y2 = 160 + 132 * Math.sin(rad);
+                      return (
+                        <line key={deg} x1={x1} y1={y1} x2={x2} y2={y2}
+                              stroke="#92400e" strokeWidth="1.5" opacity="0.6" />
+                      );
+                    })}
+                    <text x="240" y="20" textAnchor="middle" fontSize="9" fill="#92400e" fontFamily="monospace">
+                      ↗ A_leak = {A_leak_mm2.toFixed(3)} mm² (외주 누설)
+                    </text>
+                  </svg>
+                )}
+                
+                {/* ─── FRONT VIEW (정면 단면) ─── */}
+                {vizSub === 2 && (
+                  <svg viewBox="0 0 480 320" className="w-full h-auto">
+                    <defs>
+                      <linearGradient id="front-cyl" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0" stopColor="#c4b5fd" />
+                        <stop offset="1" stopColor="#7c3aed" />
+                      </linearGradient>
+                      <pattern id="hatch" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)">
+                        <line x1="0" y1="0" x2="0" y2="6" stroke="#94a3b8" strokeWidth="0.5" />
+                      </pattern>
+                    </defs>
+                    
+                    {/* Cylinder body — rectangle (front section) */}
+                    <rect x="100" y="80" width="280" height="180" fill="url(#front-cyl)" stroke="#5b21b6" strokeWidth="2" rx="4" />
+                    
+                    {/* Top (suction valve area) */}
+                    <line x1="100" y1="80" x2="380" y2="80" stroke="#5b21b6" strokeWidth="2" />
+                    {(() => {
+                      // Suction valve: 상단 좌측, A_valve_in 면적
+                      const sucW = 30 + Math.sqrt(A_valve_in_mm2) * 3;
+                      return (<>
+                        <rect x="120" y="60" width={sucW} height="22" fill="#3b82f6" opacity="0.85" stroke="#1e40af" strokeWidth="1" rx="2" />
+                        <text x={120 + sucW/2} y="50" textAnchor="middle" fontSize="11" fontFamily="monospace" fill="#1e40af" fontWeight="bold">SUC</text>
+                        <text x={120 + sucW/2} y="73" textAnchor="middle" fontSize="9" fontFamily="monospace" fill="white">{A_valve_in_mm2.toFixed(1)} mm²</text>
+                      </>);
+                    })()}
+                    
+                    {/* Discharge valve (top right) */}
+                    {(() => {
+                      const disW = 30 + Math.sqrt(A_valve_out_mm2) * 3;
+                      return (<>
+                        <rect x={360 - disW - 20} y="60" width={disW} height="22" fill="#dc2626" opacity="0.85" stroke="#7f1d1d" strokeWidth="1" rx="2" />
+                        <text x={360 - disW/2 - 20} y="50" textAnchor="middle" fontSize="11" fontFamily="monospace" fill="#7f1d1d" fontWeight="bold">DIS</text>
+                        <text x={360 - disW/2 - 20} y="73" textAnchor="middle" fontSize="9" fontFamily="monospace" fill="white">{A_valve_out_mm2.toFixed(1)} mm²</text>
+                      </>);
+                    })()}
+                    
+                    {/* Piston (이동 가능 영역) — 점선 */}
+                    <rect x="120" y="140" width="240" height="100" fill="none" stroke="#1e1b4b" strokeWidth="1" strokeDasharray="6,4" />
+                    <text x="240" y="135" textAnchor="middle" fontSize="9" fill="#1e1b4b" fontFamily="monospace">↕ Piston travel</text>
+                    
+                    {/* Clearance volume (top thin band) */}
+                    <rect x="120" y="82" width="240" height={Math.max(8, clearance_ratio * 200)}
+                          fill="url(#hatch)" stroke="#475569" strokeWidth="0.5" />
+                    <text x="240" y="100" textAnchor="middle" fontSize="9" fill="#475569" fontFamily="monospace">
+                      Clearance = {(clearance_ratio * 100).toFixed(1)}%
+                    </text>
+                    
+                    {/* Center labels */}
+                    <text x="240" y="200" textAnchor="middle" fontSize="13" fill="white" fontFamily="monospace" fontWeight="bold">
+                      V_disp = {V_disp.toFixed(1)} cm³
+                    </text>
+                    <text x="240" y="220" textAnchor="middle" fontSize="11" fill="white" fontFamily="monospace">
+                      N = {N_rated} rpm
+                    </text>
+                    <text x="240" y="237" textAnchor="middle" fontSize="10" fill="#e0e7ff" fontFamily="monospace">
+                      rv_in = {rv_in.toFixed(2)}
+                    </text>
+                    
+                    {/* Bottom — leakage path (annotated arrow) */}
+                    <line x1="100" y1="270" x2="380" y2="270" stroke="#92400e" strokeWidth="2" strokeDasharray="4,3" opacity="0.5" />
+                    <text x="240" y="290" textAnchor="middle" fontSize="10" fill="#92400e" fontFamily="monospace">
+                      ⤥ Leakage path: A = {A_leak_mm2.toFixed(3)} mm² · Cd = {Cd_leak.toFixed(2)}
+                    </text>
+                    <text x="240" y="305" textAnchor="middle" fontSize="9" fill="#525252" fontFamily="monospace">
+                      W_friction({N_rated} rpm) ≈ {derived.W_friction_at_rated} W
+                    </text>
+                  </svg>
+                )}
+              </div>
+
+              {/* Derived stats */}
+              <div className="bg-white border border-slate-200 rounded-lg p-4">
+                <div className="text-[11px] font-mono text-slate-500 uppercase tracking-wider mb-3">
+                  Derived (P_suc=5 bar, T_suc=10°C, R290 추정)
                 </div>
-                <div className="border border-slate-200 rounded p-2">
-                  <div className="text-slate-500 text-[10px] uppercase">W_friction</div>
-                  <div className="font-mono font-bold text-slate-900">{derived.W_friction_at_rated} <span className="text-slate-400 font-normal">W</span></div>
-                </div>
-                <div className="border border-slate-200 rounded p-2">
-                  <div className="text-slate-500 text-[10px] uppercase">A_v_in 효과</div>
-                  <div className="font-mono font-bold text-slate-900">{derived.A_in_total} <span className="text-slate-400 font-normal">mm²</span></div>
-                </div>
-                <div className="border border-slate-200 rounded p-2">
-                  <div className="text-slate-500 text-[10px] uppercase">η_motor × η_inv</div>
-                  <div className="font-mono font-bold text-slate-900">{(eta_motor * eta_inv).toFixed(3)}</div>
-                </div>
-                <div className="border border-slate-200 rounded p-2">
-                  <div className="text-slate-500 text-[10px] uppercase">V_disp</div>
-                  <div className="font-mono font-bold text-slate-900">{derived.V_disp_m3} <span className="text-slate-400 font-normal">cm³</span></div>
+                <div className="grid grid-cols-3 gap-3 text-[12px]">
+                  <div className="border border-slate-200 rounded p-2">
+                    <div className="text-slate-500 text-[10px] uppercase">m_dot 이론</div>
+                    <div className="font-mono font-bold text-slate-900">{derived.m_dot_th} <span className="text-slate-400 font-normal">kg/s</span></div>
+                  </div>
+                  <div className="border border-slate-200 rounded p-2">
+                    <div className="text-slate-500 text-[10px] uppercase">η_v 추정</div>
+                    <div className="font-mono font-bold text-slate-900">{derived.eta_v_est}</div>
+                  </div>
+                  <div className="border border-slate-200 rounded p-2">
+                    <div className="text-slate-500 text-[10px] uppercase">W_friction</div>
+                    <div className="font-mono font-bold text-slate-900">{derived.W_friction_at_rated} <span className="text-slate-400 font-normal">W</span></div>
+                  </div>
+                  <div className="border border-slate-200 rounded p-2">
+                    <div className="text-slate-500 text-[10px] uppercase">A_v_in 효과</div>
+                    <div className="font-mono font-bold text-slate-900">{derived.A_in_total} <span className="text-slate-400 font-normal">mm²</span></div>
+                  </div>
+                  <div className="border border-slate-200 rounded p-2">
+                    <div className="text-slate-500 text-[10px] uppercase">η_motor × η_inv</div>
+                    <div className="font-mono font-bold text-slate-900">{(eta_motor * eta_inv).toFixed(3)}</div>
+                  </div>
+                  <div className="border border-slate-200 rounded p-2">
+                    <div className="text-slate-500 text-[10px] uppercase">V_disp</div>
+                    <div className="font-mono font-bold text-slate-900">{derived.V_disp_m3} <span className="text-slate-400 font-normal">cm³</span></div>
+                  </div>
                 </div>
               </div>
-            </div>
 
-            <div className="mt-4 text-[11px] text-slate-500 leading-relaxed">
-              <div className="font-bold mb-1 text-slate-700">PDSim ROM (Bell):</div>
-              <div>· 체적효율 η_v: clearance + rv_in 기반 polytropic 압축</div>
-              <div>· 누설: A_leak × Cd_leak × √(P_dis - P_suc), N에 따른 누설 보정</div>
-              <div>· 마찰: W_f = W_f_const + α × N²</div>
-              <div>· over_comp_factor: 토출 valve 늦은 열림 보정</div>
-              <div>· AU_loss: 외부 열손실 (T_dis 추정에 영향)</div>
+              <div className="mt-4 text-[11px] text-slate-500 leading-relaxed">
+                <div className="font-bold mb-1 text-slate-700">PDSim ROM (Bell):</div>
+                <div>· 체적효율 η_v: clearance + rv_in 기반 polytropic 압축</div>
+                <div>· 누설: A_leak × Cd_leak × √(P_dis - P_suc), N에 따른 누설 보정</div>
+                <div>· 마찰: W_f = W_f_const + α × N²</div>
+                <div>· over_comp_factor: 토출 valve 늦은 열림 보정</div>
+                <div>· AU_loss: 외부 열손실 (T_dis 추정에 영향)</div>
+              </div>
             </div>
+          </div>
+
+          {/* Status bar (compressor-sim 스타일) */}
+          <div className="bg-white border-t border-slate-200 px-6 py-2 flex items-center gap-4 text-[11px] font-mono text-slate-500 shrink-0">
+            <span className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+              All inputs valid
+            </span>
+            <span className="text-slate-300">·</span>
+            <span>{fluid}</span>
+            <span className="text-slate-300">·</span>
+            <span>{N_rated} RPM</span>
+            <span className="text-slate-300">·</span>
+            <span className="text-purple-600 font-semibold">On-design (PDSim ROM)</span>
           </div>
         </div>
       </div>
