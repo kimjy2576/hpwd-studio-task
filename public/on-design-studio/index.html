@@ -25,6 +25,20 @@
   }
 </script>
 <style>
+  /* compressor-sim과 호환되는 CSS 변수 (light theme) — RollingPiston* 함수에 사용 */
+  :root {
+    --bg: #ffffff;
+    --bg2: #f8f9fa;
+    --bg3: #f0f1f3;
+    --tx: #1a1a1a;
+    --tx2: #6b7280;
+    --tx3: #9ca3af;
+    --accent: #2563eb;
+    --purple: #7c3aed;
+    --font: 'Pretendard', system-ui, sans-serif;
+    --r: 6px;
+    --bd: #e2e8f0;
+  }
   body { font-family: 'Pretendard', system-ui, sans-serif; }
   .mono { font-family: 'JetBrains Mono', monospace; }
   .step-pill { transition: all 0.25s ease; }
@@ -76,6 +90,7 @@
 <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
 <!-- 인라인 JSX (단일 파일 — 로컬에서 file:// 로 열어도 동작) -->
 <script id="app-jsx" type="text/plain">
@@ -406,6 +421,14 @@ function EvaporatorView({ onBack }) {
   // Fin
   const [FPI, setFPI] = useState(12);
   const [t_fin, setTfin] = useState(0.12); // mm
+  const [fin_type, setFinType] = useState('plain');  // plain/wavy/louver/slit
+  const [edge_type, setEdgeType] = useState('rounded');  // sharp/rounded/chamfered
+  // Wavy params (fin_type='wavy' 일 때만)
+  const [wavy_amplitude, setWavyAmp] = useState(1.0);   // mm
+  const [wavy_wavelength, setWavyWL] = useState(10.0);  // mm
+  // Louver params (fin_type='louver' 일 때만)
+  const [louver_pitch, setLouverP] = useState(1.7);     // mm
+  const [louver_angle, setLouverA] = useState(27.0);    // deg
   
   // Circuit / layout
   const [N_tubes, setNtubes] = useState(24);
@@ -413,6 +436,9 @@ function EvaporatorView({ onBack }) {
   const [P_t, setPt] = useState(25.0);  // mm
   const [P_l, setPl] = useState(22.0);  // mm
   const [N_circuits, setNcircuits] = useState(2);
+  // Circuit mode (preset 4개 + custom)
+  const [circuit_mode, setCircuitMode] = useState('row_parallel');  // row_parallel/serpentine_2/serpentine_4/single/custom
+  const [custom_circuits, setCustomCircuits] = useState([]);  // [[[r,c], ...], ...]
 
   // View toggle (2D plan view)
   const [view, setView] = useState('Top');
@@ -442,7 +468,11 @@ function EvaporatorView({ onBack }) {
     tubeMaterial, finMaterial,
     D_o, D_i, L_tube,
     FPI, t_fin,
+    fin_type, edge_type,
+    wavy_amplitude, wavy_wavelength,
+    louver_pitch, louver_angle,
     N_tubes, N_rows, P_t, P_l, N_circuits,
+    circuit_mode, custom_circuits,
   });
 
   const applyParams = (p) => {
@@ -454,11 +484,19 @@ function EvaporatorView({ onBack }) {
     if (p.L_tube !== undefined) setLtube(p.L_tube);
     if (p.FPI !== undefined) setFPI(p.FPI);
     if (p.t_fin !== undefined) setTfin(p.t_fin);
+    if (p.fin_type !== undefined) setFinType(p.fin_type);
+    if (p.edge_type !== undefined) setEdgeType(p.edge_type);
+    if (p.wavy_amplitude !== undefined) setWavyAmp(p.wavy_amplitude);
+    if (p.wavy_wavelength !== undefined) setWavyWL(p.wavy_wavelength);
+    if (p.louver_pitch !== undefined) setLouverP(p.louver_pitch);
+    if (p.louver_angle !== undefined) setLouverA(p.louver_angle);
     if (p.N_tubes !== undefined) setNtubes(p.N_tubes);
     if (p.N_rows !== undefined) setNrows(p.N_rows);
     if (p.P_t !== undefined) setPt(p.P_t);
     if (p.P_l !== undefined) setPl(p.P_l);
     if (p.N_circuits !== undefined) setNcircuits(p.N_circuits);
+    if (p.circuit_mode !== undefined) setCircuitMode(p.circuit_mode);
+    if (p.custom_circuits !== undefined) setCustomCircuits(p.custom_circuits);
   };
 
   const saveSlot = (slot, name) => {
@@ -491,16 +529,15 @@ function EvaporatorView({ onBack }) {
   // 진영님 audit 후속: Result 없이 "설계 동기화"만 (Run은 다른 Studio에서).
   const buildBackendParams = () => {
     // mm → m 변환 + 단위 통일 (backend evaporator_on_design.py 호환)
-    // 추정값 — On-Design Studio sidebar에 없는 backend 파라미터는 default 사용.
     const N_tubes_per_row = N_rows > 0 ? Math.round(N_tubes / N_rows) : N_tubes;
     return {
       // Material
       fluid: 'R290',
       mode: 'evap',
       // Geometry — 외관 (W=L_tube, H 추정, D 추정)
-      W: L_tube * 1e-3,           // m (튜브 길이)
-      H: P_t * N_tubes_per_row * 1e-3,  // 추정: P_t × N_tubes_per_row
-      D: P_l * N_rows * 1e-3,      // 추정: P_l × N_rows
+      W: L_tube * 1e-3,
+      H: P_t * N_tubes_per_row * 1e-3,
+      D: P_l * N_rows * 1e-3,
       // Tube
       D_o: D_o * 1e-3,
       D_i: D_i * 1e-3,
@@ -509,21 +546,20 @@ function EvaporatorView({ onBack }) {
       N_rows: N_rows,
       N_tubes_per_row: N_tubes_per_row,
       layout: 'staggered',
-      // Fin
+      // Fin (사용자 선택 사용)
       FPI: FPI,
       t_fin: t_fin * 1e-3,
-      fin_type: 'plain',
-      k_fin: finMaterial === 'Cu' ? 390 : 200,  // Al ~200, Cu ~390
-      edge_type: 'rounded',
-      wavy_amplitude: 1.0e-3,
-      wavy_wavelength: 10.0e-3,
-      louver_pitch: 1.7e-3,
-      louver_angle: 27.0,
-      // Circuit
-      circuit_mode: N_circuits === 1 ? 'single'
-                  : N_circuits === N_tubes_per_row ? 'row_parallel'
-                  : 'serpentine_2',
-      custom_circuits: '',
+      fin_type: fin_type,
+      k_fin: finMaterial === 'Cu' ? 390 : 200,
+      edge_type: edge_type,
+      wavy_amplitude: wavy_amplitude * 1e-3,
+      wavy_wavelength: wavy_wavelength * 1e-3,
+      louver_pitch: louver_pitch * 1e-3,
+      louver_angle: louver_angle,
+      // Circuit (사용자 선택 사용)
+      circuit_mode: circuit_mode,
+      custom_circuits: circuit_mode === 'custom' && custom_circuits.length > 0
+                       ? JSON.stringify(custom_circuits) : '',
       // Numerical
       N_seg: 10,
       N_seg_auto: 'off',
@@ -808,6 +844,56 @@ function EvaporatorView({ onBack }) {
             <SidebarSection title="FIN">
               <Slider label="FPI" sublabel="[fins/in]" value={FPI} min={4} max={25} step={1} onChange={setFPI} color="green" />
               <Slider label="t_fin" sublabel="[mm]" value={t_fin} min={0.05} max={0.5} step={0.01} decimals={2} onChange={setTfin} color="green" />
+              
+              {/* Fin type dropdown */}
+              <div className="mt-2">
+                <div className="text-[11px] text-slate-500 mb-1">Fin type</div>
+                <div className="flex gap-1 flex-wrap">
+                  {['plain', 'wavy', 'louver', 'slit'].map(opt => (
+                    <button key={opt} onClick={() => setFinType(opt)}
+                      className={`px-2 py-1 text-[11px] font-semibold rounded border transition-colors ${
+                        fin_type === opt
+                          ? 'bg-green-50 border-green-400 text-green-700'
+                          : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-50'
+                      }`}>
+                      {opt}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              
+              {/* Edge type — Kc/Ke 보정 */}
+              <div className="mt-2">
+                <div className="text-[11px] text-slate-500 mb-1">Edge type <span className="text-[10px] text-slate-400">(공기측 dP)</span></div>
+                <div className="flex gap-1 flex-wrap">
+                  {['sharp', 'rounded', 'chamfered'].map(opt => (
+                    <button key={opt} onClick={() => setEdgeType(opt)}
+                      className={`px-2 py-1 text-[11px] font-semibold rounded border transition-colors ${
+                        edge_type === opt
+                          ? 'bg-amber-50 border-amber-400 text-amber-700'
+                          : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-50'
+                      }`}>
+                      {opt}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              
+              {/* fin_type별 추가 파라미터 */}
+              {fin_type === 'wavy' && (
+                <div className="mt-2 pt-2 border-t border-slate-100">
+                  <div className="text-[10px] font-mono text-slate-400 uppercase mb-1">Wavy params</div>
+                  <Slider label="진폭" sublabel="[mm]" value={wavy_amplitude} min={0.3} max={3.0} step={0.1} decimals={1} onChange={setWavyAmp} color="green" />
+                  <Slider label="파장" sublabel="[mm]" value={wavy_wavelength} min={5} max={20} step={0.5} decimals={1} onChange={setWavyWL} color="green" />
+                </div>
+              )}
+              {fin_type === 'louver' && (
+                <div className="mt-2 pt-2 border-t border-slate-100">
+                  <div className="text-[10px] font-mono text-slate-400 uppercase mb-1">Louver params</div>
+                  <Slider label="Lp (pitch)" sublabel="[mm]" value={louver_pitch} min={0.8} max={4.0} step={0.1} decimals={1} onChange={setLouverP} color="green" />
+                  <Slider label="θ (angle)" sublabel="[deg]" value={louver_angle} min={15} max={45} step={1} decimals={0} onChange={setLouverA} color="green" />
+                </div>
+              )}
             </SidebarSection>
 
             {/* Circuit / Layout */}
@@ -816,7 +902,39 @@ function EvaporatorView({ onBack }) {
               <Slider label="N_rows" sublabel="공기 방향" value={N_rows} min={1} max={8} step={1} onChange={setNrows} color="purple" />
               <Slider label="P_t" sublabel="[mm] transverse" value={P_t} min={10} max={50} step={0.5} decimals={1} onChange={setPt} color="amber" />
               <Slider label="P_l" sublabel="[mm] longitudinal" value={P_l} min={10} max={50} step={0.5} decimals={1} onChange={setPl} color="amber" />
-              <Slider label="N_circuits" sublabel="병렬 회로" value={N_circuits} min={1} max={20} step={1} onChange={setNcircuits} color="purple" />
+              
+              {/* Circuit mode preset (4개) + custom */}
+              <div className="mt-3 pt-2 border-t border-slate-100">
+                <div className="text-[11px] text-slate-500 mb-1">Circuit mode</div>
+                <div className="grid grid-cols-2 gap-1 mb-2">
+                  {[
+                    { id: 'row_parallel', label: 'Row parallel' },
+                    { id: 'serpentine_2', label: 'Serpentine ×2' },
+                    { id: 'serpentine_4', label: 'Serpentine ×4' },
+                    { id: 'single', label: 'Single' },
+                    { id: 'custom', label: 'Custom' },
+                  ].map(opt => (
+                    <button key={opt.id} onClick={() => setCircuitMode(opt.id)}
+                      className={`px-2 py-1.5 text-[11px] font-semibold rounded border transition-colors ${
+                        circuit_mode === opt.id
+                          ? 'bg-purple-50 border-purple-400 text-purple-700'
+                          : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-50'
+                      }`}>
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              
+              <Slider label="N_circuits (참고)" sublabel="병렬 회로" value={N_circuits} min={1} max={20} step={1} onChange={setNcircuits} color="purple" />
+              
+              <div className="mt-1 text-[10px] text-slate-400 font-mono">
+                {circuit_mode === 'row_parallel' && '각 row의 모든 튜브가 병렬'}
+                {circuit_mode === 'serpentine_2' && '2회 turn 후 다음 회로'}
+                {circuit_mode === 'serpentine_4' && '4회 turn 후 다음 회로'}
+                {circuit_mode === 'single' && '모든 튜브 직렬 1회로'}
+                {circuit_mode === 'custom' && 'Custom — 시각 편집기 (Main view 참고)'}
+              </div>
             </SidebarSection>
 
             {/* Validation messages */}
@@ -856,7 +974,7 @@ function EvaporatorView({ onBack }) {
 
             {/* View toggle */}
             <div className="mb-3 flex gap-1.5">
-              {['Top', 'Side', 'Front'].map(v => (
+              {['Top', 'Side', 'Front', 'Circuit'].map(v => (
                 <button key={v} onClick={() => setView(v)}
                   className={`px-4 py-1.5 text-[12px] font-semibold rounded-lg transition-colors ${
                     view === v
@@ -871,13 +989,23 @@ function EvaporatorView({ onBack }) {
             {/* 2D viewer */}
             <div className="bg-white border border-slate-200 rounded-lg p-4">
               <div className="text-[12px] text-slate-500 mb-2 flex items-center justify-between">
-                <span><b>{view} view</b> — Tube layout + Fin pattern</span>
+                <span><b>{view} view</b> — {view === 'Circuit' ? `Circuit mode: ${circuit_mode}` : 'Tube layout + Fin pattern'}</span>
                 <span className="font-mono text-[10px] text-slate-400">
                   {N_tubes} tubes / {N_rows} rows / {N_circuits} circuits
                 </span>
               </div>
               <div className="bg-slate-50 border border-slate-200 rounded">
-                <CoilViewer
+                {view === 'Circuit' ? (
+                  <CircuitDesigner
+                    N_rows={N_rows}
+                    N_tubes_per_row={N_rows > 0 ? Math.round(N_tubes / N_rows) : N_tubes}
+                    circuit_mode={circuit_mode}
+                    custom_circuits={custom_circuits}
+                    setCustomCircuits={setCustomCircuits}
+                    setCircuitMode={setCircuitMode}
+                  />
+                ) : (
+                  <CoilViewer
                   view={view}
                   D_o={D_o}
                   D_i={D_i}
@@ -892,6 +1020,7 @@ function EvaporatorView({ onBack }) {
                   tubeMaterial={tubeMaterial}
                   finMaterial={finMaterial}
                 />
+                )}
               </div>
             </div>
 
@@ -952,6 +1081,274 @@ function ButtonGroup({ options, value, onChange }) {
           {opt}
         </button>
       ))}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Circuit Designer — Nr × Nt 그리드 시각 편집기
+   - Preset 4개 (row_parallel/serpentine_2/serpentine_4/single): 자동 계산해서 표시만
+   - Custom: 클릭으로 회로 할당 (회로 색상 라벨)
+   - 출력: custom_circuits = [[[r,c], ...], ...] (회로별 ordered list)
+   ═══════════════════════════════════════════════════════════════════ */
+function CircuitDesigner({ N_rows, N_tubes_per_row, circuit_mode,
+                           custom_circuits, setCustomCircuits, setCircuitMode }) {
+  const [activeCircuit, setActiveCircuit] = useState(0);
+  
+  const CIRCUIT_COLORS = [
+    '#2563eb', '#dc2626', '#059669', '#d97706',
+    '#7c3aed', '#0891b2', '#ea580c', '#65a30d',
+  ];
+  
+  const autoCircuits = useMemo(() => {
+    const Nr = Math.max(1, N_rows);
+    const Nt = Math.max(1, N_tubes_per_row);
+    
+    if (circuit_mode === 'row_parallel') {
+      const circs = [];
+      for (let c = 0; c < Nt; c++) {
+        const ckt = [];
+        for (let r = 0; r < Nr; r++) ckt.push([r, c]);
+        circs.push(ckt);
+      }
+      return circs;
+    }
+    if (circuit_mode === 'serpentine_2') {
+      const circs = [];
+      for (let c0 = 0; c0 < Nt; c0 += 2) {
+        const ckt = [];
+        for (let r = 0; r < Nr; r++) ckt.push([r, c0]);
+        if (c0 + 1 < Nt) {
+          for (let r = Nr - 1; r >= 0; r--) ckt.push([r, c0 + 1]);
+        }
+        circs.push(ckt);
+      }
+      return circs;
+    }
+    if (circuit_mode === 'serpentine_4') {
+      const circs = [];
+      for (let c0 = 0; c0 < Nt; c0 += 4) {
+        const ckt = [];
+        for (let dc = 0; dc < 4 && c0 + dc < Nt; dc++) {
+          const c = c0 + dc;
+          if (dc % 2 === 0) {
+            for (let r = 0; r < Nr; r++) ckt.push([r, c]);
+          } else {
+            for (let r = Nr - 1; r >= 0; r--) ckt.push([r, c]);
+          }
+        }
+        circs.push(ckt);
+      }
+      return circs;
+    }
+    if (circuit_mode === 'single') {
+      const ckt = [];
+      for (let c = 0; c < Nt; c++) {
+        if (c % 2 === 0) {
+          for (let r = 0; r < Nr; r++) ckt.push([r, c]);
+        } else {
+          for (let r = Nr - 1; r >= 0; r--) ckt.push([r, c]);
+        }
+      }
+      return [ckt];
+    }
+    return custom_circuits || [];
+  }, [N_rows, N_tubes_per_row, circuit_mode, custom_circuits]);
+  
+  const tubeToCircuit = useMemo(() => {
+    const map = {};
+    autoCircuits.forEach((ckt, ci) => {
+      ckt.forEach(([r, c], pos) => {
+        map[`${r},${c}`] = { ci, pos };
+      });
+    });
+    return map;
+  }, [autoCircuits]);
+  
+  const handleTubeClick = (r, c) => {
+    if (circuit_mode !== 'custom') {
+      setCircuitMode('custom');
+    }
+    
+    let circs = custom_circuits.length > 0
+      ? custom_circuits.map(ckt => [...ckt])
+      : [[]];
+    
+    let removed = false;
+    for (let i = 0; i < circs.length; i++) {
+      const idx = circs[i].findIndex(([rr, cc]) => rr === r && cc === c);
+      if (idx >= 0) {
+        circs[i].splice(idx, 1);
+        removed = true;
+        break;
+      }
+    }
+    
+    if (!removed) {
+      while (circs.length <= activeCircuit) circs.push([]);
+      circs[activeCircuit].push([r, c]);
+    }
+    
+    circs = circs.filter(c => c.length > 0);
+    setCustomCircuits(circs);
+  };
+  
+  const addCircuit = () => {
+    const next = activeCircuit + 1;
+    setActiveCircuit(next);
+    if (circuit_mode !== 'custom') setCircuitMode('custom');
+  };
+  
+  const clearCustom = () => {
+    if (confirm('Custom circuits 초기화?')) {
+      setCustomCircuits([]);
+      setActiveCircuit(0);
+    }
+  };
+  
+  const cellSize = Math.min(40, Math.max(20, 360 / Math.max(N_tubes_per_row, N_rows)));
+  const padX = 50, padY = 30;
+  const svgW = padX * 2 + N_tubes_per_row * cellSize;
+  const svgH = padY * 2 + N_rows * cellSize + 40;
+  
+  return (
+    <div className="p-3">
+      {circuit_mode === 'custom' && (
+        <div className="mb-3 p-2 bg-purple-50 border border-purple-200 rounded">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[11px] font-bold text-purple-700">Active circuit:</span>
+            {[...Array(Math.max(custom_circuits.length, activeCircuit + 1))].map((_, i) => (
+              <button key={i} onClick={() => setActiveCircuit(i)}
+                className={`px-2 py-0.5 text-[11px] font-mono font-semibold rounded border transition-colors ${
+                  activeCircuit === i
+                    ? 'text-white border-transparent'
+                    : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-50'
+                }`}
+                style={activeCircuit === i ? { background: CIRCUIT_COLORS[i % 8] } : {}}>
+                #{i + 1} ({custom_circuits[i]?.length || 0})
+              </button>
+            ))}
+            <button onClick={addCircuit}
+              className="px-2 py-0.5 text-[11px] bg-white border border-dashed border-slate-400 text-slate-600 rounded hover:bg-slate-100">
+              + 새 회로
+            </button>
+            <div className="flex-1"></div>
+            <button onClick={clearCustom}
+              className="px-2 py-0.5 text-[11px] bg-red-50 border border-red-200 text-red-700 rounded hover:bg-red-100">
+              초기화
+            </button>
+          </div>
+          <div className="mt-1.5 text-[10px] text-purple-700 font-mono">
+            튜브 클릭 → 활성 회로에 할당 (이미 할당된 튜브 클릭 시 제거)
+          </div>
+        </div>
+      )}
+      
+      {circuit_mode !== 'custom' && (
+        <div className="mb-3 p-2 bg-blue-50 border border-blue-200 rounded text-[11px] text-blue-800 font-mono">
+          <b>Preset: {circuit_mode}</b> — 자동 생성된 {autoCircuits.length}개 회로 표시 (편집하려면 sidebar에서 'Custom' 선택)
+        </div>
+      )}
+      
+      <div className="bg-white border border-slate-200 rounded overflow-x-auto">
+        <svg viewBox={`0 0 ${svgW} ${svgH}`} className="w-full"
+             style={{ maxHeight: '450px' }} preserveAspectRatio="xMidYMid meet">
+          <text x={padX - 10} y={padY - 10} fontSize="10" fill="#64748b" fontFamily="monospace" textAnchor="end">
+            Air →
+          </text>
+          
+          {[...Array(N_rows)].map((_, r) => (
+            <text key={`rl${r}`} x={padX - 8} y={padY + r * cellSize + cellSize/2 + 4}
+                  fontSize="10" fill="#64748b" fontFamily="monospace" textAnchor="end">
+              row {r}
+            </text>
+          ))}
+          
+          {[...Array(N_tubes_per_row)].map((_, c) => (
+            <text key={`cl${c}`} x={padX + c * cellSize + cellSize/2}
+                  y={padY + N_rows * cellSize + 14}
+                  fontSize="9" fill="#94a3b8" fontFamily="monospace" textAnchor="middle">
+              {c}
+            </text>
+          ))}
+          
+          {[...Array(N_rows)].flatMap((_, r) =>
+            [...Array(N_tubes_per_row)].map((_, c) => {
+              const cx = padX + c * cellSize + cellSize/2;
+              const cy = padY + r * cellSize + cellSize/2;
+              const radius = cellSize * 0.35;
+              const info = tubeToCircuit[`${r},${c}`];
+              const isAssigned = info !== undefined;
+              const color = isAssigned ? CIRCUIT_COLORS[info.ci % 8] : '#e2e8f0';
+              const stroke = isAssigned ? color : '#cbd5e1';
+              
+              return (
+                <g key={`t${r}-${c}`}>
+                  <rect x={padX + c * cellSize + 1} y={padY + r * cellSize + 1}
+                        width={cellSize - 2} height={cellSize - 2}
+                        fill="none" stroke="#f1f5f9" strokeWidth="0.5" />
+                  <circle cx={cx} cy={cy} r={radius}
+                          fill={color}
+                          fillOpacity={isAssigned ? 0.7 : 0.3}
+                          stroke={stroke} strokeWidth="1.5"
+                          style={{ cursor: 'pointer' }}
+                          onClick={() => handleTubeClick(r, c)} />
+                  {isAssigned && (
+                    <text x={cx} y={cy + 3} textAnchor="middle" fontSize="9"
+                          fill="white" fontFamily="monospace" fontWeight="bold"
+                          pointerEvents="none">
+                      {info.pos + 1}
+                    </text>
+                  )}
+                </g>
+              );
+            })
+          )}
+          
+          {autoCircuits.map((ckt, ci) => {
+            if (ckt.length < 2) return null;
+            const color = CIRCUIT_COLORS[ci % 8];
+            const points = ckt.map(([r, c]) => {
+              const cx = padX + c * cellSize + cellSize/2;
+              const cy = padY + r * cellSize + cellSize/2;
+              return `${cx},${cy}`;
+            }).join(' ');
+            return (
+              <polyline key={`conn${ci}`} points={points}
+                        fill="none" stroke={color} strokeWidth="1.2"
+                        strokeOpacity="0.45" strokeDasharray="3,2"
+                        pointerEvents="none" />
+            );
+          })}
+        </svg>
+      </div>
+      
+      <div className="mt-3 grid grid-cols-2 gap-2 text-[11px]">
+        <div className="bg-slate-50 border border-slate-200 rounded p-2">
+          <div className="text-[10px] text-slate-500 uppercase font-mono mb-1">회로 수</div>
+          <div className="font-mono font-bold text-slate-900">{autoCircuits.length}</div>
+        </div>
+        <div className="bg-slate-50 border border-slate-200 rounded p-2">
+          <div className="text-[10px] text-slate-500 uppercase font-mono mb-1">총 할당 tube</div>
+          <div className="font-mono font-bold text-slate-900">
+            {autoCircuits.reduce((s, c) => s + c.length, 0)} / {N_rows * N_tubes_per_row}
+          </div>
+        </div>
+      </div>
+      
+      <div className="mt-2 space-y-1 max-h-40 overflow-y-auto">
+        {autoCircuits.map((ckt, ci) => (
+          <div key={ci} className="flex items-center gap-2 text-[10px] font-mono">
+            <span className="inline-block w-3 h-3 rounded"
+                  style={{ background: CIRCUIT_COLORS[ci % 8] }}></span>
+            <span className="text-slate-600">#{ci + 1}:</span>
+            <span className="text-slate-500 truncate">
+              {ckt.length} tubes — {ckt.slice(0, 6).map(([r, c]) => `(${r},${c})`).join(' → ')}
+              {ckt.length > 6 ? ' → ...' : ''}
+            </span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -1356,13 +1753,492 @@ function DerivedStats({ D_o, D_i, L_tube, FPI, t_fin, N_tubes, N_rows, P_t, P_l,
   );
 }
 
+
+/* ═══════════════════════════════════════════════════════════════════
+   Rolling Piston Visualization (compressor-sim 그대로 가져옴)
+   - RollingPistonView: 2D top view (SVG)
+   - RollingPiston3D: 3D isometric (Three.js r128)
+   ═══════════════════════════════════════════════════════════════════ */
+function RollingPistonView({ R_c_mm, R_p_mm, H_mm, t_vane_mm, theta_deg }) {
+  const theta = theta_deg * Math.PI / 180;
+  const scale = 140 / Math.max(R_c_mm, 20); // fit R_c to ~140px radius, more padding
+  const cx = 200, cy = 200; // SVG center
+
+  const Rc = R_c_mm * scale;
+  const Rp = R_p_mm * scale;
+  const e = (R_c_mm - R_p_mm) * scale;
+  const tv = t_vane_mm * scale;
+
+  // Piston center (eccentric orbit)
+  const px = cx + e * Math.sin(theta);
+  const py = cy - e * Math.cos(theta);
+
+  // Contact point (piston touches cylinder inner wall)
+  const contact_x = cx + Rc * Math.sin(theta);
+  const contact_y = cy - Rc * Math.cos(theta);
+
+  // Vane: from cylinder center upward, sliding to follow piston
+  const vane_protrusion = e * (1 + Math.cos(theta));
+  const vane_len = Rc + vane_protrusion * scale / e * 2;
+
+  // Suction port position (~210°)
+  // Suction port (~105°, just CCW of vane — new chamber opening after piston passes vane)
+  const suc_angle = Math.PI * 7 / 12;  // 105°
+  const suc_x = cx + (Rc + 5) * Math.cos(suc_angle);
+  const suc_y = cy - (Rc + 5) * Math.sin(suc_angle);
+
+  // Discharge port (~75°, just CW of vane — compression chamber closing before piston reaches vane)
+  const dis_angle = Math.PI * 5 / 12;  // 75°
+  const dis_x = cx + (Rc + 5) * Math.cos(dis_angle);
+  const dis_y = cy - (Rc + 5) * Math.sin(dis_angle);
+
+  // Compression ratio for color
+  const V_ratio = 1 - theta_deg / 360;
+  const P_color = `hsl(${210 - V_ratio * 180}, 70%, ${55 - V_ratio * 20}%)`;
+
+  // Compression chamber arc (from contact point, clockwise to vane)
+  // Suction chamber arc (from vane, clockwise to contact point)
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, width: '100%', height: '100%', justifyContent: 'center' }}>
+      <svg viewBox="0 0 400 400" preserveAspectRatio="xMidYMid meet" style={{ width: '100%', height: '100%', maxWidth: 800, maxHeight: '100%', background: 'var(--bg3)', borderRadius: 12 }}>
+        <defs>
+          <radialGradient id="compGrad" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stopColor={P_color} stopOpacity="0.25" />
+            <stop offset="100%" stopColor={P_color} stopOpacity="0.06" />
+          </radialGradient>
+          <filter id="glow">
+            <feGaussianBlur stdDeviation="2" result="blur" />
+            <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+          </filter>
+          {/* Refrigerant flow arrow markers */}
+          <marker id="sucArrow" markerWidth="10" markerHeight="8" refX="8" refY="4" orient="auto">
+            <polygon points="0 0, 10 4, 0 8" fill="#059669" />
+          </marker>
+          <marker id="disArrow" markerWidth="10" markerHeight="8" refX="8" refY="4" orient="auto">
+            <polygon points="0 0, 10 4, 0 8" fill="#dc2626" />
+          </marker>
+        </defs>
+
+        {/* Cylinder wall */}
+        <circle cx={cx} cy={cy} r={Rc} fill="url(#compGrad)" stroke="var(--tx2)" strokeWidth="2.5" />
+
+        {/* Compression chamber fill (crescent) */}
+        <circle cx={cx} cy={cy} r={Rc-1} fill={P_color} fillOpacity="0.1" />
+        <circle cx={px} cy={py} r={Rp+1} fill="var(--bg3)" />
+
+        {/* Piston */}
+        <circle cx={px} cy={py} r={Rp} fill="var(--accent)" fillOpacity="0.08" stroke="var(--accent)" strokeWidth="2" />
+        <circle cx={px} cy={py} r={2.5} fill="var(--accent)" />
+
+        {/* Piston center cross */}
+        <line x1={px-6} y1={py} x2={px+6} y2={py} stroke="var(--tx3)" strokeWidth="0.8" />
+        <line x1={px} y1={py-6} x2={px} y2={py+6} stroke="var(--tx3)" strokeWidth="0.8" />
+
+        {/* Contact point */}
+        <circle cx={contact_x} cy={contact_y} r="4" fill="#d97706" filter="url(#glow)" />
+
+        {/* Vane (vertical, top of cylinder) — physics: ext = e(1 - cos(θ))
+            θ=0: ext=0 (pressed), θ=180: ext=2e (max), θ=90/270: ext=e */}
+        <rect
+          x={cx - tv/2} y={cy - Rc - 15}
+          width={tv} height={(R_c_mm - R_p_mm) * scale * (1 - Math.cos(theta)) + 15}
+          fill="#7c3aed" fillOpacity="0.3" stroke="#7c3aed" strokeWidth="1.5" rx="1"
+        />
+
+        {/* Vane slot */}
+        <rect x={cx - tv/2 - 2} y={cy - Rc - 18} width={tv + 4} height={8}
+          fill="var(--bg)" stroke="var(--tx2)" strokeWidth="1" rx="2" />
+
+        {/* Suction port with flow arrow (외부 → 실린더 방향) */}
+        <circle cx={suc_x} cy={suc_y} r="5.5" fill="#059669" fillOpacity="0.4" stroke="#059669" strokeWidth="2" />
+        <text x={suc_x - 18} y={suc_y + 18} fill="#059669" fontSize="11" fontFamily="var(--font)" fontWeight="600">SUC</text>
+        {/* SUC flow arrow: outside → port (inward along radial direction) */}
+        {(() => {
+          const L = 24;  // arrow length
+          const nx = Math.cos(suc_angle), ny = -Math.sin(suc_angle);
+          const x1 = suc_x + nx * L, y1 = suc_y + ny * L;  // outer end
+          const x2 = suc_x + nx * 7, y2 = suc_y + ny * 7;  // inner end (arrow tip near port)
+          return <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#059669" strokeWidth="2.5" markerEnd="url(#sucArrow)" opacity="0.85" />;
+        })()}
+
+        {/* Discharge port with flow arrow (실린더 → 외부 방향) */}
+        <circle cx={dis_x} cy={dis_y} r="4.5" fill="#dc2626" fillOpacity="0.4" stroke="#dc2626" strokeWidth="2" />
+        <text x={dis_x + 9} y={dis_y + 4} fill="#dc2626" fontSize="11" fontFamily="var(--font)" fontWeight="600">DIS</text>
+        {/* DIS flow arrow: port → outside (outward along radial) */}
+        {(() => {
+          const L = 24;
+          const nx = Math.cos(dis_angle), ny = -Math.sin(dis_angle);
+          const x1 = dis_x + nx * 7, y1 = dis_y + ny * 7;  // inner end
+          const x2 = dis_x + nx * L, y2 = dis_y + ny * L;  // outer end (arrow tip outside)
+          return <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#dc2626" strokeWidth="2.5" markerEnd="url(#disArrow)" opacity="0.85" />;
+        })()}
+
+        {/* Eccentricity line */}
+        <line x1={cx} y1={cy} x2={px} y2={py} stroke="#d97706" strokeWidth="1.2" strokeDasharray="3,2" />
+
+        {/* Cylinder center */}
+        <circle cx={cx} cy={cy} r="2" fill="var(--tx2)" />
+
+        {/* Radial leakage */}
+        {(() => {
+          const leak_angle = theta + Math.PI;
+          const lx1 = px + Rp * Math.sin(leak_angle);
+          const ly1 = py - Rp * Math.cos(leak_angle);
+          const lx2 = cx + Rc * Math.sin(leak_angle);
+          const ly2 = cy - Rc * Math.cos(leak_angle);
+          const mx = (lx1+lx2)/2, my = (ly1+ly2)/2;
+          return (
+            <>
+              <line x1={lx1} y1={ly1} x2={lx2} y2={ly2} stroke="#dc2626" strokeWidth="1.5" strokeDasharray="2,2" opacity="0.55" />
+              <circle cx={mx} cy={my} r="2" fill="#dc2626" opacity="0.7" />
+              <text x={mx+5} y={my-4} fill="#dc2626" fontSize="9" fontFamily="var(--font)" opacity="0.75">δ_r</text>
+            </>
+          );
+        })()}
+        {/* Vane leakage arrows */}
+        <line x1={cx - tv/2 - 3} y1={cy - Rc + 10} x2={cx - tv/2 - 3} y2={cy - Rc + 25}
+          stroke="#ea580c" strokeWidth="1.2" markerEnd="url(#arrowhead)" opacity="0.5" />
+        <line x1={cx + tv/2 + 3} y1={cy - Rc + 10} x2={cx + tv/2 + 3} y2={cy - Rc + 25}
+          stroke="#ea580c" strokeWidth="1.2" markerEnd="url(#arrowhead)" opacity="0.5" />
+        <text x={cx + tv/2 + 6} y={cy - Rc + 20} fill="#ea580c" fontSize="9" fontFamily="var(--font)" opacity="0.7">δ_v</text>
+
+        {/* Reference radius line (R_c), from center to top (12 o'clock = θ=0 reference) */}
+        <line x1={cx} y1={cy} x2={cx} y2={cy - Rc} stroke="var(--tx3)" strokeWidth="0.6" strokeDasharray="2,1" />
+        <text x={cx + 8} y={cy - Rc/2} fill="var(--tx2)" fontSize="10" fontFamily="var(--font)">R_c</text>
+
+        {/* Current angle radius line (center → θ direction, makes arc meaningful) */}
+        <line x1={cx} y1={cy}
+              x2={cx + Rc * Math.sin(theta)}
+              y2={cy - Rc * Math.cos(theta)}
+              stroke="#d97706" strokeWidth="0.8" strokeDasharray="3,2" opacity="0.7" />
+
+        {/* Arrowhead marker */}
+        <defs>
+          <marker id="arrowhead" markerWidth="6" markerHeight="4" refX="5" refY="2" orient="auto">
+            <polygon points="0 0, 6 2, 0 4" fill="#ea580c" opacity="0.7" />
+          </marker>
+        </defs>
+
+        {/* Angle arc — from 12 o'clock (θ=0) sweeping clockwise through θ */}
+        {theta_deg > 5 && (
+          <path
+            d={`M ${cx} ${cy - 25} A 25 25 0 ${theta_deg > 180 ? 1 : 0} 1 ${cx + 25*Math.sin(theta)} ${cy - 25*Math.cos(theta)}`}
+            fill="none" stroke="#d97706" strokeWidth="1.5" strokeOpacity="0.7"
+          />
+        )}
+
+        {/* Labels */}
+        <text x={cx} y={cy + Rc + 28} fill="var(--tx2)" fontSize="11" fontFamily="var(--font)" textAnchor="middle" fontWeight="500">
+          θ = {theta_deg.toFixed(0)}° | e = {(R_c_mm - R_p_mm).toFixed(1)}mm
+        </text>
+        <text x={cx} y={cy + Rc + 44} fill="var(--tx3)" fontSize="10" fontFamily="var(--font)" textAnchor="middle">
+          R_c={R_c_mm}mm  R_p={R_p_mm}mm  H={H_mm}mm
+        </text>
+      </svg>
+    </div>
+  );
+}
+
+// ============================================================
+// Rolling Piston 3D View (Three.js)
+// ============================================================
+function RollingPiston3D({ R_c_mm, R_p_mm, H_mm, t_vane_mm, theta_deg,
+                          autoRotate = false, explode = 0,
+                          showCylinder = true, showPiston = true, showVane = true, showPlates = true }) {
+  const mountRef = React.useRef(null);
+  const sceneRef = React.useRef(null);
+  const rendererRef = React.useRef(null);
+  const pistonRef = React.useRef(null);
+  const vaneRef = React.useRef(null);
+  const cylinderRef = React.useRef(null);
+  const cylWireRef = React.useRef(null);
+  const topPlateRef = React.useRef(null);
+  const botPlateRef = React.useRef(null);
+  const autoRotateRef = React.useRef(autoRotate);
+  const frameRef = React.useRef(null);
+  const camStateRef = React.useRef({ theta: Math.PI/4, phi: Math.PI/5, r: 130 });
+  React.useEffect(() => { autoRotateRef.current = autoRotate; }, [autoRotate]);
+
+  React.useEffect(() => {
+    if (!mountRef.current || typeof THREE === 'undefined') return;
+
+    const W = mountRef.current.clientWidth || 360;
+    const H_view = mountRef.current.clientHeight || 300;
+
+    const scene = new THREE.Scene();
+    // Light-theme friendly bg (matches fan-sim var(--bg3))
+    scene.background = new THREE.Color(0xf0f1f3);
+    const camera = new THREE.PerspectiveCamera(40, W / H_view, 0.1, 1000);
+    camera.position.set(80, 60, 80);
+    camera.lookAt(0, 0, 0);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(W, H_view);
+    renderer.setPixelRatio(window.devicePixelRatio);
+    mountRef.current.innerHTML = '';
+    mountRef.current.appendChild(renderer.domElement);
+
+    // Lighting
+    scene.add(new THREE.AmbientLight(0x334455, 0.8));
+    const dirLight = new THREE.DirectionalLight(0xffffff, 0.7);
+    dirLight.position.set(50, 80, 60);
+    scene.add(dirLight);
+    const dirLight2 = new THREE.DirectionalLight(0x4488cc, 0.3);
+    dirLight2.position.set(-30, -20, 40);
+    scene.add(dirLight2);
+
+    const Rc = R_c_mm, Rp = R_p_mm, Hc = H_mm;
+    const e = Rc - Rp;
+
+    // ═══ Cylinder side wall only (simple outline) ═══
+    // Outer wall: open cylinder, no top/bottom caps
+    const wallGeo = new THREE.CylinderGeometry(Rc, Rc, Hc, 64, 1, true);
+    const wallMat = new THREE.MeshPhongMaterial({
+      color: 0x475569, transparent: true, opacity: 0.2,
+      side: THREE.DoubleSide, depthWrite: false
+    });
+    const wall = new THREE.Mesh(wallGeo, wallMat);
+    scene.add(wall);
+    cylinderRef.current = wall;
+
+    // Wall wireframe (edges only)
+    const wallWireGeo = new THREE.EdgesGeometry(wallGeo);
+    const wallWire = new THREE.LineSegments(wallWireGeo,
+      new THREE.LineBasicMaterial({ color: 0x475569, transparent: true, opacity: 0.6 }));
+    scene.add(wallWire);
+    cylWireRef.current = wallWire;
+
+    // Plates removed entirely (user request)
+    topPlateRef.current = null;
+    botPlateRef.current = null;
+
+    // Piston — initial position at θ=0 (+X side)
+    const pisGeo = new THREE.CylinderGeometry(Rp, Rp, Hc - 1, 48);
+    const pisMat = new THREE.MeshPhongMaterial({ color: 0x94a3b8 });
+    const piston = new THREE.Mesh(pisGeo, pisMat);
+    const e_init = Rc - Rp;
+    const theta_init = theta_deg * Math.PI / 180;
+    piston.position.x = e_init * Math.sin(theta_init);
+    piston.position.z = -e_init * Math.cos(theta_init);
+    scene.add(piston);
+    pistonRef.current = piston;
+
+    // Vane — slot at z=-Rc (cylinder wall), extends inward by ext = e(1 - cos(θ))
+    const vaneGeo = new THREE.BoxGeometry(t_vane_mm, Hc - 1, Rc);
+    const vaneMat = new THREE.MeshPhongMaterial({ color: 0x64748b });
+    const vane = new THREE.Mesh(vaneGeo, vaneMat);
+    const vane_ext_init = e_init * (1 - Math.cos(theta_init));
+    vane.position.x = 0;
+    vane.position.z = -Rc + vane_ext_init / 2;
+    vane.scale.z = Math.max(vane_ext_init / Rc, 0.05);
+    scene.add(vane);
+    vaneRef.current = vane;
+
+    // Suction port indicator — at ~105° (just CCW of vane, new chamber opening)
+    const sucGeo = new THREE.SphereGeometry(1.5, 16, 16);
+    const sucMat = new THREE.MeshPhongMaterial({ color: 0x10b981, emissive: 0x10b981, emissiveIntensity: 0.5 });
+    const sucSphere = new THREE.Mesh(sucGeo, sucMat);
+    const sucAngle = Math.PI * 7 / 12;  // 105°
+    const sucX = Rc * Math.cos(sucAngle), sucZ = -Rc * Math.sin(sucAngle);
+    sucSphere.position.set(sucX, 0, sucZ);
+    scene.add(sucSphere);
+
+    // Discharge port indicator — at ~75° (just CW of vane, compression chamber closing)
+    const disGeo = new THREE.SphereGeometry(1.2, 16, 16);
+    const disMat = new THREE.MeshPhongMaterial({ color: 0xef4444, emissive: 0xef4444, emissiveIntensity: 0.5 });
+    const disSphere = new THREE.Mesh(disGeo, disMat);
+    const disAngle = Math.PI * 5 / 12;  // 75°
+    const disX = Rc * Math.cos(disAngle), disZ = -Rc * Math.sin(disAngle);
+    disSphere.position.set(disX, 0, disZ);
+    scene.add(disSphere);
+
+    // ═══ Refrigerant flow arrows (SUC inward, DIS outward) ═══
+    // Suction arrow: pointing FROM outside TOWARD cylinder (gas enters)
+    const arrowLen = Rc * 0.4;
+    const nSuc = new THREE.Vector3(Math.cos(sucAngle), 0, -Math.sin(sucAngle)); // radial outward
+    const sucStart = new THREE.Vector3(sucX + nSuc.x * arrowLen, 0, sucZ + nSuc.z * arrowLen);
+    const sucDir = new THREE.Vector3(-nSuc.x, 0, -nSuc.z);  // inward
+    const sucArrow = new THREE.ArrowHelper(sucDir, sucStart, arrowLen, 0x10b981, arrowLen*0.3, arrowLen*0.2);
+    scene.add(sucArrow);
+
+    // Discharge arrow: pointing FROM cylinder TOWARD outside (gas exits)
+    const nDis = new THREE.Vector3(Math.cos(disAngle), 0, -Math.sin(disAngle));
+    const disStart = new THREE.Vector3(disX, 0, disZ);
+    const disDir = new THREE.Vector3(nDis.x, 0, nDis.z);  // outward
+    const disArrow = new THREE.ArrowHelper(disDir, disStart, arrowLen, 0xef4444, arrowLen*0.3, arrowLen*0.2);
+    scene.add(disArrow);
+
+    // Text labels using sprites
+    const makeLabel = (text, color) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 128; canvas.height = 64;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = 'rgba(255,255,255,0.95)';
+      ctx.fillRect(0, 0, 128, 64);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 3;
+      ctx.strokeRect(2, 2, 124, 60);
+      ctx.font = 'bold 28px "Noto Sans KR", sans-serif';
+      ctx.fillStyle = color;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, 64, 32);
+      const tex = new THREE.CanvasTexture(canvas);
+      const mat = new THREE.SpriteMaterial({ map: tex, depthTest: false });
+      const sprite = new THREE.Sprite(mat);
+      sprite.scale.set(12, 6, 1);
+      return sprite;
+    };
+    const sucLabel = makeLabel('SUC', '#059669');
+    sucLabel.position.set(sucX + nSuc.x * arrowLen * 1.7, 0, sucZ + nSuc.z * arrowLen * 1.7);
+    scene.add(sucLabel);
+    const disLabel = makeLabel('DIS', '#dc2626');
+    disLabel.position.set(disX + nDis.x * arrowLen * 1.7, 0, disZ + nDis.z * arrowLen * 1.7);
+    scene.add(disLabel);
+
+    // Grid helper
+    const grid = new THREE.GridHelper(80, 8, 0x1e293b, 0x1e293b);
+    grid.position.y = -Hc/2 - 3;
+    scene.add(grid);
+
+    sceneRef.current = { scene, camera, renderer };
+    rendererRef.current = renderer;
+    renderer.render(scene, camera);
+
+    // #13: Mouse drag rotation
+    let isDragging = false, prevX = 0, prevY = 0;
+    // Restore camera state from persistent ref
+    let camTheta = camStateRef.current.theta;
+    let camPhi = camStateRef.current.phi;
+    let camR = camStateRef.current.r;
+    const updateCam = () => {
+      camera.position.set(
+        camR * Math.sin(camPhi) * Math.cos(camTheta),
+        camR * Math.cos(camPhi),
+        camR * Math.sin(camPhi) * Math.sin(camTheta),
+      );
+      camera.lookAt(0, 0, 0);
+      renderer.render(scene, camera);
+    };
+    updateCam();
+    const el = renderer.domElement;
+    el.style.cursor = 'grab';
+    el.addEventListener('mousedown', e => { isDragging = true; prevX = e.clientX; prevY = e.clientY; el.style.cursor = 'grabbing'; });
+    el.addEventListener('mousemove', e => {
+      if (!isDragging) return;
+      camTheta += (e.clientX - prevX) * 0.01;
+      camPhi = Math.max(0.1, Math.min(Math.PI - 0.1, camPhi - (e.clientY - prevY) * 0.01));
+      camStateRef.current.theta = camTheta;
+      camStateRef.current.phi = camPhi;
+      prevX = e.clientX; prevY = e.clientY;
+      updateCam();
+    });
+    el.addEventListener('mouseup', () => { isDragging = false; el.style.cursor = 'grab'; });
+    el.addEventListener('mouseleave', () => { isDragging = false; el.style.cursor = 'grab'; });
+    el.addEventListener('wheel', e => {
+      camR = Math.max(50, Math.min(300, camR + e.deltaY * 0.3));
+      camStateRef.current.r = camR;
+      updateCam();
+      e.preventDefault();
+    }, { passive: false });
+
+    // Auto-rotate animation loop (fan-sim compatible)
+    const animate = () => {
+      if (autoRotateRef.current) {
+        camTheta += 0.006;
+        camStateRef.current.theta = camTheta;
+        updateCam();
+      }
+      frameRef.current = requestAnimationFrame(animate);
+    };
+    frameRef.current = requestAnimationFrame(animate);
+
+    // ResizeObserver — auto-fit canvas to container size
+    const resizeObs = new ResizeObserver(() => {
+      if (!mountRef.current) return;
+      const nw = mountRef.current.clientWidth;
+      const nh = mountRef.current.clientHeight;
+      if (nw > 0 && nh > 0) {
+        renderer.setSize(nw, nh);
+        camera.aspect = nw / nh;
+        camera.updateProjectionMatrix();
+        updateCam();
+      }
+    });
+    resizeObs.observe(mountRef.current);
+
+    return () => {
+      if (frameRef.current) cancelAnimationFrame(frameRef.current);
+      resizeObs.disconnect();
+      renderer.dispose();
+      if (mountRef.current) mountRef.current.innerHTML = '';
+    };
+  }, [R_c_mm, R_p_mm, H_mm, t_vane_mm]);
+
+  // Update piston/vane position on theta change
+  React.useEffect(() => {
+    if (!sceneRef.current || !pistonRef.current || !vaneRef.current) return;
+    const { scene, camera, renderer } = sceneRef.current;
+    const e = R_c_mm - R_p_mm;
+    const theta = theta_deg * Math.PI / 180;
+
+    // Piston: eccentric orbit (x-z plane, y=height)
+    // θ=0 → piston at vane position (-Z), vane fully pressed (ext=0)
+    //   θ=0°: piston at -Z (under vane)
+    //   θ=90°: piston at +X
+    //   θ=180°: piston at +Z (opposite vane)
+    //   θ=270°: piston at -X
+    pistonRef.current.position.x = e * Math.sin(theta);
+    pistonRef.current.position.z = -e * Math.cos(theta);
+
+    // Vane: slides along z=0, slot at z=-Rc (cylinder wall on -Z side)
+    // Extends inward (toward +z) by ext = e(1 - cos(θ))
+    //   θ=0:   ext = 0   (piston at vane, fully retracted/pressed)
+    //   θ=90°: ext = e   (piston at +X)
+    //   θ=180°: ext = 2e (piston opposite vane, max extension)
+    //   θ=270°: ext = e  (piston at -X)
+    const vane_ext = e * (1 - Math.cos(theta));
+    vaneRef.current.position.x = 0;
+    vaneRef.current.position.z = -R_c_mm + vane_ext / 2;
+    vaneRef.current.scale.z = Math.max(vane_ext / R_c_mm, 0.05);
+
+    renderer.render(scene, camera);
+  }, [theta_deg, R_c_mm, R_p_mm]);
+
+  // Visibility toggles + explode effect
+  React.useEffect(() => {
+    if (!sceneRef.current) return;
+    const { scene, camera, renderer } = sceneRef.current;
+    if (cylinderRef.current) cylinderRef.current.visible = showCylinder;
+    if (cylWireRef.current) cylWireRef.current.visible = showCylinder;
+    if (pistonRef.current) pistonRef.current.visible = showPiston;
+    if (vaneRef.current) vaneRef.current.visible = showVane;
+    if (topPlateRef.current) topPlateRef.current.visible = showPlates;
+    if (botPlateRef.current) botPlateRef.current.visible = showPlates;
+    // Explode: parts separate along Y axis
+    // Plates move furthest, piston/vane moderately
+    const E = explode;  // explode magnitude
+    if (topPlateRef.current) topPlateRef.current.position.y = H_mm/2 + 1 + E * 2.0;
+    if (botPlateRef.current) botPlateRef.current.position.y = -H_mm/2 - 1 - E * 2.0;
+    if (pistonRef.current) pistonRef.current.position.y = E * 0.8;   // piston slightly up
+    if (vaneRef.current) vaneRef.current.position.y = E * 0.4;       // vane slightly up
+    if (cylinderRef.current) cylinderRef.current.position.y = 0;     // cylinder stays centered
+    if (cylWireRef.current) cylWireRef.current.position.y = 0;
+    renderer.render(scene, camera);
+  }, [showCylinder, showPiston, showVane, showPlates, explode, H_mm]);
+
+  return (
+    <div ref={mountRef} style={{ width: '100%', height: '100%', minHeight: 400, borderRadius: 12, overflow: 'hidden' }} />
+  );
+}
+
 /* ═══════════════════════════════════════════════════════════════════
    Compressor (PDSim ROM) Component View
    typeNo 103 — backend/components/compressor_pdsim_rom.py wrapping
    ═══════════════════════════════════════════════════════════════════ */
 function CompressorView({ onBack }) {
-  // ─── Geometry params ───
-  const [V_disp, setVdisp] = useState(10.0);            // cm³
+  // ─── PDSim ROM Fitting params (Bell ROM) ───
   const [clearance_ratio, setClearance] = useState(0.04); // -
   const [rv_in, setRvin] = useState(2.5);               // -
   const [A_valve_in_mm2, setAvIn] = useState(8.0);      // mm²
@@ -1370,8 +2246,17 @@ function CompressorView({ onBack }) {
   const [N_rated, setNrated] = useState(3000);          // rpm
   const [eta_motor, setEtaMotor] = useState(0.92);
   const [eta_inv, setEtaInv] = useState(0.95);
+  
+  // ─── Rotary geometry (compressor-sim의 RollingPiston* 함수 호환) ───
+  // 진영님 지적 반영: V_disp 단일 입력 대신 R_cyl/R_pis/H/t_vane으로 직접 정의
+  // V_disp는 derived: V_disp = π × (R_cyl² - R_pis²) × H_cyl  (cm³)
+  const [R_cyl, setRcyl] = useState(24.0);              // mm — 실린더 내경 반경
+  const [R_pis, setRpis] = useState(20.5);              // mm — 피스톤 외경 반경
+  const [H_cyl, setHcyl] = useState(25.0);              // mm — 실린더 높이
+  const [t_vane, setTvane] = useState(3.0);             // mm — vane 두께
+  const [thetaView, setThetaView] = useState(45);       // deg — 시각화용 회전 각도
 
-  // ─── Fitting params (PDSim ROM 11개 — 진영님 audit 수치) ───
+  // ─── Fitting params (Bell ROM 누설 + 마찰 + 손실) ───
   const [zeta_valve, setZetaValve] = useState(1.5);
   const [A_leak_mm2, setAleak] = useState(0.02);
   const [Cd_leak, setCdLeak] = useState(0.6);
@@ -1383,9 +2268,23 @@ function CompressorView({ onBack }) {
   const [AU_loss, setAUloss] = useState(5.0);
 
   // Material / type
-  const [comp_type, setCompType] = useState('reciprocating');  // reciprocating/rotary/scroll
+  const [comp_type, setCompType] = useState('rotary');  // rotary 기본 — RollingPiston 도면
   const [fluid] = useState('R290');
   const [T_amb, setTamb] = useState(25.0);
+
+  // 3D viz controls (compressor-sim과 동일)
+  const [autoRotate, setAutoRotate] = useState(false);
+  const [explode, setExplode] = useState(0);
+  const [showCylinder, setShowCylinder] = useState(true);
+  const [showPiston, setShowPiston] = useState(true);
+  const [showVane, setShowVane] = useState(true);
+  const [showPlates, setShowPlates] = useState(true);
+
+  // V_disp는 derived (rotary 기하학에서 자동 계산)
+  // V_disp [cm³] = π × (R_cyl² - R_pis²) × H_cyl × 10^-3 (mm³ → cm³)
+  const V_disp = useMemo(() => {
+    return Math.PI * (R_cyl*R_cyl - R_pis*R_pis) * H_cyl * 1e-3;
+  }, [R_cyl, R_pis, H_cyl]);
 
   // Save panel state
   const [saveOpen, setSaveOpen] = useState(false);
@@ -1410,18 +2309,28 @@ function CompressorView({ onBack }) {
 
   const currentParams = () => ({
     component: 'compressor',
-    V_disp, clearance_ratio, rv_in,
+    // Rotary geometry (1차 입력)
+    R_cyl, R_pis, H_cyl, t_vane,
+    // PDSim ROM fitting params
+    clearance_ratio, rv_in,
     A_valve_in_mm2, A_valve_out_mm2,
     N_rated, eta_motor, eta_inv,
     zeta_valve, A_leak_mm2, Cd_leak, n_leak_rpm,
     over_comp_factor, n_poly_base,
     W_f_const, alpha_f_rpm, AU_loss,
     comp_type, T_amb,
+    // V_disp 도 함께 (derived지만 호환성 위해 저장 — load 시 재계산되므로 무시됨)
+    V_disp,
   });
 
   const applyParams = (p) => {
     if (!p) return;
-    if (p.V_disp !== undefined) setVdisp(p.V_disp);
+    // Rotary geometry 우선 적용
+    if (p.R_cyl !== undefined) setRcyl(p.R_cyl);
+    if (p.R_pis !== undefined) setRpis(p.R_pis);
+    if (p.H_cyl !== undefined) setHcyl(p.H_cyl);
+    if (p.t_vane !== undefined) setTvane(p.t_vane);
+    // PDSim ROM
     if (p.clearance_ratio !== undefined) setClearance(p.clearance_ratio);
     if (p.rv_in !== undefined) setRvin(p.rv_in);
     if (p.A_valve_in_mm2 !== undefined) setAvIn(p.A_valve_in_mm2);
@@ -1440,6 +2349,7 @@ function CompressorView({ onBack }) {
     if (p.AU_loss !== undefined) setAUloss(p.AU_loss);
     if (p.comp_type !== undefined) setCompType(p.comp_type);
     if (p.T_amb !== undefined) setTamb(p.T_amb);
+    // V_disp는 derived이므로 무시 — R_cyl/R_pis/H_cyl로 자동 계산
   };
 
   const saveSlot = (slot, name) => {
@@ -1458,11 +2368,12 @@ function CompressorView({ onBack }) {
   };
 
   // ─── backend (typeNo 103) params 매핑 ───
+  // V_disp는 rotary geometry에서 derived (사용자가 직접 입력하지 않음)
   const buildBackendParams = () => ({
     fluid: fluid,
     comp_type: comp_type,
     T_amb: T_amb,
-    V_disp: V_disp,
+    V_disp: V_disp,  // derived from R_cyl/R_pis/H_cyl
     clearance_ratio: clearance_ratio,
     rv_in: rv_in,
     A_valve_in_mm2: A_valve_in_mm2,
@@ -1673,12 +2584,25 @@ function CompressorView({ onBack }) {
       <div className="flex-1 overflow-hidden flex">
         {/* Sidebar — params */}
         <div className="w-72 shrink-0 bg-white border-r border-slate-200 overflow-y-auto p-4">
-          <SidebarSection title="Geometry">
-            <Slider label="V_disp" sublabel="cm³" value={V_disp} min={1} max={50} step={0.5} onChange={setVdisp} color="purple" decimals={1} />
-            <Slider label="Clearance ratio" sublabel="-" value={clearance_ratio} min={0.01} max={0.15} step={0.005} onChange={setClearance} color="purple" decimals={3} />
-            <Slider label="rv_in (built-in vol ratio)" sublabel="-" value={rv_in} min={1.5} max={5.0} step={0.1} onChange={setRvin} color="purple" decimals={2} />
+          <SidebarSection title="Rotary Geometry">
+            <Slider label="R_cyl" sublabel="mm" value={R_cyl} min={15} max={45} step={0.5} onChange={setRcyl} color="purple" decimals={1} />
+            <Slider label="R_pis" sublabel="mm" value={R_pis} min={10} max={42} step={0.5} onChange={setRpis} color="purple" decimals={1} />
+            <Slider label="H_cyl" sublabel="mm" value={H_cyl} min={10} max={60} step={0.5} onChange={setHcyl} color="purple" decimals={1} />
+            <Slider label="t_vane" sublabel="mm" value={t_vane} min={1.5} max={8} step={0.1} onChange={setTvane} color="purple" decimals={1} />
+            <Slider label="θ (시각화 각도)" sublabel="°" value={thetaView} min={0} max={359} step={1} onChange={setThetaView} color="amber" decimals={0} />
+            <div className="mt-2 px-2 py-1.5 bg-purple-50 border border-purple-200 rounded text-[11px] font-mono text-purple-800">
+              V_disp = π × (R_cyl² − R_pis²) × H = <b>{V_disp.toFixed(2)} cm³</b>
+            </div>
+            <div className="mt-1 text-[10px] text-slate-400 font-mono">
+              eccentricity e = {(R_cyl - R_pis).toFixed(2)} mm
+            </div>
+          </SidebarSection>
+
+          <SidebarSection title="Valves & Operating">
             <Slider label="A_valve_in" sublabel="mm²" value={A_valve_in_mm2} min={2} max={30} step={0.5} onChange={setAvIn} color="purple" decimals={1} />
             <Slider label="A_valve_out" sublabel="mm²" value={A_valve_out_mm2} min={2} max={30} step={0.5} onChange={setAvOut} color="purple" decimals={1} />
+            <Slider label="Clearance ratio" sublabel="-" value={clearance_ratio} min={0.01} max={0.15} step={0.005} onChange={setClearance} color="purple" decimals={3} />
+            <Slider label="rv_in (built-in vol ratio)" sublabel="-" value={rv_in} min={1.5} max={5.0} step={0.1} onChange={setRvin} color="purple" decimals={2} />
             <Slider label="N_rated" sublabel="rpm" value={N_rated} min={1500} max={7000} step={100} onChange={setNrated} color="purple" decimals={0} />
             <Slider label="η_motor" sublabel="-" value={eta_motor} min={0.7} max={0.98} step={0.01} onChange={setEtaMotor} color="purple" decimals={2} />
             <Slider label="η_inv" sublabel="-" value={eta_inv} min={0.85} max={0.99} step={0.005} onChange={setEtaInv} color="purple" decimals={2} />
@@ -1698,7 +2622,7 @@ function CompressorView({ onBack }) {
 
           <SidebarSection title="Material & Operating">
             <div className="text-[11px] text-slate-500 mb-1">Type</div>
-            <ButtonGroup options={['reciprocating', 'rotary', 'scroll']} value={comp_type} onChange={setCompType} />
+            <ButtonGroup options={['rotary', 'reciprocating', 'scroll']} value={comp_type} onChange={setCompType} />
             <Slider label="T_amb" sublabel="°C" value={T_amb} min={-10} max={50} step={1} onChange={setTamb} color="slate" decimals={0} />
             <div className="mt-2 text-[10px] text-slate-400 font-mono">Fluid: {fluid} (HPWD Studio에서 변경)</div>
           </SidebarSection>
@@ -1731,227 +2655,173 @@ function CompressorView({ onBack }) {
           {/* Main scroll area */}
           <div className="flex-1 overflow-y-auto p-6 bg-slate-50">
             <div className="max-w-3xl mx-auto">
-              {/* Visualization based on vizSub */}
+              {/* Visualization based on vizSub — compressor-sim의 RollingPiston* 사용 */}
               <div className="bg-white border border-slate-200 rounded-lg p-4 mb-4">
-                <div className="text-[11px] font-mono text-slate-500 uppercase tracking-wider mb-2">
-                  {vizSub === 0 && '3D model — isometric SVG (drag to rotate not yet)'}
-                  {vizSub === 1 && 'Top view — 위에서 본 단면'}
-                  {vizSub === 2 && 'Front view — 정면 단면'}
+                <div className="text-[11px] font-mono text-slate-500 uppercase tracking-wider mb-2 flex items-center justify-between">
+                  <span>
+                    {vizSub === 0 && '3D model — Three.js (drag to rotate, scroll to zoom)'}
+                    {vizSub === 1 && 'Top view — Rolling piston cross-section (θ animation)'}
+                    {vizSub === 2 && 'Front view — Cylinder side cross-section'}
+                  </span>
+                  {/* 3D mode controls */}
+                  {vizSub === 0 && (
+                    <div className="flex gap-2 items-center">
+                      <button onClick={() => setAutoRotate(a => !a)}
+                        className={`text-[10px] px-2 py-1 rounded border ${
+                          autoRotate ? 'bg-purple-50 border-purple-400 text-purple-700' : 'bg-white border-slate-300 text-slate-600'
+                        }`}>
+                        {autoRotate ? '⏸ Pause' : '▶ Auto-rotate'}
+                      </button>
+                      <label className="flex items-center gap-1 text-[10px] text-slate-600">
+                        Explode
+                        <input type="range" min="0" max="20" step="1" value={explode} onChange={(e) => setExplode(+e.target.value)}
+                          className="w-16" />
+                      </label>
+                    </div>
+                  )}
                 </div>
                 
-                {/* ─── 3D MODEL (isometric SVG) ─── */}
-                {vizSub === 0 && (
-                  <svg viewBox="0 0 480 320" className="w-full h-auto">
-                    <defs>
-                      <linearGradient id="cyl-iso-top" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0" stopColor="#c4b5fd" />
-                        <stop offset="1" stopColor="#8b5cf6" />
-                      </linearGradient>
-                      <linearGradient id="cyl-iso-side" x1="0" y1="0" x2="1" y2="0">
-                        <stop offset="0" stopColor="#7c3aed" />
-                        <stop offset="0.5" stopColor="#a78bfa" />
-                        <stop offset="1" stopColor="#5b21b6" />
-                      </linearGradient>
-                      <radialGradient id="piston-grad" cx="0.3" cy="0.3">
-                        <stop offset="0" stopColor="#f1f5f9" />
-                        <stop offset="1" stopColor="#475569" />
-                      </radialGradient>
-                    </defs>
-                    
-                    {/* Floor grid (등각투영) */}
-                    {[-2,-1,0,1,2].map(i => (
-                      <g key={`gx${i}`}>
-                        <line x1={170 + i*40} y1={260 + i*22}
-                              x2={310 + i*40} y2={260 - 18*22 + i*22}
-                              stroke="#e2e8f0" strokeWidth="0.5" />
-                      </g>
-                    ))}
-                    {[0,1,2,3,4,5].map(i => (
-                      <g key={`gy${i}`}>
-                        <line x1={90 + i*40} y1={194 + i*22}
-                              x2={250 + i*40} y2={194 + i*22}
-                              stroke="#e2e8f0" strokeWidth="0.5" />
-                      </g>
-                    ))}
-                    
-                    {/* Cylinder body — isometric */}
-                    {/* Side wall (rectangle) */}
-                    <path d={`M 180 90 L 320 90 L 360 130 L 360 230 L 320 270 L 180 270 L 140 230 L 140 130 Z`}
-                          fill="url(#cyl-iso-side)" stroke="#5b21b6" strokeWidth="1.5" opacity="0.85" />
-                    {/* Top ellipse */}
-                    <ellipse cx="250" cy="110" rx="110" ry="22"
-                          fill="url(#cyl-iso-top)" stroke="#5b21b6" strokeWidth="1.5" />
-                    
-                    {/* Suction port (top-left) */}
-                    <path d={`M 100 130 L 145 130 L 150 122 L 100 122 Z`}
-                          fill="#3b82f6" opacity="0.85" stroke="#1e40af" strokeWidth="1" />
-                    <text x="80" y="118" textAnchor="middle" fontSize="11" fill="#1e40af" fontFamily="monospace">SUC</text>
-                    <text x="80" y="135" textAnchor="middle" fontSize="9" fill="#1e40af" fontFamily="monospace">A={A_valve_in_mm2.toFixed(1)}mm²</text>
-                    
-                    {/* Discharge port (top-right) */}
-                    <path d={`M 355 130 L 400 130 L 400 122 L 350 122 Z`}
-                          fill="#dc2626" opacity="0.85" stroke="#7f1d1d" strokeWidth="1" />
-                    <text x="425" y="118" textAnchor="middle" fontSize="11" fill="#7f1d1d" fontFamily="monospace">DIS</text>
-                    <text x="425" y="135" textAnchor="middle" fontSize="9" fill="#7f1d1d" fontFamily="monospace">A={A_valve_out_mm2.toFixed(1)}mm²</text>
-                    
-                    {/* Inside label */}
-                    <text x="250" y="180" textAnchor="middle" fontSize="13" fill="white" fontFamily="monospace" fontWeight="bold">
-                      V_disp = {V_disp.toFixed(1)} cm³
-                    </text>
-                    <text x="250" y="200" textAnchor="middle" fontSize="11" fill="white" fontFamily="monospace">
-                      N = {N_rated} rpm · {comp_type}
-                    </text>
-                    <text x="250" y="218" textAnchor="middle" fontSize="10" fill="#e0e7ff" fontFamily="monospace">
-                      η_v ≈ {derived.eta_v_est} · clearance = {clearance_ratio.toFixed(3)}
-                    </text>
-                    
-                    {/* Bottom annotations */}
-                    <text x="250" y="295" textAnchor="middle" fontSize="10" fill="#92400e" fontFamily="monospace">
-                      A_leak = {A_leak_mm2.toFixed(3)} mm² (Cd = {Cd_leak.toFixed(2)})
-                    </text>
-                    <text x="250" y="310" textAnchor="middle" fontSize="10" fill="#525252" fontFamily="monospace">
-                      W_friction({N_rated}) ≈ {derived.W_friction_at_rated} W
-                    </text>
-                  </svg>
-                )}
-                
-                {/* ─── TOP VIEW (위에서 본 단면 — 원형 + valve 위치) ─── */}
-                {vizSub === 1 && (
-                  <svg viewBox="0 0 480 320" className="w-full h-auto">
-                    <defs>
-                      <radialGradient id="top-cyl-grad" cx="0.5" cy="0.5">
-                        <stop offset="0.7" stopColor="#a78bfa" stopOpacity="0.3" />
-                        <stop offset="1" stopColor="#7c3aed" stopOpacity="0.7" />
-                      </radialGradient>
-                    </defs>
-                    
-                    {/* Outer cylinder circle */}
-                    <circle cx="240" cy="160" r="120" fill="url(#top-cyl-grad)" stroke="#5b21b6" strokeWidth="2" />
-                    {/* Inner clearance circle (시각적으로 작은 차이) */}
-                    <circle cx="240" cy="160" r="115" fill="none" stroke="#7c3aed" strokeWidth="0.5" strokeDasharray="3,3" />
-                    
-                    {/* Suction valve (left side) */}
-                    {(() => {
-                      const sucR = 6 + Math.sqrt(A_valve_in_mm2);  // 면적 기반 크기
-                      return (<>
-                        <circle cx="120" cy="160" r={sucR} fill="#3b82f6" opacity="0.8" stroke="#1e40af" strokeWidth="1.5" />
-                        <text x="120" y="125" textAnchor="middle" fontSize="11" fontFamily="monospace" fill="#1e40af" fontWeight="bold">SUC</text>
-                        <text x="120" y="195" textAnchor="middle" fontSize="9" fontFamily="monospace" fill="#1e40af">{A_valve_in_mm2.toFixed(1)} mm²</text>
-                      </>);
-                    })()}
-                    
-                    {/* Discharge valve (right side) */}
-                    {(() => {
-                      const disR = 6 + Math.sqrt(A_valve_out_mm2);
-                      return (<>
-                        <circle cx="360" cy="160" r={disR} fill="#dc2626" opacity="0.8" stroke="#7f1d1d" strokeWidth="1.5" />
-                        <text x="360" y="125" textAnchor="middle" fontSize="11" fontFamily="monospace" fill="#7f1d1d" fontWeight="bold">DIS</text>
-                        <text x="360" y="195" textAnchor="middle" fontSize="9" fontFamily="monospace" fill="#7f1d1d">{A_valve_out_mm2.toFixed(1)} mm²</text>
-                      </>);
-                    })()}
-                    
-                    {/* Center label */}
-                    <text x="240" y="155" textAnchor="middle" fontSize="13" fill="#1e1b4b" fontFamily="monospace" fontWeight="bold">
-                      V_disp = {V_disp.toFixed(1)} cm³
-                    </text>
-                    <text x="240" y="173" textAnchor="middle" fontSize="11" fill="#3730a3" fontFamily="monospace">
-                      Top section
-                    </text>
-                    
-                    {/* Diameter dimension line */}
-                    <line x1="120" y1="290" x2="360" y2="290" stroke="#64748b" strokeWidth="1" markerStart="url(#arrow-l)" markerEnd="url(#arrow-r)" />
-                    <text x="240" y="285" textAnchor="middle" fontSize="10" fill="#64748b" fontFamily="monospace">
-                      D ≈ 2 × √(V_disp / π·H) (ref geometry)
-                    </text>
-                    
-                    {/* Leakage indication — small triangles around the perimeter */}
-                    {[40, 130, 220, 310].map(deg => {
-                      const rad = (deg * Math.PI) / 180;
-                      const x1 = 240 + 122 * Math.cos(rad);
-                      const y1 = 160 + 122 * Math.sin(rad);
-                      const x2 = 240 + 132 * Math.cos(rad);
-                      const y2 = 160 + 132 * Math.sin(rad);
-                      return (
-                        <line key={deg} x1={x1} y1={y1} x2={x2} y2={y2}
-                              stroke="#92400e" strokeWidth="1.5" opacity="0.6" />
-                      );
-                    })}
-                    <text x="240" y="20" textAnchor="middle" fontSize="9" fill="#92400e" fontFamily="monospace">
-                      ↗ A_leak = {A_leak_mm2.toFixed(3)} mm² (외주 누설)
-                    </text>
-                  </svg>
-                )}
-                
-                {/* ─── FRONT VIEW (정면 단면) ─── */}
-                {vizSub === 2 && (
-                  <svg viewBox="0 0 480 320" className="w-full h-auto">
-                    <defs>
-                      <linearGradient id="front-cyl" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0" stopColor="#c4b5fd" />
-                        <stop offset="1" stopColor="#7c3aed" />
-                      </linearGradient>
-                      <pattern id="hatch" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)">
-                        <line x1="0" y1="0" x2="0" y2="6" stroke="#94a3b8" strokeWidth="0.5" />
-                      </pattern>
-                    </defs>
-                    
-                    {/* Cylinder body — rectangle (front section) */}
-                    <rect x="100" y="80" width="280" height="180" fill="url(#front-cyl)" stroke="#5b21b6" strokeWidth="2" rx="4" />
-                    
-                    {/* Top (suction valve area) */}
-                    <line x1="100" y1="80" x2="380" y2="80" stroke="#5b21b6" strokeWidth="2" />
-                    {(() => {
-                      // Suction valve: 상단 좌측, A_valve_in 면적
-                      const sucW = 30 + Math.sqrt(A_valve_in_mm2) * 3;
-                      return (<>
-                        <rect x="120" y="60" width={sucW} height="22" fill="#3b82f6" opacity="0.85" stroke="#1e40af" strokeWidth="1" rx="2" />
-                        <text x={120 + sucW/2} y="50" textAnchor="middle" fontSize="11" fontFamily="monospace" fill="#1e40af" fontWeight="bold">SUC</text>
-                        <text x={120 + sucW/2} y="73" textAnchor="middle" fontSize="9" fontFamily="monospace" fill="white">{A_valve_in_mm2.toFixed(1)} mm²</text>
-                      </>);
-                    })()}
-                    
-                    {/* Discharge valve (top right) */}
-                    {(() => {
-                      const disW = 30 + Math.sqrt(A_valve_out_mm2) * 3;
-                      return (<>
-                        <rect x={360 - disW - 20} y="60" width={disW} height="22" fill="#dc2626" opacity="0.85" stroke="#7f1d1d" strokeWidth="1" rx="2" />
-                        <text x={360 - disW/2 - 20} y="50" textAnchor="middle" fontSize="11" fontFamily="monospace" fill="#7f1d1d" fontWeight="bold">DIS</text>
-                        <text x={360 - disW/2 - 20} y="73" textAnchor="middle" fontSize="9" fontFamily="monospace" fill="white">{A_valve_out_mm2.toFixed(1)} mm²</text>
-                      </>);
-                    })()}
-                    
-                    {/* Piston (이동 가능 영역) — 점선 */}
-                    <rect x="120" y="140" width="240" height="100" fill="none" stroke="#1e1b4b" strokeWidth="1" strokeDasharray="6,4" />
-                    <text x="240" y="135" textAnchor="middle" fontSize="9" fill="#1e1b4b" fontFamily="monospace">↕ Piston travel</text>
-                    
-                    {/* Clearance volume (top thin band) */}
-                    <rect x="120" y="82" width="240" height={Math.max(8, clearance_ratio * 200)}
-                          fill="url(#hatch)" stroke="#475569" strokeWidth="0.5" />
-                    <text x="240" y="100" textAnchor="middle" fontSize="9" fill="#475569" fontFamily="monospace">
-                      Clearance = {(clearance_ratio * 100).toFixed(1)}%
-                    </text>
-                    
-                    {/* Center labels */}
-                    <text x="240" y="200" textAnchor="middle" fontSize="13" fill="white" fontFamily="monospace" fontWeight="bold">
-                      V_disp = {V_disp.toFixed(1)} cm³
-                    </text>
-                    <text x="240" y="220" textAnchor="middle" fontSize="11" fill="white" fontFamily="monospace">
-                      N = {N_rated} rpm
-                    </text>
-                    <text x="240" y="237" textAnchor="middle" fontSize="10" fill="#e0e7ff" fontFamily="monospace">
-                      rv_in = {rv_in.toFixed(2)}
-                    </text>
-                    
-                    {/* Bottom — leakage path (annotated arrow) */}
-                    <line x1="100" y1="270" x2="380" y2="270" stroke="#92400e" strokeWidth="2" strokeDasharray="4,3" opacity="0.5" />
-                    <text x="240" y="290" textAnchor="middle" fontSize="10" fill="#92400e" fontFamily="monospace">
-                      ⤥ Leakage path: A = {A_leak_mm2.toFixed(3)} mm² · Cd = {Cd_leak.toFixed(2)}
-                    </text>
-                    <text x="240" y="305" textAnchor="middle" fontSize="9" fill="#525252" fontFamily="monospace">
-                      W_friction({N_rated} rpm) ≈ {derived.W_friction_at_rated} W
-                    </text>
-                  </svg>
-                )}
+                <div style={{ height: 380, width: '100%' }}>
+                  {vizSub === 0 && (
+                    <RollingPiston3D
+                      R_c_mm={R_cyl} R_p_mm={R_pis} H_mm={H_cyl} t_vane_mm={t_vane}
+                      theta_deg={thetaView}
+                      autoRotate={autoRotate} explode={explode}
+                      showCylinder={showCylinder} showPiston={showPiston}
+                      showVane={showVane} showPlates={showPlates}
+                    />
+                  )}
+                  {vizSub === 1 && (
+                    <RollingPistonView
+                      R_c_mm={R_cyl} R_p_mm={R_pis} H_mm={H_cyl} t_vane_mm={t_vane}
+                      theta_deg={thetaView}
+                    />
+                  )}
+                  {vizSub === 2 && (
+                    /* Front view (단순 SVG — cylinder 측면 단면) */
+                    <svg viewBox="0 0 480 380" className="w-full h-full" preserveAspectRatio="xMidYMid meet">
+                      <defs>
+                        <linearGradient id="front-cyl-grad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0" stopColor="#c4b5fd" />
+                          <stop offset="1" stopColor="#7c3aed" />
+                        </linearGradient>
+                        <pattern id="hatch-clear" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)">
+                          <line x1="0" y1="0" x2="0" y2="6" stroke="#94a3b8" strokeWidth="0.5" />
+                        </pattern>
+                      </defs>
+                      
+                      {/* 스케일: cylinder 외경(2*R_cyl)이 280px 차지 */}
+                      {(() => {
+                        const Rc = R_cyl;
+                        const Rp = R_pis;
+                        const H = H_cyl;
+                        const tv = t_vane;
+                        const scale = 280 / (2 * Rc);  // mm → px
+                        const cx = 240;  // SVG center x
+                        const cy = 200;  // SVG center y
+                        const W_cyl = 2 * Rc * scale;  // cylinder width in px
+                        const H_cyl_px = H * scale;   // cylinder height in px
+                        const tv_px = tv * scale;     // vane thickness
+                        
+                        return (
+                          <>
+                            {/* Cylinder body — 단면 (rectangle) */}
+                            <rect x={cx - W_cyl/2} y={cy - H_cyl_px/2}
+                                  width={W_cyl} height={H_cyl_px}
+                                  fill="url(#front-cyl-grad)" stroke="#5b21b6" strokeWidth="2" rx="2" />
+                            
+                            {/* Top plate */}
+                            <rect x={cx - W_cyl/2 - 5} y={cy - H_cyl_px/2 - 8}
+                                  width={W_cyl + 10} height="8"
+                                  fill="#a78bfa" stroke="#5b21b6" strokeWidth="1" />
+                            {/* Bottom plate */}
+                            <rect x={cx - W_cyl/2 - 5} y={cy + H_cyl_px/2}
+                                  width={W_cyl + 10} height="8"
+                                  fill="#a78bfa" stroke="#5b21b6" strokeWidth="1" />
+                            
+                            {/* Vane (수직 — 중심에서 위로) */}
+                            <rect x={cx - tv_px/2} y={cy - H_cyl_px/2 + 2}
+                                  width={tv_px} height={H_cyl_px - 4}
+                                  fill="#7c3aed" fillOpacity="0.3" stroke="#7c3aed" strokeWidth="1.2" />
+                            
+                            {/* Suction port (top-left) */}
+                            {(() => {
+                              const sucW = 20 + Math.sqrt(A_valve_in_mm2) * 3;
+                              return (
+                                <>
+                                  <rect x={cx - W_cyl/2 + 15} y={cy - H_cyl_px/2 - 22}
+                                        width={sucW} height="14" fill="#3b82f6" opacity="0.85"
+                                        stroke="#1e40af" strokeWidth="1" rx="2" />
+                                  <text x={cx - W_cyl/2 + 15 + sucW/2} y={cy - H_cyl_px/2 - 26}
+                                        textAnchor="middle" fontSize="11" fontFamily="monospace"
+                                        fill="#1e40af" fontWeight="bold">SUC</text>
+                                  <text x={cx - W_cyl/2 + 15 + sucW/2} y={cy - H_cyl_px/2 - 12}
+                                        textAnchor="middle" fontSize="9" fontFamily="monospace"
+                                        fill="white">{A_valve_in_mm2.toFixed(1)}mm²</text>
+                                </>
+                              );
+                            })()}
+                            
+                            {/* Discharge port (top-right) */}
+                            {(() => {
+                              const disW = 20 + Math.sqrt(A_valve_out_mm2) * 3;
+                              return (
+                                <>
+                                  <rect x={cx + W_cyl/2 - 15 - disW} y={cy - H_cyl_px/2 - 22}
+                                        width={disW} height="14" fill="#dc2626" opacity="0.85"
+                                        stroke="#7f1d1d" strokeWidth="1" rx="2" />
+                                  <text x={cx + W_cyl/2 - 15 - disW/2} y={cy - H_cyl_px/2 - 26}
+                                        textAnchor="middle" fontSize="11" fontFamily="monospace"
+                                        fill="#7f1d1d" fontWeight="bold">DIS</text>
+                                  <text x={cx + W_cyl/2 - 15 - disW/2} y={cy - H_cyl_px/2 - 12}
+                                        textAnchor="middle" fontSize="9" fontFamily="monospace"
+                                        fill="white">{A_valve_out_mm2.toFixed(1)}mm²</text>
+                                </>
+                              );
+                            })()}
+                            
+                            {/* Clearance band (top thin) */}
+                            <rect x={cx - W_cyl/2 + 2} y={cy - H_cyl_px/2 + 2}
+                                  width={W_cyl - 4}
+                                  height={Math.max(4, clearance_ratio * H_cyl_px)}
+                                  fill="url(#hatch-clear)" stroke="#475569" strokeWidth="0.5" />
+                            
+                            {/* Center labels */}
+                            <text x={cx} y={cy - 5} textAnchor="middle" fontSize="13" fill="white"
+                                  fontFamily="monospace" fontWeight="bold">
+                              V_disp = {V_disp.toFixed(1)} cm³
+                            </text>
+                            <text x={cx} y={cy + 12} textAnchor="middle" fontSize="11" fill="white"
+                                  fontFamily="monospace">
+                              N = {N_rated} rpm
+                            </text>
+                            <text x={cx} y={cy + 28} textAnchor="middle" fontSize="10" fill="#e0e7ff"
+                                  fontFamily="monospace">
+                              clearance = {(clearance_ratio*100).toFixed(1)}%
+                            </text>
+                            
+                            {/* Dimensions */}
+                            <text x={cx} y={cy - H_cyl_px/2 - 50} textAnchor="middle" fontSize="11"
+                                  fill="#64748b" fontFamily="monospace">
+                              ← D = 2·R_cyl = {(2*R_cyl).toFixed(1)} mm →
+                            </text>
+                            <text x={cx + W_cyl/2 + 30} y={cy} textAnchor="middle" fontSize="11"
+                                  fill="#64748b" fontFamily="monospace"
+                                  transform={`rotate(90, ${cx + W_cyl/2 + 30}, ${cy})`}>
+                              ← H = {H} mm →
+                            </text>
+                            
+                            {/* Bottom — leakage path */}
+                            <text x={cx} y={cy + H_cyl_px/2 + 40} textAnchor="middle" fontSize="10"
+                                  fill="#92400e" fontFamily="monospace">
+                              ⤥ Leakage: A = {A_leak_mm2.toFixed(3)} mm² · Cd = {Cd_leak.toFixed(2)} · W_f({N_rated}) ≈ {derived.W_friction_at_rated} W
+                            </text>
+                          </>
+                        );
+                      })()}
+                    </svg>
+                  )}
+                </div>
               </div>
 
               {/* Derived stats */}
