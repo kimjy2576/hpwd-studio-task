@@ -643,8 +643,19 @@ class HXSolver:
         self.corr["n_circuits"] = n_circ
         self.corr["circuit_mode"] = inp.ft_spec.circuit_mode if inp.hx_type == "FT" else "row_parallel"
 
+        # 한계 #8 — Wet fraction 계산 (segment 단위 is_wet 비율)
+        if seg_dict:
+            wet_count = sum(1 for s in seg_dict.values() if s.is_wet)
+            self._wet_fraction = wet_count / len(seg_dict)
+        else:
+            self._wet_fraction = 0.0
+        self.corr["wet_fraction"] = round(self._wet_fraction, 3)
+
         # Air-side pressure drop
-        result.dp_air = self._compute_dp_air(G_air, inp.T_air_in, T_air_out)
+        # 한계 #7 — 실제 W (humidity ratio) 전달 (기존: hardcoded 0.01)
+        result.dp_air = self._compute_dp_air(G_air, inp.T_air_in, T_air_out,
+                                              W_in=W_in, W_out=W_air_out,
+                                              T_dp=T_dp)
         result.dp_ref = dp_ref_max
         result.dp_bend_total = dp_bend_max
 
@@ -881,16 +892,24 @@ class HXSolver:
 
         return b
 
-    def _compute_dp_air(self, G_air: float, T_in: float, T_out: float) -> float:
+    def _compute_dp_air(self, G_air: float, T_in: float, T_out: float,
+                        W_in: float = 0.01, W_out: float = 0.01,
+                        T_dp: float = 273.15) -> float:
         """
         Air-side pressure drop — Kays & London (1984) formulation.
         Uses f-factor from registry (auto or manual selection).
+        
+        한계 #7 해결: W (humidity ratio) 전달받아 실제 운전 조건 ρ 계산
+        한계 #8 해결: Wet coil 보정 — 핀 표면 응축 시 dP 10~30% 증가
+                     (Korte & Jacobi 2001, McLaughlin 2005)
         """
         inp = self.inp
         T_avg = (T_in + T_out) / 2
+        W_avg = (W_in + W_out) / 2
         mu = self.air.mu_air(T_avg)
-        rho_in = self.air.rho_air(T_in, 0.01)
-        rho_out = self.air.rho_air(T_out, 0.01)
+        # 한계 #7 — 실제 W 사용 (기존: hardcoded 0.01)
+        rho_in = self.air.rho_air(T_in, W_in)
+        rho_out = self.air.rho_air(T_out, W_out)
         rho_m = (rho_in + rho_out) / 2
 
         if inp.hx_type == "FT":
@@ -966,6 +985,22 @@ class HXSolver:
 
         # Apply correction factor to f
         f *= inp.cf_f
+
+        # 한계 #8 — Wet coil correction
+        # Korte & Jacobi (2001) Int. J. Refrigeration: wet coil은 dry 대비 dP 1.1~1.3배.
+        # 정확한 판정: segment 단위 is_wet의 비율로 wet fraction 계산.
+        # Wet fraction을 사용하여 보간된 보정 factor 적용.
+        wet_correction = 1.0
+        if inp.mode == "evap" and hasattr(self, '_wet_fraction'):
+            wet_frac = max(0.0, min(1.0, self._wet_fraction))
+            # Linear interpolation between dry (1.0) and wet (1.20)
+            wet_correction = 1.0 + 0.20 * wet_frac
+        elif inp.mode == "evap" and T_avg < T_dp:
+            # Fallback: T_avg < T_dp이면 wet 가정 (보수적)
+            wet_correction = 1.20
+        f *= wet_correction
+        if wet_correction > 1.001:
+            self.corr["wet_dp_factor"] = round(wet_correction, 3)
 
         # Kays & London full pressure drop
         dp = G_air ** 2 / (2 * rho_in) * (
