@@ -320,10 +320,10 @@ const COMPONENTS = [
     id: 'compressor',
     label: 'Compressor',
     type: 'Rotary / Reciprocating',
-    desc: 'PDSim ROM 기반',
+    desc: 'PDSim ROM 기반 — 23 fitting params',
     icon: '◆',
     color: 'purple',
-    available: false,
+    available: true,
   },
   {
     id: 'eev',
@@ -422,6 +422,10 @@ function EvaporatorView({ onBack }) {
   const [saves, setSaves] = useState({});  // {1: {...}, 2: {...}, ...}
   const fileInputRef = useRef(null);
 
+  // Apply panel — 다른 Studio로 동기화
+  const [applyOpen, setApplyOpen] = useState(false);
+  const [applyMsg, setApplyMsg] = useState('');
+
   // ─── Save/Load helpers ───
   const STORAGE_KEY = 'on_design_evaporator_slots';
 
@@ -480,6 +484,98 @@ function EvaporatorView({ onBack }) {
     delete newSaves[slot];
     setSaves(newSaves);
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(newSaves)); } catch (e) {}
+  };
+
+  // ─── Apply helpers — On-Design params → backend (typeNo 122) ───
+  // 단순 sidebar params를 backend의 35개 parameter 중 핵심에 매핑.
+  // 진영님 audit 후속: Result 없이 "설계 동기화"만 (Run은 다른 Studio에서).
+  const buildBackendParams = () => {
+    // mm → m 변환 + 단위 통일 (backend evaporator_on_design.py 호환)
+    // 추정값 — On-Design Studio sidebar에 없는 backend 파라미터는 default 사용.
+    const N_tubes_per_row = N_rows > 0 ? Math.round(N_tubes / N_rows) : N_tubes;
+    return {
+      // Material
+      fluid: 'R290',
+      mode: 'evap',
+      // Geometry — 외관 (W=L_tube, H 추정, D 추정)
+      W: L_tube * 1e-3,           // m (튜브 길이)
+      H: P_t * N_tubes_per_row * 1e-3,  // 추정: P_t × N_tubes_per_row
+      D: P_l * N_rows * 1e-3,      // 추정: P_l × N_rows
+      // Tube
+      D_o: D_o * 1e-3,
+      D_i: D_i * 1e-3,
+      P_t: P_t * 1e-3,
+      P_l: P_l * 1e-3,
+      N_rows: N_rows,
+      N_tubes_per_row: N_tubes_per_row,
+      layout: 'staggered',
+      // Fin
+      FPI: FPI,
+      t_fin: t_fin * 1e-3,
+      fin_type: 'plain',
+      k_fin: finMaterial === 'Cu' ? 390 : 200,  // Al ~200, Cu ~390
+      edge_type: 'rounded',
+      wavy_amplitude: 1.0e-3,
+      wavy_wavelength: 10.0e-3,
+      louver_pitch: 1.7e-3,
+      louver_angle: 27.0,
+      // Circuit
+      circuit_mode: N_circuits === 1 ? 'single'
+                  : N_circuits === N_tubes_per_row ? 'row_parallel'
+                  : 'serpentine_2',
+      custom_circuits: '',
+      // Numerical
+      N_seg: 10,
+      N_seg_auto: 'off',
+      // Correlations (default)
+      evap_corr: 'chen1966',
+      cond_corr: 'shah1979',
+      dp_corr: 'friedel1979',
+      air_j_corr: 'auto',
+      // Tuning (학계 평균)
+      wet_dp_max: 1.20,
+      K_bend: 0.75,
+      // Fitting (1.0 = no correction)
+      cf_j: 1.0, cf_f: 1.0, cf_hi: 1.0, cf_dp_ref: 1.0,
+    };
+  };
+
+  const applyToHPWD = () => {
+    const beParams = buildBackendParams();
+    const payload = {
+      component: 'evaporator_on_design',
+      typeNo: 122,
+      params: beParams,
+      sourceParams: currentParams(),  // 원본 sidebar params도 같이
+      _timestamp: new Date().toISOString(),
+      _source: 'on-design-studio',
+    };
+    try {
+      localStorage.setItem('hpwd_pending_design', JSON.stringify(payload));
+      setApplyMsg('✓ HPWD Studio로 적용됨. HPWD Studio canvas에서 typeNo 122 컴포넌트를 추가하면 자동 적용됩니다.');
+      setTimeout(() => setApplyMsg(''), 5000);
+    } catch (e) {
+      setApplyMsg('✗ 적용 실패: ' + e.message);
+    }
+  };
+
+  const applyToCalibration = () => {
+    const beParams = buildBackendParams();
+    const payload = {
+      component: 'evaporator_on_design',
+      typeNo: 122,
+      params: beParams,
+      sourceParams: currentParams(),
+      _timestamp: new Date().toISOString(),
+      _source: 'on-design-studio',
+    };
+    try {
+      localStorage.setItem('calibration_pending_design', JSON.stringify(payload));
+      setApplyMsg('✓ Calibration Studio로 적용됨. Calibration Studio에서 fitting을 시작할 수 있습니다.');
+      setTimeout(() => setApplyMsg(''), 5000);
+    } catch (e) {
+      setApplyMsg('✗ 적용 실패: ' + e.message);
+    }
   };
 
   const exportJSON = () => {
@@ -545,12 +641,50 @@ function EvaporatorView({ onBack }) {
 
         <div className="flex-1"></div>
 
+        {/* Apply button → 다른 Studio로 동기화 */}
+        <button onClick={() => setApplyOpen(o => !o)}
+          className={`text-[11px] px-2.5 py-1.5 rounded font-mono font-semibold transition-colors flex items-center gap-1 ${
+            applyOpen ? 'bg-cyan-50 text-cyan-700 border border-cyan-300' : 'bg-slate-50 hover:bg-cyan-50 text-slate-700 border border-slate-200'
+          }`}
+          title="다른 Studio로 적용">↗ Apply</button>
+
         <button onClick={() => setSaveOpen(s => !s)}
           className={`text-base px-2.5 py-1 rounded transition-colors ${
             saveOpen ? 'bg-blue-50 text-blue-700' : 'hover:bg-slate-100'
           }`}
           title="Save / Load">💾</button>
       </div>
+
+      {/* Apply panel (collapsible) — Apply to HPWD Studio / Calibration Studio */}
+      {applyOpen && (
+        <div className="bg-white border-b border-slate-200 px-4 py-3 shrink-0">
+          <div className="max-w-4xl mx-auto">
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-[11px] font-mono font-bold text-slate-700 uppercase tracking-wider">
+                Apply Design
+              </div>
+              <div className="text-[10px] text-slate-400 font-mono">
+                현재 설계를 다른 Studio로 동기화 (Run은 해당 Studio에서)
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => applyToHPWD()}
+                className="flex-1 px-3 py-2 bg-cyan-50 hover:bg-cyan-100 text-cyan-700 border border-cyan-200 rounded text-[12px] font-semibold flex items-center justify-center gap-1.5 transition-colors">
+                <span>↗</span> HPWD Studio (typeNo 122)
+              </button>
+              <button onClick={() => applyToCalibration()}
+                className="flex-1 px-3 py-2 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 rounded text-[12px] font-semibold flex items-center justify-center gap-1.5 transition-colors">
+                <span>↗</span> Calibration Studio (fitting)
+              </button>
+            </div>
+            {applyMsg && (
+              <div className="mt-2 text-[11px] text-slate-600 font-mono">
+                {applyMsg}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Save / Load panel (collapsible) */}
       {saveOpen && (
@@ -1223,6 +1357,439 @@ function DerivedStats({ D_o, D_i, L_tube, FPI, t_fin, N_tubes, N_rows, P_t, P_l,
 }
 
 /* ═══════════════════════════════════════════════════════════════════
+   Compressor (PDSim ROM) Component View
+   typeNo 103 — backend/components/compressor_pdsim_rom.py wrapping
+   ═══════════════════════════════════════════════════════════════════ */
+function CompressorView({ onBack }) {
+  // ─── Geometry params ───
+  const [V_disp, setVdisp] = useState(10.0);            // cm³
+  const [clearance_ratio, setClearance] = useState(0.04); // -
+  const [rv_in, setRvin] = useState(2.5);               // -
+  const [A_valve_in_mm2, setAvIn] = useState(8.0);      // mm²
+  const [A_valve_out_mm2, setAvOut] = useState(6.0);    // mm²
+  const [N_rated, setNrated] = useState(3000);          // rpm
+  const [eta_motor, setEtaMotor] = useState(0.92);
+  const [eta_inv, setEtaInv] = useState(0.95);
+
+  // ─── Fitting params (PDSim ROM 11개 — 진영님 audit 수치) ───
+  const [zeta_valve, setZetaValve] = useState(1.5);
+  const [A_leak_mm2, setAleak] = useState(0.02);
+  const [Cd_leak, setCdLeak] = useState(0.6);
+  const [n_leak_rpm, setNleakRpm] = useState(0.5);
+  const [over_comp_factor, setOverComp] = useState(0.3);
+  const [n_poly_base, setNpoly] = useState(1.13);
+  const [W_f_const, setWfConst] = useState(20.0);
+  const [alpha_f_rpm, setAlphaFrpm] = useState(8e-6);
+  const [AU_loss, setAUloss] = useState(5.0);
+
+  // Material / type
+  const [comp_type, setCompType] = useState('reciprocating');  // reciprocating/rotary/scroll
+  const [fluid] = useState('R290');
+  const [T_amb, setTamb] = useState(25.0);
+
+  // Save panel state
+  const [saveOpen, setSaveOpen] = useState(false);
+  const [saves, setSaves] = useState({});
+  const fileInputRef = useRef(null);
+
+  // Apply panel state
+  const [applyOpen, setApplyOpen] = useState(false);
+  const [applyMsg, setApplyMsg] = useState('');
+
+  const STORAGE_KEY = 'on_design_compressor_slots';
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) setSaves(JSON.parse(raw));
+    } catch (e) {}
+  }, []);
+
+  const currentParams = () => ({
+    component: 'compressor',
+    V_disp, clearance_ratio, rv_in,
+    A_valve_in_mm2, A_valve_out_mm2,
+    N_rated, eta_motor, eta_inv,
+    zeta_valve, A_leak_mm2, Cd_leak, n_leak_rpm,
+    over_comp_factor, n_poly_base,
+    W_f_const, alpha_f_rpm, AU_loss,
+    comp_type, T_amb,
+  });
+
+  const applyParams = (p) => {
+    if (!p) return;
+    if (p.V_disp !== undefined) setVdisp(p.V_disp);
+    if (p.clearance_ratio !== undefined) setClearance(p.clearance_ratio);
+    if (p.rv_in !== undefined) setRvin(p.rv_in);
+    if (p.A_valve_in_mm2 !== undefined) setAvIn(p.A_valve_in_mm2);
+    if (p.A_valve_out_mm2 !== undefined) setAvOut(p.A_valve_out_mm2);
+    if (p.N_rated !== undefined) setNrated(p.N_rated);
+    if (p.eta_motor !== undefined) setEtaMotor(p.eta_motor);
+    if (p.eta_inv !== undefined) setEtaInv(p.eta_inv);
+    if (p.zeta_valve !== undefined) setZetaValve(p.zeta_valve);
+    if (p.A_leak_mm2 !== undefined) setAleak(p.A_leak_mm2);
+    if (p.Cd_leak !== undefined) setCdLeak(p.Cd_leak);
+    if (p.n_leak_rpm !== undefined) setNleakRpm(p.n_leak_rpm);
+    if (p.over_comp_factor !== undefined) setOverComp(p.over_comp_factor);
+    if (p.n_poly_base !== undefined) setNpoly(p.n_poly_base);
+    if (p.W_f_const !== undefined) setWfConst(p.W_f_const);
+    if (p.alpha_f_rpm !== undefined) setAlphaFrpm(p.alpha_f_rpm);
+    if (p.AU_loss !== undefined) setAUloss(p.AU_loss);
+    if (p.comp_type !== undefined) setCompType(p.comp_type);
+    if (p.T_amb !== undefined) setTamb(p.T_amb);
+  };
+
+  const saveSlot = (slot, name) => {
+    const params = currentParams();
+    const entry = { ...params, _name: name || `Slot ${slot}`, _timestamp: new Date().toISOString() };
+    const newSaves = { ...saves, [slot]: entry };
+    setSaves(newSaves);
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(newSaves)); } catch (e) {}
+  };
+  const loadSlot = (slot) => {
+    const e = saves[slot]; if (!e) return; applyParams(e);
+  };
+  const deleteSlot = (slot) => {
+    const ns = { ...saves }; delete ns[slot]; setSaves(ns);
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(ns)); } catch (e) {}
+  };
+
+  // ─── backend (typeNo 103) params 매핑 ───
+  const buildBackendParams = () => ({
+    fluid: fluid,
+    comp_type: comp_type,
+    T_amb: T_amb,
+    V_disp: V_disp,
+    clearance_ratio: clearance_ratio,
+    rv_in: rv_in,
+    A_valve_in_mm2: A_valve_in_mm2,
+    A_valve_out_mm2: A_valve_out_mm2,
+    N_rated: N_rated,
+    eta_motor: eta_motor,
+    eta_inv: eta_inv,
+    zeta_valve: zeta_valve,
+    A_leak_mm2: A_leak_mm2,
+    Cd_leak: Cd_leak,
+    n_leak_rpm: n_leak_rpm,
+    over_comp_factor: over_comp_factor,
+    n_poly_base: n_poly_base,
+    W_f_const: W_f_const,
+    alpha_f_rpm: alpha_f_rpm,
+    AU_loss: AU_loss,
+  });
+
+  const applyToHPWD = () => {
+    const beParams = buildBackendParams();
+    const payload = {
+      component: 'compressor_pdsim_rom',
+      typeNo: 103,
+      params: beParams,
+      sourceParams: currentParams(),
+      _timestamp: new Date().toISOString(),
+      _source: 'on-design-studio',
+    };
+    try {
+      localStorage.setItem('hpwd_pending_design', JSON.stringify(payload));
+      setApplyMsg('✓ HPWD Studio로 적용됨. HPWD Studio canvas에서 typeNo 103 컴포넌트를 추가하면 자동 적용됩니다.');
+      setTimeout(() => setApplyMsg(''), 5000);
+    } catch (e) {
+      setApplyMsg('✗ 적용 실패: ' + e.message);
+    }
+  };
+
+  const applyToCalibration = () => {
+    const beParams = buildBackendParams();
+    const payload = {
+      component: 'compressor_pdsim_rom',
+      typeNo: 103,
+      params: beParams,
+      sourceParams: currentParams(),
+      _timestamp: new Date().toISOString(),
+      _source: 'on-design-studio',
+    };
+    try {
+      localStorage.setItem('calibration_pending_design', JSON.stringify(payload));
+      setApplyMsg('✓ Calibration Studio로 적용됨. Calibration Studio에서 fitting을 시작할 수 있습니다.');
+      setTimeout(() => setApplyMsg(''), 5000);
+    } catch (e) {
+      setApplyMsg('✗ 적용 실패: ' + e.message);
+    }
+  };
+
+  const exportJSON = () => {
+    const data = { ...currentParams(), _exported_at: new Date().toISOString(), _version: '1.0' };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `compressor_${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const importJSON = (e) => {
+    const file = e.target.files[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const data = JSON.parse(ev.target.result);
+        if (data.component && data.component !== 'compressor') {
+          alert(`다른 컴포넌트의 JSON: ${data.component}`); return;
+        }
+        applyParams(data);
+      } catch (err) {
+        alert('JSON 파싱 실패: ' + err.message);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  // ─── Derived stats ───
+  const derived = useMemo(() => {
+    const V_disp_m3 = V_disp * 1e-6;  // cm³ → m³
+    // 이론 displacement rate (kg/s) — 가정 P_suc=5bar, T_suc=10°C, R290 ρ ~12 kg/m³
+    const rho_suc_est = 12.0;  // 대략
+    const m_dot_th = V_disp_m3 * (N_rated / 60) * rho_suc_est;
+    // 체적효율 추정 — Bell ROM 단순화
+    const eta_v_est = 1.0 - clearance_ratio * (Math.pow(rv_in, 1.0 / n_poly_base) - 1.0);
+    return {
+      V_disp_m3: (V_disp_m3 * 1e6).toFixed(2),  // cm³
+      m_dot_th: m_dot_th.toFixed(4),
+      eta_v_est: eta_v_est.toFixed(3),
+      A_in_total: (A_valve_in_mm2 * Cd_leak).toFixed(2),  // 효과적 면적
+      W_friction_at_rated: (W_f_const + alpha_f_rpm * N_rated * N_rated).toFixed(1),
+    };
+  }, [V_disp, clearance_ratio, rv_in, N_rated, A_valve_in_mm2, Cd_leak, n_poly_base, W_f_const, alpha_f_rpm]);
+
+  return (
+    <div className="flex flex-col h-screen bg-slate-50">
+      {/* Header */}
+      <div className="bg-white border-b border-slate-200 px-4 py-2 flex items-center gap-3 shrink-0">
+        <button onClick={onBack}
+          className="flex items-center gap-1 text-[12px] text-slate-600 hover:text-slate-900 font-medium">
+          ← System
+        </button>
+        <span className="text-slate-300">|</span>
+        <span className="text-purple-600 text-base">◆</span>
+        <span className="font-bold text-slate-900 text-[15px]">Compressor</span>
+        <span className="text-[11px] font-mono text-slate-400">PDSim ROM · On-design</span>
+
+        <div className="flex-1"></div>
+
+        <button onClick={() => setApplyOpen(o => !o)}
+          className={`text-[11px] px-2.5 py-1.5 rounded font-mono font-semibold transition-colors flex items-center gap-1 ${
+            applyOpen ? 'bg-purple-50 text-purple-700 border border-purple-300' : 'bg-slate-50 hover:bg-purple-50 text-slate-700 border border-slate-200'
+          }`}
+          title="다른 Studio로 적용">↗ Apply</button>
+
+        <button onClick={() => setSaveOpen(s => !s)}
+          className={`text-base px-2.5 py-1 rounded transition-colors ${
+            saveOpen ? 'bg-blue-50 text-blue-700' : 'hover:bg-slate-100'
+          }`}
+          title="Save / Load">💾</button>
+      </div>
+
+      {/* Apply panel */}
+      {applyOpen && (
+        <div className="bg-white border-b border-slate-200 px-4 py-3 shrink-0">
+          <div className="max-w-4xl mx-auto">
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-[11px] font-mono font-bold text-slate-700 uppercase tracking-wider">Apply Design</div>
+              <div className="text-[10px] text-slate-400 font-mono">현재 설계를 다른 Studio로 동기화 (Run은 해당 Studio에서)</div>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => applyToHPWD()}
+                className="flex-1 px-3 py-2 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 rounded text-[12px] font-semibold flex items-center justify-center gap-1.5 transition-colors">
+                <span>↗</span> HPWD Studio (typeNo 103)
+              </button>
+              <button onClick={() => applyToCalibration()}
+                className="flex-1 px-3 py-2 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 rounded text-[12px] font-semibold flex items-center justify-center gap-1.5 transition-colors">
+                <span>↗</span> Calibration Studio (fitting)
+              </button>
+            </div>
+            {applyMsg && (
+              <div className="mt-2 text-[11px] text-slate-600 font-mono">{applyMsg}</div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Save / Load panel */}
+      {saveOpen && (
+        <div className="bg-white border-b border-slate-200 px-4 py-3 shrink-0">
+          <div className="max-w-4xl mx-auto">
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-[11px] font-mono font-bold text-slate-700 uppercase tracking-wider">Save / Load</div>
+              <div className="text-[10px] text-slate-400 font-mono">JSON: 파일 · Slot: 브라우저 내</div>
+            </div>
+            <div className="flex gap-2 mb-3">
+              <button onClick={exportJSON}
+                className="flex-1 px-3 py-1.5 bg-green-50 hover:bg-green-100 text-green-700 border border-green-200 rounded text-[12px] font-semibold flex items-center justify-center gap-1.5">
+                <span>📥</span> JSON 내보내기
+              </button>
+              <button onClick={() => fileInputRef.current?.click()}
+                className="flex-1 px-3 py-1.5 bg-orange-50 hover:bg-orange-100 text-orange-700 border border-orange-200 rounded text-[12px] font-semibold flex items-center justify-center gap-1.5">
+                <span>📤</span> JSON 불러오기
+              </button>
+              <input ref={fileInputRef} type="file" accept=".json" onChange={importJSON} style={{ display: 'none' }} />
+            </div>
+            <div className="grid grid-cols-5 gap-2">
+              {[1, 2, 3, 4, 5].map(slot => {
+                const entry = saves[slot];
+                return (
+                  <div key={slot} className="border border-slate-200 rounded p-2 text-[11px]">
+                    <div className="font-mono font-bold text-slate-700 mb-1">Slot {slot}</div>
+                    {entry ? (
+                      <>
+                        <div className="text-slate-600 truncate" title={entry._name}>{entry._name}</div>
+                        <div className="text-slate-400 text-[10px] mb-1">{entry._timestamp?.slice(0, 10)}</div>
+                        <div className="flex gap-1">
+                          <button onClick={() => loadSlot(slot)}
+                            className="flex-1 px-1.5 py-0.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded text-[10px]">불러오기</button>
+                          <button onClick={() => { if (confirm(`Slot ${slot} 삭제?`)) deleteSlot(slot); }}
+                            className="px-1.5 py-0.5 bg-red-50 hover:bg-red-100 text-red-700 rounded text-[10px]">×</button>
+                        </div>
+                      </>
+                    ) : (
+                      <button onClick={() => {
+                        const name = prompt(`Slot ${slot} 이름 (Enter=Slot ${slot}):`);
+                        if (name !== null) saveSlot(slot, name);
+                      }}
+                        className="w-full px-1.5 py-2 bg-slate-50 hover:bg-slate-100 text-slate-500 rounded text-[10px] border border-dashed border-slate-300">+ 저장</button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Main: Sidebar + Visual */}
+      <div className="flex-1 overflow-hidden flex">
+        {/* Sidebar — params */}
+        <div className="w-72 shrink-0 bg-white border-r border-slate-200 overflow-y-auto p-4">
+          <SidebarSection title="Geometry">
+            <Slider label="V_disp" sublabel="cm³" value={V_disp} min={1} max={50} step={0.5} onChange={setVdisp} color="purple" decimals={1} />
+            <Slider label="Clearance ratio" sublabel="-" value={clearance_ratio} min={0.01} max={0.15} step={0.005} onChange={setClearance} color="purple" decimals={3} />
+            <Slider label="rv_in (built-in vol ratio)" sublabel="-" value={rv_in} min={1.5} max={5.0} step={0.1} onChange={setRvin} color="purple" decimals={2} />
+            <Slider label="A_valve_in" sublabel="mm²" value={A_valve_in_mm2} min={2} max={30} step={0.5} onChange={setAvIn} color="purple" decimals={1} />
+            <Slider label="A_valve_out" sublabel="mm²" value={A_valve_out_mm2} min={2} max={30} step={0.5} onChange={setAvOut} color="purple" decimals={1} />
+            <Slider label="N_rated" sublabel="rpm" value={N_rated} min={1500} max={7000} step={100} onChange={setNrated} color="purple" decimals={0} />
+            <Slider label="η_motor" sublabel="-" value={eta_motor} min={0.7} max={0.98} step={0.01} onChange={setEtaMotor} color="purple" decimals={2} />
+            <Slider label="η_inv" sublabel="-" value={eta_inv} min={0.85} max={0.99} step={0.005} onChange={setEtaInv} color="purple" decimals={2} />
+          </SidebarSection>
+
+          <SidebarSection title="Fitting (Bell ROM)">
+            <Slider label="ζ_valve" sublabel="-" value={zeta_valve} min={0.5} max={3.0} step={0.1} onChange={setZetaValve} color="amber" decimals={2} />
+            <Slider label="A_leak" sublabel="mm²" value={A_leak_mm2} min={0.001} max={0.5} step={0.005} onChange={setAleak} color="amber" decimals={3} />
+            <Slider label="Cd_leak" sublabel="-" value={Cd_leak} min={0.3} max={0.9} step={0.02} onChange={setCdLeak} color="amber" decimals={2} />
+            <Slider label="n_leak (rpm exp)" sublabel="-" value={n_leak_rpm} min={0.0} max={1.0} step={0.05} onChange={setNleakRpm} color="amber" decimals={2} />
+            <Slider label="over_comp" sublabel="-" value={over_comp_factor} min={0.0} max={0.6} step={0.02} onChange={setOverComp} color="amber" decimals={2} />
+            <Slider label="n_poly_base" sublabel="-" value={n_poly_base} min={1.05} max={1.30} step={0.01} onChange={setNpoly} color="amber" decimals={2} />
+            <Slider label="W_f_const" sublabel="W" value={W_f_const} min={0} max={100} step={1} onChange={setWfConst} color="amber" decimals={0} />
+            <Slider label="α_f_rpm" sublabel="W/rpm²" value={alpha_f_rpm * 1e6} min={0} max={50} step={0.5} onChange={(v) => setAlphaFrpm(v * 1e-6)} color="amber" decimals={1} />
+            <Slider label="AU_loss" sublabel="W/K" value={AU_loss} min={0} max={30} step={0.5} onChange={setAUloss} color="amber" decimals={1} />
+          </SidebarSection>
+
+          <SidebarSection title="Material & Operating">
+            <div className="text-[11px] text-slate-500 mb-1">Type</div>
+            <ButtonGroup options={['reciprocating', 'rotary', 'scroll']} value={comp_type} onChange={setCompType} />
+            <Slider label="T_amb" sublabel="°C" value={T_amb} min={-10} max={50} step={1} onChange={setTamb} color="slate" decimals={0} />
+            <div className="mt-2 text-[10px] text-slate-400 font-mono">Fluid: {fluid} (HPWD Studio에서 변경)</div>
+          </SidebarSection>
+        </div>
+
+        {/* Main: 도식 + Stats */}
+        <div className="flex-1 overflow-y-auto p-6">
+          <div className="max-w-3xl mx-auto">
+            <h2 className="text-lg font-bold text-slate-900 mb-1">Compressor — PDSim ROM</h2>
+            <p className="text-[12px] text-slate-500 mb-4">
+              Bell ROM 기반: 체적/누설/마찰/모터-인버터 손실 모두 분리 모델링.
+              실험 데이터 fitting 시 Calibration Studio 사용.
+            </p>
+
+            {/* SVG 도식 */}
+            <div className="bg-white border border-slate-200 rounded-lg p-4 mb-4">
+              <div className="text-[11px] font-mono text-slate-500 uppercase tracking-wider mb-2">Schematic</div>
+              <svg viewBox="0 0 480 240" className="w-full h-auto">
+                <defs>
+                  <linearGradient id="cyl-grad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0" stopColor="#a78bfa" />
+                    <stop offset="1" stopColor="#7c3aed" />
+                  </linearGradient>
+                </defs>
+                {/* Suction */}
+                <line x1="20" y1="120" x2="80" y2="120" stroke="#3b82f6" strokeWidth="3" />
+                <text x="50" y="110" textAnchor="middle" fontSize="11" fill="#3b82f6" fontFamily="monospace">P_suc</text>
+                {/* Inlet valve */}
+                <rect x="80" y="105" width="20" height="30" rx="2" fill="#dbeafe" stroke="#3b82f6" strokeWidth="1.5" />
+                <text x="90" y="155" textAnchor="middle" fontSize="9" fill="#1e40af" fontFamily="monospace">A_v_in</text>
+                {/* Cylinder */}
+                <rect x="120" y="60" width="200" height="120" rx="4" fill="url(#cyl-grad)" stroke="#5b21b6" strokeWidth="2" />
+                <text x="220" y="125" textAnchor="middle" fontSize="14" fill="white" fontFamily="monospace" fontWeight="bold">V_disp = {V_disp.toFixed(1)} cm³</text>
+                <text x="220" y="145" textAnchor="middle" fontSize="11" fill="white" fontFamily="monospace">N = {N_rated} rpm</text>
+                <text x="220" y="50" textAnchor="middle" fontSize="11" fill="#5b21b6" fontFamily="monospace">η_v ≈ {derived.eta_v_est}</text>
+                {/* Outlet valve */}
+                <rect x="340" y="105" width="20" height="30" rx="2" fill="#fee2e2" stroke="#dc2626" strokeWidth="1.5" />
+                <text x="350" y="155" textAnchor="middle" fontSize="9" fill="#991b1b" fontFamily="monospace">A_v_out</text>
+                {/* Discharge */}
+                <line x1="360" y1="120" x2="460" y2="120" stroke="#dc2626" strokeWidth="3" />
+                <text x="430" y="110" textAnchor="middle" fontSize="11" fill="#dc2626" fontFamily="monospace">P_dis</text>
+                {/* Leakage indicator */}
+                <text x="220" y="200" textAnchor="middle" fontSize="10" fill="#92400e" fontFamily="monospace">A_leak = {A_leak_mm2.toFixed(3)} mm² (Cd = {Cd_leak.toFixed(2)})</text>
+                <text x="220" y="215" textAnchor="middle" fontSize="10" fill="#525252" fontFamily="monospace">W_f({N_rated}rpm) ≈ {derived.W_friction_at_rated} W</text>
+              </svg>
+            </div>
+
+            {/* Derived stats */}
+            <div className="bg-white border border-slate-200 rounded-lg p-4">
+              <div className="text-[11px] font-mono text-slate-500 uppercase tracking-wider mb-3">Derived (P_suc=5 bar, T_suc=10°C, R290 추정)</div>
+              <div className="grid grid-cols-3 gap-3 text-[12px]">
+                <div className="border border-slate-200 rounded p-2">
+                  <div className="text-slate-500 text-[10px] uppercase">m_dot 이론</div>
+                  <div className="font-mono font-bold text-slate-900">{derived.m_dot_th} <span className="text-slate-400 font-normal">kg/s</span></div>
+                </div>
+                <div className="border border-slate-200 rounded p-2">
+                  <div className="text-slate-500 text-[10px] uppercase">η_v 추정</div>
+                  <div className="font-mono font-bold text-slate-900">{derived.eta_v_est}</div>
+                </div>
+                <div className="border border-slate-200 rounded p-2">
+                  <div className="text-slate-500 text-[10px] uppercase">W_friction</div>
+                  <div className="font-mono font-bold text-slate-900">{derived.W_friction_at_rated} <span className="text-slate-400 font-normal">W</span></div>
+                </div>
+                <div className="border border-slate-200 rounded p-2">
+                  <div className="text-slate-500 text-[10px] uppercase">A_v_in 효과</div>
+                  <div className="font-mono font-bold text-slate-900">{derived.A_in_total} <span className="text-slate-400 font-normal">mm²</span></div>
+                </div>
+                <div className="border border-slate-200 rounded p-2">
+                  <div className="text-slate-500 text-[10px] uppercase">η_motor × η_inv</div>
+                  <div className="font-mono font-bold text-slate-900">{(eta_motor * eta_inv).toFixed(3)}</div>
+                </div>
+                <div className="border border-slate-200 rounded p-2">
+                  <div className="text-slate-500 text-[10px] uppercase">V_disp</div>
+                  <div className="font-mono font-bold text-slate-900">{derived.V_disp_m3} <span className="text-slate-400 font-normal">cm³</span></div>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 text-[11px] text-slate-500 leading-relaxed">
+              <div className="font-bold mb-1 text-slate-700">PDSim ROM (Bell):</div>
+              <div>· 체적효율 η_v: clearance + rv_in 기반 polytropic 압축</div>
+              <div>· 누설: A_leak × Cd_leak × √(P_dis - P_suc), N에 따른 누설 보정</div>
+              <div>· 마찰: W_f = W_f_const + α × N²</div>
+              <div>· over_comp_factor: 토출 valve 늦은 열림 보정</div>
+              <div>· AU_loss: 외부 열손실 (T_dis 추정에 영향)</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════
    Top App
    ═══════════════════════════════════════════════════════════════════ */
 function App() {
@@ -1247,6 +1814,9 @@ function App() {
   // Component view
   if (selected === 'evaporator') {
     return <EvaporatorView onBack={() => setSelected(null)} />;
+  }
+  if (selected === 'compressor') {
+    return <CompressorView onBack={() => setSelected(null)} />;
   }
 
   return (

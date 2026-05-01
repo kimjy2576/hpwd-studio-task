@@ -1594,7 +1594,30 @@ function HPWDStudio() {
   const addBlock = (typeKey, x, y) => {
     const def = TYPES[typeKey];
     const id = `b${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-    const params = Object.fromEntries(def.parameters.map(p => [p.key, p.value]));
+    let params = Object.fromEntries(def.parameters.map(p => [p.key, p.value]));
+    
+    // ─── On-Design Studio pending design 자동 적용 ───
+    // localStorage에 hpwd_pending_design이 있고 typeNo가 일치하면 params 덮어씀.
+    // 진영님 플로우: On-Design Studio에서 Apply → 여기서 자동 sync → consumed.
+    try {
+      const pendingRaw = localStorage.getItem('hpwd_pending_design');
+      if (pendingRaw) {
+        const pending = JSON.parse(pendingRaw);
+        if (pending && pending.typeNo === def.typeNo && pending.params) {
+          // typeNo 일치 — params 덮어쓰기
+          params = { ...params, ...pending.params };
+          localStorage.removeItem('hpwd_pending_design');  // 한번 사용하면 삭제
+          // 사용자에게 알림
+          setTimeout(() => {
+            const src = pending._source || 'On-Design Studio';
+            console.log(`[HPWD Studio] ${src}에서 적용된 design을 컴포넌트 ${typeKey} (typeNo ${def.typeNo})에 자동 적용함`);
+          }, 100);
+        }
+      }
+    } catch (e) {
+      console.warn('hpwd_pending_design 읽기 실패:', e);
+    }
+    
     pushHistory(blocks, connections);
     setBlocks(bs => [...bs, {
       id, type: typeKey, x: snap(x - 90), y: snap(y - 40),

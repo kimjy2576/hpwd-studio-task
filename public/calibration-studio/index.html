@@ -211,6 +211,46 @@ function SetupTab({ state, setState }) {
       ));
   }, []);
 
+  // ─── On-Design Studio pending design 자동 감지 ───
+  // 페이지 로드 시 localStorage 체크 — 있으면 사용자에게 알림.
+  // 진영님 플로우: On-Design Studio Apply → Calibration Studio 자동 sync.
+  const [pendingDesign, setPendingDesign] = useState(null);
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('calibration_pending_design');
+      if (raw) {
+        const pending = JSON.parse(raw);
+        if (pending && pending.component && pending.params) {
+          setPendingDesign(pending);
+        }
+      }
+    } catch (e) {
+      console.warn('calibration_pending_design 읽기 실패:', e);
+    }
+  }, []);
+
+  const applyPendingDesign = async () => {
+    if (!pendingDesign) return;
+    // 1. 컴포넌트 자동 선택
+    await selectComponent(pendingDesign.component);
+    // 2. fixed params 적용 (Fitting 제외 — fitting은 init만 영향)
+    setState(s => {
+      const newFixed = { ...s.fixedParams };
+      Object.entries(pendingDesign.params).forEach(([k, v]) => {
+        if (k in newFixed) newFixed[k] = v;
+      });
+      return { ...s, fixedParams: newFixed };
+    });
+    // 3. 사용 후 삭제
+    try { localStorage.removeItem('calibration_pending_design'); } catch (e) {}
+    setPendingDesign(null);
+  };
+
+  const dismissPendingDesign = () => {
+    try { localStorage.removeItem('calibration_pending_design'); } catch (e) {}
+    setPendingDesign(null);
+  };
+
   // Component 선택 시 detail 가져오기
   const selectComponent = async (name) => {
     if (!name) {
@@ -283,6 +323,30 @@ function SetupTab({ state, setState }) {
     <div className="space-y-4">
       {error && (
         <div className="p-3 bg-red-50 border border-red-200 rounded text-sm text-red-800">{error}</div>
+      )}
+
+      {/* On-Design Studio에서 보낸 pending design 알림 */}
+      {pendingDesign && (
+        <div className="p-3 bg-amber-50 border border-amber-300 rounded text-sm flex items-start gap-3">
+          <span className="text-amber-700 text-lg">↗</span>
+          <div className="flex-1">
+            <div className="font-semibold text-amber-900">
+              On-Design Studio에서 적용된 design이 있습니다
+            </div>
+            <div className="text-[12px] text-amber-800 mt-0.5 font-mono">
+              {pendingDesign.component} (typeNo {pendingDesign.typeNo}) ·
+              {' '}{pendingDesign._timestamp ? new Date(pendingDesign._timestamp).toLocaleString() : ''}
+            </div>
+          </div>
+          <button onClick={applyPendingDesign}
+            className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded text-[12px] font-semibold">
+            적용
+          </button>
+          <button onClick={dismissPendingDesign}
+            className="px-2 py-1.5 bg-white hover:bg-slate-50 border border-slate-300 text-slate-600 rounded text-[12px]">
+            ×
+          </button>
+        </div>
       )}
 
       {/* 1. Component 선택 */}
