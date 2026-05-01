@@ -438,7 +438,14 @@ function EvaporatorView({ onBack }) {
   const [N_circuits, setNcircuits] = useState(2);
   // Circuit mode (preset 4개 + custom)
   const [circuit_mode, setCircuitMode] = useState('row_parallel');  // row_parallel/serpentine_2/serpentine_4/single/custom
-  const [custom_circuits, setCustomCircuits] = useState([]);  // [[[r,c], ...], ...]
+  
+  // HX-Sim의 bend 시스템 (front/back face × 인접 튜브 페어)
+  // bends.front: [[r1,c1,r2,c2], ...] (front face의 bend 페어)
+  // bends.back: [[r1,c1,r2,c2], ...] (back face)
+  // inlets/outlets: [[r,c], ...] (사용자 지정 IN/OUT 위치)
+  const [bends, setBends] = useState({ front: [], back: [] });
+  const [inlets, setInlets] = useState([]);
+  const [outlets, setOutlets] = useState([]);
 
   // View toggle (2D plan view)
   const [view, setView] = useState('Top');
@@ -472,7 +479,8 @@ function EvaporatorView({ onBack }) {
     wavy_amplitude, wavy_wavelength,
     louver_pitch, louver_angle,
     N_tubes, N_rows, P_t, P_l, N_circuits,
-    circuit_mode, custom_circuits,
+    circuit_mode,
+    bends, inlets, outlets,
   });
 
   const applyParams = (p) => {
@@ -496,7 +504,9 @@ function EvaporatorView({ onBack }) {
     if (p.P_l !== undefined) setPl(p.P_l);
     if (p.N_circuits !== undefined) setNcircuits(p.N_circuits);
     if (p.circuit_mode !== undefined) setCircuitMode(p.circuit_mode);
-    if (p.custom_circuits !== undefined) setCustomCircuits(p.custom_circuits);
+    if (p.bends !== undefined) setBends(p.bends);
+    if (p.inlets !== undefined) setInlets(p.inlets);
+    if (p.outlets !== undefined) setOutlets(p.outlets);
   };
 
   const saveSlot = (slot, name) => {
@@ -528,13 +538,62 @@ function EvaporatorView({ onBack }) {
   // 단순 sidebar params를 backend의 35개 parameter 중 핵심에 매핑.
   // 진영님 audit 후속: Result 없이 "설계 동기화"만 (Run은 다른 Studio에서).
   const buildBackendParams = () => {
-    // mm → m 변환 + 단위 통일 (backend evaporator_on_design.py 호환)
     const N_tubes_per_row = N_rows > 0 ? Math.round(N_tubes / N_rows) : N_tubes;
+    
+    // bends 시스템 → custom_circuits JSON (HX-Sim 알고리즘 이식)
+    let custom_circuits_json = '';
+    if (circuit_mode === 'custom' &&
+        ((bends.front && bends.front.length > 0) || (bends.back && bends.back.length > 0))) {
+      // traceBends 알고리즘 (CircuitDesigner와 동일)
+      const fm = {}, bm = {};
+      (bends.front || []).forEach(([r1, c1, r2, c2]) => {
+        fm[`${r1},${c1}`] = [r2, c2]; fm[`${r2},${c2}`] = [r1, c1];
+      });
+      (bends.back || []).forEach(([r1, c1, r2, c2]) => {
+        bm[`${r1},${c1}`] = [r2, c2]; bm[`${r2},${c2}`] = [r1, c1];
+      });
+      const visited = new Set(), circuits = [];
+      const Nr = N_rows, Nt = N_tubes_per_row;
+      for (let c = 0; c < Nt; c++) for (let r = 0; r < Nr; r++) {
+        const k = `${r},${c}`;
+        if (visited.has(k)) continue;
+        const hasF = fm.hasOwnProperty(k), hasB = bm.hasOwnProperty(k);
+        if (hasF && hasB) continue;
+        if (!hasF && !hasB) { circuits.push([[r, c]]); visited.add(k); continue; }
+        const path = []; let cur = [r, c];
+        let lookFace = hasB ? 'back' : 'front';
+        path.push([...cur]); visited.add(`${cur[0]},${cur[1]}`);
+        while (true) {
+          const map = lookFace === 'front' ? fm : bm;
+          const ck = `${cur[0]},${cur[1]}`;
+          if (!map.hasOwnProperty(ck)) break;
+          const next = map[ck]; const nk = `${next[0]},${next[1]}`;
+          if (visited.has(nk)) break;
+          path.push([...next]); visited.add(nk);
+          cur = next; lookFace = lookFace === 'front' ? 'back' : 'front';
+        }
+        circuits.push(path);
+      }
+      // Orient using inlets/outlets
+      const isMatch = (a, b) => a && b && a[0] === b[0] && a[1] === b[1];
+      const inSet = (arr, t) => arr.some(a => isMatch(a, t));
+      circuits.forEach(circ => {
+        if (circ.length < 2) return;
+        const first = circ[0], last = circ[circ.length - 1];
+        if (inSet(inlets, last)) circ.reverse();
+        else if (inSet(outlets, first)) circ.reverse();
+        else if (!inSet(inlets, first) && !inSet(outlets, last)) {
+          if (first[0] < last[0]) circ.reverse();
+        }
+      });
+      custom_circuits_json = JSON.stringify(circuits);
+    }
+    
     return {
       // Material
       fluid: 'R290',
       mode: 'evap',
-      // Geometry — 외관 (W=L_tube, H 추정, D 추정)
+      // Geometry
       W: L_tube * 1e-3,
       H: P_t * N_tubes_per_row * 1e-3,
       D: P_l * N_rows * 1e-3,
@@ -558,20 +617,19 @@ function EvaporatorView({ onBack }) {
       louver_angle: louver_angle,
       // Circuit (사용자 선택 사용)
       circuit_mode: circuit_mode,
-      custom_circuits: circuit_mode === 'custom' && custom_circuits.length > 0
-                       ? JSON.stringify(custom_circuits) : '',
+      custom_circuits: custom_circuits_json,
       // Numerical
       N_seg: 10,
       N_seg_auto: 'off',
-      // Correlations (default)
+      // Correlations
       evap_corr: 'chen1966',
       cond_corr: 'shah1979',
       dp_corr: 'friedel1979',
       air_j_corr: 'auto',
-      // Tuning (학계 평균)
+      // Tuning
       wet_dp_max: 1.20,
       K_bend: 0.75,
-      // Fitting (1.0 = no correction)
+      // Fitting
       cf_j: 1.0, cf_f: 1.0, cf_hi: 1.0, cf_dp_ref: 1.0,
     };
   };
@@ -999,10 +1057,14 @@ function EvaporatorView({ onBack }) {
                   <CircuitDesigner
                     N_rows={N_rows}
                     N_tubes_per_row={N_rows > 0 ? Math.round(N_tubes / N_rows) : N_tubes}
-                    circuit_mode={circuit_mode}
-                    custom_circuits={custom_circuits}
-                    setCustomCircuits={setCustomCircuits}
-                    setCircuitMode={setCircuitMode}
+                    layout="staggered"
+                    flow="counter"
+                    bends={bends}
+                    setBends={(b) => { setBends(b); setCircuitMode('custom'); }}
+                    inlets={inlets}
+                    setInlets={(i) => { setInlets(i); setCircuitMode('custom'); }}
+                    outlets={outlets}
+                    setOutlets={(o) => { setOutlets(o); setCircuitMode('custom'); }}
                   />
                 ) : (
                   <CoilViewer
@@ -1086,268 +1148,402 @@ function ButtonGroup({ options, value, onChange }) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════
-   Circuit Designer — Nr × Nt 그리드 시각 편집기
-   - Preset 4개 (row_parallel/serpentine_2/serpentine_4/single): 자동 계산해서 표시만
-   - Custom: 클릭으로 회로 할당 (회로 색상 라벨)
-   - 출력: custom_circuits = [[[r,c], ...], ...] (회로별 ordered list)
+   Circuit Designer — HX-Sim repo의 Circuit Design 시스템 그대로 가져옴
+   - bends: { front: [[r1,c1,r2,c2], ...], back: [...] }  ← 인접 튜브 페어
+   - inlets: [[r,c], ...] / outlets: [[r,c], ...]  ← 사용자 지정 IN/OUT
+   - traceBends 알고리즘으로 회로 자동 추적 (front↔back 교차)
+   - 색상은 light theme로 변환 (HX-Sim은 dark였음)
    ═══════════════════════════════════════════════════════════════════ */
-function CircuitDesigner({ N_rows, N_tubes_per_row, circuit_mode,
-                           custom_circuits, setCustomCircuits, setCircuitMode }) {
-  const [activeCircuit, setActiveCircuit] = useState(0);
+function CircuitDesigner({ N_rows, N_tubes_per_row, layout='staggered', flow='counter',
+                           bends, setBends,
+                           inlets, setInlets,
+                           outlets, setOutlets }) {
+  // Light theme 색상 (HX-Sim의 C 객체를 light로 변환)
+  const C = {
+    bg: '#ffffff', surface: '#f8fafc', card: '#ffffff', border: '#e2e8f0',
+    accent: '#2563eb', accent2: '#7c3aed', accent3: '#db2777',
+    warn: '#d97706', success: '#059669', err: '#dc2626',
+    text: '#1e293b', dim: '#94a3b8',
+  };
+  const circColors = ['#0d9488','#dc2626','#2563eb','#10b981','#d97706','#db2777','#3b82f6','#7c3aed'];
   
-  const CIRCUIT_COLORS = [
-    '#2563eb', '#dc2626', '#059669', '#d97706',
-    '#7c3aed', '#0891b2', '#ea580c', '#65a30d',
-  ];
+  // Local UI state (HX-Sim과 동일)
+  const [bendFace, setBendFace] = useState('front');     // 'front' | 'back'
+  const [bendFirst, setBendFirst] = useState(null);      // {r,c} or null
+  const [circEditMode, setCircEditMode] = useState('bend'); // 'bend' | 'inlet' | 'outlet'
   
-  const autoCircuits = useMemo(() => {
-    const Nr = Math.max(1, N_rows);
-    const Nt = Math.max(1, N_tubes_per_row);
-    
-    if (circuit_mode === 'row_parallel') {
-      const circs = [];
-      for (let c = 0; c < Nt; c++) {
-        const ckt = [];
-        for (let r = 0; r < Nr; r++) ckt.push([r, c]);
-        circs.push(ckt);
-      }
-      return circs;
-    }
-    if (circuit_mode === 'serpentine_2') {
-      const circs = [];
-      for (let c0 = 0; c0 < Nt; c0 += 2) {
-        const ckt = [];
-        for (let r = 0; r < Nr; r++) ckt.push([r, c0]);
-        if (c0 + 1 < Nt) {
-          for (let r = Nr - 1; r >= 0; r--) ckt.push([r, c0 + 1]);
+  const Nr = Math.max(1, N_rows);
+  const Nt = Math.max(1, N_tubes_per_row);
+  const isStag = layout === 'staggered';
+  const counter = flow === 'counter';
+  
+  // ── Generate default single-serpentine bends (row-by-row) ──
+  const genDefaultBends = (nr, nt, cnt) => {
+    const front = [], back = [];
+    let atFront = true;
+    const startRow = cnt ? nr - 1 : 0;
+    const rowStep = cnt ? -1 : 1;
+    for (let ri = 0; ri < nr; ri++) {
+      const row = startRow + ri * rowStep;
+      const goRight = (ri % 2 === 0);
+      if (goRight) {
+        for (let c = 0; c < nt - 1; c++) {
+          if (atFront) front.push([row, c, row, c+1]);
+          else back.push([row, c, row, c+1]);
+          atFront = !atFront;
         }
-        circs.push(ckt);
-      }
-      return circs;
-    }
-    if (circuit_mode === 'serpentine_4') {
-      const circs = [];
-      for (let c0 = 0; c0 < Nt; c0 += 4) {
-        const ckt = [];
-        for (let dc = 0; dc < 4 && c0 + dc < Nt; dc++) {
-          const c = c0 + dc;
-          if (dc % 2 === 0) {
-            for (let r = 0; r < Nr; r++) ckt.push([r, c]);
-          } else {
-            for (let r = Nr - 1; r >= 0; r--) ckt.push([r, c]);
-          }
-        }
-        circs.push(ckt);
-      }
-      return circs;
-    }
-    if (circuit_mode === 'single') {
-      const ckt = [];
-      for (let c = 0; c < Nt; c++) {
-        if (c % 2 === 0) {
-          for (let r = 0; r < Nr; r++) ckt.push([r, c]);
-        } else {
-          for (let r = Nr - 1; r >= 0; r--) ckt.push([r, c]);
+      } else {
+        for (let c = nt - 1; c > 0; c--) {
+          if (atFront) front.push([row, c, row, c-1]);
+          else back.push([row, c, row, c-1]);
+          atFront = !atFront;
         }
       }
-      return [ckt];
+      if (ri < nr - 1) {
+        const nextRow = startRow + (ri+1) * rowStep;
+        const edgeCol = goRight ? nt - 1 : 0;
+        if (atFront) front.push([row, edgeCol, nextRow, edgeCol]);
+        else back.push([row, edgeCol, nextRow, edgeCol]);
+        atFront = !atFront;
+      }
     }
-    return custom_circuits || [];
-  }, [N_rows, N_tubes_per_row, circuit_mode, custom_circuits]);
+    return { front, back };
+  };
   
-  const tubeToCircuit = useMemo(() => {
-    const map = {};
-    autoCircuits.forEach((ckt, ci) => {
-      ckt.forEach(([r, c], pos) => {
-        map[`${r},${c}`] = { ci, pos };
-      });
+  // bends가 비어있으면 default 생성 (UI 표시용)
+  const effectiveBends = (bends && (bends.front !== undefined || bends.back !== undefined))
+    ? bends : genDefaultBends(Nr, Nt, counter);
+  
+  // ── Trace circuits from front/back bends ──
+  const traceBends = (bnds) => {
+    const fm = {}, bm = {};
+    (bnds.front || []).forEach(([r1, c1, r2, c2]) => {
+      fm[`${r1},${c1}`] = [r2, c2]; fm[`${r2},${c2}`] = [r1, c1];
     });
-    return map;
-  }, [autoCircuits]);
-  
-  const handleTubeClick = (r, c) => {
-    if (circuit_mode !== 'custom') {
-      setCircuitMode('custom');
-    }
-    
-    let circs = custom_circuits.length > 0
-      ? custom_circuits.map(ckt => [...ckt])
-      : [[]];
-    
-    let removed = false;
-    for (let i = 0; i < circs.length; i++) {
-      const idx = circs[i].findIndex(([rr, cc]) => rr === r && cc === c);
-      if (idx >= 0) {
-        circs[i].splice(idx, 1);
-        removed = true;
-        break;
+    (bnds.back || []).forEach(([r1, c1, r2, c2]) => {
+      bm[`${r1},${c1}`] = [r2, c2]; bm[`${r2},${c2}`] = [r1, c1];
+    });
+    const visited = new Set(), circuits = [];
+    for (let c = 0; c < Nt; c++) for (let r = 0; r < Nr; r++) {
+      const k = `${r},${c}`;
+      if (visited.has(k)) continue;
+      const hasF = fm.hasOwnProperty(k), hasB = bm.hasOwnProperty(k);
+      if (hasF && hasB) continue;
+      if (!hasF && !hasB) {
+        circuits.push([[r, c]]); visited.add(k); continue;
       }
+      const path = []; let cur = [r, c];
+      let lookFace = hasB ? 'back' : 'front';
+      path.push([...cur]); visited.add(`${cur[0]},${cur[1]}`);
+      while (true) {
+        const map = lookFace === 'front' ? fm : bm;
+        const ck = `${cur[0]},${cur[1]}`;
+        if (!map.hasOwnProperty(ck)) break;
+        const next = map[ck];
+        const nk = `${next[0]},${next[1]}`;
+        if (visited.has(nk)) break;
+        path.push([...next]); visited.add(nk);
+        cur = next; lookFace = lookFace === 'front' ? 'back' : 'front';
+      }
+      circuits.push(path);
     }
+    return circuits;
+  };
+  
+  const circuits = traceBends(effectiveBends);
+  const isMatch = (a, b) => a && b && a[0] === b[0] && a[1] === b[1];
+  const inSet = (arr, t) => arr.some(a => isMatch(a, t));
+  
+  // Orient circuits using inlets/outlets
+  circuits.forEach(circ => {
+    if (circ.length < 2) return;
+    const first = circ[0], last = circ[circ.length - 1];
+    if (inSet(inlets, last)) circ.reverse();
+    else if (inSet(outlets, first)) circ.reverse();
+    else if (!inSet(inlets, first) && !inSet(outlets, last)) {
+      if (first[0] < last[0]) circ.reverse();
+    }
+  });
+  const nc = circuits.length;
+  
+  // Endpoint face
+  const getEndpointFace = (tube) => {
+    if (!tube) return null;
+    const k = `${tube[0]},${tube[1]}`;
+    const hasFront = (effectiveBends.front || []).some(([r1, c1, r2, c2]) =>
+      `${r1},${c1}` === k || `${r2},${c2}` === k);
+    const hasBack = (effectiveBends.back || []).some(([r1, c1, r2, c2]) =>
+      `${r1},${c1}` === k || `${r2},${c2}` === k);
+    if (hasFront && !hasBack) return 'back';
+    if (hasBack && !hasFront) return 'front';
+    return 'front';
+  };
+  
+  const userInSet = new Set(inlets.map(t => t[0] + ',' + t[1]));
+  const userOutSet = new Set(outlets.map(t => t[0] + ',' + t[1]));
+  const inletFaces = {}, outletFaces = {};
+  userInSet.forEach(k => { const [r, c] = k.split(',').map(Number); inletFaces[k] = getEndpointFace([r, c]); });
+  userOutSet.forEach(k => { const [r, c] = k.split(',').map(Number); outletFaces[k] = getEndpointFace([r, c]); });
+  
+  // Cell map
+  const cellMap = Array.from({ length: Nr }, () => Array.from({ length: Nt }, () => null));
+  circuits.forEach((circ, ci) => {
+    circ.forEach(([r, c], idx) => {
+      if (r >= 0 && r < Nr && c >= 0 && c < Nt) cellMap[r][c] = { circ: ci, order: idx };
+    });
+  });
+  let unassigned = 0;
+  for (let r = 0; r < Nr; r++) for (let c = 0; c < Nt; c++) if (!cellMap[r][c]) unassigned++;
+  
+  // ── Click handler ──
+  const onFaceTubeClick = (r, c) => {
+    if (circEditMode === 'inlet' || circEditMode === 'outlet') {
+      const isInlet = circEditMode === 'inlet';
+      const arr = [...(isInlet ? inlets : outlets)];
+      const opp = [...(isInlet ? outlets : inlets)];
+      const idx = arr.findIndex(a => a[0] === r && a[1] === c);
+      if (idx >= 0) {
+        arr.splice(idx, 1);
+      } else {
+        arr.push([r, c]);
+        const oi = opp.findIndex(a => a[0] === r && a[1] === c);
+        if (oi >= 0) opp.splice(oi, 1);
+      }
+      if (isInlet) { setInlets(arr); setOutlets(opp); }
+      else { setOutlets(arr); setInlets(opp); }
+      return;
+    }
+    if (!bendFirst) { setBendFirst({ r, c }); return; }
+    const dr = Math.abs(r - bendFirst.r), dc = Math.abs(c - bendFirst.c);
+    if (dr + dc === 0) { setBendFirst(null); return; }
+    if (dr > 1 || dc > 1) { setBendFirst(null); return; }
+    const face = bendFace;
+    const arr = [...(effectiveBends[face] || [])];
+    const dup = arr.findIndex(([a, b, e, f]) =>
+      (a === bendFirst.r && b === bendFirst.c && e === r && f === c) ||
+      (a === r && b === c && e === bendFirst.r && f === bendFirst.c));
+    if (dup >= 0) {
+      arr.splice(dup, 1);
+    } else {
+      const k1 = `${bendFirst.r},${bendFirst.c}`, k2 = `${r},${c}`;
+      const used1 = arr.some(([a, b, e, f]) => `${a},${b}` === k1 || `${e},${f}` === k1);
+      const used2 = arr.some(([a, b, e, f]) => `${a},${b}` === k2 || `${e},${f}` === k2);
+      if (used1 || used2) { setBendFirst(null); return; }
+      arr.push([bendFirst.r, bendFirst.c, r, c]);
+    }
+    setBends({ ...effectiveBends, [face]: arr });
+    setBendFirst(null);
+  };
+  
+  const resetToDefault = () => {
+    setBends(genDefaultBends(Nr, Nt, counter));
+    setBendFirst(null);
+  };
+  const clearBends = () => {
+    setBends({ front: [], back: [] });
+    setBendFirst(null);
+  };
+  
+  // ── SVG layout ──
+  const cW = 32, cH = 32, oX = 28, oY = 22;
+  const svgW = Nr * cW + oX + 14;
+  const svgH = Nt * cH + oY + (isStag ? cH/2 : 0) + 14;
+  const tubeX = (r, c) => oX + r * cW + cW/2;
+  const tubeY = (r, c) => oY + c * cH + cH/2 + (isStag && r % 2 === 1 ? cH/2 : 0);
+  const tubeBX = (r, c) => oX + (Nr - 1 - r) * cW + cW/2;
+  const tubeBY = (r, c) => oY + c * cH + cH/2 + (isStag && r % 2 === 1 ? cH/2 : 0);
+  
+  const renderFace = (face) => {
+    const isFront = face === 'front';
+    const tx = isFront ? tubeX : tubeBX;
+    const ty = isFront ? tubeY : tubeBY;
+    const faceBends = effectiveBends[face] || [];
     
-    if (!removed) {
-      while (circs.length <= activeCircuit) circs.push([]);
-      circs[activeCircuit].push([r, c]);
-    }
-    
-    circs = circs.filter(c => c.length > 0);
-    setCustomCircuits(circs);
+    return (
+      <svg width={svgW} height={svgH} style={{ display: 'block', cursor: 'crosshair' }}>
+        <defs>
+          <marker id={`arrF${face}`} markerWidth="6" markerHeight="5" refX="6" refY="2.5" orient="auto">
+            <polygon points="0 0, 6 2.5, 0 5" fill={C.accent} />
+          </marker>
+        </defs>
+        {/* Air arrow (bottom) */}
+        <line x1={oX - 2} y1={svgH - 4} x2={svgW - 12} y2={svgH - 4}
+              stroke={C.accent} strokeWidth={1.5} markerEnd={`url(#arrF${face})`} />
+        <text x={svgW/2} y={svgH + 6} textAnchor="middle"
+              style={{ fontSize: 8, fill: C.accent, fontWeight: 700 }}>AIR →</text>
+        
+        {/* Row labels */}
+        {Array.from({ length: Nr }, (_, r) => (
+          <text key={`rl${r}`} x={tx(r, 0)} y={oY - 5} textAnchor="middle"
+                style={{ fontSize: 9, fill: C.dim }}>R{r}</text>
+        ))}
+        {/* Col labels */}
+        {Array.from({ length: Nt }, (_, c) => (
+          <text key={`cl${c}`} x={6} y={ty(0, c) + 3}
+                style={{ fontSize: 9, fill: C.dim }}>C{c}</text>
+        ))}
+        
+        {/* Bend arcs */}
+        {faceBends.map(([r1, c1, r2, c2], bi) => {
+          const x1 = tx(r1, c1), y1 = ty(r1, c1);
+          const x2 = tx(r2, c2), y2 = ty(r2, c2);
+          const info = (cellMap[r1] || [])[c1];
+          const clr = info ? circColors[info.circ % circColors.length] : C.accent;
+          const mx = (x1 + x2)/2, my = (y1 + y2)/2;
+          const dx = x2 - x1, dy = y2 - y1;
+          const side = isFront ? -1 : 1;
+          const cx2 = mx + dy * 0.4 * side, cy2 = my - dx * 0.4 * side;
+          return (
+            <path key={`b${bi}`} d={`M${x1},${y1} Q${cx2},${cy2} ${x2},${y2}`}
+                  fill="none" stroke={clr} strokeWidth={2.2} opacity={0.85} />
+          );
+        })}
+        
+        {/* Tubes */}
+        {Array.from({ length: Nr }, (_, r) =>
+          Array.from({ length: Nt }, (_, c) => {
+            const x = tx(r, c), y = ty(r, c);
+            const info = cellMap[r][c];
+            const clr = info ? circColors[info.circ % circColors.length] : C.surface;
+            const isFirst = bendFirst && bendFirst.r === r && bendFirst.c === c;
+            const tk = r + ',' + c;
+            const isInlet = userInSet.has(tk) && (inletFaces[tk] === face ||
+              !((effectiveBends.front || []).length) && !((effectiveBends.back || []).length));
+            const isOutlet = userOutSet.has(tk) && (outletFaces[tk] === face ||
+              !((effectiveBends.front || []).length) && !((effectiveBends.back || []).length));
+            const picking = circEditMode === 'inlet' || circEditMode === 'outlet';
+            const pickClr = circEditMode === 'inlet' ? C.err : C.success;
+            return (
+              <g key={`t${r}-${c}`} onClick={() => onFaceTubeClick(r, c)}
+                 style={{ cursor: picking ? 'crosshair' : 'pointer' }}>
+                {picking && (
+                  <circle cx={x} cy={y} r={14}
+                    fill="none" stroke={pickClr} strokeWidth={1} strokeDasharray="2,2" opacity={0.45} />
+                )}
+                <circle cx={x} cy={y} r={11}
+                  fill={isFirst ? '#fff' : isInlet ? C.err : isOutlet ? C.success : info ? clr : C.surface}
+                  stroke={isFirst ? C.accent : isInlet ? C.err : isOutlet ? C.success : info ? clr : C.border}
+                  strokeWidth={isFirst ? 2.5 : (isInlet || isOutlet) ? 2.5 : 1.2}
+                  opacity={(isInlet || isOutlet) ? 1 : info ? 0.92 : 0.5} />
+                <text x={x} y={y + 3} textAnchor="middle"
+                  style={{ fontSize: isInlet || isOutlet ? 7 : 8,
+                    fill: isFirst ? C.text : (isInlet || isOutlet) ? '#fff' : info ? '#fff' : C.dim,
+                    fontWeight: 700, pointerEvents: 'none' }}>
+                  {isInlet ? 'IN' : isOutlet ? 'OUT' : info ? info.order + 1 : ''}
+                </text>
+              </g>
+            );
+          })
+        )}
+      </svg>
+    );
   };
-  
-  const addCircuit = () => {
-    const next = activeCircuit + 1;
-    setActiveCircuit(next);
-    if (circuit_mode !== 'custom') setCircuitMode('custom');
-  };
-  
-  const clearCustom = () => {
-    if (confirm('Custom circuits 초기화?')) {
-      setCustomCircuits([]);
-      setActiveCircuit(0);
-    }
-  };
-  
-  const cellSize = Math.min(40, Math.max(20, 360 / Math.max(N_tubes_per_row, N_rows)));
-  const padX = 50, padY = 30;
-  const svgW = padX * 2 + N_tubes_per_row * cellSize;
-  const svgH = padY * 2 + N_rows * cellSize + 40;
   
   return (
-    <div className="p-3">
-      {circuit_mode === 'custom' && (
-        <div className="mb-3 p-2 bg-purple-50 border border-purple-200 rounded">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-[11px] font-bold text-purple-700">Active circuit:</span>
-            {[...Array(Math.max(custom_circuits.length, activeCircuit + 1))].map((_, i) => (
-              <button key={i} onClick={() => setActiveCircuit(i)}
-                className={`px-2 py-0.5 text-[11px] font-mono font-semibold rounded border transition-colors ${
-                  activeCircuit === i
-                    ? 'text-white border-transparent'
-                    : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-50'
-                }`}
-                style={activeCircuit === i ? { background: CIRCUIT_COLORS[i % 8] } : {}}>
-                #{i + 1} ({custom_circuits[i]?.length || 0})
-              </button>
-            ))}
-            <button onClick={addCircuit}
-              className="px-2 py-0.5 text-[11px] bg-white border border-dashed border-slate-400 text-slate-600 rounded hover:bg-slate-100">
-              + 새 회로
-            </button>
-            <div className="flex-1"></div>
-            <button onClick={clearCustom}
-              className="px-2 py-0.5 text-[11px] bg-red-50 border border-red-200 text-red-700 rounded hover:bg-red-100">
-              초기화
-            </button>
-          </div>
-          <div className="mt-1.5 text-[10px] text-purple-700 font-mono">
-            튜브 클릭 → 활성 회로에 할당 (이미 할당된 튜브 클릭 시 제거)
-          </div>
-        </div>
-      )}
-      
-      {circuit_mode !== 'custom' && (
-        <div className="mb-3 p-2 bg-blue-50 border border-blue-200 rounded text-[11px] text-blue-800 font-mono">
-          <b>Preset: {circuit_mode}</b> — 자동 생성된 {autoCircuits.length}개 회로 표시 (편집하려면 sidebar에서 'Custom' 선택)
-        </div>
-      )}
-      
-      <div className="bg-white border border-slate-200 rounded overflow-x-auto">
-        <svg viewBox={`0 0 ${svgW} ${svgH}`} className="w-full"
-             style={{ maxHeight: '450px' }} preserveAspectRatio="xMidYMid meet">
-          <text x={padX - 10} y={padY - 10} fontSize="10" fill="#64748b" fontFamily="monospace" textAnchor="end">
-            Air →
-          </text>
-          
-          {[...Array(N_rows)].map((_, r) => (
-            <text key={`rl${r}`} x={padX - 8} y={padY + r * cellSize + cellSize/2 + 4}
-                  fontSize="10" fill="#64748b" fontFamily="monospace" textAnchor="end">
-              row {r}
-            </text>
-          ))}
-          
-          {[...Array(N_tubes_per_row)].map((_, c) => (
-            <text key={`cl${c}`} x={padX + c * cellSize + cellSize/2}
-                  y={padY + N_rows * cellSize + 14}
-                  fontSize="9" fill="#94a3b8" fontFamily="monospace" textAnchor="middle">
-              {c}
-            </text>
-          ))}
-          
-          {[...Array(N_rows)].flatMap((_, r) =>
-            [...Array(N_tubes_per_row)].map((_, c) => {
-              const cx = padX + c * cellSize + cellSize/2;
-              const cy = padY + r * cellSize + cellSize/2;
-              const radius = cellSize * 0.35;
-              const info = tubeToCircuit[`${r},${c}`];
-              const isAssigned = info !== undefined;
-              const color = isAssigned ? CIRCUIT_COLORS[info.ci % 8] : '#e2e8f0';
-              const stroke = isAssigned ? color : '#cbd5e1';
-              
-              return (
-                <g key={`t${r}-${c}`}>
-                  <rect x={padX + c * cellSize + 1} y={padY + r * cellSize + 1}
-                        width={cellSize - 2} height={cellSize - 2}
-                        fill="none" stroke="#f1f5f9" strokeWidth="0.5" />
-                  <circle cx={cx} cy={cy} r={radius}
-                          fill={color}
-                          fillOpacity={isAssigned ? 0.7 : 0.3}
-                          stroke={stroke} strokeWidth="1.5"
-                          style={{ cursor: 'pointer' }}
-                          onClick={() => handleTubeClick(r, c)} />
-                  {isAssigned && (
-                    <text x={cx} y={cy + 3} textAnchor="middle" fontSize="9"
-                          fill="white" fontFamily="monospace" fontWeight="bold"
-                          pointerEvents="none">
-                      {info.pos + 1}
-                    </text>
-                  )}
-                </g>
-              );
-            })
-          )}
-          
-          {autoCircuits.map((ckt, ci) => {
-            if (ckt.length < 2) return null;
-            const color = CIRCUIT_COLORS[ci % 8];
-            const points = ckt.map(([r, c]) => {
-              const cx = padX + c * cellSize + cellSize/2;
-              const cy = padY + r * cellSize + cellSize/2;
-              return `${cx},${cy}`;
-            }).join(' ');
-            return (
-              <polyline key={`conn${ci}`} points={points}
-                        fill="none" stroke={color} strokeWidth="1.2"
-                        strokeOpacity="0.45" strokeDasharray="3,2"
-                        pointerEvents="none" />
-            );
-          })}
-        </svg>
+    <div style={{ borderLeft: `2px solid ${C.accent}`, paddingLeft: 12, marginBottom: 8, marginTop: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+        <span style={{ fontSize: 10, color: C.accent, fontWeight: 700, letterSpacing: 1 }}>REFRIGERANT CIRCUIT</span>
+        <span style={{ fontSize: 10, color: nc > 1 ? C.warn : C.success, fontWeight: 600 }}>
+          {nc}회로 {unassigned > 0 ? `· ⚠ 미배정 ${unassigned}` : ''}
+        </span>
       </div>
       
-      <div className="mt-3 grid grid-cols-2 gap-2 text-[11px]">
-        <div className="bg-slate-50 border border-slate-200 rounded p-2">
-          <div className="text-[10px] text-slate-500 uppercase font-mono mb-1">회로 수</div>
-          <div className="font-mono font-bold text-slate-900">{autoCircuits.length}</div>
-        </div>
-        <div className="bg-slate-50 border border-slate-200 rounded p-2">
-          <div className="text-[10px] text-slate-500 uppercase font-mono mb-1">총 할당 tube</div>
-          <div className="font-mono font-bold text-slate-900">
-            {autoCircuits.reduce((s, c) => s + c.length, 0)} / {N_rows * N_tubes_per_row}
-          </div>
-        </div>
+      {/* Toolbar */}
+      <div style={{ display: 'flex', gap: 5, marginBottom: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <button onClick={resetToDefault} style={{ padding: '4px 10px', borderRadius: 5,
+          border: `1px solid ${C.accent}`, background: 'transparent', color: C.accent,
+          fontSize: 10, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>↩ 기본회로</button>
+        <button onClick={clearBends} style={{ padding: '4px 10px', borderRadius: 5,
+          border: `1px solid ${C.dim}`, background: 'transparent', color: C.dim,
+          fontSize: 10, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>🗑 전체삭제</button>
+        {bendFirst && (
+          <span style={{ fontSize: 9, color: C.accent }}>· R{bendFirst.r}C{bendFirst.c} 선택됨</span>
+        )}
       </div>
       
-      <div className="mt-2 space-y-1 max-h-40 overflow-y-auto">
-        {autoCircuits.map((ckt, ci) => (
-          <div key={ci} className="flex items-center gap-2 text-[10px] font-mono">
-            <span className="inline-block w-3 h-3 rounded"
-                  style={{ background: CIRCUIT_COLORS[ci % 8] }}></span>
-            <span className="text-slate-600">#{ci + 1}:</span>
-            <span className="text-slate-500 truncate">
-              {ckt.length} tubes — {ckt.slice(0, 6).map(([r, c]) => `(${r},${c})`).join(' → ')}
-              {ckt.length > 6 ? ' → ...' : ''}
+      {/* Inlet/Outlet controls */}
+      <div style={{ marginBottom: 8, padding: '8px 12px', borderRadius: 6,
+                    background: C.surface, border: `1px solid ${C.border}` }}>
+        {/* Per-circuit IN/OUT list */}
+        {circuits.map((circ, ci) => {
+          const clr = circColors[ci % circColors.length];
+          const inT = circ[0], outT = circ[circ.length - 1];
+          return (
+            <div key={ci} style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: ci < nc - 1 ? 4 : 0 }}>
+              <span style={{ width: 9, height: 9, borderRadius: '50%', background: clr,
+                             display: 'inline-block', flexShrink: 0 }} />
+              <span style={{ fontSize: 9, color: C.dim, minWidth: 22 }}>C{ci + 1}</span>
+              <span style={{ fontSize: 9, padding: '1px 6px', borderRadius: 3, background: C.err,
+                             color: '#fff', fontWeight: 700 }}>
+                IN R{inT[0]}C{inT[1]}
+              </span>
+              <span style={{ fontSize: 9, color: C.dim }}>→</span>
+              <span style={{ fontSize: 9, padding: '1px 6px', borderRadius: 3, background: C.success,
+                             color: '#fff', fontWeight: 700 }}>
+                OUT R{outT[0]}C{outT[1]}
+              </span>
+            </div>
+          );
+        })}
+        {nc === 0 && inlets.length === 0 && outlets.length === 0 && (
+          <div style={{ fontSize: 9, color: C.dim }}>회로 없음 — 밴드를 추가하거나 IN/OUT을 먼저 설정하세요</div>
+        )}
+        
+        {/* Add IN / Add OUT buttons */}
+        <div style={{ display: 'flex', gap: 5, marginTop: nc > 0 || inlets.length > 0 || outlets.length > 0 ? 8 : 0 }}>
+          <button onClick={() => { setCircEditMode(circEditMode === 'inlet' ? 'bend' : 'inlet'); setBendFirst(null); }}
+            style={{ padding: '5px 14px', borderRadius: 5, border: 'none', cursor: 'pointer',
+                     fontSize: 10, fontWeight: 700, fontFamily: 'inherit',
+                     background: circEditMode === 'inlet' ? C.err : C.err + '22',
+                     color: circEditMode === 'inlet' ? '#fff' : C.err }}>
+            {circEditMode === 'inlet' ? '📍 IN 선택중 (완료시 다시 클릭)' : '📍 IN 지정'}
+            {inlets.length > 0 ? ' (' + inlets.length + ')' : ''}
+          </button>
+          <button onClick={() => { setCircEditMode(circEditMode === 'outlet' ? 'bend' : 'outlet'); setBendFirst(null); }}
+            style={{ padding: '5px 14px', borderRadius: 5, border: 'none', cursor: 'pointer',
+                     fontSize: 10, fontWeight: 700, fontFamily: 'inherit',
+                     background: circEditMode === 'outlet' ? C.success : C.success + '22',
+                     color: circEditMode === 'outlet' ? '#fff' : C.success }}>
+            {circEditMode === 'outlet' ? '📍 OUT 선택중 (완료시 다시 클릭)' : '📍 OUT 지정'}
+            {outlets.length > 0 ? ' (' + outlets.length + ')' : ''}
+          </button>
+        </div>
+        {(circEditMode === 'inlet' || circEditMode === 'outlet') && (
+          <div style={{ fontSize: 9, color: circEditMode === 'inlet' ? C.err : C.success,
+                        fontWeight: 600, marginTop: 4 }}>
+            튜브 클릭 = {circEditMode === 'inlet' ? 'IN' : 'OUT'} 토글 · 완료 후 버튼 다시 클릭하여 종료
+          </div>
+        )}
+      </div>
+      
+      {/* Face tabs */}
+      <div style={{ display: 'flex', gap: 0, marginBottom: 5 }}>
+        {['front', 'back'].map(f => (
+          <button key={f} onClick={() => { setBendFace(f); setBendFirst(null); }}
+            style={{ flex: 1, padding: '6px 0', border: 'none', cursor: 'pointer',
+                     fontSize: 11, fontWeight: 700, fontFamily: 'inherit',
+                     borderBottom: bendFace === f ? `2px solid ${C.accent}` : `1px solid ${C.border}`,
+                     background: bendFace === f ? C.accent + '15' : C.bg,
+                     color: bendFace === f ? C.accent : C.dim,
+                     borderRadius: bendFace === f ? '6px 6px 0 0' : '0' }}>
+            {f === 'front' ? '▶ FRONT' : '◀ BACK'}
+            <span style={{ fontSize: 9, marginLeft: 5, opacity: 0.65 }}>
+              ({(effectiveBends[f] || []).length}밴드)
             </span>
-          </div>
+          </button>
         ))}
+      </div>
+      
+      {/* Active face view */}
+      <div style={{ border: `1px solid ${C.accent}33`, borderRadius: '0 0 6px 6px',
+                    padding: 6, background: C.surface, overflowX: 'auto' }}>
+        {renderFace(bendFace)}
+      </div>
+      
+      <div style={{ fontSize: 9, color: C.dim, marginTop: 4 }}>
+        {(circEditMode === 'inlet' || circEditMode === 'outlet')
+          ? '📍 튜브 클릭 = ' + (circEditMode === 'inlet' ? 'IN' : 'OUT') + ' 추가/제거 (토글)'
+          : '밴드: 인접 튜브 2개 클릭 (수직/수평 1칸 거리만 가능) · IN/OUT: 버튼 클릭 후 튜브 선택'}
       </div>
     </div>
   );
@@ -2698,128 +2894,82 @@ function CompressorView({ onBack }) {
                     />
                   )}
                   {vizSub === 2 && (
-                    /* Front view (단순 SVG — cylinder 측면 단면) */
-                    <svg viewBox="0 0 480 380" className="w-full h-full" preserveAspectRatio="xMidYMid meet">
-                      <defs>
-                        <linearGradient id="front-cyl-grad" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0" stopColor="#c4b5fd" />
-                          <stop offset="1" stopColor="#7c3aed" />
-                        </linearGradient>
-                        <pattern id="hatch-clear" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)">
-                          <line x1="0" y1="0" x2="0" y2="6" stroke="#94a3b8" strokeWidth="0.5" />
-                        </pattern>
-                      </defs>
-                      
-                      {/* 스케일: cylinder 외경(2*R_cyl)이 280px 차지 */}
-                      {(() => {
-                        const Rc = R_cyl;
-                        const Rp = R_pis;
-                        const H = H_cyl;
-                        const tv = t_vane;
-                        const scale = 280 / (2 * Rc);  // mm → px
-                        const cx = 240;  // SVG center x
-                        const cy = 200;  // SVG center y
-                        const W_cyl = 2 * Rc * scale;  // cylinder width in px
-                        const H_cyl_px = H * scale;   // cylinder height in px
-                        const tv_px = tv * scale;     // vane thickness
-                        
-                        return (
-                          <>
-                            {/* Cylinder body — 단면 (rectangle) */}
-                            <rect x={cx - W_cyl/2} y={cy - H_cyl_px/2}
-                                  width={W_cyl} height={H_cyl_px}
-                                  fill="url(#front-cyl-grad)" stroke="#5b21b6" strokeWidth="2" rx="2" />
-                            
-                            {/* Top plate */}
-                            <rect x={cx - W_cyl/2 - 5} y={cy - H_cyl_px/2 - 8}
-                                  width={W_cyl + 10} height="8"
-                                  fill="#a78bfa" stroke="#5b21b6" strokeWidth="1" />
-                            {/* Bottom plate */}
-                            <rect x={cx - W_cyl/2 - 5} y={cy + H_cyl_px/2}
-                                  width={W_cyl + 10} height="8"
-                                  fill="#a78bfa" stroke="#5b21b6" strokeWidth="1" />
-                            
-                            {/* Vane (수직 — 중심에서 위로) */}
-                            <rect x={cx - tv_px/2} y={cy - H_cyl_px/2 + 2}
-                                  width={tv_px} height={H_cyl_px - 4}
-                                  fill="#7c3aed" fillOpacity="0.3" stroke="#7c3aed" strokeWidth="1.2" />
-                            
-                            {/* Suction port (top-left) */}
-                            {(() => {
-                              const sucW = 20 + Math.sqrt(A_valve_in_mm2) * 3;
-                              return (
-                                <>
-                                  <rect x={cx - W_cyl/2 + 15} y={cy - H_cyl_px/2 - 22}
-                                        width={sucW} height="14" fill="#3b82f6" opacity="0.85"
-                                        stroke="#1e40af" strokeWidth="1" rx="2" />
-                                  <text x={cx - W_cyl/2 + 15 + sucW/2} y={cy - H_cyl_px/2 - 26}
-                                        textAnchor="middle" fontSize="11" fontFamily="monospace"
-                                        fill="#1e40af" fontWeight="bold">SUC</text>
-                                  <text x={cx - W_cyl/2 + 15 + sucW/2} y={cy - H_cyl_px/2 - 12}
-                                        textAnchor="middle" fontSize="9" fontFamily="monospace"
-                                        fill="white">{A_valve_in_mm2.toFixed(1)}mm²</text>
-                                </>
-                              );
-                            })()}
-                            
-                            {/* Discharge port (top-right) */}
-                            {(() => {
-                              const disW = 20 + Math.sqrt(A_valve_out_mm2) * 3;
-                              return (
-                                <>
-                                  <rect x={cx + W_cyl/2 - 15 - disW} y={cy - H_cyl_px/2 - 22}
-                                        width={disW} height="14" fill="#dc2626" opacity="0.85"
-                                        stroke="#7f1d1d" strokeWidth="1" rx="2" />
-                                  <text x={cx + W_cyl/2 - 15 - disW/2} y={cy - H_cyl_px/2 - 26}
-                                        textAnchor="middle" fontSize="11" fontFamily="monospace"
-                                        fill="#7f1d1d" fontWeight="bold">DIS</text>
-                                  <text x={cx + W_cyl/2 - 15 - disW/2} y={cy - H_cyl_px/2 - 12}
-                                        textAnchor="middle" fontSize="9" fontFamily="monospace"
-                                        fill="white">{A_valve_out_mm2.toFixed(1)}mm²</text>
-                                </>
-                              );
-                            })()}
-                            
-                            {/* Clearance band (top thin) */}
-                            <rect x={cx - W_cyl/2 + 2} y={cy - H_cyl_px/2 + 2}
-                                  width={W_cyl - 4}
-                                  height={Math.max(4, clearance_ratio * H_cyl_px)}
-                                  fill="url(#hatch-clear)" stroke="#475569" strokeWidth="0.5" />
-                            
-                            {/* Center labels */}
-                            <text x={cx} y={cy - 5} textAnchor="middle" fontSize="13" fill="white"
-                                  fontFamily="monospace" fontWeight="bold">
-                              V_disp = {V_disp.toFixed(1)} cm³
-                            </text>
-                            <text x={cx} y={cy + 12} textAnchor="middle" fontSize="11" fill="white"
-                                  fontFamily="monospace">
-                              N = {N_rated} rpm
-                            </text>
-                            <text x={cx} y={cy + 28} textAnchor="middle" fontSize="10" fill="#e0e7ff"
-                                  fontFamily="monospace">
-                              clearance = {(clearance_ratio*100).toFixed(1)}%
-                            </text>
-                            
-                            {/* Dimensions */}
-                            <text x={cx} y={cy - H_cyl_px/2 - 50} textAnchor="middle" fontSize="11"
-                                  fill="#64748b" fontFamily="monospace">
-                              ← D = 2·R_cyl = {(2*R_cyl).toFixed(1)} mm →
-                            </text>
-                            <text x={cx + W_cyl/2 + 30} y={cy} textAnchor="middle" fontSize="11"
-                                  fill="#64748b" fontFamily="monospace"
-                                  transform={`rotate(90, ${cx + W_cyl/2 + 30}, ${cy})`}>
-                              ← H = {H} mm →
-                            </text>
-                            
-                            {/* Bottom — leakage path */}
-                            <text x={cx} y={cy + H_cyl_px/2 + 40} textAnchor="middle" fontSize="10"
-                                  fill="#92400e" fontFamily="monospace">
-                              ⤥ Leakage: A = {A_leak_mm2.toFixed(3)} mm² · Cd = {Cd_leak.toFixed(2)} · W_f({N_rated}) ≈ {derived.W_friction_at_rated} W
-                            </text>
-                          </>
-                        );
-                      })()}
-                    </svg>
+                    /* Front view — compressor-sim 그대로 (axial section + θ slider) */
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0,
+                                  width: '100%', height: '100%' }}>
+                      <div style={{ flex: 1, minHeight: 320, display: 'flex',
+                                    alignItems: 'center', justifyContent: 'center', overflow: 'auto' }}>
+                        <svg viewBox="0 0 300 240" preserveAspectRatio="xMidYMid meet"
+                             style={{ width: '100%', height: '100%', maxWidth: 800, maxHeight: '100%',
+                                      margin: '0 auto', display: 'block', background: 'var(--bg3)',
+                                      borderRadius: 12 }}>
+                          {(() => {
+                            const s = 5, cx = 150, cy = 120;
+                            const Rc = R_cyl * s, Hc = H_cyl * s, Rp = R_pis * s;
+                            const ecc = (R_cyl - R_pis) * s, theta = thetaView * Math.PI / 180;
+                            const px_off = ecc * Math.cos(theta);
+                            return (<>
+                              {/* Cylinder body (외곽 사각형) */}
+                              <rect x={cx - Rc} y={cy - Hc/2} width={2*Rc} height={Hc}
+                                    fill="none" stroke="var(--tx2)" strokeWidth="2" rx="2" />
+                              {/* Top plate */}
+                              <rect x={cx - Rc - 6} y={cy - Hc/2 - 10} width={2*Rc + 12} height="10"
+                                    fill="var(--tx3)" opacity="0.3" rx="1.5" />
+                              {/* Bottom plate */}
+                              <rect x={cx - Rc - 6} y={cy + Hc/2} width={2*Rc + 12} height="10"
+                                    fill="var(--tx3)" opacity="0.3" rx="1.5" />
+                              {/* Piston (eccentric position) */}
+                              <rect x={cx + px_off - Rp} y={cy - Hc/2 + 2} width={2*Rp} height={Hc - 4}
+                                    fill="var(--accent)" opacity="0.15"
+                                    stroke="var(--accent)" strokeWidth="1.5" rx="1" />
+                              {/* Axial clearance δ_a (top gap) */}
+                              <line x1={cx + px_off - Rp + 6} y1={cy - Hc/2}
+                                    x2={cx + px_off - Rp + 6} y2={cy - Hc/2 + 2}
+                                    stroke="#d97706" strokeWidth="2" />
+                              <text x={cx + px_off - Rp + 12} y={cy - Hc/2 - 4}
+                                    fill="#d97706" fontSize="10" fontWeight="500">δ_a</text>
+                              {/* H dimension (right side) */}
+                              <line x1={cx + Rc + 20} y1={cy - Hc/2} x2={cx + Rc + 20} y2={cy + Hc/2}
+                                    stroke="var(--tx3)" strokeWidth="1" />
+                              <line x1={cx + Rc + 15} y1={cy - Hc/2} x2={cx + Rc + 25} y2={cy - Hc/2}
+                                    stroke="var(--tx3)" strokeWidth="1" />
+                              <line x1={cx + Rc + 15} y1={cy + Hc/2} x2={cx + Rc + 25} y2={cy + Hc/2}
+                                    stroke="var(--tx3)" strokeWidth="1" />
+                              <text x={cx + Rc + 32} y={cy + 4} fill="var(--tx2)" fontSize="11">H={H_cyl}mm</text>
+                              {/* Diameter dimension (bottom) */}
+                              <line x1={cx - Rc} y1={cy + Hc/2 + 24} x2={cx + Rc} y2={cy + Hc/2 + 24}
+                                    stroke="var(--tx3)" strokeWidth="1" />
+                              <line x1={cx - Rc} y1={cy + Hc/2 + 20} x2={cx - Rc} y2={cy + Hc/2 + 28}
+                                    stroke="var(--tx3)" strokeWidth="1" />
+                              <line x1={cx + Rc} y1={cy + Hc/2 + 20} x2={cx + Rc} y2={cy + Hc/2 + 28}
+                                    stroke="var(--tx3)" strokeWidth="1" />
+                              <text x={cx} y={cy + Hc/2 + 42} fill="var(--tx2)" fontSize="11" textAnchor="middle">
+                                ⌀{(R_cyl * 2).toFixed(1)}mm
+                              </text>
+                              {/* Eccentricity label */}
+                              <text x={cx + px_off} y={cy + 4} fill="var(--accent)" fontSize="10"
+                                    textAnchor="middle" fontWeight="500">
+                                e={(R_cyl - R_pis).toFixed(1)}
+                              </text>
+                            </>);
+                          })()}
+                        </svg>
+                      </div>
+                      {/* θ slider */}
+                      <div style={{ padding: '8px 4px 0' }}>
+                        <input type="range" min="0" max="360" step="1" value={thetaView}
+                               onChange={e => setThetaView(+e.target.value)}
+                               style={{ width: '100%' }} />
+                        <div style={{ display: 'flex', justifyContent: 'space-between',
+                                      fontSize: 12, color: 'var(--tx3)', marginTop: 2 }}>
+                          <span style={{ fontFamily: 'JetBrains Mono, monospace' }}>θ = {thetaView}°</span>
+                          <span style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+                            axial section · {comp_type}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                   )}
                 </div>
               </div>
