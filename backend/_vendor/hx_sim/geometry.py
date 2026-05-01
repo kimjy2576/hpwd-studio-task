@@ -165,7 +165,8 @@ class FinTubeGeo:
         g.N_tubes = s.Nr * s.Nt
         g.L_tube = s.W
         fin_pitch = 0.0254 / s.FPI  # [m]
-        g.N_fins = int(s.W / fin_pitch)
+        # 한계 #5 — int() 절삭 대신 round (실제 핀 수에 더 가까움, ±0.5% 정확도 ↑)
+        g.N_fins = int(round(s.W / fin_pitch))
         gap = fin_pitch - s.fin_thickness
 
         # Frontal area: face perpendicular to air flow (H × W)
@@ -192,7 +193,11 @@ class FinTubeGeo:
 
         g.A_total = g.A_fin + g.A_tube_ext
 
-        # Internal area
+        # Internal area (heat transfer area)
+        # 한계 #6 — U-bend 길이는 의도적으로 제외함:
+        #   U-bend 영역은 fin이 없어 air-side HTC ≈ 0 → heat transfer 기여 거의 없음.
+        #   단순히 A_i 늘리면 Q 과대평가. 학계 표준 처리: 직선 튜브 영역만 A_i,
+        #   U-bend 효과는 dP에 bend loss로 추가 (compute_dp_ref_seg 외부에서).
         g.A_i = math.pi * s.Di * s.W * g.N_tubes
 
         # Minimum free-flow area

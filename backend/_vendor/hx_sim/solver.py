@@ -161,6 +161,7 @@ class SimulationResult:
     T_ref_out: float = 0.0
     dp_air: float = 0.0
     dp_ref: float = 0.0        # refrigerant-side total dp [Pa] (max across circuits)
+    dp_bend_total: float = 0.0 # 한계 #6 — U-bend dP 누적 (진단용) [Pa]
     segments: List[SegmentResult] = field(default_factory=list)
     row_Q: List[float] = field(default_factory=list)
     correlations_used: Dict = field(default_factory=dict)
@@ -335,6 +336,7 @@ class HXSolver:
                 #   h_fg, ρ_l, μ_l 등 모든 물성도 P_local 기반으로 사용.
                 P_sat_local = P_sat
                 dp_circ = 0.0  # accumulate dp for this circuit
+                dp_bend_circ = 0.0  # 한계 #6 — U-bend dP per circuit
                 circ_seg_keys = []
 
                 for pass_idx, (row_idx, col_idx) in enumerate(path):
@@ -348,6 +350,26 @@ class HXSolver:
                         G_ref_local = pinfo["G"]
                         m_ref_local = pinfo["m_tube"]
                         mchx_tpp = pinfo["tpp"]
+
+                    # 한계 #6 — U-bend dP loss (FT only, pass 전환 시)
+                    # K-factor based: ΔP_bend = K × G² / (2ρ_avg)
+                    # 180° smooth bend: K ≈ 0.5~1.0. 평균 0.75 사용.
+                    # First pass엔 entrance 무시, second pass부터 bend 누적.
+                    if inp.hx_type == "FT" and pass_idx > 0:
+                        # 평균 밀도 (homogeneous flow)
+                        try:
+                            rho_l_loc = ref.rho_l(P_sat_local)
+                            rho_v_loc = ref.rho_v(P_sat_local)
+                            x_for_rho = max(0.0, min(1.0, x_ref))
+                            rho_avg = 1.0 / (x_for_rho / rho_v_loc + (1 - x_for_rho) / rho_l_loc)
+                        except:
+                            rho_avg = 500.0  # fallback
+                        K_bend = 0.75  # 180° U-bend smooth
+                        dp_bend = K_bend * (G_ref_local ** 2) / (2 * max(rho_avg, 1.0))
+                        dp_bend *= inp.cf_dp_ref
+                        P_sat_local = max(P_sat_local - dp_bend, 1e3)
+                        dp_circ += dp_bend
+                        dp_bend_circ += dp_bend
 
                     # Alternate segment direction per tube pass (U-bend)
                     if pass_idx % 2 == 0:
@@ -472,7 +494,7 @@ class HXSolver:
                         # 한계 #1 해결: P_sat_local 업데이트 — segment 끝나면 dp_seg만큼 감소
                         P_sat_local = max(P_sat_local - dp_seg, 1e3)
 
-                circ_outlets.append((x_ref, T_ref, dp_circ))
+                circ_outlets.append((x_ref, T_ref, dp_circ, dp_bend_circ))
                 circ_paths.append(circ_seg_keys)
 
             # ── Check outer convergence ──
@@ -578,6 +600,8 @@ class HXSolver:
         x_ref_out_avg = sum(o[0] for o in circ_outlets) / n_circ if circ_outlets else inp.x_in
         T_ref_out_avg = sum(o[1] for o in circ_outlets) / n_circ if circ_outlets else inp.T_sat
         dp_ref_max = max(o[2] for o in circ_outlets) if circ_outlets else 0.0
+        # 한계 #6 — dp_bend_total: 전체 circuit 최대 (병렬 회로 중 max)
+        dp_bend_max = max(o[3] for o in circ_outlets) if circ_outlets else 0.0
 
         T_air_out = sum(T_air_3d[c][s][self.Nr]
                         for c in range(self.Nt) for s in range(Ns)) / max(self.Nt * Ns, 1)
@@ -622,6 +646,7 @@ class HXSolver:
         # Air-side pressure drop
         result.dp_air = self._compute_dp_air(G_air, inp.T_air_in, T_air_out)
         result.dp_ref = dp_ref_max
+        result.dp_bend_total = dp_bend_max
 
         # Outlet RH — handle supersaturation (condensate on coil)
         try:
