@@ -470,8 +470,18 @@ function EvaporatorView({ onBack }) {
   const [louver_angle, setLouverA] = useState(27.0);    // deg
   
   // Circuit / layout
-  const [N_tubes, setNtubes] = useState(24);
+  // 진영님 정리:
+  //   • N_rows ("행")    = 공기 흐름 방향 깊이 (longitudinal, P_l pitch)
+  //   • N_columns ("열") = 공기 흐름 수직 방향 (transverse, P_t pitch)
+  //   • N_tubes = N_rows × N_columns (derived, 자동 계산)
   const [N_rows, setNrows] = useState(2);
+  const [N_columns, setNcolumns] = useState(12);
+  const N_tubes = N_rows * N_columns;  // derived
+  const setNtubes = (n) => {
+    // legacy compat — N_tubes 직접 set 호출 시 N_columns로 변환
+    const cols = N_rows > 0 ? Math.max(1, Math.round(n / N_rows)) : n;
+    setNcolumns(cols);
+  };
   const [P_t, setPt] = useState(25.0);  // mm
   const [P_l, setPl] = useState(22.0);  // mm
   const [N_circuits, setNcircuits] = useState(2);
@@ -995,10 +1005,13 @@ function EvaporatorView({ onBack }) {
 
             {/* Circuit / Layout */}
             <SidebarSection title="CIRCUIT / LAYOUT">
-              <Slider label="N_tubes" sublabel="총 본수" value={N_tubes} min={2} max={100} step={1} onChange={setNtubes} color="purple" decimals={0} />
-              <Slider label="N_rows" sublabel="공기 방향" value={N_rows} min={1} max={8} step={1} onChange={setNrows} color="purple" decimals={0} />
-              <Slider label="P_t" sublabel="[mm] transverse" value={P_t} min={10} max={50} step={0.5} decimals={1} onChange={setPt} color="amber" />
-              <Slider label="P_l" sublabel="[mm] longitudinal" value={P_l} min={10} max={50} step={0.5} decimals={1} onChange={setPl} color="amber" />
+              <Slider label="N_rows" sublabel="행 (공기 흐름 방향)" value={N_rows} min={1} max={8} step={1} onChange={setNrows} color="purple" decimals={0} />
+              <Slider label="N_columns" sublabel="열 (공기 흐름 수직 방향)" value={N_columns} min={2} max={40} step={1} onChange={setNcolumns} color="purple" decimals={0} />
+              <div className="mt-1 mb-2 px-2 py-1.5 bg-purple-50 border border-purple-200 rounded text-[11px] font-mono text-purple-800">
+                N_tubes = N_rows × N_columns = <b>{N_tubes}</b> tubes
+              </div>
+              <Slider label="P_t" sublabel="[mm] 열간 거리 (transverse)" value={P_t} min={10} max={50} step={0.5} decimals={1} onChange={setPt} color="amber" />
+              <Slider label="P_l" sublabel="[mm] 행간 거리 (longitudinal)" value={P_l} min={10} max={50} step={0.5} decimals={1} onChange={setPl} color="amber" />
               
               {/* Circuit mode preset (4개) + custom */}
               <div className="mt-3 pt-2 border-t border-slate-100">
@@ -2033,7 +2046,7 @@ function CoilViewer({ view, D_o, D_i, L_tube, FPI, t_fin, N_tubes, N_rows, P_t, 
   }
   // Front (default)
   return <FrontView W={W} H={H} D_o={D_o} L_tube={L_tube} FPI={FPI} t_fin={t_fin}
-                    N_tubes={N_tubes} N_rows={N_rows} P_t={P_t} N_circuits={N_circuits}
+                    N_tubes={N_tubes} N_rows={N_rows} P_t={P_t} P_l={P_l} N_circuits={N_circuits}
                     tubeMaterial={tubeMaterial} finMaterial={finMaterial} />;
 }
 
@@ -2118,22 +2131,22 @@ function TopView({ W, H, D_o, L_tube, FPI, t_fin, N_tubes, N_rows, P_t, P_l,
       </text>
       <text x={W/2} y={y0 + drawH + 46} textAnchor="middle"
             fill="var(--tx3)" fontSize="10" fontFamily="monospace">
-        {N_rows} rows × {tubesPerRow} tubes/row = {N_tubes} tubes
+        {N_rows} rows (행, 공기방향) × {tubesPerRow} cols (열, ⊥) = {N_tubes} tubes
       </text>
     </svg>
   );
 }
 
-function FrontView({ W, H, D_o, L_tube, FPI, t_fin, N_tubes, N_rows, P_t, N_circuits,
+function FrontView({ W, H, D_o, L_tube, FPI, t_fin, N_tubes, N_rows, P_t, P_l, N_circuits,
                     tubeMaterial }) {
   // Front view = 앞에서 본 단면 (tube end + fin pattern)
+  // 진영님 정의:
+  //   • row    = 공기 흐름 방향 (세로축, P_l pitch)
+  //   • column = 공기 흐름 수직 방향 (가로축, P_t pitch)
   // 튜브가 점(원)으로 보임, staggered 격자
-  // compressor-sim 톤: var(--bg3) 배경, dimension lines
   const tubesPerRow = Math.ceil(N_tubes / N_rows);
-  const coreW_mm = tubesPerRow * P_t;        // transverse 방향 (수평)
-  const coreH_mm = N_rows * P_t;             // longitudinal 방향 (수직 — front에서 보면 작음, but here y=row direction)
-  // Front view는 "stack of tubes" — 직사각형 격자
-  // 이번 패치에서는 단순히 tube end (원 grid)만 표시
+  const coreW_mm = tubesPerRow * P_t;   // 가로 = 열 × P_t (transverse)
+  const coreH_mm = N_rows * P_l;        // 세로 = 행 × P_l (longitudinal, 공기 방향)
   
   const padX = 60, padY = 50;
   const scale = Math.min((W - 2*padX) / coreW_mm, (H - 2*padY) / coreH_mm);
@@ -2153,24 +2166,27 @@ function FrontView({ W, H, D_o, L_tube, FPI, t_fin, N_tubes, N_rows, P_t, N_circ
       <rect x={x0} y={y0} width={drawW} height={drawH}
             fill="var(--bg2)" stroke="var(--tx2)" strokeWidth="1.5" rx="2" />
       
-      {/* Air arrow (from left to right, 위쪽에) */}
+      {/* Air arrow — row 방향(세로), 진영님 정의: row = 공기 흐름 방향
+         Front view에서 row spacing은 세로축이므로 공기 화살표도 세로로 */}
       <defs>
-        <marker id="airArr" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
-          <polygon points="0 0, 6 3, 0 6" fill="var(--accent)" opacity="0.7" />
+        <marker id="airArr" markerWidth="6" markerHeight="6" refX="3" refY="5" orient="auto">
+          <polygon points="0 0, 6 0, 3 5" fill="var(--accent)" opacity="0.7" />
         </marker>
       </defs>
-      <line x1={x0 - 30} y1={y0 - 28} x2={x0 + 30} y2={y0 - 28}
+      <line x1={x0 - 28} y1={y0 - 24} x2={x0 - 28} y2={y0 + 24}
             stroke="var(--accent)" strokeWidth="1.5" opacity="0.7"
             markerEnd="url(#airArr)" />
-      <text x={x0 - 28} y={y0 - 32} fill="var(--accent)"
-            fontSize="10" fontWeight="600">AIR →</text>
+      <text x={x0 - 35} y={y0 - 28} fill="var(--accent)"
+            fontSize="10" fontWeight="600">AIR</text>
+      <text x={x0 - 35} y={y0 + 38} fill="var(--accent)"
+            fontSize="9" fontWeight="500" opacity="0.7">↓ 행방향</text>
       
-      {/* Tubes — staggered grid */}
+      {/* Tubes — staggered grid (row=세로/P_l, col=가로/P_t) */}
       {Array.from({ length: N_rows }, (_, r) =>
         Array.from({ length: tubesPerRow }, (_, c) => {
           const yOffset = (r % 2 === 1) ? P_t/2 : 0;
           const cx = x0 + (c + 0.5) * P_t * scale + (yOffset > 0 ? P_t/2 * scale : 0);
-          const cy = y0 + (r + 0.5) * P_t * scale;
+          const cy = y0 + (r + 0.5) * P_l * scale;  // row spacing = P_l
           if (cx > x0 + drawW - 2 || cx < x0 + 2) return null;
           return (
             <g key={`t${r}-${c}`}>
@@ -2208,7 +2224,7 @@ function FrontView({ W, H, D_o, L_tube, FPI, t_fin, N_tubes, N_rows, P_t, N_circ
       {/* Bottom info */}
       <text x={W/2} y={y0 + drawH + 28} textAnchor="middle"
             fill="var(--tx3)" fontSize="10" fontFamily="monospace">
-        D_o = {D_o}mm · P_t = {P_t}mm · staggered · {N_rows}×{tubesPerRow}
+        D_o = {D_o}mm · P_t = {P_t}mm · staggered · {N_rows}행 × {tubesPerRow}열 = {N_tubes} tubes
       </text>
       <text x={W/2} y={y0 + drawH + 42} textAnchor="middle"
             fill="var(--tx3)" fontSize="10" fontFamily="monospace">
