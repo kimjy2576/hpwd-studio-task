@@ -487,7 +487,7 @@ function EvaporatorView({ onBack }) {
   const [outlets, setOutlets] = useState([]);
 
   // View toggle (2D plan view)
-  const [view, setView] = useState('Top');
+  const [view, setView] = useState('3D');
   
   // Save panel
   const [saveOpen, setSaveOpen] = useState(false);
@@ -1069,9 +1069,9 @@ function EvaporatorView({ onBack }) {
               ✓ <b>On-design 모드</b> — 사이드바에서 변수를 변경하면 Model design 에 <b>실시간 반영</b>됩니다.
             </div>
 
-            {/* View toggle */}
+            {/* View toggle (3D / Front / Top / Circuit) */}
             <div className="mb-3 flex gap-1.5">
-              {['Top', 'Side', 'Front', 'Circuit'].map(v => (
+              {['3D', 'Front', 'Top', 'Circuit'].map(v => (
                 <button key={v} onClick={() => setView(v)}
                   className={`px-4 py-1.5 text-[12px] font-semibold rounded-lg transition-colors ${
                     view === v
@@ -1083,10 +1083,15 @@ function EvaporatorView({ onBack }) {
               ))}
             </div>
 
-            {/* 2D viewer */}
+            {/* Viewer */}
             <div className="bg-white border border-slate-200 rounded-lg p-4">
               <div className="text-[12px] text-slate-500 mb-2 flex items-center justify-between">
-                <span><b>{view} view</b> — {view === 'Circuit' ? `Circuit mode: ${circuit_mode}` : 'Tube layout + Fin pattern'}</span>
+                <span><b>{view} view</b> — {
+                  view === 'Circuit' ? `Circuit mode: ${circuit_mode}` :
+                  view === '3D' ? 'Three.js — drag to rotate, scroll to zoom' :
+                  view === 'Front' ? 'Tube cross-section (rows × tubes/row)' :
+                  'Tube length + fin stack'
+                }</span>
                 <span className="font-mono text-[10px] text-slate-400">
                   {N_tubes} tubes / {N_rows} rows / {N_circuits} circuits
                 </span>
@@ -1104,6 +1109,15 @@ function EvaporatorView({ onBack }) {
                     setInlets={(i) => { setInlets(i); setCircuitMode('custom'); }}
                     outlets={outlets}
                     setOutlets={(o) => { setOutlets(o); setCircuitMode('custom'); }}
+                  />
+                ) : view === '3D' ? (
+                  <CoilView3D
+                    D_o={D_o} D_i={D_i} L_tube={L_tube}
+                    FPI={FPI} t_fin={t_fin}
+                    N_tubes={N_tubes} N_rows={N_rows}
+                    P_t={P_t} P_l={P_l}
+                    tubeMaterial={tubeMaterial}
+                    finMaterial={finMaterial}
                   />
                 ) : (
                   <CoilViewer
@@ -1589,6 +1603,191 @@ function CircuitDesigner({ N_rows, N_tubes_per_row, layout='staggered', flow='co
 }
 
 /* ═══════════════════════════════════════════════════════════════════
+   Coil 3D Viewer — Three.js (compressor-sim의 RollingPiston3D 패턴)
+   - tube bundle (staggered grid, copper color)
+   - fin stack (얇은 알루미늄 plates, FPI 비례)
+   - light theme, drag to rotate, scroll to zoom
+   ═══════════════════════════════════════════════════════════════════ */
+function CoilView3D({ D_o, D_i, L_tube, FPI, t_fin, N_tubes, N_rows, P_t, P_l,
+                       tubeMaterial = 'Cu', finMaterial = 'Al' }) {
+  const mountRef = React.useRef(null);
+  const stateRef = React.useRef(null);
+  
+  React.useEffect(() => {
+    if (!mountRef.current || typeof THREE === 'undefined') return;
+    const mount = mountRef.current;
+    const w = mount.clientWidth || 600;
+    const h = mount.clientHeight || 400;
+    
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0xf1f5f9);
+    
+    const camera = new THREE.PerspectiveCamera(50, w/h, 1, 5000);
+    camera.position.set(450, 350, 550);
+    camera.lookAt(0, 0, 0);
+    
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(w, h);
+    renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
+    mount.appendChild(renderer.domElement);
+    
+    // Lights
+    const amb = new THREE.AmbientLight(0xffffff, 0.55);
+    scene.add(amb);
+    const dir = new THREE.DirectionalLight(0xffffff, 0.85);
+    dir.position.set(300, 500, 400);
+    scene.add(dir);
+    const dir2 = new THREE.DirectionalLight(0xffffff, 0.35);
+    dir2.position.set(-200, -100, -300);
+    scene.add(dir2);
+    
+    // Materials
+    const tubeColor = tubeMaterial === 'Cu' ? 0xb87333 : 0xc0c0c0;  // copper or aluminum
+    const finColor = finMaterial === 'Cu' ? 0xb87333 : 0xd4d4d8;    // 얇은 plate, light gray
+    
+    const tubeMat = new THREE.MeshPhongMaterial({
+      color: tubeColor, shininess: 80, specular: 0x444444
+    });
+    const finMat = new THREE.MeshPhongMaterial({
+      color: finColor, shininess: 30, specular: 0x222222,
+      transparent: true, opacity: 0.55, side: THREE.DoubleSide
+    });
+    
+    // Geometry parameters (mm units, scaled in scene)
+    const Nt_per_row = N_rows > 0 ? Math.round(N_tubes / N_rows) : N_tubes;
+    const Lt = L_tube;     // tube length
+    const Do = D_o;        // outer diameter (mm)
+    const Pt = P_t;        // transverse pitch (mm)
+    const Pl = P_l;        // longitudinal pitch (mm)
+    
+    // Tube bundle (staggered)
+    const tubeGroup = new THREE.Group();
+    const tubeGeo = new THREE.CylinderGeometry(Do/2, Do/2, Lt, 16);
+    for (let r = 0; r < N_rows; r++) {
+      const yOffset = (r % 2 === 1) ? Pt/2 : 0;  // staggered
+      for (let c = 0; c < Nt_per_row; c++) {
+        const tube = new THREE.Mesh(tubeGeo, tubeMat);
+        tube.rotation.z = Math.PI / 2;  // tube length along X axis
+        tube.position.set(0, c * Pt + yOffset - (Nt_per_row-1)*Pt/2, r * Pl - (N_rows-1)*Pl/2);
+        tubeGroup.add(tube);
+      }
+    }
+    scene.add(tubeGroup);
+    
+    // Fin stack — thin plates perpendicular to tubes, evenly along L_tube
+    const finCount = Math.max(2, Math.round((Lt / 25.4) * FPI));  // FPI to count
+    const finStep = Lt / (finCount - 1);
+    const finBundleW = Nt_per_row * Pt + Pt;
+    const finBundleD = N_rows * Pl + Pl;
+    const finGeo = new THREE.BoxGeometry(t_fin, finBundleW, finBundleD);
+    
+    const finGroup = new THREE.Group();
+    // 너무 많이 그리면 느려져 — max 50개로 cap
+    const drawCount = Math.min(finCount, 50);
+    const drawStep = (finCount - 1) / (drawCount - 1) * finStep;
+    for (let i = 0; i < drawCount; i++) {
+      const fin = new THREE.Mesh(finGeo, finMat);
+      fin.position.x = -Lt/2 + i * drawStep;
+      finGroup.add(fin);
+    }
+    scene.add(finGroup);
+    
+    // Tube outline (edges) — 더 명확한 입체감
+    const tubeEdgeMat = new THREE.LineBasicMaterial({ color: 0x6b4423, linewidth: 1, opacity: 0.5, transparent: true });
+    tubeGroup.children.forEach(tube => {
+      const edges = new THREE.EdgesGeometry(tubeGeo);
+      const line = new THREE.LineSegments(edges, tubeEdgeMat);
+      line.rotation.copy(tube.rotation);
+      line.position.copy(tube.position);
+      scene.add(line);
+    });
+    
+    // Floor grid (reference)
+    const grid = new THREE.GridHelper(Math.max(Lt, finBundleW, finBundleD) * 1.5, 12, 0xcbd5e1, 0xe2e8f0);
+    grid.position.y = -finBundleW/2 - 30;
+    scene.add(grid);
+    
+    // ── Mouse drag to rotate ──
+    let isDragging = false;
+    let prevX = 0, prevY = 0;
+    let rotY = 0.4, rotX = 0.25;
+    let zoom = 1.0;
+    
+    const updateCamera = () => {
+      const r = 700 / zoom;
+      camera.position.x = r * Math.sin(rotY) * Math.cos(rotX);
+      camera.position.y = r * Math.sin(rotX);
+      camera.position.z = r * Math.cos(rotY) * Math.cos(rotX);
+      camera.lookAt(0, 0, 0);
+    };
+    updateCamera();
+    
+    const dom = renderer.domElement;
+    dom.style.cursor = 'grab';
+    dom.addEventListener('mousedown', (e) => {
+      isDragging = true; prevX = e.clientX; prevY = e.clientY;
+      dom.style.cursor = 'grabbing';
+    });
+    window.addEventListener('mouseup', () => {
+      isDragging = false; dom.style.cursor = 'grab';
+    });
+    window.addEventListener('mousemove', (e) => {
+      if (!isDragging) return;
+      rotY += (e.clientX - prevX) * 0.008;
+      rotX = Math.max(-1.4, Math.min(1.4, rotX + (e.clientY - prevY) * 0.008));
+      prevX = e.clientX; prevY = e.clientY;
+      updateCamera();
+    });
+    dom.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      zoom *= e.deltaY > 0 ? 0.92 : 1.08;
+      zoom = Math.max(0.3, Math.min(3.0, zoom));
+      updateCamera();
+    }, { passive: false });
+    
+    // ── Animation loop ──
+    let raf;
+    const animate = () => {
+      raf = requestAnimationFrame(animate);
+      renderer.render(scene, camera);
+    };
+    animate();
+    
+    // ── Resize ──
+    const onResize = () => {
+      const w2 = mount.clientWidth, h2 = mount.clientHeight;
+      camera.aspect = w2 / h2;
+      camera.updateProjectionMatrix();
+      renderer.setSize(w2, h2);
+    };
+    const ro = new ResizeObserver(onResize);
+    ro.observe(mount);
+    
+    stateRef.current = { scene, camera, renderer, raf };
+    
+    return () => {
+      cancelAnimationFrame(raf);
+      ro.disconnect();
+      if (mount && renderer.domElement.parentNode === mount) {
+        mount.removeChild(renderer.domElement);
+      }
+      renderer.dispose();
+      tubeGeo.dispose();
+      finGeo.dispose();
+      tubeMat.dispose();
+      finMat.dispose();
+    };
+  }, [D_o, D_i, L_tube, FPI, t_fin, N_tubes, N_rows, P_t, P_l, tubeMaterial, finMaterial]);
+  
+  return (
+    <div ref={mountRef} style={{
+      width: '100%', height: 400, minHeight: 400,
+      borderRadius: 6, overflow: 'hidden', position: 'relative'
+    }} />
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════
    2D Coil Viewer — SVG plan view
    ═══════════════════════════════════════════════════════════════════ */
 function CoilViewer({ view, D_o, D_i, L_tube, FPI, t_fin, N_tubes, N_rows, P_t, P_l, N_circuits,
@@ -1600,11 +1799,7 @@ function CoilViewer({ view, D_o, D_i, L_tube, FPI, t_fin, N_tubes, N_rows, P_t, 
                     N_tubes={N_tubes} N_rows={N_rows} P_t={P_t} P_l={P_l}
                     N_circuits={N_circuits} tubeMaterial={tubeMaterial} finMaterial={finMaterial} />;
   }
-  if (view === 'Side') {
-    return <SideView W={W} H={H} D_o={D_o} D_i={D_i} N_tubes={N_tubes} N_rows={N_rows}
-                     P_t={P_t} P_l={P_l} tubeMaterial={tubeMaterial} />;
-  }
-  // Front
+  // Front (default)
   return <FrontView W={W} H={H} D_o={D_o} L_tube={L_tube} FPI={FPI} t_fin={t_fin}
                     N_tubes={N_tubes} N_rows={N_rows} P_t={P_t} N_circuits={N_circuits}
                     tubeMaterial={tubeMaterial} finMaterial={finMaterial} />;
@@ -1613,283 +1808,184 @@ function CoilViewer({ view, D_o, D_i, L_tube, FPI, t_fin, N_tubes, N_rows, P_t, 
 /* ───── Top view — 위에서 본 그림 (튜브 길이 방향 + fin pattern) ───── */
 function TopView({ W, H, D_o, L_tube, FPI, t_fin, N_tubes, N_rows, P_t, P_l,
                    N_circuits, tubeMaterial, finMaterial }) {
+  // Top view = 위에서 본 plan (튜브 길이방향이 horizontal, fin은 수직선)
+  // compressor-sim 스타일: var(--bg3) 배경, var(--tx2/3) 라벨, dimension lines
   const tubesPerRow = Math.ceil(N_tubes / N_rows);
   const coreW_mm = L_tube;
   const coreH_mm = N_rows * P_l;
-
-  // Scale to fit
-  const margin = 50;
-  const scale = Math.min((W - 2 * margin) / coreW_mm, (H - 2 * margin) / coreH_mm);
-  const drawW = coreW_mm * scale;
-  const drawH = coreH_mm * scale;
-  const x0 = (W - drawW) / 2;
-  const y0 = (H - drawH) / 2;
-
-  // Fin pitch (mm)
-  const P_fin_mm = 25.4 / FPI;
-  const N_fins = Math.floor(L_tube / P_fin_mm);
   
-  // Show every N-th fin to avoid clutter
-  const finStep = Math.max(1, Math.floor(N_fins / 60));
-
-  const tubeColor = { Cu: '#D97706', Al: '#94A3B8', SS: '#475569' }[tubeMaterial] || '#94A3B8';
-  const finColor = { Al: '#CBD5E1', Cu: '#FCD34D' }[finMaterial] || '#CBD5E1';
-
-  return (
-    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ background: '#FAFAFA' }}>
-      {/* Grid background */}
-      <defs>
-        <pattern id="grid-top" width="20" height="20" patternUnits="userSpaceOnUse">
-          <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#E2E8F0" strokeWidth="0.5" />
-        </pattern>
-      </defs>
-      <rect width={W} height={H} fill="url(#grid-top)" />
-
-      {/* Coil outline */}
-      <rect x={x0} y={y0} width={drawW} height={drawH} fill="white" stroke="#94A3B8" strokeWidth="1" />
-
-      {/* Fins (vertical lines along tube length, 일부만 표시) */}
-      {Array.from({ length: N_fins }, (_, i) => i).filter(i => i % finStep === 0).map(i => {
-        const x = x0 + (i * P_fin_mm) * scale;
-        return <line key={`fin-${i}`} x1={x} y1={y0} x2={x} y2={y0 + drawH}
-                     stroke={finColor} strokeWidth="0.4" opacity="0.7" />;
-      })}
-
-      {/* Tube projections (top view: 튜브가 가로 라인으로 보임) */}
-      {Array.from({ length: N_rows }, (_, r) =>
-        <g key={`row-${r}`}>
-          <line
-            x1={x0}
-            y1={y0 + (r + 0.5) * (drawH / N_rows)}
-            x2={x0 + drawW}
-            y2={y0 + (r + 0.5) * (drawH / N_rows)}
-            stroke={tubeColor}
-            strokeWidth={Math.max(2, D_o * scale)}
-            opacity="0.85"
-          />
-        </g>
-      )}
-
-      {/* Air flow arrow */}
-      <g transform={`translate(${x0 - 30}, ${y0 + drawH / 2})`}>
-        <line x1="0" y1="-30" x2="0" y2="30" stroke="#3B82F6" strokeWidth="1.5" markerEnd="url(#arrow-air)" />
-        <text x="-5" y="0" fill="#3B82F6" fontSize="10" textAnchor="end" fontFamily="monospace">Air</text>
-      </g>
-      <defs>
-        <marker id="arrow-air" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
-          <polygon points="0 0, 8 4, 0 8" fill="#3B82F6" />
-        </marker>
-      </defs>
-
-      {/* Refrigerant flow indicators */}
-      <g transform={`translate(${x0 + 20}, ${y0 - 25})`}>
-        <text fill="#0891B2" fontSize="10" fontFamily="monospace">
-          ⟶ Refrigerant ({N_circuits} circuit{N_circuits > 1 ? 's' : ''})
-        </text>
-      </g>
-
-      {/* Dimensions */}
-      <g transform={`translate(${x0}, ${y0 + drawH + 25})`}>
-        <line x1="0" y1="0" x2={drawW} y2="0" stroke="#64748B" strokeWidth="0.5" />
-        <line x1="0" y1="-3" x2="0" y2="3" stroke="#64748B" strokeWidth="0.5" />
-        <line x1={drawW} y1="-3" x2={drawW} y2="3" stroke="#64748B" strokeWidth="0.5" />
-        <text x={drawW / 2} y="14" fill="#64748B" fontSize="10" textAnchor="middle" fontFamily="monospace">
-          L = {L_tube.toFixed(0)} mm
-        </text>
-      </g>
-      <g transform={`translate(${x0 - 15}, ${y0})`}>
-        <line x1="0" y1="0" x2="0" y2={drawH} stroke="#64748B" strokeWidth="0.5" />
-        <line x1="-3" y1="0" x2="3" y2="0" stroke="#64748B" strokeWidth="0.5" />
-        <line x1="-3" y1={drawH} x2="3" y2={drawH} stroke="#64748B" strokeWidth="0.5" />
-        <text x="-5" y={drawH / 2 + 3} fill="#64748B" fontSize="10" textAnchor="end" fontFamily="monospace">
-          H = {coreH_mm.toFixed(0)} mm
-        </text>
-      </g>
-
-      {/* Info text */}
-      <text x={W - 10} y="18" fill="#64748B" fontSize="10" textAnchor="end" fontFamily="monospace">
-        N_fins = {N_fins} (showing 1/{finStep})
-      </text>
-    </svg>
-  );
-}
-
-/* ───── Side view — 옆에서 본 그림 (튜브 단면 + 회로) ───── */
-function SideView({ W, H, D_o, D_i, N_tubes, N_rows, P_t, P_l, tubeMaterial }) {
-  const tubesPerRow = Math.ceil(N_tubes / N_rows);
-  const coreW_mm = tubesPerRow * P_t;
-  const coreH_mm = N_rows * P_l;
-
-  const margin = 60;
-  const scale = Math.min((W - 2 * margin) / coreW_mm, (H - 2 * margin) / coreH_mm);
+  const padX = 60, padY = 50;
+  const scale = Math.min((W - 2*padX) / coreW_mm, (H - 2*padY) / coreH_mm);
   const drawW = coreW_mm * scale;
   const drawH = coreH_mm * scale;
   const x0 = (W - drawW) / 2;
   const y0 = (H - drawH) / 2;
-
-  const tubeR = (D_o / 2) * scale;
-  const innerR = (D_i / 2) * scale;
-  const tubeColor = { Cu: '#D97706', Al: '#94A3B8', SS: '#475569' }[tubeMaterial] || '#94A3B8';
-
-  // Generate tube positions (staggered)
-  const tubes = [];
-  let count = 0;
-  for (let r = 0; r < N_rows; r++) {
-    const offsetX = (r % 2) * (P_t / 2);
-    const tubesThisRow = (r % 2 === 0) ? tubesPerRow : Math.max(1, tubesPerRow - 1);
-    for (let i = 0; i < tubesThisRow; i++) {
-      if (count >= N_tubes) break;
-      const x_mm = (i + 0.5) * P_t + (r % 2 ? -P_t / 2 : 0) + offsetX;
-      const y_mm = (r + 0.5) * P_l;
-      tubes.push({ x: x0 + x_mm * scale, y: y0 + y_mm * scale, idx: count, row: r });
-      count++;
-    }
-  }
-
-  return (
-    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ background: '#FAFAFA' }}>
-      <defs>
-        <pattern id="grid-side" width="20" height="20" patternUnits="userSpaceOnUse">
-          <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#E2E8F0" strokeWidth="0.5" />
-        </pattern>
-      </defs>
-      <rect width={W} height={H} fill="url(#grid-side)" />
-
-      {/* Coil outline */}
-      <rect x={x0} y={y0} width={drawW} height={drawH} fill="white" stroke="#94A3B8" strokeWidth="1" />
-
-      {/* Tubes (cross-section) */}
-      {tubes.map((t, i) => (
-        <g key={`tube-${i}`}>
-          <circle cx={t.x} cy={t.y} r={tubeR} fill={tubeColor} opacity="0.3" stroke={tubeColor} strokeWidth="1" />
-          <circle cx={t.x} cy={t.y} r={innerR} fill="white" stroke={tubeColor} strokeWidth="0.5" />
-          {tubes.length <= 30 && (
-            <text x={t.x} y={t.y + 3} fill="#475569" fontSize="8" textAnchor="middle" fontFamily="monospace">
-              {t.idx + 1}
-            </text>
-          )}
-        </g>
-      ))}
-
-      {/* Air flow arrow (left to right) */}
-      <g transform={`translate(${x0 - 35}, ${y0 + drawH / 2})`}>
-        <line x1="0" y1="0" x2="20" y2="0" stroke="#3B82F6" strokeWidth="1.5" markerEnd="url(#arrow-air-side)" />
-        <text x="0" y="-5" fill="#3B82F6" fontSize="10" textAnchor="start" fontFamily="monospace">Air</text>
-      </g>
-      <defs>
-        <marker id="arrow-air-side" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
-          <polygon points="0 0, 8 4, 0 8" fill="#3B82F6" />
-        </marker>
-      </defs>
-
-      {/* Dimensions */}
-      <g transform={`translate(${x0}, ${y0 + drawH + 25})`}>
-        <line x1="0" y1="0" x2={drawW} y2="0" stroke="#64748B" strokeWidth="0.5" />
-        <text x={drawW / 2} y="14" fill="#64748B" fontSize="10" textAnchor="middle" fontFamily="monospace">
-          W = {coreW_mm.toFixed(0)} mm ({tubesPerRow} × P_t={P_t}mm)
-        </text>
-      </g>
-      <g transform={`translate(${x0 - 15}, ${y0})`}>
-        <line x1="0" y1="0" x2="0" y2={drawH} stroke="#64748B" strokeWidth="0.5" />
-        <text x="-5" y={drawH / 2 + 3} fill="#64748B" fontSize="10" textAnchor="end" fontFamily="monospace">
-          H = {coreH_mm.toFixed(0)} mm
-        </text>
-      </g>
-
-      {/* Tube count label */}
-      <text x={W - 10} y="18" fill="#64748B" fontSize="10" textAnchor="end" fontFamily="monospace">
-        {N_tubes} tubes (staggered, {N_rows} rows)
-      </text>
-      <text x={W - 10} y="32" fill="#64748B" fontSize="10" textAnchor="end" fontFamily="monospace">
-        D_o = {D_o.toFixed(1)} / D_i = {D_i.toFixed(1)} mm
-      </text>
-    </svg>
-  );
-}
-
-/* ───── Front view — 앞에서 본 그림 (튜브 끝면 + circuit 라우팅) ───── */
-function FrontView({ W, H, D_o, L_tube, FPI, t_fin, N_tubes, N_rows, P_t, N_circuits,
-                    tubeMaterial, finMaterial }) {
-  const tubesPerRow = Math.ceil(N_tubes / N_rows);
-  const coreW_mm = tubesPerRow * P_t;
-  const coreH_mm = L_tube;
-
-  const margin = 60;
-  const scale = Math.min((W - 2 * margin) / coreW_mm, (H - 2 * margin) / coreH_mm);
-  const drawW = coreW_mm * scale;
-  const drawH = coreH_mm * scale;
-  const x0 = (W - drawW) / 2;
-  const y0 = (H - drawH) / 2;
-
-  const tubeColor = { Cu: '#D97706', Al: '#94A3B8', SS: '#475569' }[tubeMaterial] || '#94A3B8';
-  const tubeR = Math.max(2, (D_o / 2) * scale);
-
-  // Fins (horizontal lines)
+  
   const P_fin_mm = 25.4 / FPI;
   const N_fins = Math.floor(L_tube / P_fin_mm);
   const finStep = Math.max(1, Math.floor(N_fins / 50));
-  const finColor = { Al: '#CBD5E1', Cu: '#FCD34D' }[finMaterial] || '#CBD5E1';
-
+  
   return (
-    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ background: '#FAFAFA' }}>
-      <defs>
-        <pattern id="grid-front" width="20" height="20" patternUnits="userSpaceOnUse">
-          <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#E2E8F0" strokeWidth="0.5" />
-        </pattern>
-      </defs>
-      <rect width={W} height={H} fill="url(#grid-front)" />
-
-      {/* Coil outline */}
-      <rect x={x0} y={y0} width={drawW} height={drawH} fill="white" stroke="#94A3B8" strokeWidth="1" />
-
-      {/* Fins (horizontal lines) */}
-      {Array.from({ length: N_fins }, (_, i) => i).filter(i => i % finStep === 0).map(i => {
-        const y = y0 + (i * P_fin_mm) * scale;
-        return <line key={`fin-${i}`} x1={x0} y1={y} x2={x0 + drawW} y2={y}
-                     stroke={finColor} strokeWidth="0.4" opacity="0.7" />;
-      })}
-
-      {/* Tube cross-sections (only first row visible from front) */}
-      {Array.from({ length: tubesPerRow }, (_, i) => {
-        const x = x0 + (i + 0.5) * P_t * scale;
+    <svg viewBox={`0 0 ${W} ${H}`} style={{
+      width: '100%', height: '100%', background: 'var(--bg3)',
+      borderRadius: 6, display: 'block'
+    }}>
+      {/* Outer frame (heat exchanger envelope) */}
+      <rect x={x0} y={y0} width={drawW} height={drawH}
+            fill="var(--bg2)" stroke="var(--tx2)" strokeWidth="1.5" rx="2" />
+      
+      {/* Fins (얇은 수직선) — top view에서는 fin이 단면 옆으로 보임 */}
+      {Array.from({ length: Math.floor(N_fins / finStep) }, (_, i) => {
+        const x = x0 + (i * finStep * P_fin_mm) * scale;
         return (
-          <line key={`tube-${i}`} x1={x} y1={y0} x2={x} y2={y0 + drawH}
-                stroke={tubeColor} strokeWidth={tubeR * 2} opacity="0.6" />
+          <line key={`fin${i}`} x1={x} y1={y0} x2={x} y2={y0 + drawH}
+                stroke="var(--tx3)" strokeWidth="0.4" opacity="0.6" />
         );
       })}
-
-      {/* Header / circuit indication */}
-      <g transform={`translate(${x0}, ${y0 - 20})`}>
-        <rect x="0" y="0" width={drawW} height="8" fill="#0891B2" opacity="0.3" stroke="#0891B2" strokeWidth="0.5" />
-        <text x={drawW / 2} y="-5" fill="#0891B2" fontSize="10" textAnchor="middle" fontFamily="monospace">
-          Refrigerant header (in) — {N_circuits} circuit{N_circuits > 1 ? 's' : ''}
-        </text>
-      </g>
-      <g transform={`translate(${x0}, ${y0 + drawH + 12})`}>
-        <rect x="0" y="0" width={drawW} height="8" fill="#0891B2" opacity="0.3" stroke="#0891B2" strokeWidth="0.5" />
-        <text x={drawW / 2} y="22" fill="#0891B2" fontSize="10" textAnchor="middle" fontFamily="monospace">
-          Refrigerant header (out)
-        </text>
-      </g>
-
-      {/* Dimensions */}
-      <g transform={`translate(${x0 - 15}, ${y0})`}>
-        <line x1="0" y1="0" x2="0" y2={drawH} stroke="#64748B" strokeWidth="0.5" />
-        <text x="-5" y={drawH / 2 + 3} fill="#64748B" fontSize="10" textAnchor="end" fontFamily="monospace" transform={`rotate(-90 -5 ${drawH / 2 + 3})`}>
-          L = {L_tube.toFixed(0)} mm
-        </text>
-      </g>
-
-      <text x={W - 10} y="18" fill="#64748B" fontSize="10" textAnchor="end" fontFamily="monospace">
-        Front view (1st row visible)
+      
+      {/* Tubes (각 row마다 horizontal line) */}
+      {Array.from({ length: N_rows }, (_, r) => {
+        const y = y0 + (r + 0.5) * P_l * scale;
+        const dot_r = Math.max(2, D_o * scale * 0.5);
+        return (
+          <g key={`row${r}`}>
+            {/* tube line (length) */}
+            <line x1={x0 + 5} y1={y} x2={x0 + drawW - 5} y2={y}
+                  stroke="var(--accent)" strokeWidth={Math.max(1.5, D_o * scale * 0.6)}
+                  opacity="0.85" />
+            {/* row label */}
+            <text x={x0 - 8} y={y + 3} textAnchor="end"
+                  fill="var(--tx3)" fontSize="9" fontFamily="monospace">R{r}</text>
+          </g>
+        );
+      })}
+      
+      {/* Top dimension: L_tube */}
+      <line x1={x0} y1={y0 - 22} x2={x0 + drawW} y2={y0 - 22}
+            stroke="var(--tx3)" strokeWidth="1" />
+      <line x1={x0} y1={y0 - 26} x2={x0} y2={y0 - 18} stroke="var(--tx3)" strokeWidth="1" />
+      <line x1={x0 + drawW} y1={y0 - 26} x2={x0 + drawW} y2={y0 - 18}
+            stroke="var(--tx3)" strokeWidth="1" />
+      <text x={x0 + drawW/2} y={y0 - 30} textAnchor="middle"
+            fill="var(--tx2)" fontSize="11">L_tube = {L_tube}mm</text>
+      
+      {/* Right dimension: depth = N_rows × P_l */}
+      <line x1={x0 + drawW + 22} y1={y0} x2={x0 + drawW + 22} y2={y0 + drawH}
+            stroke="var(--tx3)" strokeWidth="1" />
+      <line x1={x0 + drawW + 18} y1={y0} x2={x0 + drawW + 26} y2={y0}
+            stroke="var(--tx3)" strokeWidth="1" />
+      <line x1={x0 + drawW + 18} y1={y0 + drawH} x2={x0 + drawW + 26} y2={y0 + drawH}
+            stroke="var(--tx3)" strokeWidth="1" />
+      <text x={x0 + drawW + 30} y={y0 + drawH/2 + 3}
+            fill="var(--tx2)" fontSize="11">D = {(N_rows*P_l).toFixed(0)}mm</text>
+      
+      {/* Bottom info */}
+      <text x={W/2} y={y0 + drawH + 32} textAnchor="middle"
+            fill="var(--tx3)" fontSize="10" fontFamily="monospace">
+        FPI={FPI} · t_fin={t_fin}mm · {N_fins} fins · D_o={D_o}mm
+      </text>
+      <text x={W/2} y={y0 + drawH + 46} textAnchor="middle"
+            fill="var(--tx3)" fontSize="10" fontFamily="monospace">
+        {N_rows} rows × {tubesPerRow} tubes/row = {N_tubes} tubes
       </text>
     </svg>
   );
 }
 
-/* ═══════════════════════════════════════════════════════════════════
-   Derived stats — 자동 계산되는 파생 properties
-   ═══════════════════════════════════════════════════════════════════ */
+function FrontView({ W, H, D_o, L_tube, FPI, t_fin, N_tubes, N_rows, P_t, N_circuits,
+                    tubeMaterial }) {
+  // Front view = 앞에서 본 단면 (tube end + fin pattern)
+  // 튜브가 점(원)으로 보임, staggered 격자
+  // compressor-sim 톤: var(--bg3) 배경, dimension lines
+  const tubesPerRow = Math.ceil(N_tubes / N_rows);
+  const coreW_mm = tubesPerRow * P_t;        // transverse 방향 (수평)
+  const coreH_mm = N_rows * P_t;             // longitudinal 방향 (수직 — front에서 보면 작음, but here y=row direction)
+  // Front view는 "stack of tubes" — 직사각형 격자
+  // 이번 패치에서는 단순히 tube end (원 grid)만 표시
+  
+  const padX = 60, padY = 50;
+  const scale = Math.min((W - 2*padX) / coreW_mm, (H - 2*padY) / coreH_mm);
+  const drawW = coreW_mm * scale;
+  const drawH = coreH_mm * scale;
+  const x0 = (W - drawW) / 2;
+  const y0 = (H - drawH) / 2;
+  
+  const tube_r = Math.max(2, D_o * scale * 0.45);
+  
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} style={{
+      width: '100%', height: '100%', background: 'var(--bg3)',
+      borderRadius: 6, display: 'block'
+    }}>
+      {/* Outer frame */}
+      <rect x={x0} y={y0} width={drawW} height={drawH}
+            fill="var(--bg2)" stroke="var(--tx2)" strokeWidth="1.5" rx="2" />
+      
+      {/* Air arrow (from left to right, 위쪽에) */}
+      <defs>
+        <marker id="airArr" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+          <polygon points="0 0, 6 3, 0 6" fill="var(--accent)" opacity="0.7" />
+        </marker>
+      </defs>
+      <line x1={x0 - 30} y1={y0 - 28} x2={x0 + 30} y2={y0 - 28}
+            stroke="var(--accent)" strokeWidth="1.5" opacity="0.7"
+            markerEnd="url(#airArr)" />
+      <text x={x0 - 28} y={y0 - 32} fill="var(--accent)"
+            fontSize="10" fontWeight="600">AIR →</text>
+      
+      {/* Tubes — staggered grid */}
+      {Array.from({ length: N_rows }, (_, r) =>
+        Array.from({ length: tubesPerRow }, (_, c) => {
+          const yOffset = (r % 2 === 1) ? P_t/2 : 0;
+          const cx = x0 + (c + 0.5) * P_t * scale + (yOffset > 0 ? P_t/2 * scale : 0);
+          const cy = y0 + (r + 0.5) * P_t * scale;
+          if (cx > x0 + drawW - 2 || cx < x0 + 2) return null;
+          return (
+            <g key={`t${r}-${c}`}>
+              {/* outer tube */}
+              <circle cx={cx} cy={cy} r={tube_r}
+                      fill="var(--accent)" fillOpacity="0.18"
+                      stroke="var(--accent)" strokeWidth="1" />
+              {/* inner bore */}
+              <circle cx={cx} cy={cy} r={tube_r * 0.65}
+                      fill="var(--bg)" stroke="var(--tx3)" strokeWidth="0.5" />
+            </g>
+          );
+        })
+      )}
+      
+      {/* Top dimension: total width */}
+      <line x1={x0} y1={y0 - 12} x2={x0 + drawW} y2={y0 - 12}
+            stroke="var(--tx3)" strokeWidth="1" />
+      <line x1={x0} y1={y0 - 16} x2={x0} y2={y0 - 8} stroke="var(--tx3)" strokeWidth="1" />
+      <line x1={x0 + drawW} y1={y0 - 16} x2={x0 + drawW} y2={y0 - 8}
+            stroke="var(--tx3)" strokeWidth="1" />
+      <text x={x0 + drawW/2} y={y0 - 18} textAnchor="middle"
+            fill="var(--tx2)" fontSize="11">{(coreW_mm).toFixed(0)}mm ({tubesPerRow}×P_t)</text>
+      
+      {/* Right dimension: total height */}
+      <line x1={x0 + drawW + 22} y1={y0} x2={x0 + drawW + 22} y2={y0 + drawH}
+            stroke="var(--tx3)" strokeWidth="1" />
+      <line x1={x0 + drawW + 18} y1={y0} x2={x0 + drawW + 26} y2={y0}
+            stroke="var(--tx3)" strokeWidth="1" />
+      <line x1={x0 + drawW + 18} y1={y0 + drawH} x2={x0 + drawW + 26} y2={y0 + drawH}
+            stroke="var(--tx3)" strokeWidth="1" />
+      <text x={x0 + drawW + 30} y={y0 + drawH/2 + 3}
+            fill="var(--tx2)" fontSize="11">{(coreH_mm).toFixed(0)}mm</text>
+      
+      {/* Bottom info */}
+      <text x={W/2} y={y0 + drawH + 28} textAnchor="middle"
+            fill="var(--tx3)" fontSize="10" fontFamily="monospace">
+        D_o = {D_o}mm · P_t = {P_t}mm · staggered · {N_rows}×{tubesPerRow}
+      </text>
+      <text x={W/2} y={y0 + drawH + 42} textAnchor="middle"
+            fill="var(--tx3)" fontSize="10" fontFamily="monospace">
+        {N_circuits} circuits ({(N_tubes/N_circuits).toFixed(1)} tubes/circuit avg)
+      </text>
+    </svg>
+  );
+}
+
 function DerivedStats({ D_o, D_i, L_tube, FPI, t_fin, N_tubes, N_rows, P_t, P_l, N_circuits }) {
   const stats = useMemo(() => {
     const D_o_m = D_o / 1000, D_i_m = D_i / 1000;
@@ -2870,10 +2966,10 @@ function CompressorView({ onBack }) {
             ✓ <b>On-design (PDSim ROM)</b> — sidebar 변경 시 도식 + Derived 실시간 반영
           </div>
 
-          {/* View sub-tabs */}
+          {/* View sub-tabs (3D / Front / Top / Side) */}
           <div className="bg-white border-b border-slate-200 px-6 py-3 shrink-0">
             <div className="flex gap-2">
-              {['3D model', 'Top view', 'Front view'].map((label, idx) => (
+              {['3D model', 'Front view', 'Top view', 'Side view'].map((label, idx) => (
                 <button key={idx}
                   onClick={() => setVizSub(idx)}
                   className={`px-4 py-1.5 text-[13px] rounded transition-colors ${
@@ -2890,13 +2986,14 @@ function CompressorView({ onBack }) {
           {/* Main scroll area */}
           <div className="flex-1 overflow-y-auto p-6 bg-slate-50">
             <div className="max-w-3xl mx-auto">
-              {/* Visualization based on vizSub — compressor-sim의 RollingPiston* 사용 */}
+              {/* Visualization based on vizSub */}
               <div className="bg-white border border-slate-200 rounded-lg p-4 mb-4">
                 <div className="text-[11px] font-mono text-slate-500 uppercase tracking-wider mb-2 flex items-center justify-between">
                   <span>
                     {vizSub === 0 && '3D model — Three.js (drag to rotate, scroll to zoom)'}
-                    {vizSub === 1 && 'Top view — Rolling piston cross-section (θ animation)'}
-                    {vizSub === 2 && 'Front view — Cylinder side cross-section'}
+                    {vizSub === 1 && 'Front view — Axial section (cylinder + piston, θ animation)'}
+                    {vizSub === 2 && 'Top view — Rolling piston cross-section'}
+                    {vizSub === 3 && 'Side view — Cylinder length-axis (port positions emphasized)'}
                   </span>
                   {/* 3D mode controls */}
                   {vizSub === 0 && (
@@ -2927,12 +3024,6 @@ function CompressorView({ onBack }) {
                     />
                   )}
                   {vizSub === 1 && (
-                    <RollingPistonView
-                      R_c_mm={R_cyl} R_p_mm={R_pis} H_mm={H_cyl} t_vane_mm={t_vane}
-                      theta_deg={thetaView}
-                    />
-                  )}
-                  {vizSub === 2 && (
                     /* Front view — compressor-sim 그대로 (axial section + θ slider) */
                     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0,
                                   width: '100%', height: '100%' }}>
@@ -2948,26 +3039,20 @@ function CompressorView({ onBack }) {
                             const ecc = (R_cyl - R_pis) * s, theta = thetaView * Math.PI / 180;
                             const px_off = ecc * Math.cos(theta);
                             return (<>
-                              {/* Cylinder body (외곽 사각형) */}
                               <rect x={cx - Rc} y={cy - Hc/2} width={2*Rc} height={Hc}
                                     fill="none" stroke="var(--tx2)" strokeWidth="2" rx="2" />
-                              {/* Top plate */}
                               <rect x={cx - Rc - 6} y={cy - Hc/2 - 10} width={2*Rc + 12} height="10"
                                     fill="var(--tx3)" opacity="0.3" rx="1.5" />
-                              {/* Bottom plate */}
                               <rect x={cx - Rc - 6} y={cy + Hc/2} width={2*Rc + 12} height="10"
                                     fill="var(--tx3)" opacity="0.3" rx="1.5" />
-                              {/* Piston (eccentric position) */}
                               <rect x={cx + px_off - Rp} y={cy - Hc/2 + 2} width={2*Rp} height={Hc - 4}
                                     fill="var(--accent)" opacity="0.15"
                                     stroke="var(--accent)" strokeWidth="1.5" rx="1" />
-                              {/* Axial clearance δ_a (top gap) */}
                               <line x1={cx + px_off - Rp + 6} y1={cy - Hc/2}
                                     x2={cx + px_off - Rp + 6} y2={cy - Hc/2 + 2}
                                     stroke="#d97706" strokeWidth="2" />
                               <text x={cx + px_off - Rp + 12} y={cy - Hc/2 - 4}
                                     fill="#d97706" fontSize="10" fontWeight="500">δ_a</text>
-                              {/* H dimension (right side) */}
                               <line x1={cx + Rc + 20} y1={cy - Hc/2} x2={cx + Rc + 20} y2={cy + Hc/2}
                                     stroke="var(--tx3)" strokeWidth="1" />
                               <line x1={cx + Rc + 15} y1={cy - Hc/2} x2={cx + Rc + 25} y2={cy - Hc/2}
@@ -2975,7 +3060,6 @@ function CompressorView({ onBack }) {
                               <line x1={cx + Rc + 15} y1={cy + Hc/2} x2={cx + Rc + 25} y2={cy + Hc/2}
                                     stroke="var(--tx3)" strokeWidth="1" />
                               <text x={cx + Rc + 32} y={cy + 4} fill="var(--tx2)" fontSize="11">H={H_cyl}mm</text>
-                              {/* Diameter dimension (bottom) */}
                               <line x1={cx - Rc} y1={cy + Hc/2 + 24} x2={cx + Rc} y2={cy + Hc/2 + 24}
                                     stroke="var(--tx3)" strokeWidth="1" />
                               <line x1={cx - Rc} y1={cy + Hc/2 + 20} x2={cx - Rc} y2={cy + Hc/2 + 28}
@@ -2985,7 +3069,6 @@ function CompressorView({ onBack }) {
                               <text x={cx} y={cy + Hc/2 + 42} fill="var(--tx2)" fontSize="11" textAnchor="middle">
                                 ⌀{(R_cyl * 2).toFixed(1)}mm
                               </text>
-                              {/* Eccentricity label */}
                               <text x={cx + px_off} y={cy + 4} fill="var(--accent)" fontSize="10"
                                     textAnchor="middle" fontWeight="500">
                                 e={(R_cyl - R_pis).toFixed(1)}
@@ -2994,7 +3077,6 @@ function CompressorView({ onBack }) {
                           })()}
                         </svg>
                       </div>
-                      {/* θ slider */}
                       <div style={{ padding: '8px 4px 0' }}>
                         <input type="range" min="0" max="360" step="1" value={thetaView}
                                onChange={e => setThetaView(+e.target.value)}
@@ -3009,6 +3091,150 @@ function CompressorView({ onBack }) {
                       </div>
                     </div>
                   )}
+                  {vizSub === 2 && (
+                    <RollingPistonView
+                      R_c_mm={R_cyl} R_p_mm={R_pis} H_mm={H_cyl} t_vane_mm={t_vane}
+                      theta_deg={thetaView}
+                    />
+                  )}
+                  {vizSub === 3 && (
+                    /* Side view — Cylinder 길이 방향 단면, suction/discharge port 위치 강조
+                       3D의 외경 수직면 단면. piston은 안쪽에서 H 전체 차지.
+                       SUC/DIS port 정확한 위치 (top 또는 side wall) + 면적 비례 표시.
+                       compressor-sim 스타일 (var(--bg3) 배경, var(--tx2/3) 색, dimension lines) */
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0,
+                                  width: '100%', height: '100%' }}>
+                      <div style={{ flex: 1, minHeight: 320, display: 'flex',
+                                    alignItems: 'center', justifyContent: 'center', overflow: 'auto' }}>
+                        <svg viewBox="0 0 320 260" preserveAspectRatio="xMidYMid meet"
+                             style={{ width: '100%', height: '100%', maxWidth: 800, maxHeight: '100%',
+                                      margin: '0 auto', display: 'block', background: 'var(--bg3)',
+                                      borderRadius: 12 }}>
+                          {(() => {
+                            // Side view: 수직 cylinder, 길이=H, 너비=2*R_cyl (외경)
+                            // 90° 회전 → 좌우 = R_cyl 방향, 상하 = H 방향
+                            // SUC/DIS port는 top plate에 위치 (rotary는 통상 top end)
+                            const s = 5, cx = 160, cy = 130;
+                            const Rc = R_cyl * s;
+                            const Hc = H_cyl * s;
+                            const Rp = R_pis * s;
+                            // SUC/DIS port 면적 → 직경 (원형 port 가정)
+                            const dSuc = Math.sqrt(4 * A_valve_in_mm2 / Math.PI) * s;
+                            const dDis = Math.sqrt(4 * A_valve_out_mm2 / Math.PI) * s;
+                            return (<>
+                              {/* Cylinder body — 외곽 (수직 직사각형) */}
+                              <rect x={cx - Rc} y={cy - Hc/2} width={2*Rc} height={Hc}
+                                    fill="var(--bg2)" stroke="var(--tx2)" strokeWidth="2" rx="2" />
+                              
+                              {/* Top plate (port가 박혀있는 두꺼운 plate) */}
+                              <rect x={cx - Rc - 8} y={cy - Hc/2 - 18} width={2*Rc + 16} height="18"
+                                    fill="var(--tx3)" opacity="0.35" stroke="var(--tx2)" strokeWidth="1.5" rx="2" />
+                              <text x={cx} y={cy - Hc/2 - 22} textAnchor="middle"
+                                    fill="var(--tx2)" fontSize="9" fontWeight="500">TOP PLATE (ports)</text>
+                              
+                              {/* Bottom plate */}
+                              <rect x={cx - Rc - 8} y={cy + Hc/2} width={2*Rc + 16} height="18"
+                                    fill="var(--tx3)" opacity="0.35" stroke="var(--tx2)" strokeWidth="1.5" rx="2" />
+                              <text x={cx} y={cy + Hc/2 + 30} textAnchor="middle"
+                                    fill="var(--tx2)" fontSize="9" fontWeight="500">BOTTOM PLATE</text>
+                              
+                              {/* Piston cross-section (H 전체 차지, 단면 보이게 hatch) */}
+                              <defs>
+                                <pattern id="pistonHatch" patternUnits="userSpaceOnUse" width="5" height="5"
+                                         patternTransform="rotate(45)">
+                                  <line x1="0" y1="0" x2="0" y2="5" stroke="var(--accent)" strokeWidth="0.6" opacity="0.4" />
+                                </pattern>
+                              </defs>
+                              <rect x={cx - Rp + 2} y={cy - Hc/2 + 3} width={2*Rp - 4} height={Hc - 6}
+                                    fill="url(#pistonHatch)" stroke="var(--accent)" strokeWidth="1.2"
+                                    strokeDasharray="3,2" opacity="0.7" />
+                              <text x={cx} y={cy} textAnchor="middle"
+                                    fill="var(--accent)" fontSize="10" fontWeight="600"
+                                    style={{ pointerEvents: 'none' }}>
+                                Piston
+                              </text>
+                              <text x={cx} y={cy + 14} textAnchor="middle"
+                                    fill="var(--tx3)" fontSize="9" style={{ pointerEvents: 'none' }}>
+                                ⌀{(2 * R_pis).toFixed(1)}mm
+                              </text>
+                              
+                              {/* Suction port — top plate 좌측 */}
+                              <ellipse cx={cx - Rc/2} cy={cy - Hc/2 - 9} rx={dSuc/2} ry={4}
+                                       fill="#3b82f6" opacity="0.85" stroke="#1e40af" strokeWidth="1" />
+                              <line x1={cx - Rc/2} y1={cy - Hc/2 - 13} x2={cx - Rc/2} y2={cy - Hc/2 + 4}
+                                    stroke="#3b82f6" strokeWidth="2" opacity="0.6" />
+                              <text x={cx - Rc/2} y={cy - Hc/2 - 42} textAnchor="middle"
+                                    fill="#1e40af" fontSize="11" fontWeight="700">SUC</text>
+                              <text x={cx - Rc/2} y={cy - Hc/2 - 30} textAnchor="middle"
+                                    fill="#1e40af" fontSize="9" fontFamily="monospace">
+                                A={A_valve_in_mm2.toFixed(1)}mm²
+                              </text>
+                              {/* SUC arrow inflow */}
+                              <line x1={cx - Rc/2} y1={cy - Hc/2 - 26} x2={cx - Rc/2} y2={cy - Hc/2 - 14}
+                                    stroke="#3b82f6" strokeWidth="2" markerEnd="url(#sucArr)" />
+                              <defs>
+                                <marker id="sucArr" markerWidth="6" markerHeight="6" refX="3" refY="5" orient="auto">
+                                  <polygon points="0 0, 6 0, 3 5" fill="#3b82f6" />
+                                </marker>
+                              </defs>
+                              
+                              {/* Discharge port — top plate 우측 */}
+                              <ellipse cx={cx + Rc/2} cy={cy - Hc/2 - 9} rx={dDis/2} ry={4}
+                                       fill="#dc2626" opacity="0.85" stroke="#7f1d1d" strokeWidth="1" />
+                              <line x1={cx + Rc/2} y1={cy - Hc/2 - 13} x2={cx + Rc/2} y2={cy - Hc/2 + 4}
+                                    stroke="#dc2626" strokeWidth="2" opacity="0.6" />
+                              <text x={cx + Rc/2} y={cy - Hc/2 - 42} textAnchor="middle"
+                                    fill="#7f1d1d" fontSize="11" fontWeight="700">DIS</text>
+                              <text x={cx + Rc/2} y={cy - Hc/2 - 30} textAnchor="middle"
+                                    fill="#7f1d1d" fontSize="9" fontFamily="monospace">
+                                A={A_valve_out_mm2.toFixed(1)}mm²
+                              </text>
+                              {/* DIS arrow outflow */}
+                              <line x1={cx + Rc/2} y1={cy - Hc/2 - 14} x2={cx + Rc/2} y2={cy - Hc/2 - 26}
+                                    stroke="#dc2626" strokeWidth="2" markerEnd="url(#disArr)" />
+                              <defs>
+                                <marker id="disArr" markerWidth="6" markerHeight="6" refX="3" refY="0" orient="auto">
+                                  <polygon points="0 6, 6 6, 3 0" fill="#dc2626" />
+                                </marker>
+                              </defs>
+                              
+                              {/* H dimension (right side) */}
+                              <line x1={cx + Rc + 22} y1={cy - Hc/2} x2={cx + Rc + 22} y2={cy + Hc/2}
+                                    stroke="var(--tx3)" strokeWidth="1" />
+                              <line x1={cx + Rc + 17} y1={cy - Hc/2} x2={cx + Rc + 27} y2={cy - Hc/2}
+                                    stroke="var(--tx3)" strokeWidth="1" />
+                              <line x1={cx + Rc + 17} y1={cy + Hc/2} x2={cx + Rc + 27} y2={cy + Hc/2}
+                                    stroke="var(--tx3)" strokeWidth="1" />
+                              <text x={cx + Rc + 34} y={cy + 4} fill="var(--tx2)" fontSize="11">
+                                H={H_cyl}mm
+                              </text>
+                              
+                              {/* D dimension (bottom) */}
+                              <line x1={cx - Rc} y1={cy + Hc/2 + 30} x2={cx + Rc} y2={cy + Hc/2 + 30}
+                                    stroke="var(--tx3)" strokeWidth="1" />
+                              <line x1={cx - Rc} y1={cy + Hc/2 + 26} x2={cx - Rc} y2={cy + Hc/2 + 34}
+                                    stroke="var(--tx3)" strokeWidth="1" />
+                              <line x1={cx + Rc} y1={cy + Hc/2 + 26} x2={cx + Rc} y2={cy + Hc/2 + 34}
+                                    stroke="var(--tx3)" strokeWidth="1" />
+                              <text x={cx} y={cy + Hc/2 + 48} fill="var(--tx2)" fontSize="11" textAnchor="middle">
+                                ⌀{(2 * R_cyl).toFixed(1)}mm (cylinder)
+                              </text>
+                              
+                              {/* Clearance label (top, very thin) */}
+                              <line x1={cx - Rp + 4} y1={cy - Hc/2 + 2} x2={cx + Rp - 4} y2={cy - Hc/2 + 2}
+                                    stroke="#d97706" strokeWidth="1.5" />
+                              <text x={cx + Rp + 6} y={cy - Hc/2 + 5} fill="#d97706" fontSize="9" fontWeight="500">
+                                clearance {(clearance_ratio*100).toFixed(1)}%
+                              </text>
+                            </>);
+                          })()}
+                        </svg>
+                      </div>
+                      <div style={{ padding: '8px 4px 0', fontSize: 11, color: 'var(--tx3)',
+                                    fontFamily: 'JetBrains Mono, monospace', textAlign: 'center' }}>
+                        length-axis section · ports on top plate · {comp_type}
+                      </div>
+                    </div>
                   )}
                 </div>
               </div>
