@@ -1705,15 +1705,12 @@ function CoilView3D({ D_o, D_i, L_tube, FPI, t_fin, N_tubes, N_rows, P_t, P_l,
     
     // U-bend 그리기 — TubeGeometry로 부드러운 곡선
     const bendGroup = new THREE.Group();
-    const bendRadius = Do * 0.6;  // 튜브 외경의 60%
-    const stickOut = bendRadius * 1.0;  // tube 끝에서 얼마나 X 방향으로 튀어나오는가
     
     const drawBend = (r1, c1, r2, c2, face) => {
       const p1 = tubePos(r1, c1);
       const p2 = tubePos(r2, c2);
       const sign = face === 'front' ? 1 : -1;  // +X = front, -X = back
       const xEnd = sign * (Lt/2);
-      const xPeak = sign * (Lt/2 + stickOut);
       
       // 회로 색상
       const cIdx2 = tubeCircuit[`${r1},${c1}`];
@@ -1722,16 +1719,40 @@ function CoilView3D({ D_o, D_i, L_tube, FPI, t_fin, N_tubes, N_rows, P_t, P_l,
         color, shininess: 80, specular: 0x444444
       });
       
-      // 곡선 path: tube1 끝 → straight → arc → straight → tube2 끝
-      // 단순화: CatmullRom으로 4 control points
-      const points = [
-        new THREE.Vector3(xEnd,  p1.y, p1.z),
-        new THREE.Vector3(xPeak, p1.y, p1.z),
-        new THREE.Vector3(xPeak, p2.y, p2.z),
-        new THREE.Vector3(xEnd,  p2.y, p2.z),
-      ];
-      const curve = new THREE.CatmullRomCurve3(points, false, 'catmullrom', 0.5);
-      const tubeGeoBend = new THREE.TubeGeometry(curve, 24, Do/2, 12, false);
+      // ── 반원 (semicircle) bend ──
+      // 두 tube 끝점 A=(xEnd,p1.y,p1.z), B=(xEnd,p2.y,p2.z)
+      // 두 끝점을 잇는 직선 = bend의 직경
+      // 중점 M, 반경 R = |AB|/2
+      // 반원이 +X(front) 또는 -X(back) 방향으로 볼록
+      const A = new THREE.Vector3(xEnd, p1.y, p1.z);
+      const B = new THREE.Vector3(xEnd, p2.y, p2.z);
+      const M = new THREE.Vector3().addVectors(A, B).multiplyScalar(0.5);
+      const AB = new THREE.Vector3().subVectors(B, A);
+      const R = AB.length() * 0.5;
+      
+      if (R < 1e-3) return;  // 같은 위치면 스킵
+      
+      // 반원이 그려지는 평면 = AB(직경) × X축(볼록 방향)
+      // Y/Z 평면 안에 직경이 있고, X축으로 볼록 → 평면 normal = AB × X (지점→bend 방향 결정)
+      const ABnorm = AB.clone().normalize();         // 직경 방향 단위벡터
+      const xAxis = new THREE.Vector3(sign, 0, 0);   // 볼록 방향 (+X 또는 -X)
+      
+      // CurvePath로 24 segment 반원 생성 — 매개변수 t∈[0,π]
+      // P(t) = M + R·cos(t)·ABnorm·(-1) + R·sin(t)·xAxis
+      // (t=0 → A, t=π → B)
+      class SemicircleBend extends THREE.Curve {
+        constructor() { super(); }
+        getPoint(t) {
+          const angle = Math.PI * t;
+          const pt = new THREE.Vector3();
+          pt.copy(M);
+          pt.addScaledVector(ABnorm, -R * Math.cos(angle));   // 직경 방향 (A→B)
+          pt.addScaledVector(xAxis, R * Math.sin(angle));     // X 방향으로 볼록
+          return pt;
+        }
+      }
+      const curve = new SemicircleBend();
+      const tubeGeoBend = new THREE.TubeGeometry(curve, 32, Do/2, 12, false);
       const mesh = new THREE.Mesh(tubeGeoBend, matBend);
       bendGroup.add(mesh);
     };
