@@ -2326,6 +2326,16 @@ function RollingPistonView({ R_c_mm, R_p_mm, H_mm, t_vane_mm, theta_deg }) {
   const theta = theta_deg * Math.PI / 180;
   const scale = 140 / Math.max(R_c_mm, 20); // fit R_c to ~140px radius, more padding
   const cx = 200, cy = 200; // SVG center
+  
+  // Phase intensity (CompressorView의 phaseIntensity와 동일한 함수):
+  //   SUC: peak at θ=90°  (chamber growing)
+  //   DIS: peak at θ=270° (compression chamber → valve open)
+  const sucI = Math.max(0, Math.sin(theta));
+  const disI = Math.max(0, -Math.sin(theta));
+  const sucOpacity = 0.25 + 0.75 * sucI;
+  const disOpacity = 0.25 + 0.75 * disI;
+  const sucWidth = 1.5 + 2.0 * sucI;
+  const disWidth = 1.5 + 2.0 * disI;
 
   const Rc = R_c_mm * scale;
   const Rp = R_p_mm * scale;
@@ -2414,27 +2424,39 @@ function RollingPistonView({ R_c_mm, R_p_mm, H_mm, t_vane_mm, theta_deg }) {
           fill="var(--bg)" stroke="var(--tx2)" strokeWidth="1" rx="2" />
 
         {/* Suction port with flow arrow (외부 → 실린더 방향) */}
-        <circle cx={suc_x} cy={suc_y} r="5.5" fill="#059669" fillOpacity="0.4" stroke="#059669" strokeWidth="2" />
-        <text x={suc_x - 18} y={suc_y + 18} fill="#059669" fontSize="11" fontFamily="var(--font)" fontWeight="600">SUC</text>
+        <circle cx={suc_x} cy={suc_y} r="5.5" fill="#059669"
+                fillOpacity={0.3 + 0.5 * sucI}
+                stroke="#059669" strokeWidth={1.5 + sucI * 1.0} />
+        <text x={suc_x - 18} y={suc_y + 18} fill="#059669"
+              fontSize="11" fontFamily="var(--font)" fontWeight="600"
+              opacity={0.5 + 0.5 * sucI}>SUC</text>
         {/* SUC flow arrow: outside → port (inward along radial direction) */}
         {(() => {
           const L = 24;  // arrow length
           const nx = Math.cos(suc_angle), ny = -Math.sin(suc_angle);
           const x1 = suc_x + nx * L, y1 = suc_y + ny * L;  // outer end
           const x2 = suc_x + nx * 7, y2 = suc_y + ny * 7;  // inner end (arrow tip near port)
-          return <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#059669" strokeWidth="2.5" markerEnd="url(#sucArrow)" opacity="0.85" />;
+          return <line x1={x1} y1={y1} x2={x2} y2={y2}
+                       stroke="#059669" strokeWidth={sucWidth}
+                       markerEnd="url(#sucArrow)" opacity={sucOpacity} />;
         })()}
 
         {/* Discharge port with flow arrow (실린더 → 외부 방향) */}
-        <circle cx={dis_x} cy={dis_y} r="4.5" fill="#dc2626" fillOpacity="0.4" stroke="#dc2626" strokeWidth="2" />
-        <text x={dis_x + 9} y={dis_y + 4} fill="#dc2626" fontSize="11" fontFamily="var(--font)" fontWeight="600">DIS</text>
+        <circle cx={dis_x} cy={dis_y} r="4.5" fill="#dc2626"
+                fillOpacity={0.3 + 0.5 * disI}
+                stroke="#dc2626" strokeWidth={1.5 + disI * 1.0} />
+        <text x={dis_x + 9} y={dis_y + 4} fill="#dc2626"
+              fontSize="11" fontFamily="var(--font)" fontWeight="600"
+              opacity={0.5 + 0.5 * disI}>DIS</text>
         {/* DIS flow arrow: port → outside (outward along radial) */}
         {(() => {
           const L = 24;
           const nx = Math.cos(dis_angle), ny = -Math.sin(dis_angle);
           const x1 = dis_x + nx * 7, y1 = dis_y + ny * 7;  // inner end
           const x2 = dis_x + nx * L, y2 = dis_y + ny * L;  // outer end (arrow tip outside)
-          return <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#dc2626" strokeWidth="2.5" markerEnd="url(#disArrow)" opacity="0.85" />;
+          return <line x1={x1} y1={y1} x2={x2} y2={y2}
+                       stroke="#dc2626" strokeWidth={disWidth}
+                       markerEnd="url(#disArrow)" opacity={disOpacity} />;
         })()}
 
         {/* Eccentricity line */}
@@ -2850,6 +2872,21 @@ function CompressorView({ onBack }) {
   const V_disp = useMemo(() => {
     return Math.PI * (R_cyl*R_cyl - R_pis*R_pis) * H_cyl * 1e-3;
   }, [R_cyl, R_pis, H_cyl]);
+  
+  // ── Phase intensity (SUC/DIS) — θ에 따른 흡입/토출 사이클 강도 ──
+  // Rolling piston rotary 압축기의 단순화된 phase model:
+  //   • SUC active: θ ∈ [0°, 180°] (new chamber growing)
+  //   • DIS active: θ ∈ [180°, 360°] (compression chamber pressurized → valve open)
+  // 부드럽게 sin 곡선의 양/음 반:
+  //   • SUC intensity = max(0, sin θ)        — peak at θ=90°
+  //   • DIS intensity = max(0, -sin θ) = max(0, sin(θ-180°))  — peak at θ=270°
+  const phaseIntensity = useMemo(() => {
+    const rad = thetaView * Math.PI / 180;
+    return {
+      suc: Math.max(0, Math.sin(rad)),
+      dis: Math.max(0, -Math.sin(rad)),
+    };
+  }, [thetaView]);
 
   // Save panel state
   const [saveOpen, setSaveOpen] = useState(false);
@@ -3401,18 +3438,27 @@ function CompressorView({ onBack }) {
                               
                               {/* Suction port — top plate 좌측 */}
                               <ellipse cx={cx - Rc/2} cy={cy - Hc/2 - 9} rx={dSuc/2} ry={4}
-                                       fill="#3b82f6" opacity="0.85" stroke="#1e40af" strokeWidth="1" />
+                                       fill="#3b82f6"
+                                       opacity={0.4 + 0.6 * phaseIntensity.suc}
+                                       stroke="#1e40af" strokeWidth="1" />
                               <line x1={cx - Rc/2} y1={cy - Hc/2 - 13} x2={cx - Rc/2} y2={cy - Hc/2 + 4}
-                                    stroke="#3b82f6" strokeWidth="2" opacity="0.6" />
+                                    stroke="#3b82f6"
+                                    strokeWidth={1.5 + 1.5 * phaseIntensity.suc}
+                                    opacity={0.3 + 0.7 * phaseIntensity.suc} />
                               <text x={cx - Rc/2} y={cy - Hc/2 - 42} textAnchor="middle"
-                                    fill="#1e40af" fontSize="11" fontWeight="700">SUC</text>
+                                    fill="#1e40af" fontSize="11" fontWeight="700"
+                                    opacity={0.45 + 0.55 * phaseIntensity.suc}>SUC</text>
                               <text x={cx - Rc/2} y={cy - Hc/2 - 30} textAnchor="middle"
-                                    fill="#1e40af" fontSize="9" fontFamily="monospace">
+                                    fill="#1e40af" fontSize="9" fontFamily="monospace"
+                                    opacity={0.45 + 0.55 * phaseIntensity.suc}>
                                 A={A_valve_in_mm2.toFixed(1)}mm²
                               </text>
-                              {/* SUC arrow inflow */}
+                              {/* SUC arrow inflow — phase intensity로 두께/opacity 조정 */}
                               <line x1={cx - Rc/2} y1={cy - Hc/2 - 26} x2={cx - Rc/2} y2={cy - Hc/2 - 14}
-                                    stroke="#3b82f6" strokeWidth="2" markerEnd="url(#sucArr)" />
+                                    stroke="#3b82f6"
+                                    strokeWidth={1.5 + 2.5 * phaseIntensity.suc}
+                                    opacity={0.25 + 0.75 * phaseIntensity.suc}
+                                    markerEnd="url(#sucArr)" />
                               <defs>
                                 <marker id="sucArr" markerWidth="6" markerHeight="6" refX="3" refY="5" orient="auto">
                                   <polygon points="0 0, 6 0, 3 5" fill="#3b82f6" />
@@ -3421,18 +3467,27 @@ function CompressorView({ onBack }) {
                               
                               {/* Discharge port — top plate 우측 */}
                               <ellipse cx={cx + Rc/2} cy={cy - Hc/2 - 9} rx={dDis/2} ry={4}
-                                       fill="#dc2626" opacity="0.85" stroke="#7f1d1d" strokeWidth="1" />
+                                       fill="#dc2626"
+                                       opacity={0.4 + 0.6 * phaseIntensity.dis}
+                                       stroke="#7f1d1d" strokeWidth="1" />
                               <line x1={cx + Rc/2} y1={cy - Hc/2 - 13} x2={cx + Rc/2} y2={cy - Hc/2 + 4}
-                                    stroke="#dc2626" strokeWidth="2" opacity="0.6" />
+                                    stroke="#dc2626"
+                                    strokeWidth={1.5 + 1.5 * phaseIntensity.dis}
+                                    opacity={0.3 + 0.7 * phaseIntensity.dis} />
                               <text x={cx + Rc/2} y={cy - Hc/2 - 42} textAnchor="middle"
-                                    fill="#7f1d1d" fontSize="11" fontWeight="700">DIS</text>
+                                    fill="#7f1d1d" fontSize="11" fontWeight="700"
+                                    opacity={0.45 + 0.55 * phaseIntensity.dis}>DIS</text>
                               <text x={cx + Rc/2} y={cy - Hc/2 - 30} textAnchor="middle"
-                                    fill="#7f1d1d" fontSize="9" fontFamily="monospace">
+                                    fill="#7f1d1d" fontSize="9" fontFamily="monospace"
+                                    opacity={0.45 + 0.55 * phaseIntensity.dis}>
                                 A={A_valve_out_mm2.toFixed(1)}mm²
                               </text>
-                              {/* DIS arrow outflow */}
+                              {/* DIS arrow outflow — phase intensity */}
                               <line x1={cx + Rc/2} y1={cy - Hc/2 - 14} x2={cx + Rc/2} y2={cy - Hc/2 - 26}
-                                    stroke="#dc2626" strokeWidth="2" markerEnd="url(#disArr)" />
+                                    stroke="#dc2626"
+                                    strokeWidth={1.5 + 2.5 * phaseIntensity.dis}
+                                    opacity={0.25 + 0.75 * phaseIntensity.dis}
+                                    markerEnd="url(#disArr)" />
                               <defs>
                                 <marker id="disArr" markerWidth="6" markerHeight="6" refX="3" refY="0" orient="auto">
                                   <polygon points="0 6, 6 6, 3 0" fill="#dc2626" />
@@ -3516,6 +3571,52 @@ function CompressorView({ onBack }) {
                 </div>
                 <div className="mt-1.5 text-[10px] text-slate-400 font-mono">
                   슬라이더 또는 ▶ Animate 버튼으로 cylinder 회전 시각화 — 모든 view에 실시간 반영
+                </div>
+                
+                {/* Phase indicator (SUC / DIS) */}
+                <div className="mt-3 pt-3 border-t border-slate-100">
+                  <div className="text-[10px] font-mono text-slate-500 uppercase tracking-wider mb-1.5">
+                    Phase intensity
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {/* SUC (green) */}
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] font-mono font-bold w-8"
+                            style={{ color: '#059669', opacity: 0.4 + 0.6 * phaseIntensity.suc }}>
+                        SUC
+                      </span>
+                      <div className="flex-1 h-2 bg-slate-100 rounded overflow-hidden">
+                        <div className="h-full transition-all duration-100"
+                             style={{
+                               width: `${phaseIntensity.suc * 100}%`,
+                               background: '#059669',
+                             }} />
+                      </div>
+                      <span className="text-[10px] font-mono text-slate-500 w-10 text-right">
+                        {(phaseIntensity.suc * 100).toFixed(0)}%
+                      </span>
+                    </div>
+                    {/* DIS (red) */}
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] font-mono font-bold w-8"
+                            style={{ color: '#dc2626', opacity: 0.4 + 0.6 * phaseIntensity.dis }}>
+                        DIS
+                      </span>
+                      <div className="flex-1 h-2 bg-slate-100 rounded overflow-hidden">
+                        <div className="h-full transition-all duration-100"
+                             style={{
+                               width: `${phaseIntensity.dis * 100}%`,
+                               background: '#dc2626',
+                             }} />
+                      </div>
+                      <span className="text-[10px] font-mono text-slate-500 w-10 text-right">
+                        {(phaseIntensity.dis * 100).toFixed(0)}%
+                      </span>
+                    </div>
+                  </div>
+                  <div className="mt-1 text-[9px] text-slate-400 font-mono">
+                    SUC peak θ=90° (chamber growing) · DIS peak θ=270° (compression → discharge)
+                  </div>
                 </div>
               </div>
 
