@@ -2328,10 +2328,10 @@ function RollingPistonView({ R_c_mm, R_p_mm, H_mm, t_vane_mm, theta_deg }) {
   const cx = 200, cy = 200; // SVG center
   
   // Phase intensity (CompressorView의 phaseIntensity와 동일한 함수):
-  //   SUC: peak at θ=90°  (chamber growing)
-  //   DIS: peak at θ=270° (compression chamber → valve open)
-  const sucI = Math.max(0, Math.sin(theta));
-  const disI = Math.max(0, -Math.sin(theta));
+  //   SUC: peak at θ=270° (chamber growing — port와 연결된 시점)
+  //   DIS: peak at θ=90°  (compression chamber → valve open)
+  const sucI = Math.max(0, -Math.sin(theta));
+  const disI = Math.max(0, Math.sin(theta));
   const sucOpacity = 0.25 + 0.75 * sucI;
   const disOpacity = 0.25 + 0.75 * disI;
   const sucWidth = 1.5 + 2.0 * sucI;
@@ -2878,13 +2878,13 @@ function CompressorView({ onBack }) {
   //   • SUC active: θ ∈ [0°, 180°] (new chamber growing)
   //   • DIS active: θ ∈ [180°, 360°] (compression chamber pressurized → valve open)
   // 부드럽게 sin 곡선의 양/음 반:
-  //   • SUC intensity = max(0, sin θ)        — peak at θ=90°
-  //   • DIS intensity = max(0, -sin θ) = max(0, sin(θ-180°))  — peak at θ=270°
+  //   • SUC intensity = max(0, -sin θ)  — peak at θ=270° (chamber growing 시점 매칭)
+  //   • DIS intensity = max(0, sin θ)   — peak at θ=90°  (compression chamber valve open)
   const phaseIntensity = useMemo(() => {
     const rad = thetaView * Math.PI / 180;
     return {
-      suc: Math.max(0, Math.sin(rad)),
-      dis: Math.max(0, -Math.sin(rad)),
+      suc: Math.max(0, -Math.sin(rad)),
+      dis: Math.max(0, Math.sin(rad)),
     };
   }, [thetaView]);
 
@@ -2903,20 +2903,35 @@ function CompressorView({ onBack }) {
   const STORAGE_KEY = 'on_design_compressor_slots';
   
   // ── θ 자동 회전 animation ──
-  // thetaAnimate가 true면 thetaSpeed °/s로 thetaView 자동 증가 (0~360 wrap)
+  // thetaSpeed는 ref로 관리 (effect 재실행 방지) → speed slider 움직여도 RAF가 stack 안 됨
+  // animatingRef는 strict mode에서도 RAF 중복 시작 방지
+  const thetaSpeedRef = useRef(thetaSpeed);
+  useEffect(() => { thetaSpeedRef.current = thetaSpeed; }, [thetaSpeed]);
+  
+  const animatingRef = useRef(false);
   useEffect(() => {
-    if (!thetaAnimate) return;
+    if (!thetaAnimate) {
+      animatingRef.current = false;
+      return;
+    }
+    if (animatingRef.current) return;  // already running — do not start another RAF
+    animatingRef.current = true;
+    
     let raf;
     let lastT = performance.now();
     const tick = (now) => {
+      if (!animatingRef.current) return;  // safeguard against stale ticks
       const dt = (now - lastT) / 1000;
       lastT = now;
-      setThetaView(t => (t + thetaSpeed * dt) % 360);
+      setThetaView(t => (t + thetaSpeedRef.current * dt) % 360);
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [thetaAnimate, thetaSpeed]);
+    return () => {
+      animatingRef.current = false;
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, [thetaAnimate]);  // thetaSpeed 제거됨 — speed 변경은 ref로 반영
 
   useEffect(() => {
     try {
@@ -3615,7 +3630,7 @@ function CompressorView({ onBack }) {
                     </div>
                   </div>
                   <div className="mt-1 text-[9px] text-slate-400 font-mono">
-                    SUC peak θ=90° (chamber growing) · DIS peak θ=270° (compression → discharge)
+                    SUC peak θ=270° (chamber growing) · DIS peak θ=90° (compression → discharge)
                   </div>
                 </div>
               </div>
