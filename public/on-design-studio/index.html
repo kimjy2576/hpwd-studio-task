@@ -1733,7 +1733,7 @@ function CoilView3D({ D_o, D_i, L_tube, FPI, t_fin, N_tubes, N_rows, P_t, P_l,
     });
     window.addEventListener('mousemove', (e) => {
       if (!isDragging) return;
-      rotY += (e.clientX - prevX) * 0.008;
+      rotY -= (e.clientX - prevX) * 0.008;
       rotX = Math.max(-1.4, Math.min(1.4, rotX + (e.clientY - prevY) * 0.008));
       prevX = e.clientX; prevY = e.clientY;
       updateCamera();
