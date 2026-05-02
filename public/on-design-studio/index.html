@@ -1869,6 +1869,69 @@ function CoilView3D({ D_o, D_i, L_tube, FPI, t_fin, N_tubes, N_rows, P_t, P_l,
       scene.add(line);
     });
     
+    // ── Air flow visualization ──
+    // 공기는 +Z 방향으로 흐름 (R0 face → R_last face, 카메라 뒤→앞)
+    // Inlet face = -Z, outlet face = +Z
+    // 6개 화살표 (3 x 2 grid) + "AIR →" 텍스트 sprite
+    const airColor = 0x3b82f6;  // blue
+    const airDir = new THREE.Vector3(0, 0, 1);
+    
+    const airArrowGroup = new THREE.Group();
+    const arrowLength = Math.max(finBundleD * 0.7, 50);
+    const headLength = arrowLength * 0.22;
+    const headWidth = arrowLength * 0.08;
+    
+    // 3 x 2 grid (X length 방향 3개, Y column 방향 2개)
+    const nx = 3, ny = 2;
+    const xRange = Lt * 0.7;
+    const yRange = finBundleW * 0.55;
+    for (let i = 0; i < nx; i++) {
+      for (let j = 0; j < ny; j++) {
+        const x = -xRange/2 + i * xRange / (nx - 1);
+        const y = -yRange/2 + j * yRange / (ny - 1);
+        // 화살표 시작점 = fin face 뒤쪽 (-Z 방향), 끝점 = fin face 직전
+        const origin = new THREE.Vector3(x, y, -finBundleD/2 - arrowLength - 5);
+        const arrow = new THREE.ArrowHelper(airDir, origin, arrowLength, airColor, headLength, headWidth);
+        // ArrowHelper 내부의 line/cone material에 transparent 적용 (화살표 톤 부드럽게)
+        if (arrow.line && arrow.line.material) {
+          arrow.line.material.transparent = true;
+          arrow.line.material.opacity = 0.85;
+        }
+        if (arrow.cone && arrow.cone.material) {
+          arrow.cone.material.transparent = true;
+          arrow.cone.material.opacity = 0.85;
+        }
+        airArrowGroup.add(arrow);
+      }
+    }
+    scene.add(airArrowGroup);
+    
+    // "AIR →" 텍스트 sprite (canvas-based)
+    const airCanvas = document.createElement('canvas');
+    airCanvas.width = 192; airCanvas.height = 48;
+    const airCtx = airCanvas.getContext('2d');
+    // 반투명 배경
+    airCtx.fillStyle = 'rgba(59, 130, 246, 0.15)';
+    airCtx.fillRect(0, 0, 192, 48);
+    // 테두리
+    airCtx.strokeStyle = '#3b82f6';
+    airCtx.lineWidth = 2;
+    airCtx.strokeRect(2, 2, 188, 44);
+    // 텍스트
+    airCtx.fillStyle = '#1e40af';
+    airCtx.font = 'bold 26px sans-serif';
+    airCtx.textAlign = 'center';
+    airCtx.textBaseline = 'middle';
+    airCtx.fillText('AIR →', 96, 26);
+    const airTex = new THREE.CanvasTexture(airCanvas);
+    const airSpriteMat = new THREE.SpriteMaterial({
+      map: airTex, sizeAttenuation: false, transparent: true
+    });
+    const airSprite = new THREE.Sprite(airSpriteMat);
+    airSprite.scale.set(0.13, 0.033, 1);
+    airSprite.position.set(0, finBundleW/2 + 35, -finBundleD/2 - arrowLength * 0.55);
+    scene.add(airSprite);
+    
     // Floor grid
     const grid = new THREE.GridHelper(Math.max(Lt, finBundleW, finBundleD) * 1.5, 12, 0xcbd5e1, 0xe2e8f0);
     grid.position.y = -finBundleW/2 - 30;
