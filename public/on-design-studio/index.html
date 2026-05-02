@@ -2818,6 +2818,8 @@ function CompressorView({ onBack }) {
   const [H_cyl, setHcyl] = useState(25.0);              // mm — 실린더 높이
   const [t_vane, setTvane] = useState(3.0);             // mm — vane 두께
   const [thetaView, setThetaView] = useState(45);       // deg — 시각화용 회전 각도
+  const [thetaAnimate, setThetaAnimate] = useState(false);  // θ 자동 회전 (모든 view에 영향)
+  const [thetaSpeed, setThetaSpeed] = useState(60);     // °/s 회전 속도
 
   // ─── Fitting params (Bell ROM 누설 + 마찰 + 손실) ───
   const [zeta_valve, setZetaValve] = useState(1.5);
@@ -2862,6 +2864,22 @@ function CompressorView({ onBack }) {
   const [vizSub, setVizSub] = useState(0);
 
   const STORAGE_KEY = 'on_design_compressor_slots';
+  
+  // ── θ 자동 회전 animation ──
+  // thetaAnimate가 true면 thetaSpeed °/s로 thetaView 자동 증가 (0~360 wrap)
+  useEffect(() => {
+    if (!thetaAnimate) return;
+    let raf;
+    let lastT = performance.now();
+    const tick = (now) => {
+      const dt = (now - lastT) / 1000;
+      lastT = now;
+      setThetaView(t => (t + thetaSpeed * dt) % 360);
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [thetaAnimate, thetaSpeed]);
 
   useEffect(() => {
     try {
@@ -3152,7 +3170,6 @@ function CompressorView({ onBack }) {
             <Slider label="R_pis" sublabel="mm" value={R_pis} min={10} max={42} step={0.5} onChange={setRpis} color="purple" decimals={1} />
             <Slider label="H_cyl" sublabel="mm" value={H_cyl} min={10} max={60} step={0.5} onChange={setHcyl} color="purple" decimals={1} />
             <Slider label="t_vane" sublabel="mm" value={t_vane} min={1.5} max={8} step={0.1} onChange={setTvane} color="purple" decimals={1} />
-            <Slider label="θ (시각화 각도)" sublabel="°" value={thetaView} min={0} max={359} step={1} onChange={setThetaView} color="amber" decimals={0} />
             <div className="mt-2 px-2 py-1.5 bg-purple-50 border border-purple-200 rounded text-[11px] font-mono text-purple-800">
               V_disp = π × (R_cyl² − R_pis²) × H = <b>{V_disp.toFixed(2)} cm³</b>
             </div>
@@ -3309,17 +3326,9 @@ function CompressorView({ onBack }) {
                           })()}
                         </svg>
                       </div>
-                      <div style={{ padding: '8px 4px 0' }}>
-                        <input type="range" min="0" max="360" step="1" value={thetaView}
-                               onChange={e => setThetaView(+e.target.value)}
-                               style={{ width: '100%' }} />
-                        <div style={{ display: 'flex', justifyContent: 'space-between',
-                                      fontSize: 12, color: 'var(--tx3)', marginTop: 2 }}>
-                          <span style={{ fontFamily: 'JetBrains Mono, monospace' }}>θ = {thetaView}°</span>
-                          <span style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-                            axial section · {comp_type}
-                          </span>
-                        </div>
+                      <div style={{ padding: '8px 4px 0', fontSize: 12, color: 'var(--tx3)',
+                                    fontFamily: 'JetBrains Mono, monospace', textAlign: 'center' }}>
+                        θ = {Math.round(thetaView)}° · axial section · {comp_type}
                       </div>
                     </div>
                   )}
@@ -3468,6 +3477,45 @@ function CompressorView({ onBack }) {
                       </div>
                     </div>
                   )}
+                </div>
+              </div>
+
+              {/* ── Shared θ control panel (모든 view에서 회전 재현) ── */}
+              <div className="bg-white border border-slate-200 rounded-lg p-4 mb-4">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-[11px] font-mono text-slate-500 uppercase tracking-wider">
+                    Cylinder rotation (θ)
+                  </div>
+                  <div className="flex gap-2 items-center">
+                    <button onClick={() => setThetaAnimate(a => !a)}
+                      className={`text-[11px] px-3 py-1 rounded border font-semibold transition-colors ${
+                        thetaAnimate
+                          ? 'bg-purple-600 border-purple-600 text-white'
+                          : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'
+                      }`}>
+                      {thetaAnimate ? '⏸ Pause' : '▶ Animate'}
+                    </button>
+                    <label className="flex items-center gap-1 text-[10px] text-slate-500 font-mono">
+                      Speed
+                      <input type="range" min="10" max="360" step="10"
+                        value={thetaSpeed}
+                        onChange={(e) => setThetaSpeed(+e.target.value)}
+                        className="w-20" />
+                      <span className="w-12 text-right">{thetaSpeed}°/s</span>
+                    </label>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <input type="range" min="0" max="360" step="1"
+                    value={thetaView}
+                    onChange={(e) => setThetaView(+e.target.value)}
+                    className="flex-1 cursor-pointer" />
+                  <span className="font-mono text-[13px] font-semibold text-purple-700 w-16 text-right">
+                    θ = {Math.round(thetaView)}°
+                  </span>
+                </div>
+                <div className="mt-1.5 text-[10px] text-slate-400 font-mono">
+                  슬라이더 또는 ▶ Animate 버튼으로 cylinder 회전 시각화 — 모든 view에 실시간 반영
                 </div>
               </div>
 
