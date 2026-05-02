@@ -1502,6 +1502,43 @@ function smoothPath(points, r) {
   d += ` L ${last.x} ${last.y}`;
   return d;
 }
+/* ParamInput — 사용자가 입력 중일 때 raw string 보존, blur/Enter 시 commit.
+   "칸을 다 지워도 0이 안 남게" + "소수점 자유 입력" 처리. */
+function ParamInput({ value, onChange, isNumber }) {
+  const [editing, setEditing] = React.useState(null);
+  React.useEffect(() => { setEditing(null); }, [value]);
+  const display = editing !== null
+    ? editing
+    : (value === null || value === undefined ? '' : String(value));
+  const commit = () => {
+    if (editing === null) return;
+    const t = editing.trim();
+    if (t === '' || t === '-' || t === '.') { setEditing(null); return; }
+    if (isNumber) {
+      const parsed = parseFloat(t);
+      if (isNaN(parsed)) { setEditing(null); return; }
+      onChange(parsed);
+    } else {
+      onChange(t);
+    }
+  };
+  return (
+    <input type="text" inputMode={isNumber ? 'decimal' : 'text'}
+      value={display}
+      onChange={(e) => setEditing(e.target.value)}
+      onFocus={(e) => {
+        setEditing(value === null || value === undefined ? '' : String(value));
+        e.target.select();
+      }}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') { e.target.blur(); }
+        if (e.key === 'Escape') { setEditing(null); e.target.blur(); }
+      }}
+      className="w-20 bg-white border border-slate-300 px-1.5 py-0.5 rounded text-[11px] text-slate-900 font-mono text-right focus:outline-none focus:border-cyan-500" />
+  );
+}
+
 const snap = (v) => Math.round(v / GRID_SIZE) * GRID_SIZE;
 
 
@@ -2049,7 +2086,7 @@ function HPWDStudio() {
       );
     }
 
-    // 일반 parameter
+    // 일반 parameter — ParamInput은 module top-level에 정의 (focus 안정성)
     return (
       <div key={p.key} className="flex items-center gap-2">
         <label className="flex-1 text-[11px] text-slate-700">{p.label}</label>
@@ -2062,13 +2099,10 @@ function HPWDStudio() {
             {p.options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
           </select>
         ) : (
-          <input
-            type={typeof p.value === 'number' ? 'number' : 'text'}
+          <ParamInput
             value={block.params[p.key]}
-            step={typeof p.value === 'number' ? (p.value < 1 ? 0.01 : p.value < 10 ? 0.1 : 1) : undefined}
-            onChange={(e) => updateFn(block.id, p.key,
-              typeof p.value === 'number' ? (parseFloat(e.target.value) || 0) : e.target.value)}
-            className="w-20 bg-white border border-slate-300 px-1.5 py-0.5 rounded text-[11px] text-slate-900 font-mono text-right focus:outline-none focus:border-cyan-500"
+            isNumber={typeof p.value === 'number'}
+            onChange={(v) => updateFn(block.id, p.key, v)}
           />
         )}
         <span className="text-[10px] text-slate-400 w-10 font-mono">{unitDisplay}</span>

@@ -258,7 +258,7 @@ function BackendStatus() {
 }
 
 /* ───────── Slider 컴포넌트 (fan-sim 패턴) ───────── */
-function Slider({ label, sublabel, value, min, max, step, onChange, color = 'blue', unit = '', decimals = 0 }) {
+function Slider({ label, sublabel, value, min, max, step, onChange, color = 'blue', unit = '', decimals = 2 }) {
   const pct = ((value - min) / (max - min)) * 100;
   const colorMap = {
     blue:   { fill: '#2563EB', text: 'text-blue-700',   bg: 'bg-blue-600' },
@@ -269,6 +269,39 @@ function Slider({ label, sublabel, value, min, max, step, onChange, color = 'blu
     slate:  { fill: '#475569', text: 'text-slate-700',  bg: 'bg-slate-600' },
   };
   const c = colorMap[color] || colorMap.blue;
+  
+  // Local input state — 사용자가 타이핑 중일 때 raw string 보존 (controlled 충돌 회피)
+  // null이면 props value를 그대로 표시, string이면 사용자가 편집 중
+  const [editing, setEditing] = useState(null);
+  
+  // props value가 외부에서 바뀌면 (slider drag, applyParams 등) editing 해제
+  useEffect(() => {
+    setEditing(null);
+  }, [value]);
+  
+  // 표시용 값 — 편집 중이면 raw string, 아니면 formatted
+  const displayValue = editing !== null ? editing : Number(value).toFixed(decimals);
+  
+  // Commit (blur 또는 Enter) — 빈 문자열 처리, NaN 처리, clamp
+  const commit = () => {
+    if (editing === null) return;
+    const trimmed = editing.trim();
+    if (trimmed === '' || trimmed === '-' || trimmed === '.') {
+      // 빈 입력 → 원래 value 유지 (state는 그대로, editing만 해제)
+      setEditing(null);
+      return;
+    }
+    const parsed = parseFloat(trimmed);
+    if (isNaN(parsed)) {
+      setEditing(null);
+      return;
+    }
+    // Clamp to [min, max]
+    const clamped = Math.max(min, Math.min(max, parsed));
+    onChange(clamped);
+    // useEffect가 editing을 null로 reset
+  };
+  
   return (
     <div className="mb-3">
       <div className="flex items-center justify-between mb-1">
@@ -276,10 +309,16 @@ function Slider({ label, sublabel, value, min, max, step, onChange, color = 'blu
           <span className="text-[12px] font-semibold text-slate-700">{label}</span>
           {sublabel && <span className="text-[10px] text-slate-400 font-mono">{sublabel}</span>}
         </div>
-        <input type="number" value={Number(value).toFixed(decimals)}
-          onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
-          step={step}
-          className={`w-20 text-right text-[12px] font-mono font-semibold ${c.text} bg-transparent border-0 outline-none px-1 py-0.5 rounded hover:bg-slate-50 focus:bg-slate-50`} />
+        <input type="text" inputMode="decimal"
+          value={displayValue}
+          onChange={(e) => setEditing(e.target.value)}
+          onFocus={(e) => { setEditing(Number(value).toFixed(decimals)); e.target.select(); }}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') { e.target.blur(); }
+            if (e.key === 'Escape') { setEditing(null); e.target.blur(); }
+          }}
+          className={`w-20 text-right text-[12px] font-mono font-semibold ${c.text} bg-transparent border border-transparent outline-none px-1 py-0.5 rounded hover:bg-slate-50 focus:bg-white focus:border-slate-300`} />
       </div>
       <div className="relative">
         <input type="range" min={min} max={max} step={step} value={value}
@@ -895,12 +934,12 @@ function EvaporatorView({ onBack }) {
             <SidebarSection title="TUBE">
               <Slider label="D_o" sublabel="[mm]" value={D_o} min={3} max={20} step={0.1} decimals={1} onChange={setDo} color="cyan" />
               <Slider label="D_i" sublabel="[mm]" value={D_i} min={2} max={18} step={0.1} decimals={1} onChange={setDi} color="cyan" />
-              <Slider label="L_tube" sublabel="[mm]" value={L_tube} min={100} max={2000} step={10} onChange={setLtube} color="cyan" />
+              <Slider label="L_tube" sublabel="[mm]" value={L_tube} min={100} max={2000} step={10} onChange={setLtube} color="cyan" decimals={0} />
             </SidebarSection>
 
             {/* Fin */}
             <SidebarSection title="FIN">
-              <Slider label="FPI" sublabel="[fins/in]" value={FPI} min={4} max={25} step={1} onChange={setFPI} color="green" />
+              <Slider label="FPI" sublabel="[fins/in]" value={FPI} min={4} max={25} step={1} onChange={setFPI} color="green" decimals={0} />
               <Slider label="t_fin" sublabel="[mm]" value={t_fin} min={0.05} max={0.5} step={0.01} decimals={2} onChange={setTfin} color="green" />
               
               {/* Fin type dropdown */}
@@ -956,8 +995,8 @@ function EvaporatorView({ onBack }) {
 
             {/* Circuit / Layout */}
             <SidebarSection title="CIRCUIT / LAYOUT">
-              <Slider label="N_tubes" sublabel="총 본수" value={N_tubes} min={2} max={100} step={1} onChange={setNtubes} color="purple" />
-              <Slider label="N_rows" sublabel="공기 방향" value={N_rows} min={1} max={8} step={1} onChange={setNrows} color="purple" />
+              <Slider label="N_tubes" sublabel="총 본수" value={N_tubes} min={2} max={100} step={1} onChange={setNtubes} color="purple" decimals={0} />
+              <Slider label="N_rows" sublabel="공기 방향" value={N_rows} min={1} max={8} step={1} onChange={setNrows} color="purple" decimals={0} />
               <Slider label="P_t" sublabel="[mm] transverse" value={P_t} min={10} max={50} step={0.5} decimals={1} onChange={setPt} color="amber" />
               <Slider label="P_l" sublabel="[mm] longitudinal" value={P_l} min={10} max={50} step={0.5} decimals={1} onChange={setPl} color="amber" />
               
@@ -984,7 +1023,7 @@ function EvaporatorView({ onBack }) {
                 </div>
               </div>
               
-              <Slider label="N_circuits (참고)" sublabel="병렬 회로" value={N_circuits} min={1} max={20} step={1} onChange={setNcircuits} color="purple" />
+              <Slider label="N_circuits (참고)" sublabel="병렬 회로" value={N_circuits} min={1} max={20} step={1} onChange={setNcircuits} color="purple" decimals={0} />
               
               <div className="mt-1 text-[10px] text-slate-400 font-mono">
                 {circuit_mode === 'row_parallel' && '각 row의 모든 튜브가 병렬'}
