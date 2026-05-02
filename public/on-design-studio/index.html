@@ -1118,6 +1118,8 @@ function EvaporatorView({ onBack }) {
                     P_t={P_t} P_l={P_l}
                     tubeMaterial={tubeMaterial}
                     finMaterial={finMaterial}
+                    bends={bends}
+                    circuit_mode={circuit_mode}
                   />
                 ) : (
                   <CoilViewer
@@ -1584,7 +1586,8 @@ function CircuitDesigner({ N_rows, N_tubes_per_row, layout='staggered', flow='co
    - light theme, drag to rotate, scroll to zoom
    ═══════════════════════════════════════════════════════════════════ */
 function CoilView3D({ D_o, D_i, L_tube, FPI, t_fin, N_tubes, N_rows, P_t, P_l,
-                       tubeMaterial = 'Cu', finMaterial = 'Al' }) {
+                       tubeMaterial = 'Cu', finMaterial = 'Al',
+                       bends = { front: [], back: [] }, circuit_mode = 'row_parallel' }) {
   const mountRef = React.useRef(null);
   const stateRef = React.useRef(null);
   
@@ -1617,8 +1620,8 @@ function CoilView3D({ D_o, D_i, L_tube, FPI, t_fin, N_tubes, N_rows, P_t, P_l,
     scene.add(dir2);
     
     // Materials
-    const tubeColor = tubeMaterial === 'Cu' ? 0xb87333 : 0xc0c0c0;  // copper or aluminum
-    const finColor = finMaterial === 'Cu' ? 0xb87333 : 0xd4d4d8;    // 얇은 plate, light gray
+    const tubeColor = tubeMaterial === 'Cu' ? 0xb87333 : 0xc0c0c0;
+    const finColor = finMaterial === 'Cu' ? 0xb87333 : 0xd4d4d8;
     
     const tubeMat = new THREE.MeshPhongMaterial({
       color: tubeColor, shininess: 80, specular: 0x444444
@@ -1630,34 +1633,135 @@ function CoilView3D({ D_o, D_i, L_tube, FPI, t_fin, N_tubes, N_rows, P_t, P_l,
     
     // Geometry parameters (mm units, scaled in scene)
     const Nt_per_row = N_rows > 0 ? Math.round(N_tubes / N_rows) : N_tubes;
-    const Lt = L_tube;     // tube length
-    const Do = D_o;        // outer diameter (mm)
-    const Pt = P_t;        // transverse pitch (mm)
-    const Pl = P_l;        // longitudinal pitch (mm)
+    const Lt = L_tube;
+    const Do = D_o;
+    const Pt = P_t;
+    const Pl = P_l;
+    
+    // ── Tube position helper (CircuitDesigner와 같은 좌표계) ──
+    // tube center: x=0, y, z
+    const tubePos = (r, c) => {
+      const yOffset = (r % 2 === 1) ? Pt/2 : 0;
+      return {
+        y: c * Pt + yOffset - (Nt_per_row-1)*Pt/2,
+        z: r * Pl - (N_rows-1)*Pl/2,
+      };
+    };
     
     // Tube bundle (staggered)
     const tubeGroup = new THREE.Group();
     const tubeGeo = new THREE.CylinderGeometry(Do/2, Do/2, Lt, 16);
     for (let r = 0; r < N_rows; r++) {
-      const yOffset = (r % 2 === 1) ? Pt/2 : 0;  // staggered
       for (let c = 0; c < Nt_per_row; c++) {
         const tube = new THREE.Mesh(tubeGeo, tubeMat);
-        tube.rotation.z = Math.PI / 2;  // tube length along X axis
-        tube.position.set(0, c * Pt + yOffset - (Nt_per_row-1)*Pt/2, r * Pl - (N_rows-1)*Pl/2);
+        tube.rotation.z = Math.PI / 2;  // length along X
+        const p = tubePos(r, c);
+        tube.position.set(0, p.y, p.z);
         tubeGroup.add(tube);
       }
     }
     scene.add(tubeGroup);
     
-    // Fin stack — thin plates perpendicular to tubes, evenly along L_tube
-    const finCount = Math.max(2, Math.round((Lt / 25.4) * FPI));  // FPI to count
+    // ── Return bends (U-bends) — front: +X end, back: -X end ──
+    // bends.front: [[r1,c1,r2,c2], ...] (인접 튜브 페어를 +X 측에서 연결)
+    // bends.back:  [[r1,c1,r2,c2], ...]                   (-X 측)
+    // 회로 색상 — CircuitDesigner와 일치
+    const circColors = [0x0d9488, 0xdc2626, 0x2563eb, 0x10b981,
+                        0xd97706, 0xdb2777, 0x3b82f6, 0x7c3aed];
+    
+    // 회로 추적 (CircuitDesigner의 traceBends 알고리즘 — 회로별 색상 결정용)
+    const fm = {}, bm = {};
+    (bends.front || []).forEach(([r1,c1,r2,c2]) => {
+      fm[`${r1},${c1}`] = [r2,c2]; fm[`${r2},${c2}`] = [r1,c1];
+    });
+    (bends.back || []).forEach(([r1,c1,r2,c2]) => {
+      bm[`${r1},${c1}`] = [r2,c2]; bm[`${r2},${c2}`] = [r1,c1];
+    });
+    const visited = new Set();
+    const tubeCircuit = {};  // 'r,c' → circuit index
+    let cIdx = 0;
+    for (let c = 0; c < Nt_per_row; c++) for (let r = 0; r < N_rows; r++) {
+      const k = `${r},${c}`;
+      if (visited.has(k)) continue;
+      const hasF = fm.hasOwnProperty(k), hasB = bm.hasOwnProperty(k);
+      if (hasF && hasB) continue;
+      if (!hasF && !hasB) {
+        tubeCircuit[k] = cIdx; visited.add(k); cIdx++; continue;
+      }
+      let cur = [r,c]; let lookFace = hasB ? 'back' : 'front';
+      while (true) {
+        const ck = `${cur[0]},${cur[1]}`;
+        if (visited.has(ck)) break;
+        visited.add(ck); tubeCircuit[ck] = cIdx;
+        const map = lookFace === 'front' ? fm : bm;
+        if (!map.hasOwnProperty(ck)) break;
+        const next = map[ck];
+        const nk = `${next[0]},${next[1]}`;
+        if (visited.has(nk)) break;
+        cur = next; lookFace = lookFace === 'front' ? 'back' : 'front';
+      }
+      cIdx++;
+    }
+    
+    // U-bend 그리기 — TubeGeometry로 부드러운 곡선
+    const bendGroup = new THREE.Group();
+    const bendRadius = Do * 0.6;  // 튜브 외경의 60%
+    const stickOut = bendRadius * 1.0;  // tube 끝에서 얼마나 X 방향으로 튀어나오는가
+    
+    const drawBend = (r1, c1, r2, c2, face) => {
+      const p1 = tubePos(r1, c1);
+      const p2 = tubePos(r2, c2);
+      const sign = face === 'front' ? 1 : -1;  // +X = front, -X = back
+      const xEnd = sign * (Lt/2);
+      const xPeak = sign * (Lt/2 + stickOut);
+      
+      // 회로 색상
+      const cIdx2 = tubeCircuit[`${r1},${c1}`];
+      const color = (cIdx2 !== undefined) ? circColors[cIdx2 % 8] : 0xb87333;
+      const matBend = new THREE.MeshPhongMaterial({
+        color, shininess: 80, specular: 0x444444
+      });
+      
+      // 곡선 path: tube1 끝 → straight → arc → straight → tube2 끝
+      // 단순화: CatmullRom으로 4 control points
+      const points = [
+        new THREE.Vector3(xEnd,  p1.y, p1.z),
+        new THREE.Vector3(xPeak, p1.y, p1.z),
+        new THREE.Vector3(xPeak, p2.y, p2.z),
+        new THREE.Vector3(xEnd,  p2.y, p2.z),
+      ];
+      const curve = new THREE.CatmullRomCurve3(points, false, 'catmullrom', 0.5);
+      const tubeGeoBend = new THREE.TubeGeometry(curve, 24, Do/2, 12, false);
+      const mesh = new THREE.Mesh(tubeGeoBend, matBend);
+      bendGroup.add(mesh);
+    };
+    
+    (bends.front || []).forEach(([r1,c1,r2,c2]) => drawBend(r1,c1,r2,c2,'front'));
+    (bends.back || []).forEach(([r1,c1,r2,c2]) => drawBend(r1,c1,r2,c2,'back'));
+    scene.add(bendGroup);
+    
+    // 회로 색상이 적용된 경우, tube도 회로 색상으로 다시 칠하기 (custom 모드만)
+    if (circuit_mode === 'custom' && Object.keys(tubeCircuit).length > 0) {
+      tubeGroup.children.forEach((tube, i) => {
+        const r = Math.floor(i / Nt_per_row);
+        const c = i % Nt_per_row;
+        const ci = tubeCircuit[`${r},${c}`];
+        if (ci !== undefined) {
+          tube.material = new THREE.MeshPhongMaterial({
+            color: circColors[ci % 8], shininess: 80, specular: 0x444444
+          });
+        }
+      });
+    }
+    
+    // Fin stack
+    const finCount = Math.max(2, Math.round((Lt / 25.4) * FPI));
     const finStep = Lt / (finCount - 1);
     const finBundleW = Nt_per_row * Pt + Pt;
     const finBundleD = N_rows * Pl + Pl;
     const finGeo = new THREE.BoxGeometry(t_fin, finBundleW, finBundleD);
     
     const finGroup = new THREE.Group();
-    // 너무 많이 그리면 느려져 — max 50개로 cap
     const drawCount = Math.min(finCount, 50);
     const drawStep = (finCount - 1) / (drawCount - 1) * finStep;
     for (let i = 0; i < drawCount; i++) {
@@ -1667,7 +1771,7 @@ function CoilView3D({ D_o, D_i, L_tube, FPI, t_fin, N_tubes, N_rows, P_t, P_l,
     }
     scene.add(finGroup);
     
-    // Tube outline (edges) — 더 명확한 입체감
+    // Tube outline edges
     const tubeEdgeMat = new THREE.LineBasicMaterial({ color: 0x6b4423, linewidth: 1, opacity: 0.5, transparent: true });
     tubeGroup.children.forEach(tube => {
       const edges = new THREE.EdgesGeometry(tubeGeo);
@@ -1677,7 +1781,7 @@ function CoilView3D({ D_o, D_i, L_tube, FPI, t_fin, N_tubes, N_rows, P_t, P_l,
       scene.add(line);
     });
     
-    // Floor grid (reference)
+    // Floor grid
     const grid = new THREE.GridHelper(Math.max(Lt, finBundleW, finBundleD) * 1.5, 12, 0xcbd5e1, 0xe2e8f0);
     grid.position.y = -finBundleW/2 - 30;
     scene.add(grid);
@@ -1752,7 +1856,8 @@ function CoilView3D({ D_o, D_i, L_tube, FPI, t_fin, N_tubes, N_rows, P_t, P_l,
       tubeMat.dispose();
       finMat.dispose();
     };
-  }, [D_o, D_i, L_tube, FPI, t_fin, N_tubes, N_rows, P_t, P_l, tubeMaterial, finMaterial]);
+  }, [D_o, D_i, L_tube, FPI, t_fin, N_tubes, N_rows, P_t, P_l, tubeMaterial, finMaterial,
+      JSON.stringify(bends), circuit_mode]);
   
   return (
     <div ref={mountRef} style={{
