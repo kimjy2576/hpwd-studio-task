@@ -1517,33 +1517,8 @@ function CircuitDesigner({ N_rows, N_tubes_per_row, layout='staggered', flow='co
       {/* Inlet/Outlet controls */}
       <div style={{ marginBottom: 8, padding: '8px 12px', borderRadius: 6,
                     background: C.surface, border: `1px solid ${C.border}` }}>
-        {/* Per-circuit IN/OUT list */}
-        {circuits.map((circ, ci) => {
-          const clr = circColors[ci % circColors.length];
-          const inT = circ[0], outT = circ[circ.length - 1];
-          return (
-            <div key={ci} style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: ci < nc - 1 ? 4 : 0 }}>
-              <span style={{ width: 9, height: 9, borderRadius: '50%', background: clr,
-                             display: 'inline-block', flexShrink: 0 }} />
-              <span style={{ fontSize: 9, color: C.dim, minWidth: 22 }}>C{ci + 1}</span>
-              <span style={{ fontSize: 9, padding: '1px 6px', borderRadius: 3, background: C.err,
-                             color: '#fff', fontWeight: 700 }}>
-                IN R{inT[0]}C{inT[1]}
-              </span>
-              <span style={{ fontSize: 9, color: C.dim }}>→</span>
-              <span style={{ fontSize: 9, padding: '1px 6px', borderRadius: 3, background: C.success,
-                             color: '#fff', fontWeight: 700 }}>
-                OUT R{outT[0]}C{outT[1]}
-              </span>
-            </div>
-          );
-        })}
-        {nc === 0 && inlets.length === 0 && outlets.length === 0 && (
-          <div style={{ fontSize: 9, color: C.dim }}>회로 없음 — 밴드를 추가하거나 IN/OUT을 먼저 설정하세요</div>
-        )}
-        
         {/* Add IN / Add OUT buttons */}
-        <div style={{ display: 'flex', gap: 5, marginTop: nc > 0 || inlets.length > 0 || outlets.length > 0 ? 8 : 0 }}>
+        <div style={{ display: 'flex', gap: 5 }}>
           <button onClick={() => { setCircEditMode(circEditMode === 'inlet' ? 'bend' : 'inlet'); setBendFirst(null); }}
             style={{ padding: '5px 14px', borderRadius: 5, border: 'none', cursor: 'pointer',
                      fontSize: 10, fontWeight: 700, fontFamily: 'inherit',
