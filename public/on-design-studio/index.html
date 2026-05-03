@@ -3450,6 +3450,14 @@ function CompressorView({ onBack }) {
                             // SUC/DIS port 면적 → 직경 (원형 port 가정)
                             const dSuc = Math.sqrt(4 * A_valve_in_mm2 / Math.PI) * s;
                             const dDis = Math.sqrt(4 * A_valve_out_mm2 / Math.PI) * s;
+                            // ── Piston 편심 운동의 X 성분 ──
+                            // Top view는 X-Y, Side view는 X-Z 평면
+                            // X 좌표: cx_p = cx + e·sin(θ) (Top view와 동일한 sin)
+                            // 즉 길이방향 단면에서 piston이 좌우로 흔들리는 모습 보임
+                            const e_mm = R_cyl - R_pis;        // eccentricity (mm)
+                            const e_px = e_mm * s;              // pixel 단위
+                            const thetaRad = thetaView * Math.PI / 180;
+                            const px_off = e_px * Math.sin(thetaRad);  // piston X offset
                             return (<>
                               {/* Cylinder body — 외곽 (수직 직사각형) */}
                               <rect x={cx - Rc} y={cy - Hc/2} width={2*Rc} height={Hc}
@@ -3474,18 +3482,43 @@ function CompressorView({ onBack }) {
                                   <line x1="0" y1="0" x2="0" y2="5" stroke="var(--accent)" strokeWidth="0.6" opacity="0.4" />
                                 </pattern>
                               </defs>
-                              <rect x={cx - Rp + 2} y={cy - Hc/2 + 3} width={2*Rp - 4} height={Hc - 6}
+                              <rect x={cx + px_off - Rp + 2} y={cy - Hc/2 + 3} width={2*Rp - 4} height={Hc - 6}
                                     fill="url(#pistonHatch)" stroke="var(--accent)" strokeWidth="1.2"
                                     strokeDasharray="3,2" opacity="0.7" />
-                              <text x={cx} y={cy} textAnchor="middle"
+                              <text x={cx + px_off} y={cy} textAnchor="middle"
                                     fill="var(--accent)" fontSize="10" fontWeight="600"
                                     style={{ pointerEvents: 'none' }}>
                                 Piston
                               </text>
-                              <text x={cx} y={cy + 14} textAnchor="middle"
+                              <text x={cx + px_off} y={cy + 14} textAnchor="middle"
                                     fill="var(--tx3)" fontSize="9" style={{ pointerEvents: 'none' }}>
                                 ⌀{(2 * R_pis).toFixed(1)}mm
                               </text>
+                              
+                              {/* Eccentricity gap indicator — piston 좌우의 빈 공간 강조
+                                 회전 시 한쪽이 좁아지고 반대쪽이 넓어짐 */}
+                              {(() => {
+                                const leftGap = (cx + px_off - Rp) - (cx - Rc);
+                                const rightGap = (cx + Rc) - (cx + px_off + Rp);
+                                return (<>
+                                  {/* Left gap label */}
+                                  {leftGap > 8 && (
+                                    <text x={cx - Rc + leftGap/2} y={cy + Hc/2 - 6}
+                                          textAnchor="middle" fill="#3b82f6" fontSize="8"
+                                          fontFamily="monospace" opacity="0.7">
+                                      {(leftGap/s).toFixed(2)}
+                                    </text>
+                                  )}
+                                  {/* Right gap label */}
+                                  {rightGap > 8 && (
+                                    <text x={cx + Rc - rightGap/2} y={cy + Hc/2 - 6}
+                                          textAnchor="middle" fill="#dc2626" fontSize="8"
+                                          fontFamily="monospace" opacity="0.7">
+                                      {(rightGap/s).toFixed(2)}
+                                    </text>
+                                  )}
+                                </>);
+                              })()}
                               
                               {/* Suction port — top plate 좌측 */}
                               <ellipse cx={cx - Rc/2} cy={cy - Hc/2 - 9} rx={dSuc/2} ry={4}
@@ -3579,7 +3612,7 @@ function CompressorView({ onBack }) {
                       </div>
                       <div style={{ padding: '8px 4px 0', fontSize: 11, color: 'var(--tx3)',
                                     fontFamily: 'JetBrains Mono, monospace', textAlign: 'center' }}>
-                        length-axis section · ports on top plate · {comp_type}
+                        θ = {Math.round(thetaView)}° · piston X-offset {((R_cyl - R_pis) * Math.sin(thetaView * Math.PI / 180)).toFixed(2)}mm · length-axis section · {comp_type}
                       </div>
                     </div>
                   )}
