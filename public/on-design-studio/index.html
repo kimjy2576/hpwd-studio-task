@@ -2148,7 +2148,7 @@ function FrontView({ W, H, D_o, L_tube, FPI, t_fin, N_tubes, N_rows, P_t, P_l, N
   const coreW_mm = tubesPerRow * P_t;   // 가로 = 열 × P_t (transverse)
   const coreH_mm = N_rows * P_l;        // 세로 = 행 × P_l (longitudinal, 공기 방향)
   
-  const padX = 60, padY = 50;
+  const padX = 80, padY = 60;
   const scale = Math.min((W - 2*padX) / coreW_mm, (H - 2*padY) / coreH_mm);
   const drawW = coreW_mm * scale;
   const drawH = coreH_mm * scale;
@@ -2167,19 +2167,39 @@ function FrontView({ W, H, D_o, L_tube, FPI, t_fin, N_tubes, N_rows, P_t, P_l, N
             fill="var(--bg2)" stroke="var(--tx2)" strokeWidth="1.5" rx="2" />
       
       {/* Air arrow — row 방향(세로), 진영님 정의: row = 공기 흐름 방향
-         Front view에서 row spacing은 세로축이므로 공기 화살표도 세로로 */}
+         격자 전체 높이만큼 큰 화살표로 명확히 표시 */}
       <defs>
-        <marker id="airArr" markerWidth="6" markerHeight="6" refX="3" refY="5" orient="auto">
-          <polygon points="0 0, 6 0, 3 5" fill="var(--accent)" opacity="0.7" />
+        <marker id="airArr" markerWidth="10" markerHeight="10" refX="5" refY="9" orient="auto">
+          <polygon points="0 0, 10 0, 5 9" fill="#3b82f6" />
         </marker>
+        <linearGradient id="airGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.0" />
+          <stop offset="20%" stopColor="#3b82f6" stopOpacity="0.7" />
+          <stop offset="100%" stopColor="#3b82f6" stopOpacity="0.95" />
+        </linearGradient>
       </defs>
-      <line x1={x0 - 28} y1={y0 - 24} x2={x0 - 28} y2={y0 + 24}
-            stroke="var(--accent)" strokeWidth="1.5" opacity="0.7"
+      
+      {/* 격자 전체 높이의 큰 화살표 (frame 바로 왼쪽) */}
+      <line x1={x0 - 24} y1={y0} x2={x0 - 24} y2={y0 + drawH}
+            stroke="url(#airGrad)" strokeWidth="3.5"
             markerEnd="url(#airArr)" />
-      <text x={x0 - 35} y={y0 - 28} fill="var(--accent)"
-            fontSize="10" fontWeight="600">AIR</text>
-      <text x={x0 - 35} y={y0 + 38} fill="var(--accent)"
-            fontSize="9" fontWeight="500" opacity="0.7">↓ 행방향</text>
+      
+      {/* 라벨 박스 — 화살표 위쪽에 크게 */}
+      <g transform={`translate(${x0 - 50}, ${y0 - 32})`}>
+        <rect x="0" y="0" width="56" height="22" rx="4"
+              fill="#3b82f6" fillOpacity="0.12"
+              stroke="#3b82f6" strokeWidth="1.5" />
+        <text x="28" y="14" textAnchor="middle"
+              fill="#1e40af" fontSize="12" fontWeight="800"
+              style={{ letterSpacing: '1px' }}>AIR ↓</text>
+      </g>
+      
+      {/* 행방향 안내 — 화살표 옆에 작게 */}
+      <text x={x0 - 24} y={y0 + drawH/2}
+            fill="#1e40af" fontSize="10" fontWeight="600"
+            textAnchor="end" transform={`rotate(-90, ${x0 - 30}, ${y0 + drawH/2})`}>
+        공기 흐름 (행 방향)
+      </text>
       
       {/* Tubes — staggered grid (row=세로/P_l, col=가로/P_t) */}
       {Array.from({ length: N_rows }, (_, r) =>
