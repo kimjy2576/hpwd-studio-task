@@ -3457,7 +3457,12 @@ function CompressorView({ onBack }) {
                             const e_mm = R_cyl - R_pis;        // eccentricity (mm)
                             const e_px = e_mm * s;              // pixel 단위
                             const thetaRad = thetaView * Math.PI / 180;
-                            const px_off = e_px * Math.sin(thetaRad);  // piston X offset
+                            // ── 시각화용 amplification ──
+                            // 실제 e는 1~2mm이라 화면에서 거의 안 보임
+                            // 시각적 명확성을 위해 3배 증폭 (라벨로 실제 값 명시)
+                            const eVizScale = 3.0;
+                            const px_off_actual = e_px * Math.sin(thetaRad);
+                            const px_off = px_off_actual * eVizScale;  // amplified for display
                             return (<>
                               {/* Cylinder body — 외곽 (수직 직사각형) */}
                               <rect x={cx - Rc} y={cy - Hc/2} width={2*Rc} height={Hc}
@@ -3475,25 +3480,39 @@ function CompressorView({ onBack }) {
                               <text x={cx} y={cy + Hc/2 + 30} textAnchor="middle"
                                     fill="var(--tx2)" fontSize="9" fontWeight="500">BOTTOM PLATE</text>
                               
-                              {/* Piston cross-section (H 전체 차지, 단면 보이게 hatch) */}
+                              {/* Piston cross-section (H 전체 차지, 단면 보이게 hatch)
+                                 시각화 amplified (e×3배) — 실제 e는 라벨에 명시 */}
                               <defs>
                                 <pattern id="pistonHatch" patternUnits="userSpaceOnUse" width="5" height="5"
                                          patternTransform="rotate(45)">
-                                  <line x1="0" y1="0" x2="0" y2="5" stroke="var(--accent)" strokeWidth="0.6" opacity="0.4" />
+                                  <line x1="0" y1="0" x2="0" y2="5" stroke="var(--accent)" strokeWidth="1" opacity="0.6" />
                                 </pattern>
                               </defs>
                               <rect x={cx + px_off - Rp + 2} y={cy - Hc/2 + 3} width={2*Rp - 4} height={Hc - 6}
-                                    fill="url(#pistonHatch)" stroke="var(--accent)" strokeWidth="1.2"
-                                    strokeDasharray="3,2" opacity="0.7" />
-                              <text x={cx + px_off} y={cy} textAnchor="middle"
-                                    fill="var(--accent)" fontSize="10" fontWeight="600"
+                                    fill="url(#pistonHatch)" stroke="var(--accent)" strokeWidth="2"
+                                    opacity="0.95" />
+                              <text x={cx + px_off} y={cy - 4} textAnchor="middle"
+                                    fill="var(--accent)" fontSize="11" fontWeight="700"
                                     style={{ pointerEvents: 'none' }}>
                                 Piston
                               </text>
-                              <text x={cx + px_off} y={cy + 14} textAnchor="middle"
-                                    fill="var(--tx3)" fontSize="9" style={{ pointerEvents: 'none' }}>
+                              <text x={cx + px_off} y={cy + 9} textAnchor="middle"
+                                    fill="var(--tx3)" fontSize="9" fontFamily="monospace"
+                                    style={{ pointerEvents: 'none' }}>
                                 ⌀{(2 * R_pis).toFixed(1)}mm
                               </text>
+                              <text x={cx + px_off} y={cy + 22} textAnchor="middle"
+                                    fill="var(--accent)" fontSize="9" fontFamily="monospace"
+                                    fontWeight="600" style={{ pointerEvents: 'none' }}>
+                                Δx = {(px_off_actual / s).toFixed(2)}mm
+                              </text>
+                              {/* viz 라벨 (offset이 amplified 됐다는 안내) */}
+                              {Math.abs(px_off_actual) > 0.5 && (
+                                <text x={cx} y={cy + Hc/2 + 16} textAnchor="middle"
+                                      fill="var(--tx3)" fontSize="8" fontFamily="monospace" opacity="0.6">
+                                  (vis ×{eVizScale} for clarity)
+                                </text>
+                              )}
                               
                               {/* Eccentricity gap indicator — piston 좌우의 빈 공간 강조
                                  회전 시 한쪽이 좁아지고 반대쪽이 넓어짐 */}
