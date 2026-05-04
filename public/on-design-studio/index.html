@@ -721,9 +721,11 @@ function FinTubeHXView({ mode = 'evap', onBack }) {
 
   const applyToHPWD = () => {
     const beParams = buildBackendParams();
+    const componentName = mode === 'cond' ? 'condenser_on_design' : 'evaporator_on_design';
+    const targetTypeNo = mode === 'cond' ? 222 : 122;
     const payload = {
-      component: 'evaporator_on_design',
-      typeNo: 122,
+      component: componentName,
+      typeNo: targetTypeNo,
       params: beParams,
       sourceParams: currentParams(),  // 원본 sidebar params도 같이
       _timestamp: new Date().toISOString(),
@@ -731,7 +733,7 @@ function FinTubeHXView({ mode = 'evap', onBack }) {
     };
     try {
       localStorage.setItem('hpwd_pending_design', JSON.stringify(payload));
-      setApplyMsg('✓ HPWD Studio로 적용됨. HPWD Studio canvas에서 typeNo 122 컴포넌트를 추가하면 자동 적용됩니다.');
+      setApplyMsg(`✓ HPWD Studio로 적용됨. HPWD Studio canvas에서 typeNo ${targetTypeNo} 컴포넌트를 추가하면 자동 적용됩니다.`);
       setTimeout(() => setApplyMsg(''), 5000);
     } catch (e) {
       setApplyMsg('✗ 적용 실패: ' + e.message);
@@ -740,9 +742,11 @@ function FinTubeHXView({ mode = 'evap', onBack }) {
 
   const applyToCalibration = () => {
     const beParams = buildBackendParams();
+    const componentName = mode === 'cond' ? 'condenser_on_design' : 'evaporator_on_design';
+    const targetTypeNo = mode === 'cond' ? 222 : 122;
     const payload = {
-      component: 'evaporator_on_design',
-      typeNo: 122,
+      component: componentName,
+      typeNo: targetTypeNo,
       params: beParams,
       sourceParams: currentParams(),
       _timestamp: new Date().toISOString(),
