@@ -211,3 +211,9 @@ CORR_REGISTRY = {
 }
 
 DEFAULT = 'Shah'
+
+
+def evaluate(name, **kwargs):
+    """Condensation HTC correlation dispatcher (boiling과 동일 패턴)."""
+    fn = CORR_REGISTRY.get(name) or CORR_REGISTRY[DEFAULT]
+    return fn(**kwargs)

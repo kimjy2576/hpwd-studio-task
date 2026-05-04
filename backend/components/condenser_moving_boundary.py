@@ -177,6 +177,8 @@ modelDescription = {
          'description': 'SC zone 길이 비율'},
         {'name': 'eta_fin', 'causality': 'output', 'type': 'Real', 'unit': '-',
          'description': 'Fin 효율 (Schmidt 가정)'},
+        {'name': 'dP_total', 'causality': 'output', 'type': 'Real', 'unit': 'Pa',
+         'description': '총 압력강하 (dP_ref 비율 기반 간소 추정)'},
     ],
     'capabilities': {
         'canDoStep': True,
@@ -510,6 +512,7 @@ def step(input, params, state, dt):
     
     # 출구 압력
     P_ref_out_bar = P_cond_bar * (1.0 - dP_ref_frac)
+    dP_total_Pa = P_cond_bar * 1e5 * dP_ref_frac
     
     return {
         'outputs': {
@@ -533,6 +536,7 @@ def step(input, params, state, dt):
             'L_2ph_fraction': L_2ph_frac,
             'L_SC_fraction': L_SC_frac,
             'eta_fin': eta_f,
+            'dP_total': dP_total_Pa,
         },
         'newState': {},
     }
