@@ -3427,202 +3427,209 @@ function CompressorView({ onBack }) {
                     />
                   )}
                   {vizSub === 3 && (
-                    /* Side view — Cylinder 길이 방향 단면, suction/discharge port 위치 강조
-                       3D의 외경 수직면 단면. piston은 안쪽에서 H 전체 차지.
-                       SUC/DIS port 정확한 위치 (top 또는 side wall) + 면적 비례 표시.
-                       compressor-sim 스타일 (var(--bg3) 배경, var(--tx2/3) 색, dimension lines) */
+                    /* Side view — Cylinder 길이 방향 단면 (가로로 누운 cylinder)
+                       진영님 정의: 단면 안에서 piston 편심을 세로 방향으로 표시
+                       ─ 가로축 = H (cylinder 길이)
+                       ─ 세로축 = D (직경 방향, R_cyl)
+                       ─ piston은 cylinder 안에서 회전하면서 직경 방향(세로)으로 편심
+                       compressor-sim 스타일 (var(--bg3) 배경, dimension lines) */
                     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0,
                                   width: '100%', height: '100%' }}>
                       <div style={{ flex: 1, minHeight: 320, display: 'flex',
                                     alignItems: 'center', justifyContent: 'center', overflow: 'auto' }}>
-                        <svg viewBox="0 0 320 260" preserveAspectRatio="xMidYMid meet"
+                        <svg viewBox="0 0 380 240" preserveAspectRatio="xMidYMid meet"
                              style={{ width: '100%', height: '100%', maxWidth: 800, maxHeight: '100%',
                                       margin: '0 auto', display: 'block', background: 'var(--bg3)',
                                       borderRadius: 12 }}>
                           {(() => {
-                            // Side view: 수직 cylinder, 길이=H, 너비=2*R_cyl (외경)
-                            // 90° 회전 → 좌우 = R_cyl 방향, 상하 = H 방향
-                            // SUC/DIS port는 top plate에 위치 (rotary는 통상 top end)
-                            const s = 5, cx = 160, cy = 130;
-                            const Rc = R_cyl * s;
-                            const Hc = H_cyl * s;
-                            const Rp = R_pis * s;
-                            // SUC/DIS port 면적 → 직경 (원형 port 가정)
+                            // 좌표계 (가로 누운 cylinder):
+                            //   가로(width) = H (length), 세로(height) = 2*R_cyl (diameter)
+                            const s = 5, cx = 190, cy = 120;
+                            const Hpx = H_cyl * s;        // cylinder 길이 (가로)
+                            const Dpx = 2 * R_cyl * s;    // cylinder 직경 (세로)
+                            const Rcpx = R_cyl * s;
+                            const Rppx = R_pis * s;
+                            
+                            // SUC/DIS port 직경 (원형 가정)
                             const dSuc = Math.sqrt(4 * A_valve_in_mm2 / Math.PI) * s;
                             const dDis = Math.sqrt(4 * A_valve_out_mm2 / Math.PI) * s;
-                            // ── Piston 편심 운동의 X 성분 ──
-                            // Top view는 X-Y, Side view는 X-Z 평면
-                            // X 좌표: cx_p = cx + e·sin(θ) (Top view와 동일한 sin)
-                            // 즉 길이방향 단면에서 piston이 좌우로 흔들리는 모습 보임
-                            const e_mm = R_cyl - R_pis;        // eccentricity (mm)
-                            const e_px = e_mm * s;              // pixel 단위
+                            
+                            // ── Piston 편심 운동 (세로 방향) ──
+                            // 진영님: 'cylinder 내부에서 piston이 상하 움직임' 
+                            // = 단면 안에서 직경 방향으로 편심 = Side view 화면의 세로축
+                            const e_mm = R_cyl - R_pis;
+                            const e_px = e_mm * s;
                             const thetaRad = thetaView * Math.PI / 180;
-                            // ── 시각화용 amplification ──
-                            // 실제 e는 1~2mm이라 화면에서 거의 안 보임
-                            // 시각적 명확성을 위해 3배 증폭 (라벨로 실제 값 명시)
-                            const eVizScale = 3.0;
-                            const px_off_actual = e_px * Math.sin(thetaRad);
-                            const px_off = px_off_actual * eVizScale;  // amplified for display
+                            const eVizScale = 3.0;  // 시각화 amplification
+                            const py_off_actual = e_px * Math.sin(thetaRad);
+                            const py_off = py_off_actual * eVizScale;
+                            
+                            // Piston은 길이방향 전체 차지 (얇은 직사각형, 세로로 편심)
+                            const piston_x = cx - Hpx/2 + 3;        // piston 길이 시작
+                            const piston_w = Hpx - 6;                // piston 길이 (cylinder 거의 전체)
+                            const piston_y = cy + py_off - Rppx;     // piston 세로 위치 (편심 반영)
+                            const piston_h = 2 * Rppx;               // piston 직경
+                            
                             return (<>
-                              {/* Cylinder body — 외곽 (수직 직사각형) */}
-                              <rect x={cx - Rc} y={cy - Hc/2} width={2*Rc} height={Hc}
+                              {/* Cylinder body — 가로로 누운 직사각형 */}
+                              <rect x={cx - Hpx/2} y={cy - Dpx/2} width={Hpx} height={Dpx}
                                     fill="var(--bg2)" stroke="var(--tx2)" strokeWidth="2" rx="2" />
                               
-                              {/* Top plate (port가 박혀있는 두꺼운 plate) */}
-                              <rect x={cx - Rc - 8} y={cy - Hc/2 - 18} width={2*Rc + 16} height="18"
+                              {/* Top plate (좌측 — 보통 ports 박혀있음) */}
+                              <rect x={cx - Hpx/2 - 18} y={cy - Dpx/2 - 8} width="18" height={Dpx + 16}
                                     fill="var(--tx3)" opacity="0.35" stroke="var(--tx2)" strokeWidth="1.5" rx="2" />
-                              <text x={cx} y={cy - Hc/2 - 22} textAnchor="middle"
-                                    fill="var(--tx2)" fontSize="9" fontWeight="500">TOP PLATE (ports)</text>
+                              <text x={cx - Hpx/2 - 22} y={cy} textAnchor="end"
+                                    fill="var(--tx2)" fontSize="9" fontWeight="500"
+                                    transform={`rotate(-90, ${cx - Hpx/2 - 22}, ${cy})`}>
+                                TOP PLATE (ports)
+                              </text>
                               
-                              {/* Bottom plate */}
-                              <rect x={cx - Rc - 8} y={cy + Hc/2} width={2*Rc + 16} height="18"
+                              {/* Bottom plate (우측) */}
+                              <rect x={cx + Hpx/2} y={cy - Dpx/2 - 8} width="18" height={Dpx + 16}
                                     fill="var(--tx3)" opacity="0.35" stroke="var(--tx2)" strokeWidth="1.5" rx="2" />
-                              <text x={cx} y={cy + Hc/2 + 30} textAnchor="middle"
-                                    fill="var(--tx2)" fontSize="9" fontWeight="500">BOTTOM PLATE</text>
+                              <text x={cx + Hpx/2 + 30} y={cy} textAnchor="middle"
+                                    fill="var(--tx2)" fontSize="9" fontWeight="500"
+                                    transform={`rotate(-90, ${cx + Hpx/2 + 30}, ${cy})`}>
+                                BOTTOM PLATE
+                              </text>
                               
-                              {/* Piston cross-section (H 전체 차지, 단면 보이게 hatch)
-                                 시각화 amplified (e×3배) — 실제 e는 라벨에 명시 */}
+                              {/* Piston — 길이방향 직사각형, 세로 방향으로 편심 */}
                               <defs>
                                 <pattern id="pistonHatch" patternUnits="userSpaceOnUse" width="5" height="5"
                                          patternTransform="rotate(45)">
-                                  <line x1="0" y1="0" x2="0" y2="5" stroke="var(--accent)" strokeWidth="1" opacity="0.6" />
+                                  <line x1="0" y1="0" x2="0" y2="5" stroke="var(--accent)"
+                                        strokeWidth="1" opacity="0.6" />
                                 </pattern>
                               </defs>
-                              <rect x={cx + px_off - Rp + 2} y={cy - Hc/2 + 3} width={2*Rp - 4} height={Hc - 6}
+                              <rect x={piston_x} y={piston_y} width={piston_w} height={piston_h}
                                     fill="url(#pistonHatch)" stroke="var(--accent)" strokeWidth="2"
-                                    opacity="0.95" />
-                              <text x={cx + px_off} y={cy - 4} textAnchor="middle"
+                                    opacity="0.95" rx="1" />
+                              <text x={cx} y={cy + py_off - 4} textAnchor="middle"
                                     fill="var(--accent)" fontSize="11" fontWeight="700"
                                     style={{ pointerEvents: 'none' }}>
                                 Piston
                               </text>
-                              <text x={cx + px_off} y={cy + 9} textAnchor="middle"
+                              <text x={cx} y={cy + py_off + 9} textAnchor="middle"
                                     fill="var(--tx3)" fontSize="9" fontFamily="monospace"
                                     style={{ pointerEvents: 'none' }}>
                                 ⌀{(2 * R_pis).toFixed(1)}mm
                               </text>
-                              <text x={cx + px_off} y={cy + 22} textAnchor="middle"
+                              <text x={cx} y={cy + py_off + 22} textAnchor="middle"
                                     fill="var(--accent)" fontSize="9" fontFamily="monospace"
                                     fontWeight="600" style={{ pointerEvents: 'none' }}>
-                                Δx = {(px_off_actual / s).toFixed(2)}mm
+                                Δy = {(py_off_actual / s).toFixed(2)}mm
                               </text>
-                              {/* viz 라벨 (offset이 amplified 됐다는 안내) */}
-                              {Math.abs(px_off_actual) > 0.5 && (
-                                <text x={cx} y={cy + Hc/2 + 16} textAnchor="middle"
-                                      fill="var(--tx3)" fontSize="8" fontFamily="monospace" opacity="0.6">
-                                  (vis ×{eVizScale} for clarity)
-                                </text>
-                              )}
                               
-                              {/* Eccentricity gap indicator — piston 좌우의 빈 공간 강조
-                                 회전 시 한쪽이 좁아지고 반대쪽이 넓어짐 */}
+                              {/* Eccentricity gap — 위/아래 빈 공간 (회전 시 한쪽이 좁아지고 반대쪽이 넓어짐) */}
                               {(() => {
-                                const leftGap = (cx + px_off - Rp) - (cx - Rc);
-                                const rightGap = (cx + Rc) - (cx + px_off + Rp);
+                                const topGap = (cy + py_off - Rppx) - (cy - Rcpx);
+                                const botGap = (cy + Rcpx) - (cy + py_off + Rppx);
                                 return (<>
-                                  {/* Left gap label */}
-                                  {leftGap > 8 && (
-                                    <text x={cx - Rc + leftGap/2} y={cy + Hc/2 - 6}
-                                          textAnchor="middle" fill="#3b82f6" fontSize="8"
-                                          fontFamily="monospace" opacity="0.7">
-                                      {(leftGap/s).toFixed(2)}
+                                  {topGap > 8 && (
+                                    <text x={cx} y={cy - Rcpx + topGap/2 + 3} textAnchor="middle"
+                                          fill="#3b82f6" fontSize="8" fontFamily="monospace" opacity="0.7">
+                                      {(topGap/s).toFixed(2)}mm
                                     </text>
                                   )}
-                                  {/* Right gap label */}
-                                  {rightGap > 8 && (
-                                    <text x={cx + Rc - rightGap/2} y={cy + Hc/2 - 6}
-                                          textAnchor="middle" fill="#dc2626" fontSize="8"
-                                          fontFamily="monospace" opacity="0.7">
-                                      {(rightGap/s).toFixed(2)}
+                                  {botGap > 8 && (
+                                    <text x={cx} y={cy + Rcpx - botGap/2 + 3} textAnchor="middle"
+                                          fill="#dc2626" fontSize="8" fontFamily="monospace" opacity="0.7">
+                                      {(botGap/s).toFixed(2)}mm
                                     </text>
                                   )}
                                 </>);
                               })()}
                               
-                              {/* Suction port — top plate 좌측 */}
-                              <ellipse cx={cx - Rc/2} cy={cy - Hc/2 - 9} rx={dSuc/2} ry={4}
+                              {Math.abs(py_off_actual) > 0.5 && (
+                                <text x={cx} y={cy + Dpx/2 + 16} textAnchor="middle"
+                                      fill="var(--tx3)" fontSize="8" fontFamily="monospace" opacity="0.6">
+                                  (vis ×{eVizScale} for clarity)
+                                </text>
+                              )}
+                              
+                              {/* SUC port — top plate 위쪽 (세로축 상단 부근) */}
+                              <ellipse cx={cx - Hpx/2 - 9} cy={cy - Dpx/4} rx={4} ry={dSuc/2}
                                        fill="#3b82f6"
                                        opacity={0.4 + 0.6 * phaseIntensity.suc}
                                        stroke="#1e40af" strokeWidth="1" />
-                              <line x1={cx - Rc/2} y1={cy - Hc/2 - 13} x2={cx - Rc/2} y2={cy - Hc/2 + 4}
+                              <line x1={cx - Hpx/2 - 13} y1={cy - Dpx/4} x2={cx - Hpx/2 + 4} y2={cy - Dpx/4}
                                     stroke="#3b82f6"
                                     strokeWidth={1.5 + 1.5 * phaseIntensity.suc}
                                     opacity={0.3 + 0.7 * phaseIntensity.suc} />
-                              <text x={cx - Rc/2} y={cy - Hc/2 - 42} textAnchor="middle"
+                              <text x={cx - Hpx/2 - 42} y={cy - Dpx/4 + 4} textAnchor="middle"
                                     fill="#1e40af" fontSize="11" fontWeight="700"
                                     opacity={0.45 + 0.55 * phaseIntensity.suc}>SUC</text>
-                              <text x={cx - Rc/2} y={cy - Hc/2 - 30} textAnchor="middle"
+                              <text x={cx - Hpx/2 - 42} y={cy - Dpx/4 - 8} textAnchor="middle"
                                     fill="#1e40af" fontSize="9" fontFamily="monospace"
                                     opacity={0.45 + 0.55 * phaseIntensity.suc}>
                                 A={A_valve_in_mm2.toFixed(1)}mm²
                               </text>
-                              {/* SUC arrow inflow — phase intensity로 두께/opacity 조정 */}
-                              <line x1={cx - Rc/2} y1={cy - Hc/2 - 26} x2={cx - Rc/2} y2={cy - Hc/2 - 14}
+                              {/* SUC arrow inflow (외부 → port) */}
+                              <line x1={cx - Hpx/2 - 26} y1={cy - Dpx/4} x2={cx - Hpx/2 - 14} y2={cy - Dpx/4}
                                     stroke="#3b82f6"
                                     strokeWidth={1.5 + 2.5 * phaseIntensity.suc}
                                     opacity={0.25 + 0.75 * phaseIntensity.suc}
                                     markerEnd="url(#sucArr)" />
                               <defs>
-                                <marker id="sucArr" markerWidth="6" markerHeight="6" refX="3" refY="5" orient="auto">
-                                  <polygon points="0 0, 6 0, 3 5" fill="#3b82f6" />
+                                <marker id="sucArr" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+                                  <polygon points="0 0, 6 3, 0 6" fill="#3b82f6" />
                                 </marker>
                               </defs>
                               
-                              {/* Discharge port — top plate 우측 */}
-                              <ellipse cx={cx + Rc/2} cy={cy - Hc/2 - 9} rx={dDis/2} ry={4}
+                              {/* DIS port — top plate 아래쪽 */}
+                              <ellipse cx={cx - Hpx/2 - 9} cy={cy + Dpx/4} rx={4} ry={dDis/2}
                                        fill="#dc2626"
                                        opacity={0.4 + 0.6 * phaseIntensity.dis}
                                        stroke="#7f1d1d" strokeWidth="1" />
-                              <line x1={cx + Rc/2} y1={cy - Hc/2 - 13} x2={cx + Rc/2} y2={cy - Hc/2 + 4}
+                              <line x1={cx - Hpx/2 - 13} y1={cy + Dpx/4} x2={cx - Hpx/2 + 4} y2={cy + Dpx/4}
                                     stroke="#dc2626"
                                     strokeWidth={1.5 + 1.5 * phaseIntensity.dis}
                                     opacity={0.3 + 0.7 * phaseIntensity.dis} />
-                              <text x={cx + Rc/2} y={cy - Hc/2 - 42} textAnchor="middle"
+                              <text x={cx - Hpx/2 - 42} y={cy + Dpx/4 - 4} textAnchor="middle"
                                     fill="#7f1d1d" fontSize="11" fontWeight="700"
                                     opacity={0.45 + 0.55 * phaseIntensity.dis}>DIS</text>
-                              <text x={cx + Rc/2} y={cy - Hc/2 - 30} textAnchor="middle"
+                              <text x={cx - Hpx/2 - 42} y={cy + Dpx/4 + 12} textAnchor="middle"
                                     fill="#7f1d1d" fontSize="9" fontFamily="monospace"
                                     opacity={0.45 + 0.55 * phaseIntensity.dis}>
                                 A={A_valve_out_mm2.toFixed(1)}mm²
                               </text>
-                              {/* DIS arrow outflow — phase intensity */}
-                              <line x1={cx + Rc/2} y1={cy - Hc/2 - 14} x2={cx + Rc/2} y2={cy - Hc/2 - 26}
+                              {/* DIS arrow outflow (port → 외부) */}
+                              <line x1={cx - Hpx/2 - 14} y1={cy + Dpx/4} x2={cx - Hpx/2 - 26} y2={cy + Dpx/4}
                                     stroke="#dc2626"
                                     strokeWidth={1.5 + 2.5 * phaseIntensity.dis}
                                     opacity={0.25 + 0.75 * phaseIntensity.dis}
                                     markerEnd="url(#disArr)" />
                               <defs>
-                                <marker id="disArr" markerWidth="6" markerHeight="6" refX="3" refY="0" orient="auto">
-                                  <polygon points="0 6, 6 6, 3 0" fill="#dc2626" />
+                                <marker id="disArr" markerWidth="6" markerHeight="6" refX="0" refY="3" orient="auto">
+                                  <polygon points="6 0, 0 3, 6 6" fill="#dc2626" />
                                 </marker>
                               </defs>
                               
-                              {/* H dimension (right side) */}
-                              <line x1={cx + Rc + 22} y1={cy - Hc/2} x2={cx + Rc + 22} y2={cy + Hc/2}
+                              {/* H dimension (top) */}
+                              <line x1={cx - Hpx/2} y1={cy - Dpx/2 - 28} x2={cx + Hpx/2} y2={cy - Dpx/2 - 28}
                                     stroke="var(--tx3)" strokeWidth="1" />
-                              <line x1={cx + Rc + 17} y1={cy - Hc/2} x2={cx + Rc + 27} y2={cy - Hc/2}
+                              <line x1={cx - Hpx/2} y1={cy - Dpx/2 - 32} x2={cx - Hpx/2} y2={cy - Dpx/2 - 24}
                                     stroke="var(--tx3)" strokeWidth="1" />
-                              <line x1={cx + Rc + 17} y1={cy + Hc/2} x2={cx + Rc + 27} y2={cy + Hc/2}
+                              <line x1={cx + Hpx/2} y1={cy - Dpx/2 - 32} x2={cx + Hpx/2} y2={cy - Dpx/2 - 24}
                                     stroke="var(--tx3)" strokeWidth="1" />
-                              <text x={cx + Rc + 34} y={cy + 4} fill="var(--tx2)" fontSize="11">
-                                H={H_cyl}mm
-                              </text>
+                              <text x={cx} y={cy - Dpx/2 - 36} textAnchor="middle"
+                                    fill="var(--tx2)" fontSize="11">H = {H_cyl}mm</text>
                               
-                              {/* D dimension (bottom) */}
-                              <line x1={cx - Rc} y1={cy + Hc/2 + 30} x2={cx + Rc} y2={cy + Hc/2 + 30}
+                              {/* D dimension (right) */}
+                              <line x1={cx + Hpx/2 + 30} y1={cy - Dpx/2} x2={cx + Hpx/2 + 30} y2={cy + Dpx/2}
                                     stroke="var(--tx3)" strokeWidth="1" />
-                              <line x1={cx - Rc} y1={cy + Hc/2 + 26} x2={cx - Rc} y2={cy + Hc/2 + 34}
+                              <line x1={cx + Hpx/2 + 26} y1={cy - Dpx/2} x2={cx + Hpx/2 + 34} y2={cy - Dpx/2}
                                     stroke="var(--tx3)" strokeWidth="1" />
-                              <line x1={cx + Rc} y1={cy + Hc/2 + 26} x2={cx + Rc} y2={cy + Hc/2 + 34}
+                              <line x1={cx + Hpx/2 + 26} y1={cy + Dpx/2} x2={cx + Hpx/2 + 34} y2={cy + Dpx/2}
                                     stroke="var(--tx3)" strokeWidth="1" />
-                              <text x={cx} y={cy + Hc/2 + 48} fill="var(--tx2)" fontSize="11" textAnchor="middle">
-                                ⌀{(2 * R_cyl).toFixed(1)}mm (cylinder)
-                              </text>
+                              <text x={cx + Hpx/2 + 36} y={cy + 4}
+                                    fill="var(--tx2)" fontSize="11">⌀{(2 * R_cyl).toFixed(1)}mm</text>
                               
-                              {/* Clearance label (top, very thin) */}
-                              <line x1={cx - Rp + 4} y1={cy - Hc/2 + 2} x2={cx + Rp - 4} y2={cy - Hc/2 + 2}
+                              {/* Clearance label (left edge of piston) */}
+                              <line x1={piston_x} y1={piston_y - 2} x2={piston_x} y2={piston_y + piston_h + 2}
                                     stroke="#d97706" strokeWidth="1.5" />
-                              <text x={cx + Rp + 6} y={cy - Hc/2 + 5} fill="#d97706" fontSize="9" fontWeight="500">
+                              <text x={piston_x - 4} y={piston_y - 4} textAnchor="end"
+                                    fill="#d97706" fontSize="9" fontWeight="500">
                                 clearance {(clearance_ratio*100).toFixed(1)}%
                               </text>
                             </>);
@@ -3631,7 +3638,7 @@ function CompressorView({ onBack }) {
                       </div>
                       <div style={{ padding: '8px 4px 0', fontSize: 11, color: 'var(--tx3)',
                                     fontFamily: 'JetBrains Mono, monospace', textAlign: 'center' }}>
-                        θ = {Math.round(thetaView)}° · piston X-offset {((R_cyl - R_pis) * Math.sin(thetaView * Math.PI / 180)).toFixed(2)}mm · length-axis section · {comp_type}
+                        θ = {Math.round(thetaView)}° · piston Δy = {((R_cyl - R_pis) * Math.sin(thetaView * Math.PI / 180)).toFixed(2)}mm · cylinder length-axis · {comp_type}
                       </div>
                     </div>
                   )}
