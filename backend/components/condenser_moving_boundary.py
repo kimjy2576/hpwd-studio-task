@@ -1,117 +1,119 @@
 """
-Condenser (L2 Semi-empirical / Moving Boundary)
+Condenser (L2 Semi-empirical / Cascade)
 ═══════════════════════════════════════════════════════════════════════
-3-zone cascade ε-NTU with correlation-driven UA + Schmidt fin efficiency.
+3-zone cascade ε-NTU + Schmidt fin + condensation correlation registry.
 
-진영님 정리 (B 옵션):
-  • Schmidt fin + correlation은 사용 (UA 자동 계산)
-  • Cascade 방식 (zone 길이 명시적 ζ 풀이는 안 함)
-  • Evap moving_boundary와 유사한 부가가치, 코드 간소화
+진영님 정리:
+  ✓ B 옵션: Schmidt fin + correlation은 쓰되 cascade 방식 (≈ 400줄)
+  ✓ Evap 모듈 안 건드림, 별도 모듈
+  ✓ Evap L2와 동등한 수준
 
-Zone 구조 (응축기):
-  Zone 1: De-SH    — vapor cooling, single-phase α (Dittus-Boelter)
-  Zone 2: 2-phase  — condensation α (Shah/Cavallini/Dobson-Chato/Akers)
-  Zone 3: SC       — liquid cooling, single-phase α
+═══ 차이점 (vs L1 condenser_off_design) ═══
+L1: UA / ε 직접 입력 (사용자 fitting)
+L2: UA / α_zone를 correlation으로 자동 계산
+    • α_air: Wang/Kim/McQuiston (air_side registry)
+    • α_ref_2ph: Shah/Cavallini-Smith/Dobson-Chato/Akers (condensation registry)
+    • α_ref_deSH/SC: Dittus-Boelter/Gnielinski (single_phase registry)
+    • η_fin: Schmidt/Sector (fin_efficiency registry)
 
-Cascade ε-NTU:
-  T_air 점진 가열 → 각 zone에서 correlation으로 α 계산 → UA = UA_ref || UA_air → ε-NTU
-  
-  zone 길이 분배는 사후 추정 (Q_zone / UA_zone × LMTD)
+═══ Zone 구조 (응축기) ═══
+Zone 1: De-SH    — vapor cooling (T_in_SH → T_sat)
+Zone 2: 2-phase  — condensation (x=1 → x=0)
+Zone 3: SC       — liquid subcooling (T_sat → T_out)
 
-Correlation registry:
-  - condensation: Shah / Cavallini-Smith / Dobson-Chato / Akers
-  - single-phase: Dittus-Boelter / Gnielinski (DeSH/SC 공통)
-  - air-side:     Wang-Chang-Chi / Kim / McQuiston (evap과 공유)
-  - fin-efficiency: Schmidt / Sector (evap과 공유)
+═══ Cascade 방식 (B 옵션의 핵심) ═══
+명시적 ζ (zone 길이) 풀지 않고 cascade 방식:
+  1. 각 zone에 대해 α_ref / α_air / η_fin 계산
+  2. UA_zone_full = 1 / (1/(α_ref × A_i) + 1/(α_air × A_o × η_fin))
+     → 각 zone이 전체 면적 사용한다고 가정
+  3. ε-NTU 적용해 Q_zone 계산
+  4. 사후 zone 길이 ζ = Q_zone / Q_total 비율로 추정 (진단용)
 
-Wet coil: 응축기는 dry 가정 (W_air_out = W_in)
+이 방식의 의의:
+  • Newton iteration 불필요 → 안정 수렴
+  • Zone 분배가 sequential (cascade)이라 직관적
+  • 명시적 ζ 풀이는 아니지만 모든 correlation은 그대로 사용
+
+═══ Wet coil ═══
+응축기는 dry — RH 변화 없음 (W_air_out = W_in)
 """
 
 import math
 import CoolProp.CoolProp as CP
 
-from .correlations import condensation, single_phase, air_side, fin_efficiency
+from .correlations import condensation, single_phase, air_side, fin_efficiency, pressure_drop
 
-FLUIDS = ['R290', 'R134a', 'R410A', 'R32', 'R1234yf']
 
+FLUIDS = ['R290']
+
+# Dropdown 옵션 (boiling 대신 condensation registry)
 CORR_2PH_OPTIONS = list(condensation.CORR_REGISTRY.keys())
-CORR_SP_OPTIONS = list(single_phase.CORR_REGISTRY.keys())
+CORR_SP_OPTIONS  = list(single_phase.CORR_REGISTRY.keys())
 CORR_AIR_OPTIONS = list(air_side.CORR_REGISTRY.keys())
 CORR_FIN_OPTIONS = list(fin_efficiency.CORR_REGISTRY.keys())
 
 
 modelDescription = {
     'typeNo': 221,
-    'name': 'Condenser (Moving Boundary)',
+    'name': 'Condenser (Moving Boundary / Cascade)',
     'category': 'refrigerant',
     'modelType': 'semi-empirical',
     'fidelity': 0.7,
-    'description': '3-zone cascade ε-NTU with correlation-driven UA + Schmidt fin (응축).',
+    'description': '3-zone cascade ε-NTU + Schmidt fin + condensation correlation (Shah/Cavallini/Dobson-Chato 등)',
     'backend': 'python',
     'variables': [
-        # ═══════ Material ═══════
+        # Material
         {'name': 'fluid', 'causality': 'parameter', 'type': 'String',
          'group': 'Material', 'start': 'R290', 'unit': '-', 'options': FLUIDS,
          'description': '냉매 종류'},
 
-        # ═══════ Geometry ═══════
+        # Geometry — 11개
         {'name': 'D_o', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Geometry', 'start': 7.0e-3, 'unit': 'm',
-         'description': '튜브 외경'},
+         'group': 'Geometry', 'start': 7.0e-3, 'unit': 'm', 'description': '튜브 외경'},
         {'name': 'D_i', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Geometry', 'start': 6.5e-3, 'unit': 'm',
-         'description': '튜브 내경'},
+         'group': 'Geometry', 'start': 6.5e-3, 'unit': 'm', 'description': '튜브 내경'},
         {'name': 'L_tube_total', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Geometry', 'start': 10.0, 'unit': 'm',
-         'description': '튜브 총 길이 (모든 튜브 합)'},
+         'group': 'Geometry', 'start': 10.0, 'unit': 'm', 'description': '튜브 총 길이'},
         {'name': 'N_tubes', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Geometry', 'start': 24.0, 'unit': '-',
-         'description': '튜브 본수'},
+         'group': 'Geometry', 'start': 24.0, 'unit': '-', 'description': '튜브 본수'},
         {'name': 'N_rows', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Geometry', 'start': 2.0, 'unit': '-',
-         'description': '공기 흐름 방향 row 수'},
+         'group': 'Geometry', 'start': 2.0, 'unit': '-', 'description': '공기 row 수'},
         {'name': 'P_t', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Geometry', 'start': 25.0e-3, 'unit': 'm',
-         'description': 'Transverse pitch'},
+         'group': 'Geometry', 'start': 25.0e-3, 'unit': 'm', 'description': 'Transverse pitch'},
         {'name': 'P_l', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Geometry', 'start': 22.0e-3, 'unit': 'm',
-         'description': 'Longitudinal pitch'},
+         'group': 'Geometry', 'start': 22.0e-3, 'unit': 'm', 'description': 'Longitudinal pitch'},
         {'name': 't_fin', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Geometry', 'start': 0.12e-3, 'unit': 'm',
-         'description': '핀 두께'},
+         'group': 'Geometry', 'start': 0.12e-3, 'unit': 'm', 'description': '핀 두께'},
         {'name': 'FPI', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Geometry', 'start': 12.0, 'unit': 'fins/inch',
-         'description': '핀 밀도'},
+         'group': 'Geometry', 'start': 12.0, 'unit': 'fins/inch', 'description': 'FPI'},
         {'name': 'k_fin', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Geometry', 'start': 200.0, 'unit': 'W/(m·K)',
-         'description': '핀 열전도율 (Al~200, Cu~390)'},
+         'group': 'Geometry', 'start': 200.0, 'unit': 'W/(m·K)', 'description': '핀 열전도율'},
         {'name': 'A_o_face', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Geometry', 'start': 0.05, 'unit': 'm²',
-         'description': '정면 (face) 면적'},
+         'group': 'Geometry', 'start': 0.05, 'unit': 'm²', 'description': '정면 (face) 면적'},
 
-        # ═══════ Correlation 선택 ═══════
-        {'name': 'corr_2ph', 'causality': 'parameter', 'type': 'String',
-         'group': 'Geometry', 'start': condensation.DEFAULT, 'unit': '-',
+        # Correlation
+        {'name': 'corr_cond', 'causality': 'parameter', 'type': 'String',
+         'group': 'Correlation', 'start': condensation.DEFAULT, 'unit': '-',
          'options': CORR_2PH_OPTIONS,
-         'description': '응축 (2-phase) correlation'},
-        {'name': 'corr_sp', 'causality': 'parameter', 'type': 'String',
-         'group': 'Geometry', 'start': single_phase.DEFAULT, 'unit': '-',
+         'description': '2-phase condensation correlation'},
+        {'name': 'corr_SP', 'causality': 'parameter', 'type': 'String',
+         'group': 'Correlation', 'start': single_phase.DEFAULT, 'unit': '-',
          'options': CORR_SP_OPTIONS,
-         'description': 'Single-phase (DeSH/SC 공통) correlation'},
+         'description': 'Single-phase (deSH/SC) correlation'},
         {'name': 'corr_air', 'causality': 'parameter', 'type': 'String',
-         'group': 'Geometry', 'start': air_side.DEFAULT, 'unit': '-',
+         'group': 'Correlation', 'start': air_side.DEFAULT, 'unit': '-',
          'options': CORR_AIR_OPTIONS,
          'description': '공기측 correlation'},
         {'name': 'corr_fin', 'causality': 'parameter', 'type': 'String',
-         'group': 'Geometry', 'start': fin_efficiency.DEFAULT, 'unit': '-',
+         'group': 'Correlation', 'start': fin_efficiency.DEFAULT, 'unit': '-',
          'options': CORR_FIN_OPTIONS,
          'description': 'Fin 효율 correlation'},
 
-        # ═══════ Fitting ═══════
-        {'name': 'htc_corr_2ph', 'causality': 'parameter', 'type': 'Real',
+        # Fitting
+        {'name': 'htc_corr_cond', 'causality': 'parameter', 'type': 'Real',
          'group': 'Fitting', 'start': 1.0, 'unit': '-',
-         'description': '2-phase α 보정'},
-        {'name': 'htc_corr_sp', 'causality': 'parameter', 'type': 'Real',
+         'description': 'Condensation α 보정'},
+        {'name': 'htc_corr_SP', 'causality': 'parameter', 'type': 'Real',
          'group': 'Fitting', 'start': 1.0, 'unit': '-',
          'description': 'Single-phase α 보정'},
         {'name': 'htc_corr_air', 'causality': 'parameter', 'type': 'Real',
@@ -121,11 +123,11 @@ modelDescription = {
          'group': 'Fitting', 'start': 0.03, 'unit': '-',
          'description': '냉매 측 압력 손실 비율'},
 
-        # ═══════ Inputs ═══════
+        # Inputs
         {'name': 'P_cond', 'causality': 'input', 'type': 'Real',
          'unit': 'bar', 'description': '응축 압력 (abs)'},
         {'name': 'h_in', 'causality': 'input', 'type': 'Real',
-         'unit': 'kJ/kg', 'description': '냉매 입구 비엔탈피 (보통 SH vapor)'},
+         'unit': 'kJ/kg', 'description': '냉매 입구 비엔탈피 (compressor 출구, SH)'},
         {'name': 'm_dot_ref', 'causality': 'input', 'type': 'Real',
          'unit': 'kg/s', 'description': '냉매 질량 유량'},
         {'name': 'T_air_in', 'causality': 'input', 'type': 'Real',
@@ -135,50 +137,29 @@ modelDescription = {
         {'name': 'm_dot_air', 'causality': 'input', 'type': 'Real',
          'unit': 'kg/s', 'description': '공기 질량 유량'},
 
-        # ═══════ Outputs ═══════
-        {'name': 'T_ref_out', 'causality': 'output', 'type': 'Real', 'unit': '°C',
-         'description': '냉매 출구 온도'},
-        {'name': 'h_ref_out', 'causality': 'output', 'type': 'Real', 'unit': 'kJ/kg',
-         'description': '냉매 출구 엔탈피'},
-        {'name': 'P_ref_out', 'causality': 'output', 'type': 'Real', 'unit': 'bar',
-         'description': '냉매 출구 압력'},
-        {'name': 'quality_out', 'causality': 'output', 'type': 'Real', 'unit': '-',
-         'description': '출구 quality (음수=SC)'},
-        {'name': 'SC_out', 'causality': 'output', 'type': 'Real', 'unit': 'K',
-         'description': '출구 과냉도'},
-        {'name': 'T_cond', 'causality': 'output', 'type': 'Real', 'unit': '°C',
-         'description': '응축 포화 온도'},
-        {'name': 'T_air_out', 'causality': 'output', 'type': 'Real', 'unit': '°C',
-         'description': '공기 출구 온도'},
-        {'name': 'RH_air_out', 'causality': 'output', 'type': 'Real', 'unit': '%',
-         'description': '공기 출구 RH'},
-        {'name': 'W_air_out', 'causality': 'output', 'type': 'Real', 'unit': 'kg/kg',
-         'description': '공기 출구 humidity (불변)'},
-        {'name': 'Q_total', 'causality': 'output', 'type': 'Real', 'unit': 'W',
-         'description': '총 열량'},
-        {'name': 'Q_deSH', 'causality': 'output', 'type': 'Real', 'unit': 'W',
-         'description': 'De-SH zone 열량'},
-        {'name': 'Q_2ph', 'causality': 'output', 'type': 'Real', 'unit': 'W',
-         'description': '2-phase zone 열량'},
-        {'name': 'Q_SC', 'causality': 'output', 'type': 'Real', 'unit': 'W',
-         'description': 'SC zone 열량'},
-        # 진단
-        {'name': 'UA_deSH', 'causality': 'output', 'type': 'Real', 'unit': 'W/K',
-         'description': 'De-SH zone UA (correlation 자동 계산)'},
-        {'name': 'UA_2ph', 'causality': 'output', 'type': 'Real', 'unit': 'W/K',
-         'description': '2-phase zone UA'},
-        {'name': 'UA_SC', 'causality': 'output', 'type': 'Real', 'unit': 'W/K',
-         'description': 'SC zone UA'},
-        {'name': 'L_deSH_fraction', 'causality': 'output', 'type': 'Real', 'unit': '-',
-         'description': 'De-SH zone 길이 비율'},
-        {'name': 'L_2ph_fraction', 'causality': 'output', 'type': 'Real', 'unit': '-',
-         'description': '2-phase zone 길이 비율'},
-        {'name': 'L_SC_fraction', 'causality': 'output', 'type': 'Real', 'unit': '-',
-         'description': 'SC zone 길이 비율'},
-        {'name': 'eta_fin', 'causality': 'output', 'type': 'Real', 'unit': '-',
-         'description': 'Fin 효율 (Schmidt 가정)'},
-        {'name': 'dP_total', 'causality': 'output', 'type': 'Real', 'unit': 'Pa',
-         'description': '총 압력강하 (dP_ref 비율 기반 간소 추정)'},
+        # Outputs
+        {'name': 'T_ref_out', 'causality': 'output', 'type': 'Real', 'unit': '°C', 'description': '냉매 출구 온도'},
+        {'name': 'h_ref_out', 'causality': 'output', 'type': 'Real', 'unit': 'kJ/kg', 'description': '냉매 출구 엔탈피'},
+        {'name': 'P_ref_out', 'causality': 'output', 'type': 'Real', 'unit': 'bar', 'description': '냉매 출구 압력'},
+        {'name': 'quality_out', 'causality': 'output', 'type': 'Real', 'unit': '-', 'description': '출구 quality (음수=SC)'},
+        {'name': 'SC_out', 'causality': 'output', 'type': 'Real', 'unit': 'K', 'description': '출구 과냉도'},
+        {'name': 'T_cond', 'causality': 'output', 'type': 'Real', 'unit': '°C', 'description': '응축 포화 온도'},
+        {'name': 'T_air_out', 'causality': 'output', 'type': 'Real', 'unit': '°C', 'description': '공기 출구 온도'},
+        {'name': 'RH_air_out', 'causality': 'output', 'type': 'Real', 'unit': '%', 'description': '공기 출구 RH'},
+        {'name': 'W_air_out', 'causality': 'output', 'type': 'Real', 'unit': 'kg/kg', 'description': '공기 출구 humidity'},
+        {'name': 'Q_total', 'causality': 'output', 'type': 'Real', 'unit': 'W', 'description': '총 열교환량'},
+        {'name': 'Q_deSH', 'causality': 'output', 'type': 'Real', 'unit': 'W', 'description': 'De-SH zone 열량'},
+        {'name': 'Q_2ph', 'causality': 'output', 'type': 'Real', 'unit': 'W', 'description': '2-phase zone 열량'},
+        {'name': 'Q_SC', 'causality': 'output', 'type': 'Real', 'unit': 'W', 'description': 'SC zone 열량'},
+        {'name': 'L_deSH_fraction', 'causality': 'output', 'type': 'Real', 'unit': '-', 'description': 'De-SH zone 길이 비율'},
+        {'name': 'L_2ph_fraction', 'causality': 'output', 'type': 'Real', 'unit': '-', 'description': '2-phase zone 길이 비율'},
+        {'name': 'L_SC_fraction', 'causality': 'output', 'type': 'Real', 'unit': '-', 'description': 'SC zone 길이 비율'},
+        # 진단 (계산된 α, UA)
+        {'name': 'alpha_air', 'causality': 'output', 'type': 'Real', 'unit': 'W/(m²·K)', 'description': '공기측 α (계산값)'},
+        {'name': 'alpha_2ph', 'causality': 'output', 'type': 'Real', 'unit': 'W/(m²·K)', 'description': '2-phase α (응축)'},
+        {'name': 'alpha_SP', 'causality': 'output', 'type': 'Real', 'unit': 'W/(m²·K)', 'description': 'Single-phase α (deSH/SC)'},
+        {'name': 'eta_fin', 'causality': 'output', 'type': 'Real', 'unit': '-', 'description': 'Fin 효율'},
+        {'name': 'UA_2ph_full', 'causality': 'output', 'type': 'Real', 'unit': 'W/K', 'description': '2-phase zone 전체-면적 UA'},
     ],
     'capabilities': {
         'canDoStep': True,
@@ -191,8 +172,33 @@ def init_state(params):
     return {}
 
 
+# ════════════════════════════════════════════════════════════════════
+# Helper functions
+# ════════════════════════════════════════════════════════════════════
+def _humid_air(T_C, RH_pct, P_atm=101325.0):
+    """Humid air properties (L2 evap의 helper와 동일 패턴)."""
+    try:
+        from CoolProp.HumidAirProp import HAPropsSI
+        T_K = T_C + 273.15
+        RH = max(0.001, min(0.999, RH_pct / 100.0))
+        W = HAPropsSI('W', 'T', T_K, 'P', P_atm, 'R', RH)
+        h = HAPropsSI('H', 'T', T_K, 'P', P_atm, 'R', RH)
+        T_dp = HAPropsSI('Tdp', 'T', T_K, 'P', P_atm, 'R', RH)
+        cp = HAPropsSI('cp_ha', 'T', T_K, 'P', P_atm, 'R', RH)
+        return W, h, T_dp, cp
+    except Exception:
+        T_K = T_C + 273.15
+        RH = max(0.001, min(0.999, RH_pct / 100.0))
+        Pws = 611.2 * math.exp(17.62 * T_C / (243.12 + T_C))
+        Pw = RH * Pws
+        W = 0.622 * Pw / max(P_atm - Pw, 1.0)
+        cp = 1006 + 1860 * W
+        h = cp * T_C * 1000 + W * 2501e3
+        T_dp = T_K - 5
+        return W, h, T_dp, cp
+
+
 def _eps_NTU_C0(NTU):
-    """C_r=0 ε-NTU."""
     if NTU <= 0:
         return 0.0
     if NTU > 50:
@@ -201,7 +207,6 @@ def _eps_NTU_C0(NTU):
 
 
 def _eps_NTU_counter(NTU, Cr):
-    """Counter-flow ε-NTU."""
     if NTU <= 0:
         return 0.0
     if Cr <= 1e-6:
@@ -215,305 +220,229 @@ def _eps_NTU_counter(NTU, Cr):
     return (1.0 - e) / (1.0 - Cr * e)
 
 
-def _humid_air_props(T_C, RH_pct, P_atm_Pa=101325.0):
-    """Reuse from evaporator_moving_boundary or recompute."""
-    try:
-        T_K = T_C + 273.15
-        cp = CP.HAPropsSI('cp_ha', 'T', T_K, 'P', P_atm_Pa, 'R', RH_pct/100.0)
-        W = CP.HAPropsSI('W', 'T', T_K, 'P', P_atm_Pa, 'R', RH_pct/100.0)
-        return {'cp': cp, 'W': W}
-    except Exception:
-        return {'cp': 1006.0, 'W': 0.01}
+def _P_sat_water(T_C):
+    if T_C < -50 or T_C > 200:
+        T_C = max(-50, min(200, T_C))
+    A, B, C = 8.07131, 1730.63, 233.426
+    P_mmHg = 10 ** (A - B / (T_C + C))
+    return P_mmHg * 133.322
 
 
+# ════════════════════════════════════════════════════════════════════
+# Main step
+# ════════════════════════════════════════════════════════════════════
 def step(input, params, state, dt):
-    """3-zone cascade with correlation-driven UA."""
-    # ═══════ Parameters ═══════
+    # ── Parameters ──
     fluid = params.get('fluid', 'R290')
-    
     D_o = float(params.get('D_o', 7.0e-3))
     D_i = float(params.get('D_i', 6.5e-3))
     L_tube_total = float(params.get('L_tube_total', 10.0))
-    N_tubes = int(float(params.get('N_tubes', 24.0)))
-    N_rows = int(float(params.get('N_rows', 2.0)))
+    N_tubes = float(params.get('N_tubes', 24.0))
+    N_rows = float(params.get('N_rows', 2.0))
     P_t = float(params.get('P_t', 25.0e-3))
     P_l = float(params.get('P_l', 22.0e-3))
     t_fin = float(params.get('t_fin', 0.12e-3))
     FPI = float(params.get('FPI', 12.0))
     k_fin = float(params.get('k_fin', 200.0))
     A_o_face = float(params.get('A_o_face', 0.05))
-    
-    corr_2ph = params.get('corr_2ph', condensation.DEFAULT)
-    corr_sp = params.get('corr_sp', single_phase.DEFAULT)
+    corr_cond = params.get('corr_cond', condensation.DEFAULT)
+    corr_SP = params.get('corr_SP', single_phase.DEFAULT)
     corr_air = params.get('corr_air', air_side.DEFAULT)
     corr_fin = params.get('corr_fin', fin_efficiency.DEFAULT)
-    
-    htc_2ph = float(params.get('htc_corr_2ph', 1.0))
-    htc_sp = float(params.get('htc_corr_sp', 1.0))
-    htc_air = float(params.get('htc_corr_air', 1.0))
-    dP_ref_frac = float(params.get('dP_ref', 0.03))
-    
-    # ═══════ Inputs ═══════
+    htc_corr_cond = float(params.get('htc_corr_cond', 1.0))
+    htc_corr_SP = float(params.get('htc_corr_SP', 1.0))
+    htc_corr_air = float(params.get('htc_corr_air', 1.0))
+    dP_ref = float(params.get('dP_ref', 0.03))
+
+    # ── Inputs ──
     P_cond_bar = float(input.get('P_cond', 17.0))
     h_in_kjkg = float(input.get('h_in', 680.0))
     m_dot_ref = float(input.get('m_dot_ref', 0.012))
     T_air_in_C = float(input.get('T_air_in', 35.0))
     RH_air_in = float(input.get('RH_air_in', 50.0))
     m_dot_air = float(input.get('m_dot_air', 0.5))
-    
-    if P_cond_bar <= 0 or m_dot_ref <= 0:
-        raise ValueError(f"입력 0 이하: P_cond={P_cond_bar}, m_dot_ref={m_dot_ref}")
-    
-    # ═══════ 입구 / 포화 ═══════
+
+    if P_cond_bar <= 0 or m_dot_ref <= 0 or m_dot_air <= 0:
+        raise ValueError(f"입력 0 이하: P={P_cond_bar}, ṁ_ref={m_dot_ref}, ṁ_air={m_dot_air}")
+
     P_cond_Pa = P_cond_bar * 1e5
     h_in_J = h_in_kjkg * 1000.0
-    
-    T_cond = CP.PropsSI('T', 'P', P_cond_Pa, 'Q', 0, fluid)
-    T_cond_C = T_cond - 273.15
-    h_l_sat = CP.PropsSI('H', 'P', P_cond_Pa, 'Q', 0, fluid)
-    h_v_sat = CP.PropsSI('H', 'P', P_cond_Pa, 'Q', 1, fluid)
-    h_fg = h_v_sat - h_l_sat
-    
-    # 입구 상태
-    if h_in_J >= h_v_sat:
+    P_fin = 0.0254 / FPI
+
+    # ── 1. 냉매 입구/포화 상태 ──
+    try:
+        T_cond_K = CP.PropsSI('T', 'P', P_cond_Pa, 'Q', 0.5, fluid)
+        h_l = CP.PropsSI('H', 'P', P_cond_Pa, 'Q', 0, fluid)
+        h_v = CP.PropsSI('H', 'P', P_cond_Pa, 'Q', 1, fluid)
+        h_fg = h_v - h_l
+    except Exception as e:
+        raise ValueError(f"냉매 포화 상태 실패: {e}")
+    T_cond_C = T_cond_K - 273.15
+
+    if h_in_J >= h_v:
         try:
             T_ref_in_K = CP.PropsSI('T', 'P', P_cond_Pa, 'H', h_in_J, fluid)
         except Exception:
-            T_ref_in_K = T_cond + 30.0
-    elif h_in_J >= h_l_sat:
-        T_ref_in_K = T_cond
+            T_ref_in_K = T_cond_K + 30.0
+        x_in = 1.0
+    elif h_in_J >= h_l:
+        x_in = (h_in_J - h_l) / h_fg
+        T_ref_in_K = T_cond_K
     else:
         try:
             T_ref_in_K = CP.PropsSI('T', 'P', P_cond_Pa, 'H', h_in_J, fluid)
         except Exception:
-            T_ref_in_K = T_cond - 5.0
+            T_ref_in_K = T_cond_K - 5.0
+        x_in = 0.0
     T_ref_in_C = T_ref_in_K - 273.15
-    
-    # ═══════ Geometry derivations ═══════
-    # Fin pitch
-    P_fin = 0.0254 / FPI
-    # Tube outer surface area
-    A_tube_outer = math.pi * D_o * L_tube_total
-    # Inner surface area
-    A_tube_inner = math.pi * D_i * L_tube_total
-    # Fin count along tube
-    N_fins_per_tube = int(L_tube_total / N_tubes / P_fin) if N_tubes > 0 else 0
-    # Fin face area (single fin) — 단순: P_t × P_l × N_rows / N_tubes_per_row 정도 — 근사
-    # 더 정확히는 (W × D) − tube circle. Simplification:
-    A_fin_per_tube = max(0.0, 2 * P_t * P_l * N_rows - math.pi * D_o ** 2 / 4 * N_tubes / max(N_rows, 1))
-    A_fin_total = A_fin_per_tube * N_fins_per_tube * N_tubes
-    # Total air-side area
-    A_air = A_tube_outer * (1.0 - t_fin / P_fin) + A_fin_total
-    A_air = max(A_air, A_tube_outer)  # safety floor
-    
-    # face area & velocity
-    V_air = m_dot_air / (1.2 * A_o_face) if A_o_face > 0 else 1.0
-    
-    # ═══════ Air-side α (zone 공통, T_air 큰 변동 없으니 approximate) ═══════
-    air_corr_fn = air_side.CORR_REGISTRY.get(corr_air, air_side.CORR_REGISTRY[air_side.DEFAULT])
-    try:
-        alpha_air = air_corr_fn(
-            V_face=V_air, T_air_K=T_air_in_C + 273.15,
-            D_o=D_o, P_t=P_t, P_l=P_l, t_fin=t_fin, P_fin=P_fin, N_rows=N_rows,
-        ) * htc_air
-    except Exception:
-        alpha_air = 50.0 * htc_air  # fallback
-    alpha_air = max(alpha_air, 10.0)
-    
-    # Schmidt fin efficiency (zone 공통)
-    fin_corr_fn = fin_efficiency.CORR_REGISTRY.get(corr_fin, fin_efficiency.CORR_REGISTRY[fin_efficiency.DEFAULT])
-    try:
-        eta_f = fin_corr_fn(D_o=D_o, P_t=P_t, P_l=P_l, t_fin=t_fin,
-                            k_fin=k_fin, alpha_air=alpha_air)
-    except Exception:
-        eta_f = 0.85
-    eta_f = max(0.5, min(0.99, eta_f))
-    # Surface efficiency
-    eta_o = 1.0 - (A_fin_total / A_air) * (1.0 - eta_f) if A_air > 0 else eta_f
-    
-    # ═══════ T_air 갱신 변수 ═══════
-    air_in = _humid_air_props(T_air_in_C, RH_air_in)
-    cp_air = air_in['cp']
-    W_in = air_in['W']
+
+    # ── 2. 공기 입구 ──
+    W_in, _, _, cp_air = _humid_air(T_air_in_C, RH_air_in)
     C_air = m_dot_air * cp_air
-    
+
+    # ── 3. 외부/내부 면적 ──
+    A_tube_outer = math.pi * D_o * L_tube_total
+    n_fins_per_tube = L_tube_total / N_tubes / P_fin if P_fin > 0 else 0
+    A_per_fin = 2.0 * (P_t * P_l - math.pi * (D_o ** 2) / 4.0)
+    A_fin_total = N_tubes * n_fins_per_tube * A_per_fin
+    A_o = A_tube_outer + A_fin_total
+    A_i = math.pi * D_i * L_tube_total
+
+    # ── 4. 공기측 α + Schmidt fin ──
+    T_air_avg_K = (T_air_in_C + 273.15 + T_cond_K) / 2.0
+    alpha_air = air_side.evaluate(corr_air,
+                                   m_dot_air=m_dot_air, T_air_avg_K=T_air_avg_K,
+                                   D_o=D_o, P_t=P_t, P_l=P_l, P_fin=P_fin,
+                                   t_fin=t_fin, N_row=int(N_rows), A_o_face=A_o_face)
+    alpha_air *= htc_corr_air
+
+    eta_fin = fin_efficiency.evaluate(corr_fin,
+                                       D_o=D_o, P_t=P_t, P_l=P_l,
+                                       t_fin=t_fin, k_fin=k_fin, alpha_o=alpha_air)
+    eta_overall = (A_tube_outer + A_fin_total * eta_fin) / A_o if A_o > 0 else eta_fin
+
+    # ── 5. 냉매측 α — zone별 ──
+    Q_2ph_demand = m_dot_ref * h_fg
+    q_flux_cond_est = Q_2ph_demand / max(A_i, 1e-6)
+    alpha_2ph = condensation.evaluate(corr_cond,
+                                       P_Pa=P_cond_Pa, x_avg=0.5,
+                                       m_dot=m_dot_ref / max(N_tubes, 1),
+                                       D_i=D_i, q_flux=q_flux_cond_est, fluid=fluid)
+    alpha_2ph *= htc_corr_cond
+
+    T_deSH_avg_K = (T_ref_in_K + T_cond_K) / 2.0 if h_in_J >= h_v else T_cond_K + 5
+    alpha_deSH = single_phase.evaluate(corr_SP,
+                                        P_Pa=P_cond_Pa, T_avg_K=T_deSH_avg_K,
+                                        m_dot=m_dot_ref / max(N_tubes, 1),
+                                        D_i=D_i, fluid=fluid, heating=False)
+    alpha_deSH *= htc_corr_SP
+
+    T_SC_avg_K = T_cond_K - 5.0
+    alpha_SC = single_phase.evaluate(corr_SP,
+                                      P_Pa=P_cond_Pa, T_avg_K=T_SC_avg_K,
+                                      m_dot=m_dot_ref / max(N_tubes, 1),
+                                      D_i=D_i, fluid=fluid, heating=False)
+    alpha_SC *= htc_corr_SP
+
+    # ── 6. UA per zone (전체 면적 가정 — cascade 방식) ──
+    UA_deSH_full = 1.0 / (1.0 / (alpha_deSH * A_i) + 1.0 / (alpha_air * A_o * eta_overall))
+    UA_2ph_full  = 1.0 / (1.0 / (alpha_2ph  * A_i) + 1.0 / (alpha_air * A_o * eta_overall))
+    UA_SC_full   = 1.0 / (1.0 / (alpha_SC   * A_i) + 1.0 / (alpha_air * A_o * eta_overall))
+
+    # ── 7. Cascade 3-zone ──
     T_air_curr = T_air_in_C
     h_ref_curr = h_in_J
-    
-    # zone별 결과
-    zone_results = {'deSH': {}, '2ph': {}, 'SC': {}}
-    
-    # ── Zone 1: De-SH ──
     Q_deSH = 0.0
-    UA_deSH = 0.0
-    if h_ref_curr > h_v_sat and T_air_curr < T_ref_in_C:
+    Q_2ph_total = 0.0
+    Q_SC = 0.0
+
+    # Zone 1: De-SH
+    if h_ref_curr > h_v and T_air_curr < T_ref_in_C:
         try:
             cp_v = CP.PropsSI('CPMASS', 'P', P_cond_Pa, 'T', T_ref_in_K, fluid)
         except Exception:
             cp_v = 1800.0
-        # Single-phase α (vapor)
-        sp_corr_fn = single_phase.CORR_REGISTRY.get(corr_sp, single_phase.CORR_REGISTRY[single_phase.DEFAULT])
-        try:
-            alpha_ref = sp_corr_fn(
-                P_Pa=P_cond_Pa, T_K=T_ref_in_K, m_dot=m_dot_ref,
-                D_i=D_i, fluid=fluid, phase='vapor'
-            ) * htc_sp
-        except TypeError:
-            # 어떤 single_phase signature는 phase= 안 받음
-            try:
-                alpha_ref = sp_corr_fn(P_Pa=P_cond_Pa, T_K=T_ref_in_K,
-                                       m_dot=m_dot_ref, D_i=D_i, fluid=fluid) * htc_sp
-            except Exception:
-                alpha_ref = 200.0 * htc_sp
-        except Exception:
-            alpha_ref = 200.0 * htc_sp
-        alpha_ref = max(alpha_ref, 50.0)
-        
-        # UA — zone fraction은 Q에 비례 가정 (cascade에서 계산 후 정정)
-        # 여기서는 모든 surface가 zone에 할당된다고 가정 → zone Q 비율로 사후 분배
-        # 단순화: UA_zone = (1/(α_ref × A_inner) + 1/(α_air × η_o × A_air))^(-1)
-        UA_full = 1.0 / (1.0 / (alpha_ref * A_tube_inner) + 1.0 / (alpha_air * eta_o * A_air))
-        
-        # zone fraction은 ζ_deSH 미지수. 단순히 Q-balance로:
-        # Q_deSH가 작으면 ζ도 작음 → cascade로 Q 먼저 풀고 사후 정정
-        # 일단 잠정 UA = full UA × estimate (이전 zone 비율 추정 0.15)
-        zeta_est = 0.15
-        UA_deSH = UA_full * zeta_est
-        
         C_ref_v = m_dot_ref * cp_v
         C_min = min(C_ref_v, C_air)
         C_max = max(C_ref_v, C_air)
         Cr = C_min / C_max if C_max > 0 else 0.0
-        NTU = UA_deSH / C_min if C_min > 0 else 0
+
+        Q_max_deSH_ref = m_dot_ref * (h_ref_curr - h_v)
+        NTU = UA_deSH_full / C_min if C_min > 0 else 0
         eps = _eps_NTU_counter(NTU, Cr)
-        
-        Q_max_ref = m_dot_ref * (h_ref_curr - h_v_sat)
-        Q_deSH = eps * C_min * (T_ref_in_C - T_air_curr)
-        Q_deSH = max(0.0, min(Q_deSH, Q_max_ref))
-        
+        if C_min > 0:
+            Q_deSH = eps * C_min * (T_ref_in_C - T_air_curr)
+            Q_deSH = max(0.0, min(Q_deSH, Q_max_deSH_ref))
         T_air_curr += Q_deSH / C_air if C_air > 0 else 0
         h_ref_curr -= Q_deSH / m_dot_ref if m_dot_ref > 0 else 0
-        zone_results['deSH'] = {'Q': Q_deSH, 'alpha_ref': alpha_ref, 'UA_full': UA_full}
-    
-    # ── Zone 2: 2-phase condensation ──
-    Q_2ph_total = 0.0
-    UA_2ph = 0.0
-    if h_ref_curr > h_l_sat + 1e-3 and T_air_curr < T_cond_C - 0.05:
-        # x_avg of zone (입구 1 → 출구 0 가정 → 0.5 평균)
-        x_in_2ph = max(0.0, min(1.0, (h_ref_curr - h_l_sat) / h_fg))
-        x_avg = x_in_2ph * 0.5  # 입구 ~1 → 출구 0 가정 시 평균. 단순화: 0.5
-        
-        cond_corr_fn = condensation.CORR_REGISTRY.get(corr_2ph, condensation.CORR_REGISTRY[condensation.DEFAULT])
-        try:
-            alpha_ref_2ph = cond_corr_fn(
-                P_Pa=P_cond_Pa, x_avg=max(0.5, x_avg), m_dot=m_dot_ref,
-                D_i=D_i, fluid=fluid
-            ) * htc_2ph
-        except Exception:
-            alpha_ref_2ph = 3000.0 * htc_2ph  # 응축 typical
-        alpha_ref_2ph = max(alpha_ref_2ph, 100.0)
-        
-        UA_full = 1.0 / (1.0 / (alpha_ref_2ph * A_tube_inner) + 1.0 / (alpha_air * eta_o * A_air))
-        # 2상은 통상 70% 할당 가정
-        zeta_est = 0.7
-        UA_2ph = UA_full * zeta_est
-        
-        # C_r = 0 (refrigerant 측 C_ref → ∞ in 2-phase)
-        NTU = UA_2ph / C_air if C_air > 0 else 0
+
+    # Zone 2: 2-phase
+    if h_ref_curr > h_l + 1e-3 and T_air_curr < T_cond_C - 0.05:
+        Q_max_2ph_ref = m_dot_ref * (h_ref_curr - h_l)
+        NTU = UA_2ph_full / C_air if C_air > 0 else 0
         eps = _eps_NTU_C0(NTU)
-        
-        Q_max_ref = m_dot_ref * (h_ref_curr - h_l_sat)
         Q_2ph_total = eps * C_air * (T_cond_C - T_air_curr)
-        Q_2ph_total = max(0.0, min(Q_2ph_total, Q_max_ref))
-        
+        Q_2ph_total = max(0.0, min(Q_2ph_total, Q_max_2ph_ref))
         T_air_curr += Q_2ph_total / C_air if C_air > 0 else 0
         h_ref_curr -= Q_2ph_total / m_dot_ref if m_dot_ref > 0 else 0
-        zone_results['2ph'] = {'Q': Q_2ph_total, 'alpha_ref': alpha_ref_2ph, 'UA_full': UA_full}
-    
-    # ── Zone 3: SC ──
-    Q_SC = 0.0
-    UA_SC = 0.0
-    if h_ref_curr <= h_l_sat + 1e-3 and T_air_curr < T_cond_C - 0.05:
+
+    # Zone 3: SC
+    if h_ref_curr <= h_l + 1e-3 and T_air_curr < T_cond_C - 0.05:
         try:
             cp_l = CP.PropsSI('CPMASS', 'P', P_cond_Pa, 'Q', 0, fluid)
         except Exception:
             cp_l = 2700.0
-        sp_corr_fn = single_phase.CORR_REGISTRY.get(corr_sp, single_phase.CORR_REGISTRY[single_phase.DEFAULT])
-        try:
-            alpha_ref_sc = sp_corr_fn(
-                P_Pa=P_cond_Pa, T_K=T_cond, m_dot=m_dot_ref,
-                D_i=D_i, fluid=fluid, phase='liquid'
-            ) * htc_sp
-        except TypeError:
-            try:
-                alpha_ref_sc = sp_corr_fn(P_Pa=P_cond_Pa, T_K=T_cond,
-                                          m_dot=m_dot_ref, D_i=D_i, fluid=fluid) * htc_sp
-            except Exception:
-                alpha_ref_sc = 1000.0 * htc_sp
-        except Exception:
-            alpha_ref_sc = 1000.0 * htc_sp
-        alpha_ref_sc = max(alpha_ref_sc, 50.0)
-        
-        UA_full = 1.0 / (1.0 / (alpha_ref_sc * A_tube_inner) + 1.0 / (alpha_air * eta_o * A_air))
-        zeta_est = 0.15
-        UA_SC = UA_full * zeta_est
-        
         C_ref_l = m_dot_ref * cp_l
         C_min = min(C_ref_l, C_air)
         C_max = max(C_ref_l, C_air)
         Cr = C_min / C_max if C_max > 0 else 0.0
-        NTU = UA_SC / C_min if C_min > 0 else 0
+
+        NTU = UA_SC_full / C_min if C_min > 0 else 0
         eps = _eps_NTU_counter(NTU, Cr)
-        
         Q_SC = eps * C_min * (T_cond_C - T_air_curr)
         Q_SC = max(0.0, Q_SC)
-        
         T_air_curr += Q_SC / C_air if C_air > 0 else 0
         h_ref_curr -= Q_SC / m_dot_ref if m_dot_ref > 0 else 0
-        zone_results['SC'] = {'Q': Q_SC, 'alpha_ref': alpha_ref_sc, 'UA_full': UA_full}
-    
-    # ═══════ 출구 상태 ═══════
+
+    # ── 8. 출구 상태 ──
     Q_total = Q_deSH + Q_2ph_total + Q_SC
     h_out_J = h_ref_curr
-    
-    if h_out_J >= h_v_sat:
+
+    if h_out_J >= h_v:
         try:
             T_ref_out_K = CP.PropsSI('T', 'P', P_cond_Pa, 'H', h_out_J, fluid)
         except Exception:
-            T_ref_out_K = T_cond + max(0, (h_out_J - h_v_sat) / 1800.0)
-        x_out = 1.0 + max(0.0, (h_out_J - h_v_sat) / max(h_fg, 1.0))
+            T_ref_out_K = T_cond_K + max(0, (h_out_J - h_v) / 1800.0)
+        x_out = 1.0 + max(0.0, (h_out_J - h_v) / max(h_fg, 1.0))
         SC_out = 0.0
-    elif h_out_J >= h_l_sat:
-        x_out = max(0.0, min(1.0, (h_out_J - h_l_sat) / h_fg))
-        T_ref_out_K = T_cond
+    elif h_out_J >= h_l:
+        x_out = max(0.0, min(1.0, (h_out_J - h_l) / h_fg))
+        T_ref_out_K = T_cond_K
         SC_out = 0.0
     else:
         try:
             T_ref_out_K = CP.PropsSI('T', 'P', P_cond_Pa, 'H', h_out_J, fluid)
         except Exception:
-            T_ref_out_K = T_cond - max(0, (h_l_sat - h_out_J) / 2700.0)
-        x_out = -max(0.0, (h_l_sat - h_out_J) / max(h_fg, 1.0))
-        SC_out = max(0.0, T_cond - T_ref_out_K)
+            T_ref_out_K = T_cond_K - max(0, (h_l - h_out_J) / 2700.0)
+        x_out = -max(0.0, (h_l - h_out_J) / max(h_fg, 1.0))
+        SC_out = max(0.0, T_cond_K - T_ref_out_K)
+
     T_ref_out_C = T_ref_out_K - 273.15
-    
-    # 공기 RH (가열되어 RH 감소 — W_in 그대로)
+
     P_atm = 101325.0
-    P_ws_out = _P_sat_water_simple(T_air_curr)
+    P_ws_out = _P_sat_water(T_air_curr)
     P_w_out = W_in / (W_in + 0.622) * P_atm
     RH_out = max(0.0, min(100.0, P_w_out / P_ws_out * 100.0)) if P_ws_out > 0 else 0.0
-    
-    # zone fraction 사후 정정 (Q 비례)
+
     if Q_total > 0:
         L_deSH_frac = Q_deSH / Q_total
         L_2ph_frac = Q_2ph_total / Q_total
         L_SC_frac = Q_SC / Q_total
     else:
         L_deSH_frac = L_2ph_frac = L_SC_frac = 0.0
-    
-    # 출구 압력
-    P_ref_out_bar = P_cond_bar * (1.0 - dP_ref_frac)
-    dP_total_Pa = P_cond_bar * 1e5 * dP_ref_frac
-    
+
+    P_ref_out_bar = P_cond_bar * (1.0 - dP_ref)
+
     return {
         'outputs': {
             'T_ref_out': T_ref_out_C,
@@ -529,25 +458,17 @@ def step(input, params, state, dt):
             'Q_deSH': Q_deSH,
             'Q_2ph': Q_2ph_total,
             'Q_SC': Q_SC,
-            'UA_deSH': UA_deSH,
-            'UA_2ph': UA_2ph,
-            'UA_SC': UA_SC,
             'L_deSH_fraction': L_deSH_frac,
             'L_2ph_fraction': L_2ph_frac,
             'L_SC_fraction': L_SC_frac,
-            'eta_fin': eta_f,
-            'dP_total': dP_total_Pa,
+            'alpha_air': alpha_air,
+            'alpha_2ph': alpha_2ph,
+            'alpha_SP': (alpha_deSH + alpha_SC) / 2.0,
+            'eta_fin': eta_fin,
+            'UA_2ph_full': UA_2ph_full,
         },
         'newState': {},
     }
-
-
-def _P_sat_water_simple(T_C):
-    """간이 Antoine."""
-    T_C = max(-50, min(200, T_C))
-    A, B, C = 8.07131, 1730.63, 233.426
-    P_mmHg = 10 ** (A - B / (T_C + C))
-    return P_mmHg * 133.322
 
 
 def validate(params):
@@ -556,14 +477,20 @@ def validate(params):
     D_o = float(params.get('D_o', 7.0e-3))
     D_i = float(params.get('D_i', 6.5e-3))
     if D_i >= D_o:
-        issues.append({'key': 'D_i', 'msg': f'D_i ≥ D_o — 비현실적'})
+        issues.append({'key': 'D_i', 'msg': f'D_i ≥ D_o ({D_i*1000:.2f} ≥ {D_o*1000:.2f}mm)'})
     
     P_t = float(params.get('P_t', 25.0e-3))
     if P_t <= D_o:
-        issues.append({'key': 'P_t', 'msg': f'P_t ({P_t*1000:.1f}mm) ≤ D_o — 튜브 겹침'})
+        issues.append({'key': 'P_t', 'msg': f'P_t ({P_t*1000:.1f}mm) ≤ D_o ({D_o*1000:.1f}mm)'})
     
-    corr_2ph = params.get('corr_2ph', condensation.DEFAULT)
-    if corr_2ph not in CORR_2PH_OPTIONS:
-        issues.append({'key': 'corr_2ph', 'msg': f"unknown corr_2ph='{corr_2ph}'"})
+    FPI = float(params.get('FPI', 12.0))
+    t_fin = float(params.get('t_fin', 0.12e-3))
+    fin_pitch = 0.0254 / FPI
+    if t_fin >= fin_pitch:
+        issues.append({'key': 't_fin', 'msg': f'핀 두께({t_fin*1000:.2f}) ≥ 핀 간격({fin_pitch*1000:.2f}mm)'})
+    
+    corr_cond = params.get('corr_cond', condensation.DEFAULT)
+    if corr_cond not in CORR_2PH_OPTIONS:
+        issues.append({'key': 'corr_cond', 'msg': f"unknown condensation correlation '{corr_cond}'"})
     
     return issues
