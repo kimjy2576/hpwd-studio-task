@@ -1312,6 +1312,56 @@ const TYPES = {
     ].map(k => [k, NaN])),
   },
 
+  // ================ EEV (Off-design L1) ================
+  // Simple isenthalpic + Cd × A_throat × √(2ρΔP).
+  // mode='control': opening % → m_dot 계산
+  // mode='measure': m_dot 측정 → opening 역산 (calibration 용)
+  eev_off_design: {
+    typeNo: 130, name: 'EEV (Off-design)', category: 'refrigerant',
+    color: '#16a34a', icon: Zap, image: './images/eev.png',
+    desc: 'Isenthalpic + Cd × A_throat — opening % 제어 또는 m_dot 측정',
+    backend: 'python',
+    pythonComponent: 'eev_off_design',
+    parameters: [
+      // ─── Material ───
+      { key: 'fluid', group: 'Material', label: 'Fluid', value: 'R290',
+        options: ['R290','R134a','R410A','R32','R1234yf'], unit: '' },
+      // ─── Operating mode ───
+      { key: 'mode', group: 'Operating', label: 'Mode', value: 'control',
+        options: ['control', 'measure'], unit: '' },
+      // ─── Geometry ───
+      { key: 'A_max',       group: 'Geometry', label: 'A_max',       value: 1.5e-6, unit: 'm²' },
+      { key: 'opening_min', group: 'Geometry', label: 'opening_min', value: 5.0,    unit: '%' },
+      // ─── Fitting ───
+      { key: 'Cd', group: 'Fitting', label: 'Cd', value: 0.65, unit: '-' },
+      // ─── Outputs ───
+      { key: 'output_select', label: 'Outputs',
+        value: ['m_dot_ref', 'opening_calc', 'h_out', 'T_out', 'x_out', 'A_throat'],
+        multiSelect: ['m_dot_ref', 'opening_calc', 'h_out', 'T_out', 'x_out',
+                      'rho_in', 'dP', 'A_throat'], unit: '' },
+    ],
+    inputs: [
+      { key: 'P_in',        label: 'P_in',        unit: 'bar' },
+      { key: 'h_in',        label: 'h_in',        unit: 'kJ/kg' },
+      { key: 'P_out',       label: 'P_out',       unit: 'bar' },
+      { key: 'opening',     label: 'opening',     unit: '%' },
+      { key: 'm_dot_meas',  label: 'ṁ_meas',     unit: 'kg/s' },
+    ],
+    outputs: [
+      { key: 'm_dot_ref',    label: 'ṁ_ref',     unit: 'kg/s' },
+      { key: 'opening_calc', label: 'opening',    unit: '%' },
+      { key: 'h_out',        label: 'h_out',      unit: 'kJ/kg' },
+      { key: 'T_out',        label: 'T_out',      unit: '°C' },
+      { key: 'x_out',        label: 'x_out',      unit: '-' },
+      { key: 'rho_in',       label: 'ρ_in',       unit: 'kg/m³' },
+      { key: 'dP',           label: 'ΔP',         unit: 'bar' },
+      { key: 'A_throat',     label: 'A_throat',   unit: 'mm²' },
+    ],
+    compute: () => Object.fromEntries([
+      'm_dot_ref','opening_calc','h_out','T_out','x_out','rho_in','dP','A_throat'
+    ].map(k => [k, NaN])),
+  },
+
   // ================ 결과 디스플레이 ================
   display: {
     typeNo: 901, name: 'Display', category: 'output', color: '#7c3aed', icon: Eye,

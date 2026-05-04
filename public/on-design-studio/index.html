@@ -383,10 +383,10 @@ const COMPONENTS = [
     id: 'eev',
     label: 'EEV',
     type: 'Expansion Valve',
-    desc: 'Orifice + flow coefficient',
+    desc: 'Orifice + Cd × A — opening 제어 / m_dot 측정 모드',
     icon: '◆',
     color: 'green',
-    available: false,
+    available: true,
   },
 ];
 
@@ -3828,6 +3828,483 @@ function CompressorView({ onBack }) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════
+   EEV (Electronic Expansion Valve) View
+   ═══════════════════════════════════════════════════════════════════
+   - 단순 isenthalpic + Cd × A 모델 시각화
+   - Sidebar: parameters (mode, A_max, Cd, opening_min)
+   - Main: schematic (orifice + needle + opening 표시) + m_dot vs opening curve
+   ═══════════════════════════════════════════════════════════════════ */
+function EEVView({ onBack }) {
+  const STORAGE_KEY = '_eev_slots';
+  
+  // ── Parameters (slot persistence) ──
+  const [mode, setMode] = useState('control');  // control | measure
+  const [A_max_mm2, setAmax] = useState(1.5);   // mm² (UI는 mm² 단위)
+  const [Cd, setCd] = useState(0.65);
+  const [opening_min, setOpeningMin] = useState(5.0);  // %
+  const [fluid, setFluid] = useState('R290');
+  
+  // ── Operating conditions (시각화용 input) ──
+  const [P_in_bar, setPin] = useState(17.0);
+  const [P_out_bar, setPout] = useState(5.84);
+  const [h_in_kjkg, setHin] = useState(280.0);
+  const [opening_pct, setOpening] = useState(50.0);
+  const [m_dot_meas_gs, setMdotMeas] = useState(15.0);  // g/s for measure mode
+  
+  // ── 계산 ──
+  // Simplified frontend computation (backend logic mirror)
+  // 실제 운영에서는 backend에 호출하지만, 시각화용으로는 단순 식 사용
+  const dP_bar = Math.max(0.001, P_in_bar - P_out_bar);
+  const dP_Pa = dP_bar * 1e5;
+  const A_max_m2 = A_max_mm2 * 1e-6;
+  // R290 subcool liquid 밀도 약식: ρ ≈ 580 kg/m³ at 17 bar
+  const rho_in_approx = fluid === 'R290' ? 480 : 1100;
+  
+  const opening_eff = Math.max(opening_min, Math.min(100, opening_pct));
+  const A_throat_m2 = (opening_eff / 100) * A_max_m2;
+  const m_dot_calc = Cd * A_throat_m2 * Math.sqrt(2 * rho_in_approx * dP_Pa);
+  const m_dot_calc_gs = m_dot_calc * 1000;
+  
+  // Measure 역산
+  const denom = Cd * A_max_m2 * Math.sqrt(2 * rho_in_approx * dP_Pa);
+  const opening_calc_from_meas = denom > 0
+    ? Math.max(opening_min, Math.min(100, (m_dot_meas_gs / 1000) / denom * 100))
+    : 0;
+  
+  // Display value (mode 따라)
+  const display_m_dot_gs = mode === 'control' ? m_dot_calc_gs : m_dot_meas_gs;
+  const display_opening = mode === 'control' ? opening_eff : opening_calc_from_meas;
+  
+  // m_dot vs opening curve
+  const sweep_data = useMemo(() => {
+    const points = [];
+    for (let op = 0; op <= 100; op += 5) {
+      const op_eff = Math.max(opening_min, op);
+      const A = (op_eff / 100) * A_max_m2;
+      const m = Cd * A * Math.sqrt(2 * rho_in_approx * dP_Pa) * 1000;  // g/s
+      points.push({ opening: op, m_dot: m });
+    }
+    return points;
+  }, [Cd, A_max_m2, opening_min, rho_in_approx, dP_Pa]);
+  
+  // ── Slot system (간단 — localStorage 한 슬롯) ──
+  const saveSlot = () => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        mode, A_max_mm2, Cd, opening_min, fluid,
+        P_in_bar, P_out_bar, h_in_kjkg, opening_pct, m_dot_meas_gs,
+      }));
+      alert('✓ EEV 사양 저장됨');
+    } catch (e) { alert('✗ 저장 실패: ' + e.message); }
+  };
+  const loadSlot = () => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) { alert('저장된 슬롯 없음'); return; }
+      const d = JSON.parse(raw);
+      if (d.mode) setMode(d.mode);
+      if (d.A_max_mm2) setAmax(d.A_max_mm2);
+      if (d.Cd) setCd(d.Cd);
+      if (d.opening_min !== undefined) setOpeningMin(d.opening_min);
+      if (d.fluid) setFluid(d.fluid);
+      if (d.P_in_bar) setPin(d.P_in_bar);
+      if (d.P_out_bar) setPout(d.P_out_bar);
+      if (d.h_in_kjkg) setHin(d.h_in_kjkg);
+      if (d.opening_pct !== undefined) setOpening(d.opening_pct);
+      if (d.m_dot_meas_gs) setMdotMeas(d.m_dot_meas_gs);
+    } catch (e) { alert('✗ 로드 실패: ' + e.message); }
+  };
+  
+  // ── Apply (HPWD/Calibration) ──
+  const [applyMsg, setApplyMsg] = useState('');
+  const buildBackendParams = () => ({
+    fluid, mode, A_max: A_max_m2, opening_min, Cd,
+  });
+  const applyToHPWD = () => {
+    const payload = {
+      component: 'eev_off_design',
+      typeNo: 130,
+      params: buildBackendParams(),
+      _timestamp: new Date().toISOString(),
+      _source: 'on-design-studio-eev',
+    };
+    try {
+      localStorage.setItem('hpwd_pending_design', JSON.stringify(payload));
+      setApplyMsg('✓ HPWD Studio로 적용됨. typeNo 130 EEV 컴포넌트 추가하면 자동 적용.');
+      setTimeout(() => setApplyMsg(''), 5000);
+    } catch (e) { setApplyMsg('✗ ' + e.message); }
+  };
+  const applyToCalibration = () => {
+    const payload = {
+      component: 'eev_off_design',
+      typeNo: 130,
+      params: buildBackendParams(),
+      _timestamp: new Date().toISOString(),
+      _source: 'on-design-studio-eev',
+    };
+    try {
+      localStorage.setItem('calibration_pending_design', JSON.stringify(payload));
+      setApplyMsg('✓ Calibration Studio로 적용됨.');
+      setTimeout(() => setApplyMsg(''), 5000);
+    } catch (e) { setApplyMsg('✗ ' + e.message); }
+  };
+  
+  // ═══════ Schematic SVG (orifice + needle) ═══════
+  const SchemaSVG = () => {
+    const W = 600, H = 300;
+    const cx = W / 2, cy = H / 2;
+    const orificeY = cy;
+    const orificeOpenWidth = 60 * (opening_eff / 100);  // visual scaling
+    const tubeR = 50;
+    const needleX = cx;
+    const needleY_top = cy - 80 + 80 * (1 - opening_eff / 100);  // 닫힐수록 아래
+    
+    return (
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full bg-white border border-slate-200 rounded">
+        <defs>
+          <linearGradient id="liquid" x1="0" x2="1" y1="0" y2="0">
+            <stop offset="0" stopColor="#a78bfa"/>
+            <stop offset="1" stopColor="#c4b5fd"/>
+          </linearGradient>
+          <linearGradient id="twophase" x1="0" x2="1" y1="0" y2="0">
+            <stop offset="0" stopColor="#fbbf24"/>
+            <stop offset="1" stopColor="#fde68a"/>
+          </linearGradient>
+        </defs>
+        
+        {/* Inlet pipe (subcool liquid 보라) */}
+        <rect x="20" y={cy - tubeR/2} width={cx - 50} height={tubeR}
+              fill="url(#liquid)" stroke="#7c3aed" strokeWidth="1.5"/>
+        <text x="40" y={cy - tubeR/2 - 8} fontSize="10" fontFamily="monospace" fill="#7c3aed" fontWeight="bold">
+          P_in = {P_in_bar.toFixed(1)} bar (subcool liquid)
+        </text>
+        
+        {/* Valve body */}
+        <rect x={cx - 50} y={cy - 80} width="100" height="160"
+              fill="#e2e8f0" stroke="#475569" strokeWidth="2" rx="6"/>
+        
+        {/* Needle (movable, 위치는 opening %에 비례) */}
+        <polygon points={`${needleX-12},${needleY_top} ${needleX+12},${needleY_top} ${needleX},${needleY_top+50}`}
+                 fill="#64748b" stroke="#1e293b" strokeWidth="1.5"/>
+        <line x1={needleX} y1={needleY_top - 5} x2={needleX} y2={cy - 80} 
+              stroke="#1e293b" strokeWidth="3"/>
+        
+        {/* Orifice opening (needle 아래) */}
+        <rect x={cx - orificeOpenWidth/2} y={cy + 15} width={orificeOpenWidth} height="20"
+              fill="#fff" stroke="#dc2626" strokeWidth="1.5" rx="2"/>
+        <text x={cx} y={cy + 50} textAnchor="middle" fontSize="10" fontFamily="monospace" fill="#dc2626" fontWeight="bold">
+          A_throat = {(A_throat_m2*1e6).toFixed(3)} mm²
+        </text>
+        
+        {/* Outlet pipe (2-phase, 노랑) */}
+        <rect x={cx + 50} y={cy - tubeR/2} width={W - cx - 70} height={tubeR}
+              fill="url(#twophase)" stroke="#d97706" strokeWidth="1.5"/>
+        <text x={cx + 80} y={cy - tubeR/2 - 8} fontSize="10" fontFamily="monospace" fill="#d97706" fontWeight="bold">
+          P_out = {P_out_bar.toFixed(2)} bar (2-phase)
+        </text>
+        
+        {/* Flow arrows */}
+        <text x="100" y={cy + 5} fontSize="20" fill="#7c3aed" fontWeight="bold">→</text>
+        <text x={cx + 100} y={cy + 5} fontSize="20" fill="#d97706" fontWeight="bold">→</text>
+        
+        {/* Mass flow & opening labels */}
+        <g transform={`translate(${W - 200}, 30)`}>
+          <rect x="0" y="0" width="180" height="80" fill="#f8fafc" stroke="#cbd5e1" rx="4"/>
+          <text x="10" y="20" fontSize="10" fontFamily="monospace" fill="#64748b" fontWeight="bold">RESULT</text>
+          <text x="10" y="40" fontSize="13" fontFamily="monospace" fill="#16a34a" fontWeight="bold">
+            ṁ = {display_m_dot_gs.toFixed(2)} g/s
+          </text>
+          <text x="10" y="58" fontSize="13" fontFamily="monospace" fill="#0891b2" fontWeight="bold">
+            opening = {display_opening.toFixed(1)}%
+          </text>
+          <text x="10" y="73" fontSize="10" fontFamily="monospace" fill="#64748b">
+            ΔP = {dP_bar.toFixed(2)} bar
+          </text>
+        </g>
+        
+        {/* Mode badge */}
+        <g transform={`translate(20, ${H - 30})`}>
+          <rect x="0" y="0" width="120" height="22" fill={mode === 'control' ? '#dbeafe' : '#fef3c7'} 
+                stroke={mode === 'control' ? '#2563eb' : '#d97706'} rx="4"/>
+          <text x="10" y="15" fontSize="11" fontFamily="monospace" fontWeight="bold"
+                fill={mode === 'control' ? '#2563eb' : '#d97706'}>
+            mode: {mode}
+          </text>
+        </g>
+      </svg>
+    );
+  };
+  
+  // ═══════ Curve plot (m_dot vs opening) ═══════
+  const CurvePlot = () => {
+    const W = 600, H = 200;
+    const padX = 50, padY = 25;
+    const xMin = 0, xMax = 100;
+    const yMax = Math.max(...sweep_data.map(p => p.m_dot)) * 1.1 || 50;
+    const xToPx = x => padX + (x - xMin) / (xMax - xMin) * (W - 2*padX);
+    const yToPx = y => H - padY - (y / yMax) * (H - 2*padY);
+    const pathD = sweep_data.map((p, i) => 
+      (i === 0 ? 'M' : 'L') + xToPx(p.opening) + ',' + yToPx(p.m_dot)).join(' ');
+    
+    // Current point
+    const currentX = xToPx(display_opening);
+    const currentY = yToPx(display_m_dot_gs);
+    
+    return (
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full bg-white border border-slate-200 rounded">
+        {/* Grid */}
+        {[0, 25, 50, 75, 100].map(x => (
+          <g key={x}>
+            <line x1={xToPx(x)} y1={padY} x2={xToPx(x)} y2={H - padY} stroke="#e2e8f0" strokeWidth="0.5"/>
+            <text x={xToPx(x)} y={H - 8} fontSize="9" fontFamily="monospace" textAnchor="middle" fill="#64748b">{x}</text>
+          </g>
+        ))}
+        {[0, 0.25, 0.5, 0.75, 1].map(f => (
+          <g key={f}>
+            <line x1={padX} y1={yToPx(yMax * f)} x2={W - padX} y2={yToPx(yMax * f)} stroke="#e2e8f0" strokeWidth="0.5"/>
+            <text x={padX - 5} y={yToPx(yMax * f) + 3} fontSize="9" fontFamily="monospace" textAnchor="end" fill="#64748b">
+              {(yMax * f).toFixed(0)}
+            </text>
+          </g>
+        ))}
+        
+        {/* Axis labels */}
+        <text x={W/2} y={H - 2} fontSize="10" fontFamily="monospace" textAnchor="middle" fill="#475569">opening (%)</text>
+        <text x="10" y={H/2} fontSize="10" fontFamily="monospace" fill="#475569" 
+              transform={`rotate(-90 10 ${H/2})`}>ṁ (g/s)</text>
+        
+        {/* Curve */}
+        <path d={pathD} fill="none" stroke="#16a34a" strokeWidth="2"/>
+        
+        {/* Current operating point */}
+        <circle cx={currentX} cy={currentY} r="6" fill="#dc2626" stroke="#fff" strokeWidth="2"/>
+        <text x={currentX + 10} y={currentY - 5} fontSize="10" fontFamily="monospace" fill="#dc2626" fontWeight="bold">
+          ({display_opening.toFixed(0)}%, {display_m_dot_gs.toFixed(1)} g/s)
+        </text>
+      </svg>
+    );
+  };
+  
+  // ═══════ Sidebar ═══════
+  return (
+    <div className="flex h-full bg-slate-50">
+      {/* Sidebar */}
+      <div className="w-72 bg-white border-r border-slate-200 overflow-y-auto p-4">
+        <div className="flex items-center gap-2 mb-4">
+          <button onClick={onBack} className="text-slate-400 hover:text-slate-700">←</button>
+          <h2 className="text-lg font-bold text-green-700">EEV</h2>
+          <span className="text-[10px] font-mono text-slate-500 ml-auto">typeNo 130</span>
+        </div>
+        
+        {/* Mode toggle */}
+        <div className="mb-4">
+          <div className="text-[10px] font-mono uppercase text-slate-500 mb-1">Operating Mode</div>
+          <div className="flex gap-1">
+            <button onClick={() => setMode('control')}
+              className={`flex-1 px-3 py-2 text-[12px] font-bold rounded border ${
+                mode === 'control' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white border-slate-300 text-slate-600'
+              }`}>Control</button>
+            <button onClick={() => setMode('measure')}
+              className={`flex-1 px-3 py-2 text-[12px] font-bold rounded border ${
+                mode === 'measure' ? 'bg-amber-500 text-white border-amber-500' : 'bg-white border-slate-300 text-slate-600'
+              }`}>Measure</button>
+          </div>
+          <div className="text-[10px] text-slate-500 mt-1">
+            {mode === 'control' ? 'opening % → ṁ 계산' : 'ṁ 측정 → opening 역산'}
+          </div>
+        </div>
+        
+        {/* Material */}
+        <div className="mb-4">
+          <div className="text-[10px] font-mono uppercase text-slate-500 mb-1">Material</div>
+          <select value={fluid} onChange={e => setFluid(e.target.value)}
+            className="w-full px-2 py-1 border border-slate-300 rounded text-[12px]">
+            <option value="R290">R290</option>
+            <option value="R134a">R134a</option>
+            <option value="R410A">R410A</option>
+            <option value="R32">R32</option>
+            <option value="R1234yf">R1234yf</option>
+          </select>
+        </div>
+        
+        {/* Geometry / Fitting */}
+        <div className="mb-4">
+          <div className="text-[10px] font-mono uppercase text-slate-500 mb-2">Geometry / Fitting</div>
+          <div className="space-y-2">
+            <div>
+              <div className="flex justify-between text-[11px]">
+                <span>A_max</span>
+                <input type="number" step="0.1" value={A_max_mm2}
+                  onChange={e => setAmax(parseFloat(e.target.value) || 0)}
+                  className="w-16 text-right px-1 border border-slate-300 rounded text-[11px]"/>
+                <span className="text-slate-500 ml-1">mm²</span>
+              </div>
+            </div>
+            <div>
+              <div className="flex justify-between text-[11px]">
+                <span>Cd</span>
+                <input type="number" step="0.01" value={Cd}
+                  onChange={e => setCd(parseFloat(e.target.value) || 0)}
+                  className="w-16 text-right px-1 border border-slate-300 rounded text-[11px]"/>
+                <span className="text-slate-500 ml-1">-</span>
+              </div>
+              <div className="text-[9px] text-slate-400 mt-0.5">R290 EEV 표준: 0.6~0.7</div>
+            </div>
+            <div>
+              <div className="flex justify-between text-[11px]">
+                <span>opening_min</span>
+                <input type="number" step="1" value={opening_min}
+                  onChange={e => setOpeningMin(parseFloat(e.target.value) || 0)}
+                  className="w-16 text-right px-1 border border-slate-300 rounded text-[11px]"/>
+                <span className="text-slate-500 ml-1">%</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        {/* Operating Conditions */}
+        <div className="mb-4">
+          <div className="text-[10px] font-mono uppercase text-slate-500 mb-2">Operating Conditions</div>
+          <div className="space-y-2">
+            <div className="flex justify-between text-[11px]">
+              <span>P_in</span>
+              <input type="number" step="0.1" value={P_in_bar}
+                onChange={e => setPin(parseFloat(e.target.value) || 0)}
+                className="w-16 text-right px-1 border border-slate-300 rounded"/>
+              <span className="text-slate-500 ml-1">bar</span>
+            </div>
+            <div className="flex justify-between text-[11px]">
+              <span>P_out</span>
+              <input type="number" step="0.1" value={P_out_bar}
+                onChange={e => setPout(parseFloat(e.target.value) || 0)}
+                className="w-16 text-right px-1 border border-slate-300 rounded"/>
+              <span className="text-slate-500 ml-1">bar</span>
+            </div>
+            <div className="flex justify-between text-[11px]">
+              <span>h_in</span>
+              <input type="number" step="1" value={h_in_kjkg}
+                onChange={e => setHin(parseFloat(e.target.value) || 0)}
+                className="w-16 text-right px-1 border border-slate-300 rounded"/>
+              <span className="text-slate-500 ml-1">kJ/kg</span>
+            </div>
+            
+            {mode === 'control' ? (
+              <div>
+                <div className="flex justify-between text-[11px]">
+                  <span>opening</span>
+                  <input type="number" step="1" value={opening_pct}
+                    onChange={e => setOpening(parseFloat(e.target.value) || 0)}
+                    className="w-16 text-right px-1 border border-slate-300 rounded"/>
+                  <span className="text-slate-500 ml-1">%</span>
+                </div>
+                <input type="range" min="0" max="100" value={opening_pct}
+                  onChange={e => setOpening(parseFloat(e.target.value))}
+                  className="w-full mt-1"/>
+              </div>
+            ) : (
+              <div className="flex justify-between text-[11px]">
+                <span>ṁ_meas</span>
+                <input type="number" step="0.5" value={m_dot_meas_gs}
+                  onChange={e => setMdotMeas(parseFloat(e.target.value) || 0)}
+                  className="w-16 text-right px-1 border border-slate-300 rounded"/>
+                <span className="text-slate-500 ml-1">g/s</span>
+              </div>
+            )}
+          </div>
+        </div>
+        
+        {/* Slot save/load */}
+        <div className="border-t border-slate-200 pt-3 mb-3">
+          <div className="flex gap-2">
+            <button onClick={saveSlot}
+              className="flex-1 px-3 py-1.5 text-[11px] bg-slate-100 hover:bg-slate-200 rounded border border-slate-300">
+              💾 Save
+            </button>
+            <button onClick={loadSlot}
+              className="flex-1 px-3 py-1.5 text-[11px] bg-slate-100 hover:bg-slate-200 rounded border border-slate-300">
+              📂 Load
+            </button>
+          </div>
+        </div>
+        
+        {/* Apply */}
+        <div className="border-t border-slate-200 pt-3">
+          <div className="text-[10px] font-mono uppercase text-slate-500 mb-2">Apply</div>
+          <div className="flex flex-col gap-1.5">
+            <button onClick={applyToHPWD}
+              className="w-full px-3 py-1.5 text-[11px] bg-blue-50 hover:bg-blue-100 rounded border border-blue-300 text-blue-700 font-bold">
+              ↗ HPWD Studio
+            </button>
+            <button onClick={applyToCalibration}
+              className="w-full px-3 py-1.5 text-[11px] bg-amber-50 hover:bg-amber-100 rounded border border-amber-300 text-amber-700 font-bold">
+              ↗ Calibration Studio
+            </button>
+            {applyMsg && (
+              <div className="text-[10px] text-slate-600 mt-1">{applyMsg}</div>
+            )}
+          </div>
+        </div>
+      </div>
+      
+      {/* Main canvas */}
+      <div className="flex-1 overflow-y-auto p-6">
+        <div className="max-w-4xl mx-auto">
+          <div className="mb-4">
+            <h2 className="text-2xl font-bold text-slate-900">EEV — Expansion Valve</h2>
+            <div className="text-[12px] text-slate-500 mt-1">
+              Isenthalpic expansion · Cd × A_throat × √(2ρΔP) · {mode} mode
+            </div>
+          </div>
+          
+          {/* Schematic */}
+          <div className="mb-6">
+            <div className="text-[11px] font-mono uppercase text-slate-500 mb-2">Schematic</div>
+            <SchemaSVG/>
+          </div>
+          
+          {/* Curve */}
+          <div className="mb-6">
+            <div className="text-[11px] font-mono uppercase text-slate-500 mb-2">
+              ṁ vs opening curve (현재 ΔP={dP_bar.toFixed(2)} bar)
+            </div>
+            <CurvePlot/>
+          </div>
+          
+          {/* Numerical results */}
+          <div className="grid grid-cols-3 gap-3">
+            <div className="bg-white border border-green-300 rounded p-3">
+              <div className="text-[10px] font-mono text-slate-500 uppercase">ṁ_ref</div>
+              <div className="text-2xl font-bold text-green-700">{display_m_dot_gs.toFixed(2)}</div>
+              <div className="text-[10px] text-slate-500">g/s</div>
+            </div>
+            <div className="bg-white border border-cyan-300 rounded p-3">
+              <div className="text-[10px] font-mono text-slate-500 uppercase">opening</div>
+              <div className="text-2xl font-bold text-cyan-700">{display_opening.toFixed(1)}</div>
+              <div className="text-[10px] text-slate-500">% {mode === 'measure' ? '(역산)' : ''}</div>
+            </div>
+            <div className="bg-white border border-amber-300 rounded p-3">
+              <div className="text-[10px] font-mono text-slate-500 uppercase">A_throat</div>
+              <div className="text-2xl font-bold text-amber-700">{(A_throat_m2*1e6).toFixed(3)}</div>
+              <div className="text-[10px] text-slate-500">mm²</div>
+            </div>
+          </div>
+          
+          {/* Note */}
+          <div className="mt-6 p-3 bg-slate-100 rounded text-[11px] text-slate-600 leading-relaxed">
+            <div className="font-bold mb-1">📌 모델 구조 (L1 Off-design)</div>
+            <div>• Isenthalpic 가정: h_out = h_in (단열·정상상태)</div>
+            <div>• Mass flow: ṁ = Cd × A_throat × √(2ρ_in × ΔP)</div>
+            <div>• Cd 학계 표준: R290 EEV 0.6~0.7 범위 (default 0.65)</div>
+            <div>• Choke 처리는 L2/L3에서 (현재 incompressible 가정)</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════
    Top App
    ═══════════════════════════════════════════════════════════════════ */
 function App() {
@@ -3858,6 +4335,9 @@ function App() {
   }
   if (selected === 'compressor') {
     return <CompressorView onBack={() => setSelected(null)} />;
+  }
+  if (selected === 'eev') {
+    return <EEVView onBack={() => setSelected(null)} />;
   }
 
   return (
