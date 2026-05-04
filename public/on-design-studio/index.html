@@ -3460,9 +3460,10 @@ function CompressorView({ onBack }) {
                             const e_mm = R_cyl - R_pis;
                             const e_px = e_mm * s;
                             const thetaRad = thetaView * Math.PI / 180;
-                            const eVizScale = 3.0;  // 시각화 amplification
-                            const py_off_actual = e_px * Math.sin(thetaRad);
-                            const py_off = py_off_actual * eVizScale;
+                            // py_off는 [-e_px, +e_px] 범위 — cylinder 안에서만 움직임
+                            // amplification 없음 (이전 3× 배율은 piston이 외경 밖으로 나가는 버그 유발)
+                            const py_off = e_px * Math.sin(thetaRad);
+                            const py_off_actual = py_off;  // 호환용 alias
                             
                             // Piston은 길이방향 전체 차지 (얇은 직사각형, 세로로 편심)
                             const piston_x = cx - Hpx/2 + 3;        // piston 길이 시작
@@ -3539,13 +3540,6 @@ function CompressorView({ onBack }) {
                                   )}
                                 </>);
                               })()}
-                              
-                              {Math.abs(py_off_actual) > 0.5 && (
-                                <text x={cx} y={cy + Dpx/2 + 16} textAnchor="middle"
-                                      fill="var(--tx3)" fontSize="8" fontFamily="monospace" opacity="0.6">
-                                  (vis ×{eVizScale} for clarity)
-                                </text>
-                              )}
                               
                               {/* SUC port — top plate 위쪽 (세로축 상단 부근) */}
                               <ellipse cx={cx - Hpx/2 - 9} cy={cy - Dpx/4} rx={4} ry={dSuc/2}
