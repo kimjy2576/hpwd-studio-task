@@ -24,6 +24,7 @@ from typing import Any
 # 키 = 정규화된 component port 이름
 # 값 = 가능한 CSV column 이름 (lowercase, suffix 제거 후)
 COLUMN_ALIASES = {
+    # ───── Compressor 측 ─────
     'P_suc':  ['p_suc', 'p_su', 'p_e', 'psuc', 'p_evap', 'p_evaporator', 'pevap', 'p1'],
     'T_suc':  ['t_suc', 't_su', 'tsuc', 't_su1'],
     'P_dis':  ['p_dis', 'p_dc', 'p_c', 'pdis', 'p_cond', 'p_condenser', 'pcond', 'p2'],
@@ -35,6 +36,34 @@ COLUMN_ALIASES = {
     'eta_v':  ['eta_v', 'eta_vol', 'eta_volumetric', 'vol_eff'],
     'T_e':    ['t_e', 't_evap', 'tevap'],
     'T_c':    ['t_c', 't_cond', 'tcond'],
+    
+    # ───── HX (Evaporator) 측 inputs ─────
+    # 압력 (Evaporator는 P_evap, Condenser는 P_cond)
+    'P_evap': ['p_evap', 'pevap', 'p_e', 'p_low', 'p_suction', 'p1', 'p_in_hx'],
+    'P_cond': ['p_cond', 'pcond', 'p_c', 'p_high', 'p_discharge', 'p2', 'p_in_cond'],
+    # Refrigerant 입출구 enthalpy/온도/질량유량
+    'h_in':       ['h_in', 'h_inlet', 'h_ref_in', 'h_refrig_in', 'h1', 'enthalpy_in'],
+    'm_dot_ref':  ['m_dot_ref', 'mdot_ref', 'm_ref', 'mass_flow_ref', 'm_dot_refrig', 'm_refrigerant'],
+    # Air 입구
+    'T_air_in':   ['t_air_in', 'tair_in', 't_in_air', 't_amb', 'tamb', 't_inlet_air', 't_db_in'],
+    'RH_air_in':  ['rh_air_in', 'rh_in', 'rh', 'humidity_in', 'rh_amb', 'phi_in'],
+    'm_dot_air':  ['m_dot_air', 'mdot_air', 'm_air', 'mass_flow_air', 'air_flow_rate', 'm_a'],
+    
+    # ───── HX outputs (validate 시 비교용) ─────
+    'T_ref_out':       ['t_ref_out', 'tref_out', 't_out_ref', 't_out_refrig', 't_refrigerant_out', 't2'],
+    'T_air_out':       ['t_air_out', 'tair_out', 't_out_air', 't_db_out', 't_outlet_air'],
+    'RH_air_out':      ['rh_air_out', 'rh_out', 'humidity_out', 'phi_out'],
+    'Q_total':         ['q_total', 'q', 'q_meas', 'q_measured', 'q_hx', 'capacity', 'cooling_capacity', 'heating_capacity'],
+    'Q_sensible':      ['q_sensible', 'q_sens', 'qs'],
+    'Q_latent':        ['q_latent', 'q_lat', 'ql'],
+    'condensate_rate': ['condensate_rate', 'condensate', 'condensation_rate', 'water_drain', 'mw'],
+    # Condenser 특화
+    'SC_out':          ['sc_out', 'sc', 'subcool', 'subcooling', 'delta_t_sc'],
+    'Q_deSH':          ['q_desh', 'q_de_sh', 'q_desuperheat'],
+    'Q_2ph':           ['q_2ph', 'q_2phase', 'q_two_phase', 'q_cond_2ph', 'q_evap_2ph'],
+    'Q_SC':            ['q_sc', 'q_subcool'],
+    # Evaporator 특화
+    'SH_out':          ['sh_out', 'sh', 'superheat', 'delta_t_sh'],
 }
 
 
