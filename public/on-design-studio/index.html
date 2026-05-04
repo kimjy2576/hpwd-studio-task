@@ -365,10 +365,10 @@ const COMPONENTS = [
     id: 'condenser',
     label: 'Condenser',
     type: 'Fin-tube HX',
-    desc: 'Plain-fin staggered tube',
+    desc: 'Plain-fin staggered tube — On-design 1D 모델 (응축)',
     icon: '◆',
     color: 'amber',
-    available: false,
+    available: true,
   },
   {
     id: 'compressor',
@@ -445,9 +445,45 @@ function SystemView({ onSelect }) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════
-   Evaporator Component View — Sidebar + Model design
+   Fin-tube HX Component View — Sidebar + Model design
+   mode='evap' (Evaporator) / mode='cond' (Condenser)
+   - 차이점: 타이틀, 컬러 테마, refrigerant correlation hint
+   - 공통: geometry, tube/fin material, circuit/layout, 모든 viewer
    ═══════════════════════════════════════════════════════════════════ */
-function EvaporatorView({ onBack }) {
+function FinTubeHXView({ mode = 'evap', onBack }) {
+  // ── Mode-dependent theme ──
+  const theme = mode === 'cond'
+    ? {
+        title: 'Condenser',
+        subtitle: 'Fin-tube · On-design',
+        backendMode: 'cond',                    // payload mode
+        accent: 'amber',                        // primary accent color
+        tabActive: 'bg-amber-600 text-white',   // view tab active
+        applyBtn: 'bg-amber-50 text-amber-700 border-amber-300',
+        applyBtnHover: 'bg-slate-50 hover:bg-amber-50 text-slate-700 border-slate-200',
+        applyAction: 'bg-amber-50 hover:bg-amber-100 text-amber-700 border-amber-200',
+        sliderColor: 'amber',                   // sidebar Slider 'color' prop
+        infoBg: 'bg-amber-50 border-amber-200 text-amber-800',
+        ringActive: 'bg-amber-50 border-amber-400 text-amber-700',
+        // 응축 상관식 hint (정보용, backend가 사용)
+        refSideHint: 'Shah (2009) condensation, R290',
+        refRangeHint: '응축: 고압측 (Pcond ~ 1.4-1.8 MPa for R290)',
+      }
+    : {
+        title: 'Evaporator',
+        subtitle: 'Fin-tube · On-design',
+        backendMode: 'evap',
+        accent: 'cyan',
+        tabActive: 'bg-cyan-600 text-white',
+        applyBtn: 'bg-cyan-50 text-cyan-700 border-cyan-300',
+        applyBtnHover: 'bg-slate-50 hover:bg-cyan-50 text-slate-700 border-slate-200',
+        applyAction: 'bg-cyan-50 hover:bg-cyan-100 text-cyan-700 border-cyan-200',
+        sliderColor: 'cyan',
+        infoBg: 'bg-cyan-50 border-cyan-200 text-cyan-800',
+        ringActive: 'bg-cyan-50 border-cyan-400 text-cyan-700',
+        refSideHint: 'Kandlikar/Wattelet evaporation, R290',
+        refRangeHint: '증발: 저압측 (Pevap ~ 0.3-0.5 MPa for R290)',
+      };
   // ─── State (geometry + material + circuit) ───
   const [tubeMaterial, setTubeMaterial] = useState('Cu');
   const [finMaterial, setFinMaterial] = useState('Al');
@@ -509,7 +545,7 @@ function EvaporatorView({ onBack }) {
   const [applyMsg, setApplyMsg] = useState('');
 
   // ─── Save/Load helpers ───
-  const STORAGE_KEY = 'on_design_evaporator_slots';
+  const STORAGE_KEY = mode === 'cond' ? 'on_design_condenser_slots' : 'on_design_evaporator_slots';
 
   // localStorage에서 slots 로드 (한번만)
   useEffect(() => {
@@ -641,7 +677,7 @@ function EvaporatorView({ onBack }) {
     return {
       // Material
       fluid: 'R290',
-      mode: 'evap',
+      mode: theme.backendMode,
       // Geometry
       W: L_tube * 1e-3,
       H: P_t * N_tubes_per_row * 1e-3,
@@ -778,16 +814,16 @@ function EvaporatorView({ onBack }) {
           ← System
         </button>
         <span className="text-slate-300">|</span>
-        <span className="text-cyan-600 text-base">◆</span>
-        <span className="font-bold text-slate-900 text-[15px]">Evaporator</span>
-        <span className="text-[11px] font-mono text-slate-400">Fin-tube · On-design</span>
+        <span className={`text-base ${theme.accent === 'cyan' ? 'text-cyan-600' : 'text-amber-600'}`}>◆</span>
+        <span className="font-bold text-slate-900 text-[15px]">{theme.title}</span>
+        <span className="text-[11px] font-mono text-slate-400">{theme.subtitle}</span>
 
         <div className="flex-1"></div>
 
         {/* Apply button → 다른 Studio로 동기화 */}
         <button onClick={() => setApplyOpen(o => !o)}
           className={`text-[11px] px-2.5 py-1.5 rounded font-mono font-semibold transition-colors flex items-center gap-1 ${
-            applyOpen ? 'bg-cyan-50 text-cyan-700 border border-cyan-300' : 'bg-slate-50 hover:bg-cyan-50 text-slate-700 border border-slate-200'
+            applyOpen ? `border ${theme.applyBtn}` : `border ${theme.applyBtnHover}`
           }`}
           title="다른 Studio로 적용">↗ Apply</button>
 
@@ -812,8 +848,8 @@ function EvaporatorView({ onBack }) {
             </div>
             <div className="flex gap-2">
               <button onClick={() => applyToHPWD()}
-                className="flex-1 px-3 py-2 bg-cyan-50 hover:bg-cyan-100 text-cyan-700 border border-cyan-200 rounded text-[12px] font-semibold flex items-center justify-center gap-1.5 transition-colors">
-                <span>↗</span> HPWD Studio (typeNo 122)
+                className={`flex-1 px-3 py-2 ${theme.applyAction} border rounded text-[12px] font-semibold flex items-center justify-center gap-1.5 transition-colors`}>
+                <span>↗</span> HPWD Studio (typeNo {mode === 'cond' ? '222' : '122'})
               </button>
               <button onClick={() => applyToCalibration()}
                 className="flex-1 px-3 py-2 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 rounded text-[12px] font-semibold flex items-center justify-center gap-1.5 transition-colors">
@@ -3811,7 +3847,10 @@ function App() {
 
   // Component view
   if (selected === 'evaporator') {
-    return <EvaporatorView onBack={() => setSelected(null)} />;
+    return <FinTubeHXView mode="evap" onBack={() => setSelected(null)} />;
+  }
+  if (selected === 'condenser') {
+    return <FinTubeHXView mode="cond" onBack={() => setSelected(null)} />;
   }
   if (selected === 'compressor') {
     return <CompressorView onBack={() => setSelected(null)} />;
