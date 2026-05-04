@@ -2959,7 +2959,7 @@ function CompressorView({ onBack }) {
       if (!animatingRef.current) return;  // safeguard against stale ticks
       const dt = (now - lastT) / 1000;
       lastT = now;
-      setThetaView(t => (t + thetaSpeedRef.current * dt) % 360);
+      setThetaView(t => (t - thetaSpeedRef.current * dt + 360) % 360);
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
