@@ -3834,54 +3834,193 @@ function CompressorView({ onBack }) {
    - Sidebar: parameters (mode, A_max, Cd, opening_min)
    - Main: schematic (orifice + needle + opening 표시) + m_dot vs opening curve
    ═══════════════════════════════════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════════════════════
+   EEV (Electronic Expansion Valve) View
+   ═══════════════════════════════════════════════════════════════════
+   다른 View들 (FinTubeHXView, CompressorView)과 완전 동일한 UI 구조:
+   - flex flex-col h-screen outer + Header bar (back / title / Apply / 💾)
+   - Apply panel (collapsible) — HPWD Studio / Calibration Studio
+   - Save panel (collapsible) — JSON export/import + 5 slot
+   - Main: 좌측 sidebar (group 별 params) + 우측 canvas (view tabs)
+   - Fidelity는 L1/L2 toggle (다른 view의 fidelity 토글 패턴)
+   ═══════════════════════════════════════════════════════════════════ */
 function EEVView({ onBack }) {
-  const STORAGE_KEY = '_eev_slots';
+  // ── Fidelity ──
+  const [fidelity, setFidelity] = useState('L1');
   
-  // ── Fidelity (L1 / L2) ──
-  const [fidelity, setFidelity] = useState('L1');  // 'L1' (off_design) | 'L2' (moving_boundary)
+  // ── Theme (fidelity별) ──
+  const theme = fidelity === 'L1'
+    ? {
+        title: 'EEV',
+        subtitle: 'Off-design · Isenthalpic',
+        accent: 'green',
+        accentText: 'text-green-600',
+        accentBg: 'bg-green-600',
+        applyBtn: 'bg-green-50 text-green-700 border-green-300',
+        applyBtnHover: 'bg-slate-50 hover:bg-green-50 text-slate-700 border-slate-200',
+        applyAction: 'bg-green-50 hover:bg-green-100 text-green-700 border-green-200',
+        tabActive: 'bg-green-600 text-white',
+        ringActive: 'bg-green-50 border-green-400 text-green-700',
+        typeNo: 130,
+        componentName: 'eev_off_design',
+      }
+    : {
+        title: 'EEV',
+        subtitle: 'Moving Boundary · Cv polynomial',
+        accent: 'emerald',
+        accentText: 'text-emerald-700',
+        accentBg: 'bg-emerald-700',
+        applyBtn: 'bg-emerald-50 text-emerald-700 border-emerald-300',
+        applyBtnHover: 'bg-slate-50 hover:bg-emerald-50 text-slate-700 border-slate-200',
+        applyAction: 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200',
+        tabActive: 'bg-emerald-700 text-white',
+        ringActive: 'bg-emerald-50 border-emerald-400 text-emerald-700',
+        typeNo: 131,
+        componentName: 'eev_moving_boundary',
+      };
   
-  // ── Parameters (slot persistence) ──
-  const [mode, setMode] = useState('control');  // control | measure
-  const [A_max_mm2, setAmax] = useState(1.5);   // mm² (UI는 mm² 단위)
-  const [Cd, setCd] = useState(0.65);           // L1 전용
-  const [opening_min, setOpeningMin] = useState(5.0);  // %
+  // ── State ──
+  // Material
   const [fluid, setFluid] = useState('R290');
-  
-  // ── L2 전용: Cv polynomial 계수 + choke + cf ──
+  // Operating mode
+  const [mode, setMode] = useState('control');
+  // Geometry
+  const [A_max_mm2, setAmax] = useState(1.5);
+  const [opening_min, setOpeningMin] = useState(5.0);
+  // L1 전용
+  const [Cd, setCd] = useState(0.65);
+  // L2 전용 — Cv polynomial
   const [c0, setC0] = useState(0.50);
   const [c1, setC1] = useState(0.40);
   const [c2, setC2] = useState(-0.20);
   const [c3, setC3] = useState(0.05);
-  const [cf_Cd, setCfCd] = useState(1.0);
-  const [cf_A, setCfA] = useState(1.0);
+  // L2 전용 — Choke
   const [choke_ratio, setChokeRatio] = useState(0.5);
   const [use_choke, setUseChoke] = useState('on');
+  // L2 전용 — Fitting multipliers
+  const [cf_Cd, setCfCd] = useState(1.0);
+  const [cf_A, setCfA] = useState(1.0);
   
-  // ── Operating conditions (시각화용 input) ──
+  // Operating conditions (시각화 input)
   const [P_in_bar, setPin] = useState(17.0);
   const [P_out_bar, setPout] = useState(5.84);
   const [h_in_kjkg, setHin] = useState(280.0);
   const [opening_pct, setOpening] = useState(50.0);
-  const [m_dot_meas_gs, setMdotMeas] = useState(15.0);  // g/s for measure mode
+  const [m_dot_meas_gs, setMdotMeas] = useState(15.0);
   
-  // ── 계산 (fidelity에 따라 분기) ──
-  // Simplified frontend computation (backend logic mirror)
+  // View tabs (다른 view 패턴 따라)
+  const [view, setView] = useState('Schematic');  // Schematic / Curve / Numerical
+  
+  // Apply / Save panels (다른 view 패턴 따라)
+  const [applyOpen, setApplyOpen] = useState(false);
+  const [saveOpen, setSaveOpen] = useState(false);
+  const [applyMsg, setApplyMsg] = useState('');
+  
+  // ─── 5-slot save system (다른 view와 동일) ───
+  const STORAGE_KEY = '_eev_slots';
+  const [saves, setSaves] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'); }
+    catch { return {}; }
+  });
+  const fileInputRef = useRef(null);
+  
+  const currentParams = () => ({
+    _component: 'eev',
+    _fidelity: fidelity,
+    fluid, mode,
+    A_max_mm2, opening_min,
+    Cd,
+    c0, c1, c2, c3,
+    choke_ratio, use_choke,
+    cf_Cd, cf_A,
+    P_in_bar, P_out_bar, h_in_kjkg, opening_pct, m_dot_meas_gs,
+  });
+  
+  const applyParams = (data) => {
+    if (data._fidelity) setFidelity(data._fidelity);
+    if (data.fluid) setFluid(data.fluid);
+    if (data.mode) setMode(data.mode);
+    if (data.A_max_mm2 !== undefined) setAmax(data.A_max_mm2);
+    if (data.opening_min !== undefined) setOpeningMin(data.opening_min);
+    if (data.Cd !== undefined) setCd(data.Cd);
+    if (data.c0 !== undefined) setC0(data.c0);
+    if (data.c1 !== undefined) setC1(data.c1);
+    if (data.c2 !== undefined) setC2(data.c2);
+    if (data.c3 !== undefined) setC3(data.c3);
+    if (data.choke_ratio !== undefined) setChokeRatio(data.choke_ratio);
+    if (data.use_choke) setUseChoke(data.use_choke);
+    if (data.cf_Cd !== undefined) setCfCd(data.cf_Cd);
+    if (data.cf_A !== undefined) setCfA(data.cf_A);
+    if (data.P_in_bar !== undefined) setPin(data.P_in_bar);
+    if (data.P_out_bar !== undefined) setPout(data.P_out_bar);
+    if (data.h_in_kjkg !== undefined) setHin(data.h_in_kjkg);
+    if (data.opening_pct !== undefined) setOpening(data.opening_pct);
+    if (data.m_dot_meas_gs !== undefined) setMdotMeas(data.m_dot_meas_gs);
+  };
+  
+  const saveSlot = (slot) => {
+    const name = prompt(`Slot ${slot} 이름 (선택):`, `EEV ${fidelity} ${A_max_mm2}mm²`) || '';
+    const data = { ...currentParams(), _name: name, _saved_at: new Date().toISOString() };
+    const updated = { ...saves, [slot]: data };
+    setSaves(updated);
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(updated)); } 
+    catch (e) { alert('저장 실패: ' + e.message); }
+  };
+  const loadSlot = (slot) => {
+    const data = saves[slot];
+    if (!data) { alert(`Slot ${slot} 비어 있음`); return; }
+    applyParams(data);
+  };
+  const deleteSlot = (slot) => {
+    if (!saves[slot]) return;
+    if (!confirm(`Slot ${slot} 삭제?`)) return;
+    const updated = { ...saves };
+    delete updated[slot];
+    setSaves(updated);
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(updated)); }
+    catch (e) {}
+  };
+  const exportJSON = () => {
+    const data = currentParams();
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `eev-${fidelity}-${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+  const importJSON = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const data = JSON.parse(ev.target.result);
+        if (data._component && data._component !== 'eev') {
+          alert(`다른 컴포넌트의 JSON: ${data._component}`);
+          return;
+        }
+        applyParams(data);
+      } catch (err) { alert('JSON 파싱 실패: ' + err.message); }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+  
+  // ── 계산 (fidelity 분기) ──
   const dP_actual_bar = Math.max(0.001, P_in_bar - P_out_bar);
   const dP_actual_Pa = dP_actual_bar * 1e5;
   const A_max_m2 = A_max_mm2 * 1e-6;
-  // R290 subcool liquid 밀도 약식
   const rho_in_approx = fluid === 'R290' ? 480 : 1100;
   
-  // Cd 함수 (L1: 상수 / L2: polynomial)
   const cd_at = (op_frac) => {
     if (fidelity === 'L1') return Cd;
-    // L2 polynomial
     const op = Math.max(0, Math.min(1, op_frac));
     const Cd_poly = c0 + c1 * op + c2 * op * op + c3 * op * op * op;
     return Math.max(0.05, Math.min(1.0, Cd_poly)) * cf_Cd;
   };
   
-  // ΔP 함수 (L1: 그대로 / L2: choke ceiling)
   const dP_effective = () => {
     if (fidelity === 'L1' || use_choke !== 'on') return { dP_eff_Pa: dP_actual_Pa, is_choked: false };
     if (P_out_bar / P_in_bar < choke_ratio) {
@@ -3891,20 +4030,16 @@ function EEVView({ onBack }) {
     return { dP_eff_Pa: dP_actual_Pa, is_choked: false };
   };
   
-  // A_max effective (L2는 cf_A 적용)
   const A_max_eff_m2 = fidelity === 'L2' ? A_max_m2 * cf_A : A_max_m2;
-  
-  // 동작점 계산
   const opening_eff = Math.max(opening_min, Math.min(100, opening_pct));
   const opening_frac = opening_eff / 100;
   const Cd_eff_now = cd_at(opening_frac);
   const A_throat_m2 = opening_frac * A_max_eff_m2;
   const { dP_eff_Pa, is_choked } = dP_effective();
   const dP_eff_bar = dP_eff_Pa / 1e5;
-  const m_dot_calc = Cd_eff_now * A_throat_m2 * Math.sqrt(2 * rho_in_approx * dP_eff_Pa);
-  const m_dot_calc_gs = m_dot_calc * 1000;
+  const m_dot_calc_gs = Cd_eff_now * A_throat_m2 * Math.sqrt(2 * rho_in_approx * dP_eff_Pa) * 1000;
   
-  // Measure 역산 — L1 analytic, L2 bisection
+  // Measure mode 역산
   let opening_calc_from_meas;
   if (fidelity === 'L1') {
     const denom = Cd * A_max_m2 * Math.sqrt(2 * rho_in_approx * dP_eff_Pa);
@@ -3912,7 +4047,6 @@ function EEVView({ onBack }) {
       ? Math.max(opening_min, Math.min(100, (m_dot_meas_gs / 1000) / denom * 100))
       : 0;
   } else {
-    // L2 bisection (Cd가 op 함수라 analytic 불가)
     let lo = opening_min, hi = 100;
     for (let i = 0; i < 40; i++) {
       const mid = (lo + hi) / 2;
@@ -3926,12 +4060,11 @@ function EEVView({ onBack }) {
     opening_calc_from_meas = (lo + hi) / 2;
   }
   
-  // Display value (mode 따라)
   const display_m_dot_gs = mode === 'control' ? m_dot_calc_gs : m_dot_meas_gs;
   const display_opening = mode === 'control' ? opening_eff : opening_calc_from_meas;
   const display_Cd = mode === 'control' ? Cd_eff_now : cd_at(display_opening / 100);
   
-  // m_dot vs opening curve (fidelity에 따라 모양 다름)
+  // Curve sweep
   const sweep_data = useMemo(() => {
     const points = [];
     for (let op = 0; op <= 100; op += 2) {
@@ -3939,106 +4072,84 @@ function EEVView({ onBack }) {
       const op_f = op_eff / 100;
       const Cd_t = cd_at(op_f);
       const A = op_f * A_max_eff_m2;
-      const m = Cd_t * A * Math.sqrt(2 * rho_in_approx * dP_eff_Pa) * 1000;  // g/s
+      const m = Cd_t * A * Math.sqrt(2 * rho_in_approx * dP_eff_Pa) * 1000;
       points.push({ opening: op, m_dot: m, Cd: Cd_t });
     }
     return points;
   }, [fidelity, Cd, c0, c1, c2, c3, cf_Cd, cf_A, A_max_mm2, opening_min, rho_in_approx, dP_eff_Pa]);
   
-  // ── Slot system (간단 — localStorage 한 슬롯) ──
-  const saveSlot = () => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({
-        fidelity, mode, A_max_mm2, Cd, opening_min, fluid,
-        c0, c1, c2, c3, cf_Cd, cf_A, choke_ratio, use_choke,
-        P_in_bar, P_out_bar, h_in_kjkg, opening_pct, m_dot_meas_gs,
-      }));
-      alert('✓ EEV 사양 저장됨');
-    } catch (e) { alert('✗ 저장 실패: ' + e.message); }
-  };
-  const loadSlot = () => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) { alert('저장된 슬롯 없음'); return; }
-      const d = JSON.parse(raw);
-      if (d.fidelity) setFidelity(d.fidelity);
-      if (d.mode) setMode(d.mode);
-      if (d.A_max_mm2) setAmax(d.A_max_mm2);
-      if (d.Cd) setCd(d.Cd);
-      if (d.opening_min !== undefined) setOpeningMin(d.opening_min);
-      if (d.fluid) setFluid(d.fluid);
-      if (d.c0 !== undefined) setC0(d.c0);
-      if (d.c1 !== undefined) setC1(d.c1);
-      if (d.c2 !== undefined) setC2(d.c2);
-      if (d.c3 !== undefined) setC3(d.c3);
-      if (d.cf_Cd !== undefined) setCfCd(d.cf_Cd);
-      if (d.cf_A !== undefined) setCfA(d.cf_A);
-      if (d.choke_ratio !== undefined) setChokeRatio(d.choke_ratio);
-      if (d.use_choke) setUseChoke(d.use_choke);
-      if (d.P_in_bar) setPin(d.P_in_bar);
-      if (d.P_out_bar) setPout(d.P_out_bar);
-      if (d.h_in_kjkg) setHin(d.h_in_kjkg);
-      if (d.opening_pct !== undefined) setOpening(d.opening_pct);
-      if (d.m_dot_meas_gs) setMdotMeas(d.m_dot_meas_gs);
-    } catch (e) { alert('✗ 로드 실패: ' + e.message); }
-  };
-  
-  // ── Apply (HPWD/Calibration) ──
-  const [applyMsg, setApplyMsg] = useState('');
+  // ── Apply ──
   const buildBackendParams = () => {
     if (fidelity === 'L1') {
       return { fluid, mode, A_max: A_max_m2, opening_min, Cd };
     }
-    // L2
-    return { 
+    return {
       fluid, mode, A_max: A_max_m2, opening_min,
       c0, c1, c2, c3, cf_Cd, cf_A,
       choke_ratio, use_choke,
     };
   };
-  const componentName = fidelity === 'L1' ? 'eev_off_design' : 'eev_moving_boundary';
-  const targetTypeNo = fidelity === 'L1' ? 130 : 131;
   const applyToHPWD = () => {
     const payload = {
-      component: componentName,
-      typeNo: targetTypeNo,
+      component: theme.componentName,
+      typeNo: theme.typeNo,
       params: buildBackendParams(),
+      sourceParams: currentParams(),
       _timestamp: new Date().toISOString(),
-      _source: 'on-design-studio-eev',
+      _source: 'on-design-studio',
     };
     try {
       localStorage.setItem('hpwd_pending_design', JSON.stringify(payload));
-      setApplyMsg(`✓ HPWD Studio로 적용됨. typeNo ${targetTypeNo} EEV 컴포넌트 추가하면 자동 적용.`);
+      setApplyMsg(`✓ HPWD Studio로 적용됨. typeNo ${theme.typeNo} 컴포넌트 추가 시 자동 적용.`);
       setTimeout(() => setApplyMsg(''), 5000);
     } catch (e) { setApplyMsg('✗ ' + e.message); }
   };
   const applyToCalibration = () => {
     const payload = {
-      component: componentName,
-      typeNo: targetTypeNo,
+      component: theme.componentName,
+      typeNo: theme.typeNo,
       params: buildBackendParams(),
+      sourceParams: currentParams(),
       _timestamp: new Date().toISOString(),
-      _source: 'on-design-studio-eev',
+      _source: 'on-design-studio',
     };
     try {
       localStorage.setItem('calibration_pending_design', JSON.stringify(payload));
-      setApplyMsg('✓ Calibration Studio로 적용됨.');
+      setApplyMsg(`✓ Calibration Studio로 적용됨 (typeNo ${theme.typeNo}).`);
       setTimeout(() => setApplyMsg(''), 5000);
     } catch (e) { setApplyMsg('✗ ' + e.message); }
   };
   
-  // ═══════ Schematic SVG (orifice + needle) ═══════
+  // ─── Validation ───
+  const validation = useMemo(() => {
+    const errs = [];
+    if (A_max_mm2 <= 0) errs.push({ level: 'error', msg: 'A_max는 양수여야 함' });
+    if (P_out_bar >= P_in_bar) errs.push({ level: 'error', msg: 'P_out ≥ P_in — 팽창 안 일어남' });
+    if (fidelity === 'L1') {
+      if (Cd <= 0 || Cd > 1.0) errs.push({ level: 'warn', msg: `Cd=${Cd} — 0.5~0.9 권장` });
+    } else {
+      const Cd0 = cd_at(0);
+      const Cd1 = cd_at(1);
+      if (Cd0 < 0.05 || Cd0 > 1.0) errs.push({ level: 'warn', msg: `Cd(op=0)=${Cd0.toFixed(3)} — 0.3~0.6 권장` });
+      if (Cd1 < 0.3 || Cd1 > 1.2) errs.push({ level: 'warn', msg: `Cd(op=100%)=${Cd1.toFixed(3)} — 0.6~0.85 권장` });
+      if (choke_ratio < 0.3 || choke_ratio > 0.7) errs.push({ level: 'warn', msg: `choke_ratio=${choke_ratio} — 0.4~0.6 권장` });
+    }
+    return errs;
+  }, [A_max_mm2, P_in_bar, P_out_bar, fidelity, Cd, c0, c1, c2, c3, choke_ratio]);
+  
+  // ═══════════════════════════════════════════════════════════════════
+  // Schematic SVG
+  // ═══════════════════════════════════════════════════════════════════
   const SchemaSVG = () => {
     const W = 600, H = 300;
     const cx = W / 2, cy = H / 2;
-    const orificeY = cy;
-    const orificeOpenWidth = 60 * (opening_eff / 100);  // visual scaling
+    const orificeOpenWidth = 60 * (opening_eff / 100);
     const tubeR = 50;
     const needleX = cx;
-    const needleY_top = cy - 80 + 80 * (1 - opening_eff / 100);  // 닫힐수록 아래
+    const needleY_top = cy - 80 + 80 * (1 - opening_eff / 100);
     
     return (
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full bg-white border border-slate-200 rounded">
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full bg-white">
         <defs>
           <linearGradient id="liquid" x1="0" x2="1" y1="0" y2="0">
             <stop offset="0" stopColor="#a78bfa"/>
@@ -4050,7 +4161,7 @@ function EEVView({ onBack }) {
           </linearGradient>
         </defs>
         
-        {/* Inlet pipe (subcool liquid 보라) */}
+        {/* Inlet pipe (subcool liquid) */}
         <rect x="20" y={cy - tubeR/2} width={cx - 50} height={tubeR}
               fill="url(#liquid)" stroke="#7c3aed" strokeWidth="1.5"/>
         <text x="40" y={cy - tubeR/2 - 8} fontSize="10" fontFamily="monospace" fill="#7c3aed" fontWeight="bold">
@@ -4061,20 +4172,20 @@ function EEVView({ onBack }) {
         <rect x={cx - 50} y={cy - 80} width="100" height="160"
               fill="#e2e8f0" stroke="#475569" strokeWidth="2" rx="6"/>
         
-        {/* Needle (movable, 위치는 opening %에 비례) */}
+        {/* Needle */}
         <polygon points={`${needleX-12},${needleY_top} ${needleX+12},${needleY_top} ${needleX},${needleY_top+50}`}
                  fill="#64748b" stroke="#1e293b" strokeWidth="1.5"/>
         <line x1={needleX} y1={needleY_top - 5} x2={needleX} y2={cy - 80} 
               stroke="#1e293b" strokeWidth="3"/>
         
-        {/* Orifice opening (needle 아래) */}
+        {/* Orifice opening */}
         <rect x={cx - orificeOpenWidth/2} y={cy + 15} width={orificeOpenWidth} height="20"
               fill="#fff" stroke="#dc2626" strokeWidth="1.5" rx="2"/>
         <text x={cx} y={cy + 50} textAnchor="middle" fontSize="10" fontFamily="monospace" fill="#dc2626" fontWeight="bold">
           A_throat = {(A_throat_m2*1e6).toFixed(3)} mm²
         </text>
         
-        {/* Outlet pipe (2-phase, 노랑) */}
+        {/* Outlet pipe (2-phase) */}
         <rect x={cx + 50} y={cy - tubeR/2} width={W - cx - 70} height={tubeR}
               fill="url(#twophase)" stroke="#d97706" strokeWidth="1.5"/>
         <text x={cx + 80} y={cy - tubeR/2 - 8} fontSize="10" fontFamily="monospace" fill="#d97706" fontWeight="bold">
@@ -4085,7 +4196,7 @@ function EEVView({ onBack }) {
         <text x="100" y={cy + 5} fontSize="20" fill="#7c3aed" fontWeight="bold">→</text>
         <text x={cx + 100} y={cy + 5} fontSize="20" fill="#d97706" fontWeight="bold">→</text>
         
-        {/* Mass flow & opening labels */}
+        {/* RESULT box */}
         <g transform={`translate(${W - 200}, 30)`}>
           <rect x="0" y="0" width="180" height={fidelity === 'L2' ? 100 : 80} fill="#f8fafc" stroke="#cbd5e1" rx="4"/>
           <text x="10" y="20" fontSize="10" fontFamily="monospace" fill="#64748b" fontWeight="bold">RESULT ({fidelity})</text>
@@ -4118,24 +4229,24 @@ function EEVView({ onBack }) {
     );
   };
   
-  // ═══════ Curve plot (m_dot vs opening) ═══════
+  // ═══════════════════════════════════════════════════════════════════
+  // Curve plot
+  // ═══════════════════════════════════════════════════════════════════
   const CurvePlot = () => {
-    const W = 600, H = 200;
+    const W = 600, H = 280;
     const padX = 50, padY = 25;
-    const xMin = 0, xMax = 100;
+    const xMax = 100;
     const yMax = Math.max(...sweep_data.map(p => p.m_dot)) * 1.1 || 50;
-    const xToPx = x => padX + (x - xMin) / (xMax - xMin) * (W - 2*padX);
-    const yToPx = y => H - padY - (y / yMax) * (H - 2*padY);
+    const xToPx = x => padX + x / xMax * (W - 2*padX);
+    const yToPx = y => H - padY - y / yMax * (H - 2*padY);
     const pathD = sweep_data.map((p, i) => 
       (i === 0 ? 'M' : 'L') + xToPx(p.opening) + ',' + yToPx(p.m_dot)).join(' ');
     
-    // Current point
     const currentX = xToPx(display_opening);
     const currentY = yToPx(display_m_dot_gs);
     
     return (
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full bg-white border border-slate-200 rounded">
-        {/* Grid */}
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full bg-white">
         {[0, 25, 50, 75, 100].map(x => (
           <g key={x}>
             <line x1={xToPx(x)} y1={padY} x2={xToPx(x)} y2={H - padY} stroke="#e2e8f0" strokeWidth="0.5"/>
@@ -4151,15 +4262,12 @@ function EEVView({ onBack }) {
           </g>
         ))}
         
-        {/* Axis labels */}
         <text x={W/2} y={H - 2} fontSize="10" fontFamily="monospace" textAnchor="middle" fill="#475569">opening (%)</text>
         <text x="10" y={H/2} fontSize="10" fontFamily="monospace" fill="#475569" 
               transform={`rotate(-90 10 ${H/2})`}>ṁ (g/s)</text>
         
-        {/* Curve */}
         <path d={pathD} fill="none" stroke="#16a34a" strokeWidth="2"/>
         
-        {/* Current operating point */}
         <circle cx={currentX} cy={currentY} r="6" fill="#dc2626" stroke="#fff" strokeWidth="2"/>
         <text x={currentX + 10} y={currentY - 5} fontSize="10" fontFamily="monospace" fill="#dc2626" fontWeight="bold">
           ({display_opening.toFixed(0)}%, {display_m_dot_gs.toFixed(1)} g/s)
@@ -4168,354 +4276,462 @@ function EEVView({ onBack }) {
     );
   };
   
-  // ═══════ Sidebar ═══════
+  // ═══════════════════════════════════════════════════════════════════
+  // Render (다른 view들과 완전 동일 layout)
+  // ═══════════════════════════════════════════════════════════════════
   return (
-    <div className="flex h-full bg-slate-50">
-      {/* Sidebar */}
-      <div className="w-72 bg-white border-r border-slate-200 overflow-y-auto p-4">
-        <div className="flex items-center gap-2 mb-4">
-          <button onClick={onBack} className="text-slate-400 hover:text-slate-700">←</button>
-          <h2 className="text-lg font-bold text-green-700">EEV</h2>
-          <span className="text-[10px] font-mono text-slate-500 ml-auto">
-            typeNo {fidelity === 'L1' ? 130 : 131}
-          </span>
+    <div className="flex flex-col h-screen bg-slate-50">
+      {/* ─── Header ─── */}
+      <div className="bg-white border-b border-slate-200 px-4 py-2 flex items-center gap-3 shrink-0">
+        <button onClick={onBack}
+          className="flex items-center gap-1 text-[12px] text-slate-600 hover:text-slate-900 font-medium">
+          ← System
+        </button>
+        <span className="text-slate-300">|</span>
+        <span className={`text-base ${theme.accentText}`}>◆</span>
+        <span className="font-bold text-slate-900 text-[15px]">{theme.title}</span>
+        <span className="text-[11px] font-mono text-slate-400">{theme.subtitle}</span>
+        <span className="text-[10px] font-mono text-slate-400 ml-2">typeNo {theme.typeNo}</span>
+        
+        <div className="flex-1"></div>
+        
+        {/* Fidelity toggle (HX의 mode toggle 패턴 따라) */}
+        <div className="flex gap-1 mr-2">
+          <button onClick={() => setFidelity('L1')}
+            className={`px-2.5 py-1 text-[11px] font-mono font-semibold rounded transition-colors ${
+              fidelity === 'L1' 
+                ? 'bg-green-600 text-white' 
+                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+            }`}>L1</button>
+          <button onClick={() => setFidelity('L2')}
+            className={`px-2.5 py-1 text-[11px] font-mono font-semibold rounded transition-colors ${
+              fidelity === 'L2' 
+                ? 'bg-emerald-700 text-white' 
+                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+            }`}>L2</button>
         </div>
         
-        {/* Fidelity toggle */}
-        <div className="mb-4">
-          <div className="text-[10px] font-mono uppercase text-slate-500 mb-1">Fidelity</div>
-          <div className="flex gap-1">
-            <button onClick={() => setFidelity('L1')}
-              className={`flex-1 px-3 py-2 text-[11px] font-bold rounded border ${
-                fidelity === 'L1' ? 'bg-green-600 text-white border-green-600' : 'bg-white border-slate-300 text-slate-600'
-              }`}>
-              L1 · Off-design
-            </button>
-            <button onClick={() => setFidelity('L2')}
-              className={`flex-1 px-3 py-2 text-[11px] font-bold rounded border ${
-                fidelity === 'L2' ? 'bg-green-700 text-white border-green-700' : 'bg-white border-slate-300 text-slate-600'
-              }`}>
-              L2 · Cv poly
-            </button>
-          </div>
-          <div className="text-[10px] text-slate-500 mt-1">
-            {fidelity === 'L1' 
-              ? 'Cd 상수, choke 없음' 
-              : 'Cd(opening) 다항식 + choke ceiling'}
+        <button onClick={() => setApplyOpen(o => !o)}
+          className={`text-[11px] px-2.5 py-1.5 rounded font-mono font-semibold transition-colors flex items-center gap-1 ${
+            applyOpen ? `border ${theme.applyBtn}` : `border ${theme.applyBtnHover}`
+          }`}
+          title="다른 Studio로 적용">↗ Apply</button>
+        
+        <button onClick={() => setSaveOpen(s => !s)}
+          className={`text-base px-2.5 py-1 rounded transition-colors ${
+            saveOpen ? 'bg-blue-50 text-blue-700' : 'hover:bg-slate-100'
+          }`}
+          title="Save / Load">💾</button>
+      </div>
+      
+      {/* ─── Apply panel (collapsible) ─── */}
+      {applyOpen && (
+        <div className="bg-white border-b border-slate-200 px-4 py-3 shrink-0">
+          <div className="max-w-4xl mx-auto">
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-[11px] font-mono font-bold text-slate-700 uppercase tracking-wider">Apply Design</div>
+              <div className="text-[10px] text-slate-400 font-mono">현재 설계를 다른 Studio로 동기화 (Run은 해당 Studio에서)</div>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => applyToHPWD()}
+                className={`flex-1 px-3 py-2 ${theme.applyAction} border rounded text-[12px] font-semibold flex items-center justify-center gap-1.5`}>
+                <span>↗</span> HPWD Studio (typeNo {theme.typeNo})
+              </button>
+              <button onClick={() => applyToCalibration()}
+                className="flex-1 px-3 py-2 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 rounded text-[12px] font-semibold flex items-center justify-center gap-1.5">
+                <span>↗</span> Calibration Studio (fitting)
+              </button>
+            </div>
+            {applyMsg && (
+              <div className="mt-2 text-[11px] text-slate-600 font-mono">{applyMsg}</div>
+            )}
           </div>
         </div>
-        
-        {/* Mode toggle */}
-        <div className="mb-4">
-          <div className="text-[10px] font-mono uppercase text-slate-500 mb-1">Operating Mode</div>
-          <div className="flex gap-1">
-            <button onClick={() => setMode('control')}
-              className={`flex-1 px-3 py-2 text-[12px] font-bold rounded border ${
-                mode === 'control' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white border-slate-300 text-slate-600'
-              }`}>Control</button>
-            <button onClick={() => setMode('measure')}
-              className={`flex-1 px-3 py-2 text-[12px] font-bold rounded border ${
-                mode === 'measure' ? 'bg-amber-500 text-white border-amber-500' : 'bg-white border-slate-300 text-slate-600'
-              }`}>Measure</button>
-          </div>
-          <div className="text-[10px] text-slate-500 mt-1">
-            {mode === 'control' ? 'opening % → ṁ 계산' : 'ṁ 측정 → opening 역산'}
+      )}
+      
+      {/* ─── Save / Load panel (collapsible) ─── */}
+      {saveOpen && (
+        <div className="bg-white border-b border-slate-200 px-4 py-3 shrink-0">
+          <div className="max-w-4xl mx-auto">
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-[11px] font-mono font-bold text-slate-700 uppercase tracking-wider">Save / Load</div>
+              <div className="text-[10px] text-slate-400 font-mono">JSON: 파일 · Slot: 브라우저 내</div>
+            </div>
+            <div className="flex gap-2 mb-3">
+              <button onClick={exportJSON}
+                className="flex-1 px-3 py-1.5 bg-green-50 hover:bg-green-100 text-green-700 border border-green-200 rounded text-[12px] font-semibold flex items-center justify-center gap-1.5">
+                <span>📥</span> JSON 내보내기
+              </button>
+              <button onClick={() => fileInputRef.current?.click()}
+                className="flex-1 px-3 py-1.5 bg-orange-50 hover:bg-orange-100 text-orange-700 border border-orange-200 rounded text-[12px] font-semibold flex items-center justify-center gap-1.5">
+                <span>📤</span> JSON 불러오기
+              </button>
+              <input ref={fileInputRef} type="file" accept=".json" onChange={importJSON} style={{ display: 'none' }} />
+            </div>
+            <div className="text-[10px] text-slate-500 font-mono uppercase mb-1.5">Save Slots (브라우저 localStorage)</div>
+            <div className="space-y-1">
+              {[1, 2, 3, 4, 5].map(slot => {
+                const s = saves[slot];
+                const isEmpty = !s;
+                return (
+                  <div key={slot} className="flex items-center gap-2">
+                    <span className="w-5 text-center text-[11px] font-mono font-bold text-slate-400">{slot}.</span>
+                    <div className={`flex-1 px-2.5 py-1 rounded border text-[11px] font-mono truncate ${
+                      isEmpty ? 'bg-slate-50 border-slate-200 text-slate-400' : 'bg-blue-50 border-blue-200 text-slate-800'
+                    }`}>
+                      {isEmpty ? (
+                        <span>— 비어 있음 —</span>
+                      ) : (
+                        <span>
+                          <b className="text-blue-900">{s._name || `Slot ${slot}`}</b>
+                          <span className="text-slate-400 ml-2">
+                            {s._fidelity}/A={s.A_max_mm2}mm²/{s.mode}
+                          </span>
+                        </span>
+                      )}
+                    </div>
+                    <button onClick={() => saveSlot(slot)}
+                      className="px-2 py-0.5 text-[11px] bg-green-100 hover:bg-green-200 text-green-700 rounded font-semibold">저장</button>
+                    {!isEmpty && (
+                      <>
+                        <button onClick={() => loadSlot(slot)}
+                          className="px-2 py-0.5 text-[11px] bg-blue-100 hover:bg-blue-200 text-blue-700 rounded font-semibold">로드</button>
+                        <button onClick={() => deleteSlot(slot)}
+                          className="px-2 py-0.5 text-[11px] bg-red-100 hover:bg-red-200 text-red-700 rounded font-semibold">×</button>
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
-        
-        {/* Material */}
-        <div className="mb-4">
-          <div className="text-[10px] font-mono uppercase text-slate-500 mb-1">Material</div>
-          <select value={fluid} onChange={e => setFluid(e.target.value)}
-            className="w-full px-2 py-1 border border-slate-300 rounded text-[12px]">
-            <option value="R290">R290</option>
-            <option value="R134a">R134a</option>
-            <option value="R410A">R410A</option>
-            <option value="R32">R32</option>
-            <option value="R1234yf">R1234yf</option>
-          </select>
-        </div>
-        
-        {/* Geometry / Fitting */}
-        <div className="mb-4">
-          <div className="text-[10px] font-mono uppercase text-slate-500 mb-2">Geometry / Fitting</div>
-          <div className="space-y-2">
-            <div>
-              <div className="flex justify-between text-[11px]">
+      )}
+      
+      {/* ─── Main: sidebar + canvas ─── */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* Sidebar */}
+        <div className="w-72 bg-white border-r border-slate-200 overflow-y-auto p-3">
+          {/* ── Group: Material ── */}
+          <div className="mb-4">
+            <div className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider mb-2 pb-1 border-b border-slate-200">
+              Material
+            </div>
+            <div className="text-[11px] mb-1">Fluid</div>
+            <select value={fluid} onChange={e => setFluid(e.target.value)}
+              className="w-full px-2 py-1 border border-slate-300 rounded text-[12px]">
+              <option value="R290">R290</option>
+              <option value="R134a">R134a</option>
+              <option value="R410A">R410A</option>
+              <option value="R32">R32</option>
+              <option value="R1234yf">R1234yf</option>
+            </select>
+          </div>
+          
+          {/* ── Group: Operating ── */}
+          <div className="mb-4">
+            <div className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider mb-2 pb-1 border-b border-slate-200">
+              Operating
+            </div>
+            <div className="text-[11px] mb-1">Mode</div>
+            <div className="flex gap-1 mb-3">
+              <button onClick={() => setMode('control')}
+                className={`flex-1 px-2 py-1 text-[11px] font-bold rounded border ${
+                  mode === 'control' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white border-slate-300 text-slate-600'
+                }`}>Control</button>
+              <button onClick={() => setMode('measure')}
+                className={`flex-1 px-2 py-1 text-[11px] font-bold rounded border ${
+                  mode === 'measure' ? 'bg-amber-500 text-white border-amber-500' : 'bg-white border-slate-300 text-slate-600'
+                }`}>Measure</button>
+            </div>
+            <div className="text-[9px] text-slate-500 mb-3">
+              {mode === 'control' ? 'opening % → ṁ' : 'ṁ → opening 역산'}
+            </div>
+            
+            {/* P_in, P_out, h_in, opening or m_dot_meas */}
+            <div className="space-y-1.5 text-[11px]">
+              <div className="flex justify-between items-center">
+                <span>P_in</span>
+                <input type="number" step="0.1" value={P_in_bar}
+                  onChange={e => setPin(parseFloat(e.target.value) || 0)}
+                  className="w-16 text-right px-1 border border-slate-300 rounded"/>
+                <span className="text-slate-500 w-8 text-right">bar</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span>P_out</span>
+                <input type="number" step="0.1" value={P_out_bar}
+                  onChange={e => setPout(parseFloat(e.target.value) || 0)}
+                  className="w-16 text-right px-1 border border-slate-300 rounded"/>
+                <span className="text-slate-500 w-8 text-right">bar</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span>h_in</span>
+                <input type="number" step="1" value={h_in_kjkg}
+                  onChange={e => setHin(parseFloat(e.target.value) || 0)}
+                  className="w-16 text-right px-1 border border-slate-300 rounded"/>
+                <span className="text-slate-500 w-8 text-right">kJ/kg</span>
+              </div>
+              {mode === 'control' ? (
+                <>
+                  <div className="flex justify-between items-center">
+                    <span>opening</span>
+                    <input type="number" step="1" value={opening_pct}
+                      onChange={e => setOpening(parseFloat(e.target.value) || 0)}
+                      className="w-16 text-right px-1 border border-slate-300 rounded"/>
+                    <span className="text-slate-500 w-8 text-right">%</span>
+                  </div>
+                  <input type="range" min="0" max="100" value={opening_pct}
+                    onChange={e => setOpening(parseFloat(e.target.value))}
+                    className="w-full"/>
+                </>
+              ) : (
+                <div className="flex justify-between items-center">
+                  <span>ṁ_meas</span>
+                  <input type="number" step="0.5" value={m_dot_meas_gs}
+                    onChange={e => setMdotMeas(parseFloat(e.target.value) || 0)}
+                    className="w-16 text-right px-1 border border-slate-300 rounded"/>
+                  <span className="text-slate-500 w-8 text-right">g/s</span>
+                </div>
+              )}
+            </div>
+          </div>
+          
+          {/* ── Group: Geometry ── */}
+          <div className="mb-4">
+            <div className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider mb-2 pb-1 border-b border-slate-200">
+              Geometry
+            </div>
+            <div className="space-y-1.5 text-[11px]">
+              <div className="flex justify-between items-center">
                 <span>A_max</span>
                 <input type="number" step="0.1" value={A_max_mm2}
                   onChange={e => setAmax(parseFloat(e.target.value) || 0)}
-                  className="w-16 text-right px-1 border border-slate-300 rounded text-[11px]"/>
-                <span className="text-slate-500 ml-1">mm²</span>
+                  className="w-16 text-right px-1 border border-slate-300 rounded"/>
+                <span className="text-slate-500 w-8 text-right">mm²</span>
               </div>
-            </div>
-            {fidelity === 'L1' && (
-              <div>
-                <div className="flex justify-between text-[11px]">
-                  <span>Cd</span>
-                  <input type="number" step="0.01" value={Cd}
-                    onChange={e => setCd(parseFloat(e.target.value) || 0)}
-                    className="w-16 text-right px-1 border border-slate-300 rounded text-[11px]"/>
-                  <span className="text-slate-500 ml-1">-</span>
-                </div>
-                <div className="text-[9px] text-slate-400 mt-0.5">R290 EEV 표준: 0.6~0.7</div>
-              </div>
-            )}
-            <div>
-              <div className="flex justify-between text-[11px]">
+              <div className="flex justify-between items-center">
                 <span>opening_min</span>
                 <input type="number" step="1" value={opening_min}
                   onChange={e => setOpeningMin(parseFloat(e.target.value) || 0)}
-                  className="w-16 text-right px-1 border border-slate-300 rounded text-[11px]"/>
-                <span className="text-slate-500 ml-1">%</span>
+                  className="w-16 text-right px-1 border border-slate-300 rounded"/>
+                <span className="text-slate-500 w-8 text-right">%</span>
               </div>
             </div>
           </div>
-        </div>
-        
-        {/* L2 전용 — Cv polynomial */}
-        {fidelity === 'L2' && (
-          <div className="mb-4 p-2 bg-green-50 rounded border border-green-200">
-            <div className="text-[10px] font-mono uppercase text-green-700 mb-2 font-bold">
-              Cv Polynomial · Cd(op) = c0+c1·op+c2·op²+c3·op³
+          
+          {/* ── Group: Discharge coefficient ── */}
+          <div className="mb-4">
+            <div className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider mb-2 pb-1 border-b border-slate-200">
+              {fidelity === 'L1' ? 'Discharge Coefficient' : 'Cv Polynomial · Cd(op)=c0+c1·op+c2·op²+c3·op³'}
             </div>
-            <div className="space-y-1.5">
-              {[
-                ['c0', c0, setC0, 0.01, '상수항 Cd(op=0)'],
-                ['c1', c1, setC1, 0.01, '1차'],
-                ['c2', c2, setC2, 0.01, '2차'],
-                ['c3', c3, setC3, 0.01, '3차'],
-              ].map(([name, val, setter, step, hint]) => (
-                <div key={name} className="flex justify-between items-center text-[11px]">
-                  <span className="font-mono">{name}</span>
-                  <input type="number" step={step} value={val}
-                    onChange={e => setter(parseFloat(e.target.value) || 0)}
-                    className="w-16 text-right px-1 border border-slate-300 rounded text-[11px]"/>
-                  <span className="text-[9px] text-slate-500 ml-1 w-16 truncate">{hint}</span>
+            {fidelity === 'L1' ? (
+              <div className="space-y-1.5 text-[11px]">
+                <div className="flex justify-between items-center">
+                  <span>Cd</span>
+                  <input type="number" step="0.01" value={Cd}
+                    onChange={e => setCd(parseFloat(e.target.value) || 0)}
+                    className="w-16 text-right px-1 border border-slate-300 rounded"/>
+                  <span className="text-slate-500 w-8 text-right">-</span>
+                </div>
+                <div className="text-[9px] text-slate-400">R290 EEV 표준: 0.6~0.7</div>
+              </div>
+            ) : (
+              <div className="space-y-1.5 text-[11px]">
+                {[
+                  ['c0', c0, setC0, 0.01],
+                  ['c1', c1, setC1, 0.01],
+                  ['c2', c2, setC2, 0.01],
+                  ['c3', c3, setC3, 0.01],
+                ].map(([name, val, setter, step]) => (
+                  <div key={name} className="flex justify-between items-center">
+                    <span className="font-mono">{name}</span>
+                    <input type="number" step={step} value={val}
+                      onChange={e => setter(parseFloat(e.target.value) || 0)}
+                      className="w-16 text-right px-1 border border-slate-300 rounded"/>
+                    <span className="text-slate-500 w-8 text-right">-</span>
+                  </div>
+                ))}
+                <div className="mt-1 pt-1 border-t border-slate-100 text-[10px] text-slate-600 space-y-0.5">
+                  <div>Cd(0%) = <b>{cd_at(0).toFixed(3)}</b></div>
+                  <div>Cd(50%) = <b>{cd_at(0.5).toFixed(3)}</b></div>
+                  <div>Cd(100%) = <b>{cd_at(1.0).toFixed(3)}</b></div>
+                </div>
+              </div>
+            )}
+          </div>
+          
+          {/* ── Group: Choke (L2 only) ── */}
+          {fidelity === 'L2' && (
+            <div className="mb-4">
+              <div className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider mb-2 pb-1 border-b border-slate-200">
+                Choke Ceiling
+              </div>
+              <div className="space-y-1.5 text-[11px]">
+                <div className="flex gap-1">
+                  <button onClick={() => setUseChoke('on')}
+                    className={`flex-1 px-2 py-1 text-[10px] font-bold rounded border ${
+                      use_choke === 'on' ? 'bg-amber-500 text-white border-amber-500' : 'bg-white border-slate-300 text-slate-600'
+                    }`}>ON</button>
+                  <button onClick={() => setUseChoke('off')}
+                    className={`flex-1 px-2 py-1 text-[10px] font-bold rounded border ${
+                      use_choke === 'off' ? 'bg-slate-500 text-white border-slate-500' : 'bg-white border-slate-300 text-slate-600'
+                    }`}>OFF</button>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span>choke_ratio</span>
+                  <input type="number" step="0.05" value={choke_ratio}
+                    onChange={e => setChokeRatio(parseFloat(e.target.value) || 0)}
+                    className="w-16 text-right px-1 border border-slate-300 rounded"/>
+                  <span className="text-slate-500 w-8 text-right">-</span>
+                </div>
+                <div className="text-[9px] text-slate-500">현재 ratio: {(P_out_bar/P_in_bar).toFixed(3)} {is_choked ? <span className="text-amber-700 font-bold">CHOKED</span> : <span className="text-slate-500">normal</span>}</div>
+              </div>
+            </div>
+          )}
+          
+          {/* ── Group: Fitting (L2 only) ── */}
+          {fidelity === 'L2' && (
+            <div className="mb-4">
+              <div className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider mb-2 pb-1 border-b border-slate-200">
+                Fitting (Calibration)
+              </div>
+              <div className="space-y-1.5 text-[11px]">
+                <div className="flex justify-between items-center">
+                  <span className="font-mono">cf_Cd</span>
+                  <input type="number" step="0.01" value={cf_Cd}
+                    onChange={e => setCfCd(parseFloat(e.target.value) || 0)}
+                    className="w-16 text-right px-1 border border-slate-300 rounded"/>
+                  <span className="text-slate-500 w-8 text-right">-</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="font-mono">cf_A</span>
+                  <input type="number" step="0.01" value={cf_A}
+                    onChange={e => setCfA(parseFloat(e.target.value) || 0)}
+                    className="w-16 text-right px-1 border border-slate-300 rounded"/>
+                  <span className="text-slate-500 w-8 text-right">-</span>
+                </div>
+              </div>
+            </div>
+          )}
+          
+          {/* Validation messages */}
+          {validation.length > 0 && (
+            <div className="mt-3 pt-3 border-t border-slate-200 space-y-1">
+              {validation.map((v, i) => (
+                <div key={i} className={`text-[10px] px-2 py-1 rounded ${
+                  v.level === 'error' ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-700'
+                }`}>
+                  {v.level === 'error' ? '✗' : '⚠'} {v.msg}
                 </div>
               ))}
             </div>
-            <div className="mt-2 pt-2 border-t border-green-200 text-[10px] text-slate-600">
-              <div>Cd(0%) = <b>{cd_at(0).toFixed(3)}</b></div>
-              <div>Cd(50%) = <b>{cd_at(0.5).toFixed(3)}</b></div>
-              <div>Cd(100%) = <b>{cd_at(1.0).toFixed(3)}</b></div>
-            </div>
-            <div className="mt-2 pt-2 border-t border-green-200 space-y-1.5">
-              <div className="text-[10px] font-mono uppercase text-slate-500 mb-1">Calibration multipliers</div>
-              <div className="flex justify-between text-[11px]">
-                <span className="font-mono">cf_Cd</span>
-                <input type="number" step="0.01" value={cf_Cd}
-                  onChange={e => setCfCd(parseFloat(e.target.value) || 0)}
-                  className="w-16 text-right px-1 border border-slate-300 rounded text-[11px]"/>
-              </div>
-              <div className="flex justify-between text-[11px]">
-                <span className="font-mono">cf_A</span>
-                <input type="number" step="0.01" value={cf_A}
-                  onChange={e => setCfA(parseFloat(e.target.value) || 0)}
-                  className="w-16 text-right px-1 border border-slate-300 rounded text-[11px]"/>
-              </div>
-            </div>
-          </div>
-        )}
+          )}
+        </div>
         
-        {/* L2 전용 — Choke */}
-        {fidelity === 'L2' && (
-          <div className="mb-4 p-2 bg-amber-50 rounded border border-amber-200">
-            <div className="text-[10px] font-mono uppercase text-amber-700 mb-2 font-bold">
-              Choke Ceiling
-            </div>
-            <div className="space-y-2">
-              <div className="flex gap-1">
-                <button onClick={() => setUseChoke('on')}
-                  className={`flex-1 px-2 py-1 text-[10px] font-bold rounded border ${
-                    use_choke === 'on' ? 'bg-amber-500 text-white border-amber-500' : 'bg-white border-slate-300 text-slate-600'
-                  }`}>ON</button>
-                <button onClick={() => setUseChoke('off')}
-                  className={`flex-1 px-2 py-1 text-[10px] font-bold rounded border ${
-                    use_choke === 'off' ? 'bg-slate-500 text-white border-slate-500' : 'bg-white border-slate-300 text-slate-600'
-                  }`}>OFF (L1 같음)</button>
+        {/* Main canvas */}
+        <div className="flex-1 overflow-y-auto p-6 bg-slate-50">
+          <div className="max-w-4xl mx-auto">
+            {/* Title + status banner */}
+            <div className="mb-4">
+              <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-3">
+                EEV — Expansion Valve
+                <span className={`text-sm font-mono ${theme.accentText} bg-${theme.accent}-50 px-2 py-1 rounded`}>
+                  {fidelity} · {theme.subtitle.split(' · ')[1] || ''}
+                </span>
+              </h2>
+              <div className="text-[12px] text-slate-500 mt-1">
+                Isenthalpic expansion · {fidelity === 'L1' 
+                  ? 'Cd = const × A_throat × √(2ρΔP)' 
+                  : 'Cd(op) polynomial × A_throat × √(2ρΔP_eff with choke)'}
               </div>
-              <div className="flex justify-between text-[11px]">
-                <span className="font-mono">choke_ratio</span>
-                <input type="number" step="0.05" value={choke_ratio}
-                  onChange={e => setChokeRatio(parseFloat(e.target.value) || 0)}
-                  className="w-16 text-right px-1 border border-slate-300 rounded text-[11px]"/>
-                <span className="text-slate-500 ml-1">-</span>
-              </div>
-              <div className="text-[9px] text-slate-500">
-                P_out/P_in &lt; ratio → choke (R290: ~0.5)
-              </div>
-              <div className="text-[10px] mt-1">
-                현재: {(P_out_bar / P_in_bar).toFixed(3)} {is_choked ? <span className="text-amber-700 font-bold">→ CHOKED</span> : <span className="text-slate-500">→ normal</span>}
-              </div>
-            </div>
-          </div>
-        )}
-        
-        {/* Operating Conditions */}
-        <div className="mb-4">
-          <div className="text-[10px] font-mono uppercase text-slate-500 mb-2">Operating Conditions</div>
-          <div className="space-y-2">
-            <div className="flex justify-between text-[11px]">
-              <span>P_in</span>
-              <input type="number" step="0.1" value={P_in_bar}
-                onChange={e => setPin(parseFloat(e.target.value) || 0)}
-                className="w-16 text-right px-1 border border-slate-300 rounded"/>
-              <span className="text-slate-500 ml-1">bar</span>
-            </div>
-            <div className="flex justify-between text-[11px]">
-              <span>P_out</span>
-              <input type="number" step="0.1" value={P_out_bar}
-                onChange={e => setPout(parseFloat(e.target.value) || 0)}
-                className="w-16 text-right px-1 border border-slate-300 rounded"/>
-              <span className="text-slate-500 ml-1">bar</span>
-            </div>
-            <div className="flex justify-between text-[11px]">
-              <span>h_in</span>
-              <input type="number" step="1" value={h_in_kjkg}
-                onChange={e => setHin(parseFloat(e.target.value) || 0)}
-                className="w-16 text-right px-1 border border-slate-300 rounded"/>
-              <span className="text-slate-500 ml-1">kJ/kg</span>
             </div>
             
-            {mode === 'control' ? (
-              <div>
-                <div className="flex justify-between text-[11px]">
-                  <span>opening</span>
-                  <input type="number" step="1" value={opening_pct}
-                    onChange={e => setOpening(parseFloat(e.target.value) || 0)}
-                    className="w-16 text-right px-1 border border-slate-300 rounded"/>
-                  <span className="text-slate-500 ml-1">%</span>
-                </div>
-                <input type="range" min="0" max="100" value={opening_pct}
-                  onChange={e => setOpening(parseFloat(e.target.value))}
-                  className="w-full mt-1"/>
+            {/* Status banner */}
+            <div className={`mb-4 ${theme.ringActive} border rounded-lg px-4 py-2 text-[12px]`}>
+              ✓ <b>{fidelity === 'L1' ? 'Off-design' : 'Moving Boundary'} 모드</b> — 사이드바에서 변수 변경하면 view에 <b>실시간 반영</b>됩니다.
+            </div>
+            
+            {/* View tabs */}
+            <div className="mb-3 flex gap-1.5">
+              {['Schematic', 'Curve', 'Numerical'].map(v => (
+                <button key={v} onClick={() => setView(v)}
+                  className={`px-4 py-1.5 text-[12px] font-semibold rounded-lg transition-colors ${
+                    view === v
+                      ? theme.tabActive
+                      : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                  }`}>
+                  {v} view
+                </button>
+              ))}
+            </div>
+            
+            {/* Viewer */}
+            <div className="bg-white border border-slate-200 rounded-lg p-4">
+              <div className="text-[12px] text-slate-500 mb-2 flex items-center justify-between">
+                <span><b>{view} view</b> — {
+                  view === 'Schematic' ? 'Orifice + needle + opening 시각화' :
+                  view === 'Curve' ? `ṁ vs opening curve (ΔP=${dP_actual_bar.toFixed(2)} bar)` :
+                  '수치 결과 카드'
+                }</span>
+                <span className="font-mono text-[10px] text-slate-400">
+                  ΔP={dP_actual_bar.toFixed(2)} bar {is_choked ? '· CHOKED' : ''}
+                </span>
               </div>
-            ) : (
-              <div className="flex justify-between text-[11px]">
-                <span>ṁ_meas</span>
-                <input type="number" step="0.5" value={m_dot_meas_gs}
-                  onChange={e => setMdotMeas(parseFloat(e.target.value) || 0)}
-                  className="w-16 text-right px-1 border border-slate-300 rounded"/>
-                <span className="text-slate-500 ml-1">g/s</span>
+              <div className="bg-slate-50 border border-slate-200 rounded">
+                {view === 'Schematic' && <SchemaSVG/>}
+                {view === 'Curve' && <CurvePlot/>}
+                {view === 'Numerical' && (
+                  <div className="p-6 grid grid-cols-2 gap-4">
+                    <div className="bg-white border border-green-300 rounded p-4">
+                      <div className="text-[10px] font-mono text-slate-500 uppercase">ṁ_ref</div>
+                      <div className="text-3xl font-bold text-green-700">{display_m_dot_gs.toFixed(2)}</div>
+                      <div className="text-[10px] text-slate-500">g/s</div>
+                    </div>
+                    <div className="bg-white border border-cyan-300 rounded p-4">
+                      <div className="text-[10px] font-mono text-slate-500 uppercase">opening</div>
+                      <div className="text-3xl font-bold text-cyan-700">{display_opening.toFixed(1)}</div>
+                      <div className="text-[10px] text-slate-500">% {mode === 'measure' ? '(역산)' : ''}</div>
+                    </div>
+                    <div className="bg-white border border-purple-300 rounded p-4">
+                      <div className="text-[10px] font-mono text-slate-500 uppercase">Cd_eff</div>
+                      <div className="text-3xl font-bold text-purple-700">{display_Cd.toFixed(3)}</div>
+                      <div className="text-[10px] text-slate-500">{fidelity === 'L2' ? 'poly(op)' : 'const'}</div>
+                    </div>
+                    <div className="bg-white border border-amber-300 rounded p-4">
+                      <div className="text-[10px] font-mono text-slate-500 uppercase">A_throat</div>
+                      <div className="text-3xl font-bold text-amber-700">{(A_throat_m2*1e6).toFixed(3)}</div>
+                      <div className="text-[10px] text-slate-500">mm² {is_choked ? '· CHOKED' : ''}</div>
+                    </div>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-        </div>
-        
-        {/* Slot save/load */}
-        <div className="border-t border-slate-200 pt-3 mb-3">
-          <div className="flex gap-2">
-            <button onClick={saveSlot}
-              className="flex-1 px-3 py-1.5 text-[11px] bg-slate-100 hover:bg-slate-200 rounded border border-slate-300">
-              💾 Save
-            </button>
-            <button onClick={loadSlot}
-              className="flex-1 px-3 py-1.5 text-[11px] bg-slate-100 hover:bg-slate-200 rounded border border-slate-300">
-              📂 Load
-            </button>
-          </div>
-        </div>
-        
-        {/* Apply */}
-        <div className="border-t border-slate-200 pt-3">
-          <div className="text-[10px] font-mono uppercase text-slate-500 mb-2">Apply</div>
-          <div className="flex flex-col gap-1.5">
-            <button onClick={applyToHPWD}
-              className="w-full px-3 py-1.5 text-[11px] bg-blue-50 hover:bg-blue-100 rounded border border-blue-300 text-blue-700 font-bold">
-              ↗ HPWD Studio
-            </button>
-            <button onClick={applyToCalibration}
-              className="w-full px-3 py-1.5 text-[11px] bg-amber-50 hover:bg-amber-100 rounded border border-amber-300 text-amber-700 font-bold">
-              ↗ Calibration Studio
-            </button>
-            {applyMsg && (
-              <div className="text-[10px] text-slate-600 mt-1">{applyMsg}</div>
-            )}
-          </div>
-        </div>
-      </div>
-      
-      {/* Main canvas */}
-      <div className="flex-1 overflow-y-auto p-6">
-        <div className="max-w-4xl mx-auto">
-          <div className="mb-4">
-            <h2 className="text-2xl font-bold text-slate-900">
-              EEV — Expansion Valve
-              <span className="ml-3 text-sm font-mono text-green-700 bg-green-50 px-2 py-1 rounded">
-                {fidelity} {fidelity === 'L1' ? '· Off-design' : '· Moving Boundary'}
-              </span>
-            </h2>
-            <div className="text-[12px] text-slate-500 mt-1">
-              Isenthalpic expansion · {fidelity === 'L1' 
-                ? 'Cd = const × A_throat × √(2ρΔP)' 
-                : 'Cd(op) polynomial × A_throat × √(2ρΔP_eff with choke)'} · {mode} mode
             </div>
-          </div>
-          
-          {/* Schematic */}
-          <div className="mb-6">
-            <div className="text-[11px] font-mono uppercase text-slate-500 mb-2">Schematic</div>
-            <SchemaSVG/>
-          </div>
-          
-          {/* Curve */}
-          <div className="mb-6">
-            <div className="text-[11px] font-mono uppercase text-slate-500 mb-2">
-              ṁ vs opening curve · {fidelity} · ΔP_actual={dP_actual_bar.toFixed(2)} bar
-              {fidelity === 'L2' && is_choked && <span className="ml-2 text-amber-700">(choke active, ΔP_eff={dP_eff_bar.toFixed(2)})</span>}
+            
+            {/* Model design note */}
+            <div className="mt-4 p-3 bg-slate-100 rounded text-[11px] text-slate-600 leading-relaxed">
+              <div className="font-bold mb-1">📌 모델 구조 ({fidelity === 'L1' ? 'L1 Off-design' : 'L2 Moving Boundary / Cv polynomial'})</div>
+              <div>• Isenthalpic 가정: h_out = h_in</div>
+              {fidelity === 'L1' ? (
+                <>
+                  <div>• Mass flow: ṁ = Cd × A_throat × √(2ρ_in × ΔP)</div>
+                  <div>• Cd 학계 표준: R290 EEV 0.6~0.7 (default 0.65)</div>
+                </>
+              ) : (
+                <>
+                  <div>• Mass flow: ṁ = Cd_eff(op) × A_throat × √(2ρ_in × ΔP_eff)</div>
+                  <div>• Cd_eff(op) = c0 + c1·op + c2·op² + c3·op³ — 다항식 fitting</div>
+                  <div>• Choke ceiling: P_out/P_in &lt; ratio → ΔP_eff = P_in·(1-ratio)</div>
+                  <div>• Calibration: 4 polynomial 계수 + 2 multiplier = 6 params</div>
+                </>
+              )}
             </div>
-            <CurvePlot/>
-          </div>
-          
-          {/* Numerical results */}
-          <div className="grid grid-cols-4 gap-3">
-            <div className="bg-white border border-green-300 rounded p-3">
-              <div className="text-[10px] font-mono text-slate-500 uppercase">ṁ_ref</div>
-              <div className="text-2xl font-bold text-green-700">{display_m_dot_gs.toFixed(2)}</div>
-              <div className="text-[10px] text-slate-500">g/s</div>
-            </div>
-            <div className="bg-white border border-cyan-300 rounded p-3">
-              <div className="text-[10px] font-mono text-slate-500 uppercase">opening</div>
-              <div className="text-2xl font-bold text-cyan-700">{display_opening.toFixed(1)}</div>
-              <div className="text-[10px] text-slate-500">% {mode === 'measure' ? '(역산)' : ''}</div>
-            </div>
-            <div className="bg-white border border-purple-300 rounded p-3">
-              <div className="text-[10px] font-mono text-slate-500 uppercase">Cd_eff</div>
-              <div className="text-2xl font-bold text-purple-700">{display_Cd.toFixed(3)}</div>
-              <div className="text-[10px] text-slate-500">{fidelity === 'L2' ? 'poly(op)' : 'const'}</div>
-            </div>
-            <div className="bg-white border border-amber-300 rounded p-3">
-              <div className="text-[10px] font-mono text-slate-500 uppercase">A_throat</div>
-              <div className="text-2xl font-bold text-amber-700">{(A_throat_m2*1e6).toFixed(3)}</div>
-              <div className="text-[10px] text-slate-500">mm² {is_choked ? <span className="text-amber-700 font-bold">CHOKED</span> : ''}</div>
-            </div>
-          </div>
-          
-          {/* Note */}
-          <div className="mt-6 p-3 bg-slate-100 rounded text-[11px] text-slate-600 leading-relaxed">
-            <div className="font-bold mb-1">📌 모델 구조 ({fidelity === 'L1' ? 'L1 Off-design' : 'L2 Semi-empirical / Cv polynomial'})</div>
-            <div>• Isenthalpic 가정: h_out = h_in</div>
-            {fidelity === 'L1' ? (
-              <>
-                <div>• Mass flow: ṁ = Cd × A_throat × √(2ρ_in × ΔP)</div>
-                <div>• Cd 학계 표준: R290 EEV 0.6~0.7 (default 0.65)</div>
-                <div>• Choke 처리 없음 — incompressible 가정</div>
-              </>
-            ) : (
-              <>
-                <div>• Mass flow: ṁ = Cd_eff(op) × A_throat × √(2ρ_in × ΔP_eff)</div>
-                <div>• Cd_eff(op) = c0 + c1·op + c2·op² + c3·op³ — 다항식 fitting 가능</div>
-                <div>• Choke ceiling: P_out/P_in &lt; ratio (~0.5) → ΔP_eff = P_in·(1-ratio)</div>
-                <div>• Calibration friendly — 4 다항식 계수 + 2 multiplier 6 params fitting 가능</div>
-              </>
-            )}
           </div>
         </div>
       </div>
     </div>
   );
 }
+
 
 
 /* ═══════════════════════════════════════════════════════════════════
