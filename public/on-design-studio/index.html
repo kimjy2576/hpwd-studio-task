@@ -2147,12 +2147,11 @@ function EEVView3D({ D_seat_mm, stroke_max_mm, D_orifice_max_mm,
     const D_seat = D_seat_mm * scale;
     const stroke_max = stroke_max_mm * scale;
     
-    // Needle (cone) 치수
+    // Needle (cone) 치수 — Side view와 동일 비율
     const alpha_half_rad = needle_angle * Math.PI / 180;
-    // needle base 반경: seat hole보다 약간 더 큼 (sealing 가능하게)
-    const coneBaseR = (D_seat / 2) / Math.sin(alpha_half_rad);
+    // cone base R: seat hole의 1.6배 (Side view와 일치)
+    const coneBaseR = (D_seat / 2) * 1.6;
     const coneHeight = coneBaseR / Math.tan(alpha_half_rad);
-    // (즉 cone 옆면이 정확히 seat hole 가장자리에 닿음 — fully closed 시 sealing)
     
     // ─── Seat plate (orifice가 가운데 hole) ───
     // Seat은 평면 plate로 처리 (단순), hole은 RingGeometry
@@ -2197,32 +2196,15 @@ function EEVView3D({ D_seat_mm, stroke_max_mm, D_orifice_max_mm,
     // ─── Needle (cone) ───
     // 핵심: opening에 따른 위치 계산
     // 
-    // opening 0% (CLOSED): needle이 seat hole 안에 박혀서 막음
-    //   → needle tip이 seat hole 깊이까지 들어감
-    //   → cone의 옆면이 seat hole 가장자리에 접촉 (sealing)
-    // 
-    // opening 100% (OPEN): needle이 위로 stroke_max만큼 올라감
-    // 
-    // 좌표:
-    //   seat top surface Y = +seatThickness/2
-    //   opening 0% 기준: cone의 어느 지점이 seat hole 가장자리와 만나는가?
-    //   → cone 옆면 식: 반경 R(y) = coneBaseR × y/coneHeight (apex가 y=0)
-    //   → R(y) = D_seat/2 일 때 y = D_seat/2 / coneBaseR × coneHeight
-    //   → = sin(α/2) × coneHeight = D_seat/2 / tan(α/2)
-    //   이 거리만큼 cone apex가 seat top surface 아래로 내려가야 sealing 가능
-    //   
-    //   즉 closed position의 cone apex Y = seatTopY - D_seat/2 / tan(α/2)
+    // opening 0%: needle tip이 seat top과 같은 높이 (touching, CLOSED)
+    // opening 100%: needle tip이 seat 위 stroke_max만큼
+    // Side view와 동일한 로직 (sealing 제거 — 진영님 결정)
     
     const stroke_now = stroke_m * 1000 * scale;  // 실제 stroke (visual amp 없음)
     const seatTopY = seatY + seatThickness / 2;
     
-    // Closed position 계산: cone이 seat hole에 막 들어맞는 위치
-    // (반경이 D_seat/2 되는 cone의 y좌표 = D_seat/2 / tan(α/2))
-    const sealPenetration = (D_seat / 2) / Math.tan(alpha_half_rad);
-    const apexY_closed = seatTopY - sealPenetration;
-    
-    // 실제 apex Y (opening에 따라 위로 올라감)
-    const apexY = apexY_closed + stroke_now;
+    // Apex Y: opening 0%면 seat top, opening 증가하면 stroke_now만큼 위로
+    const apexY = seatTopY + stroke_now;
     
     const needleGeo = new THREE.ConeGeometry(coneBaseR, coneHeight, 32);
     const needle = new THREE.Mesh(needleGeo, needleMat);
@@ -4185,7 +4167,7 @@ function EEVView({ onBack }) {
   const [needle_profile, setNeedleProfile] = useState('cone');
   const [needle_angle, setNeedleAngle] = useState(30.0);  // deg (반각)
   const [D_seat_mm, setDseat] = useState(2.0);             // mm
-  const [stroke_max_mm, setStrokeMax] = useState(2.5);     // mm (R290 EEV typical, sealing 위해 D_seat 보다 큼)
+  const [stroke_max_mm, setStrokeMax] = useState(1.0);     // mm
   const [D_orifice_max_mm, setDorifMax] = useState(1.5);   // mm
   const [L_inlet_mm, setLin] = useState(30.0);             // mm (시각화)
   const [L_outlet_mm, setLout] = useState(30.0);           // mm
