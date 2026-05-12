@@ -2196,15 +2196,22 @@ function EEVView3D({ D_seat_mm, stroke_max_mm,
     // ─── Needle (cone) ───
     // 핵심: opening에 따른 위치 계산
     // 
-    // opening 0%: needle tip이 seat top과 같은 높이 (touching, CLOSED)
-    // opening 100%: needle tip이 seat 위 stroke_max만큼
-    // Side view와 동일한 로직 (sealing 제거 — 진영님 결정)
+    // opening 0%: needle tip이 seat bottom (hole 안 가장 깊이 진입, CLOSED)
+    // opening 100%: needle tip이 seat top 위로 stroke_max만큼 (FULLY OPEN)
+    // 총 이동 거리 = seatThickness + stroke_max
     
-    const stroke_now = stroke_m * 1000 * scale;  // 실제 stroke (visual amp 없음)
+    const stroke_now = stroke_m * 1000 * scale;     // 실제 stroke (mm → scn)
+    const stroke_max_scn = stroke_max;              // 이미 위에서 정의됨
     const seatTopY = seatY + seatThickness / 2;
+    const seatBottomY = seatY - seatThickness / 2;
     
-    // Apex Y: opening 0%면 seat top, opening 증가하면 stroke_now만큼 위로
-    const apexY = seatTopY + stroke_now;
+    // opening fraction
+    const op_frac = Math.max(0, Math.min(1, opening_eff / 100));
+    
+    // Total travel = seatThickness (hole 내부 통과) + stroke_max (seat 위로 추가 이동)
+    const totalTravel = seatThickness + stroke_max_scn;
+    // op=0 → apex at seatBottomY, op=1 → apex at seatTopY + stroke_max
+    const apexY = seatBottomY + op_frac * totalTravel;
     
     const needleGeo = new THREE.ConeGeometry(coneBaseR, coneHeight, 32);
     const needle = new THREE.Mesh(needleGeo, needleMat);
@@ -4429,8 +4436,18 @@ function EEVView({ onBack }) {
     const seatHole_half = D_seat_mm * 8;  // 8x zoom factor (mm → px)
     
     // Needle (cone) 위치
-    const stroke_px = stroke_m * 1000 * 8;  // mm → px (8x zoom)
-    const needleTipY = seatTop - stroke_px;  // needle tip
+    // opening 0%: needle tip이 seat bottom (hole 안 가장 깊이, CLOSED)
+    // opening 100%: needle tip이 seat top 위로 stroke_max만큼 (FULLY OPEN)
+    const seatThickness_mm = D_seat_mm * 0.4;  // 3D view와 동일 비율
+    const seatThickness_px = seatThickness_mm * 8;  // mm → px (8x zoom)
+    const seatBottom = seatTop + seatThickness_px;
+    const stroke_max_px = stroke_max_mm * 8;
+    const totalTravel_px = seatThickness_px + stroke_max_px;
+    
+    const op_frac = Math.max(0, Math.min(1, opening_eff / 100));
+    // SVG: Y가 아래로 증가 → seat bottom (큰 Y) 에서 위로 (작은 Y) 이동
+    const needleTipY = seatBottom - op_frac * totalTravel_px;
+    
     const needle_angle_rad = needle_angle * Math.PI / 180;
     const coneBase_half = seatHole_half * 1.6;  // needle base (cone)
     const coneHeight = coneBase_half / Math.tan(needle_angle_rad);
@@ -4486,16 +4503,16 @@ function EEVView({ onBack }) {
           fill="#64748b" stroke="#1e293b" strokeWidth="1.5"/>
         
         {/* Seat (단면) */}
-        <rect x={bodyX + 25} y={seatTop} width={bodyW - 50} height={20}
+        <rect x={bodyX + 25} y={seatTop} width={bodyW - 50} height={seatThickness_px}
               fill="#94a3b8" stroke="#1e293b" strokeWidth="1.5"/>
         {/* Seat orifice (gap) */}
-        <rect x={cxBody - seatHole_half} y={seatTop} width={seatHole_half * 2} height={20}
+        <rect x={cxBody - seatHole_half} y={seatTop} width={seatHole_half * 2} height={seatThickness_px}
               fill="#fff" stroke="#dc2626" strokeWidth="1.5"/>
         
         {/* Outlet pipe (2-phase 노랑) */}
-        <rect x={bodyX + 30} y={seatTop + 20} width={bodyW - 60} height="15"
+        <rect x={bodyX + 30} y={seatTop + seatThickness_px} width={bodyW - 60} height="15"
               fill="url(#twoPhaseGrad)" stroke="#d97706" strokeWidth="1"/>
-        <rect x={cxBody - 10} y={seatTop + 35} width="20" height={bodyY + bodyH - (seatTop + 35)}
+        <rect x={cxBody - 10} y={seatTop + seatThickness_px + 15} width="20" height={bodyY + bodyH - (seatTop + seatThickness_px + 15)}
               fill="url(#twoPhaseGrad)" stroke="#d97706" strokeWidth="1"/>
         <rect x={cxBody - 30} y={bodyY + bodyH} width="60" height="15"
               fill="url(#twoPhaseGrad)" stroke="#d97706" strokeWidth="1"/>
@@ -4519,11 +4536,11 @@ function EEVView({ onBack }) {
         
         {/* D_seat dimension */}
         <g stroke="#dc2626" strokeWidth="1">
-          <line x1={cxBody - seatHole_half} y1={seatTop + 30} x2={cxBody + seatHole_half} y2={seatTop + 30}/>
-          <line x1={cxBody - seatHole_half} y1={seatTop + 28} x2={cxBody - seatHole_half} y2={seatTop + 32}/>
-          <line x1={cxBody + seatHole_half} y1={seatTop + 28} x2={cxBody + seatHole_half} y2={seatTop + 32}/>
+          <line x1={cxBody - seatHole_half} y1={seatBottom + 10} x2={cxBody + seatHole_half} y2={seatBottom + 10}/>
+          <line x1={cxBody - seatHole_half} y1={seatBottom + 8} x2={cxBody - seatHole_half} y2={seatBottom + 12}/>
+          <line x1={cxBody + seatHole_half} y1={seatBottom + 8} x2={cxBody + seatHole_half} y2={seatBottom + 12}/>
         </g>
-        <text x={cxBody} y={seatTop + 44} fontSize="9" fontFamily="monospace" fill="#dc2626" fontWeight="bold" textAnchor="middle">
+        <text x={cxBody} y={seatBottom + 24} fontSize="9" fontFamily="monospace" fill="#dc2626" fontWeight="bold" textAnchor="middle">
           D_seat = {D_seat_mm} mm
         </text>
         
@@ -4592,8 +4609,46 @@ function EEVView({ onBack }) {
           D_seat = orifice = {D_seat_mm}mm
         </text>
         
-        {/* Needle center (현재 opening 표시 — opening 0%면 가득, 100%면 사라짐) */}
-        <circle cx={cx} cy={cy} r={Math.max(1, seat_r * (1 - opening_eff/100))} fill="#64748b" stroke="#1e293b" strokeWidth="1"/>
+        {/* Needle center — 위에서 본 cone 단면 (seat top 평면에서 자른) */}
+        {/* opening 0%: needle tip이 seat bottom → cone 단면이 hole 가득
+            opening 100%: needle tip이 seat top 위로 stroke_max → cone이 hole 평면에 닿지 않음 */}
+        {(() => {
+          // needle tip 위치 (seat top 기준 상대값 in mm)
+          // tip이 seat bottom일 때: -seatThickness (mm)
+          // tip이 seat top일 때: 0
+          // tip이 seat top 위 stroke_max일 때: +stroke_max
+          const seatThickness_mm = D_seat_mm * 0.4;  // approximate (실제 EEV typical)
+          const totalTravel_mm = seatThickness_mm + stroke_max_mm;
+          const op_frac = Math.max(0, Math.min(1, opening_eff / 100));
+          // tip이 seat top에서 얼마나 위에 있는가 (음수면 hole 안)
+          const tipAboveSeatTop_mm = -seatThickness_mm + op_frac * totalTravel_mm;
+          
+          // cone radius at seat top plane (mm)
+          // cone apex at tip, base widens upward
+          // base radius = (D_seat/2) × 1.6 (Side view와 동일)
+          const coneBaseR_mm = (D_seat_mm / 2) * 1.6;
+          const alpha_half_rad = needle_angle * Math.PI / 180;
+          const coneHeight_mm = coneBaseR_mm / Math.tan(alpha_half_rad);
+          
+          let cone_r_at_seat_mm;
+          if (tipAboveSeatTop_mm >= 0) {
+            // tip이 seat top 위 → seat top 평면이 cone 아래쪽 → 단면 없음
+            cone_r_at_seat_mm = 0;
+          } else {
+            // tip이 seat top 아래 (hole 안 또는 그 아래)
+            // d_from_tip = |tipAboveSeatTop_mm|
+            const d_from_tip = -tipAboveSeatTop_mm;
+            cone_r_at_seat_mm = Math.min(coneBaseR_mm, (d_from_tip / coneHeight_mm) * coneBaseR_mm);
+          }
+          
+          // 시각화: hole (D_seat/2)을 안 넘게 cap
+          const visible_r_mm = Math.min(D_seat_mm / 2, cone_r_at_seat_mm);
+          const visible_r_px = visible_r_mm * 24;  // 12x zoom for radius × 2 (consistent w/ seat_r)
+          
+          return visible_r_px > 0.5 ? (
+            <circle cx={cx} cy={cy} r={visible_r_px} fill="#64748b" stroke="#1e293b" strokeWidth="1"/>
+          ) : null;
+        })()}
         
         {/* Body outer label */}
         <text x={cx} y={cy - bodyR - 8} fontSize="10" fontFamily="monospace" fill="#475569" textAnchor="middle" fontWeight="bold">
