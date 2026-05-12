@@ -1319,109 +1319,101 @@ const TYPES = {
   eev_off_design: {
     typeNo: 130, name: 'EEV (Off-design)', category: 'refrigerant',
     color: '#16a34a', icon: Zap, image: './images/eev.png',
-    desc: 'Isenthalpic + Cd × A_throat — opening % 제어 또는 m_dot 측정',
+    desc: 'ARI flow coefficient curve — 제조사 카탈로그 직접 사용 (L1)',
     backend: 'python',
     pythonComponent: 'eev_off_design',
     parameters: [
-      // ─── Material ───
       { key: 'fluid', group: 'Material', label: 'Fluid', value: 'R290',
         options: ['R290','R134a','R410A','R32','R1234yf'], unit: '' },
-      // ─── Operating mode ───
       { key: 'mode', group: 'Operating', label: 'Mode', value: 'control',
         options: ['control', 'measure'], unit: '' },
-      // ─── Geometry ───
-      { key: 'A_max',       group: 'Geometry', label: 'A_max',       value: 1.5e-6, unit: 'm²' },
-      { key: 'opening_min', group: 'Geometry', label: 'opening_min', value: 5.0,    unit: '%' },
-      // ─── Fitting ───
-      { key: 'Cd', group: 'Fitting', label: 'Cd', value: 0.65, unit: '-' },
-      // ─── Outputs ───
+      { key: 'A_orifice',   group: 'Geometry', label: 'A_orifice',   value: 3.14e-6, unit: 'm²' },
+      { key: 'opening_min', group: 'Geometry', label: 'opening_min', value: 0.0,     unit: '%' },
+      { key: 'Cv_rated',    group: 'Curve',    label: 'Cv_rated',    value: 0.7,     unit: '-' },
+      { key: 'c0',          group: 'Curve',    label: 'c0',          value: 0.0,     unit: '-' },
+      { key: 'c1',          group: 'Curve',    label: 'c1',          value: 0.5,     unit: '-' },
+      { key: 'c2',          group: 'Curve',    label: 'c2',          value: 0.3,     unit: '-' },
+      { key: 'c3',          group: 'Curve',    label: 'c3',          value: 0.2,     unit: '-' },
       { key: 'output_select', label: 'Outputs',
-        value: ['m_dot_ref', 'opening_calc', 'h_out', 'T_out', 'x_out', 'A_throat'],
-        multiSelect: ['m_dot_ref', 'opening_calc', 'h_out', 'T_out', 'x_out',
-                      'rho_in', 'dP', 'A_throat'], unit: '' },
+        value: ['m_dot_ref', 'opening_calc', 'phi_op', 'T_out', 'x_out'],
+        multiSelect: ['m_dot_ref','opening_calc','h_out','T_out','x_out',
+                      'phi_op','rho_in','dP'], unit: '' },
     ],
     inputs: [
-      { key: 'P_in',        label: 'P_in',        unit: 'bar' },
-      { key: 'h_in',        label: 'h_in',        unit: 'kJ/kg' },
-      { key: 'P_out',       label: 'P_out',       unit: 'bar' },
-      { key: 'opening',     label: 'opening',     unit: '%' },
-      { key: 'm_dot_meas',  label: 'ṁ_meas',     unit: 'kg/s' },
+      { key: 'P_in',       label: 'P_in',    unit: 'bar' },
+      { key: 'h_in',       label: 'h_in',    unit: 'kJ/kg' },
+      { key: 'P_out',      label: 'P_out',   unit: 'bar' },
+      { key: 'opening',    label: 'opening', unit: '%' },
+      { key: 'm_dot_meas', label: 'ṁ_meas', unit: 'kg/s' },
     ],
     outputs: [
-      { key: 'm_dot_ref',    label: 'ṁ_ref',     unit: 'kg/s' },
-      { key: 'opening_calc', label: 'opening',    unit: '%' },
-      { key: 'h_out',        label: 'h_out',      unit: 'kJ/kg' },
-      { key: 'T_out',        label: 'T_out',      unit: '°C' },
-      { key: 'x_out',        label: 'x_out',      unit: '-' },
-      { key: 'rho_in',       label: 'ρ_in',       unit: 'kg/m³' },
-      { key: 'dP',           label: 'ΔP',         unit: 'bar' },
-      { key: 'A_throat',     label: 'A_throat',   unit: 'mm²' },
+      { key: 'm_dot_ref',    label: 'ṁ_ref',  unit: 'kg/s' },
+      { key: 'opening_calc', label: 'opening', unit: '%' },
+      { key: 'h_out',        label: 'h_out',   unit: 'kJ/kg' },
+      { key: 'T_out',        label: 'T_out',   unit: '°C' },
+      { key: 'x_out',        label: 'x_out',   unit: '-' },
+      { key: 'phi_op',       label: 'Φ(op)',   unit: '-' },
+      { key: 'rho_in',       label: 'ρ_in',    unit: 'kg/m³' },
+      { key: 'dP',           label: 'ΔP',      unit: 'bar' },
     ],
     compute: () => Object.fromEntries([
-      'm_dot_ref','opening_calc','h_out','T_out','x_out','rho_in','dP','A_throat'
+      'm_dot_ref','opening_calc','h_out','T_out','x_out','phi_op','rho_in','dP'
     ].map(k => [k, NaN])),
   },
 
-  // ================ EEV (Moving Boundary L2) ================
-  // Cv polynomial Cd(opening) + choke ceiling.
-  // L1과 별도 — 6 fitting params (c0, c1, c2, c3, cf_Cd, cf_A) calibration 가능.
+  // ================ EEV (Semi-Empirical L2 / Sami-Schnotale) ================
+  // 2-phase choked flow + subcooling correction + Re correction.
+  // 7 fitting params (Cd_0, Re_c, k_sub, k_op, Y_crit, cf_A) for calibration.
   eev_moving_boundary: {
-    typeNo: 131, name: 'EEV (Moving Boundary)', category: 'refrigerant',
+    typeNo: 131, name: 'EEV (Semi-Empirical)', category: 'refrigerant',
     color: '#15803d', icon: Zap, image: './images/eev.png',
-    desc: 'Cv polynomial Cd(opening) + choke ceiling — 6 fitting params',
+    desc: 'Sami-Schnotale: 2-phase choke + subcooling/Re correction (L2)',
     backend: 'python',
     pythonComponent: 'eev_moving_boundary',
     parameters: [
-      // ─── Material ───
       { key: 'fluid', group: 'Material', label: 'Fluid', value: 'R290',
         options: ['R290','R134a','R410A','R32','R1234yf'], unit: '' },
-      // ─── Operating mode ───
       { key: 'mode', group: 'Operating', label: 'Mode', value: 'control',
         options: ['control', 'measure'], unit: '' },
-      // ─── Geometry ───
-      { key: 'A_max',       group: 'Geometry', label: 'A_max',       value: 1.5e-6, unit: 'm²' },
-      { key: 'opening_min', group: 'Geometry', label: 'opening_min', value: 5.0,    unit: '%' },
-      // ─── Choke ───
-      { key: 'choke_ratio', group: 'Operating', label: 'choke_ratio', value: 0.5, unit: '-' },
-      { key: 'use_choke',   group: 'Operating', label: 'Choke ON',    value: 'on',
+      { key: 'use_choke',   group: 'Operating', label: 'Choke',       value: 'on',
         options: ['on', 'off'], unit: '' },
-      // ─── Cv polynomial (L2 핵심) ───
-      { key: 'c0', group: 'Cv polynomial', label: 'c0', value: 0.50, unit: '-' },
-      { key: 'c1', group: 'Cv polynomial', label: 'c1', value: 0.40, unit: '-' },
-      { key: 'c2', group: 'Cv polynomial', label: 'c2', value: -0.20, unit: '-' },
-      { key: 'c3', group: 'Cv polynomial', label: 'c3', value: 0.05, unit: '-' },
-      // ─── Fitting multipliers ───
-      { key: 'cf_Cd', group: 'Fitting', label: 'cf_Cd', value: 1.0, unit: '-' },
-      { key: 'cf_A',  group: 'Fitting', label: 'cf_A',  value: 1.0, unit: '-' },
-      // ─── Outputs ───
+      { key: 'A_orifice',   group: 'Geometry', label: 'A_orifice',   value: 3.14e-6, unit: 'm²' },
+      { key: 'opening_min', group: 'Geometry', label: 'opening_min', value: 0.0,     unit: '%' },
+      { key: 'Cd_0',        group: 'Fitting',  label: 'Cd_0',        value: 0.72,    unit: '-' },
+      { key: 'Re_c',        group: 'Fitting',  label: 'Re_c',        value: 5000.0,  unit: '-' },
+      { key: 'k_sub',       group: 'Fitting',  label: 'k_sub',       value: 0.05,    unit: '-' },
+      { key: 'k_op',        group: 'Fitting',  label: 'k_op',        value: 0.15,    unit: '-' },
+      { key: 'Y_crit',      group: 'Choke',    label: 'Y_crit',      value: 0.55,    unit: '-' },
+      { key: 'cf_A',        group: 'Fitting',  label: 'cf_A',        value: 1.0,     unit: '-' },
       { key: 'output_select', label: 'Outputs',
         value: ['m_dot_ref', 'opening_calc', 'Cd_eff', 'T_out', 'x_out', 'is_choked'],
-        multiSelect: ['m_dot_ref', 'opening_calc', 'h_out', 'T_out', 'x_out',
-                      'Cd_eff', 'rho_in', 'dP', 'dP_eff', 'is_choked', 'A_throat'], unit: '' },
+        multiSelect: ['m_dot_ref','opening_calc','h_out','T_out','x_out',
+                      'Cd_eff','Re','T_sub','rho_in','dP','dP_eff','is_choked'], unit: '' },
     ],
     inputs: [
-      { key: 'P_in',        label: 'P_in',        unit: 'bar' },
-      { key: 'h_in',        label: 'h_in',        unit: 'kJ/kg' },
-      { key: 'P_out',       label: 'P_out',       unit: 'bar' },
-      { key: 'opening',     label: 'opening',     unit: '%' },
-      { key: 'm_dot_meas',  label: 'ṁ_meas',     unit: 'kg/s' },
+      { key: 'P_in',       label: 'P_in',    unit: 'bar' },
+      { key: 'h_in',       label: 'h_in',    unit: 'kJ/kg' },
+      { key: 'P_out',      label: 'P_out',   unit: 'bar' },
+      { key: 'opening',    label: 'opening', unit: '%' },
+      { key: 'm_dot_meas', label: 'ṁ_meas', unit: 'kg/s' },
     ],
     outputs: [
-      { key: 'm_dot_ref',    label: 'ṁ_ref',     unit: 'kg/s' },
-      { key: 'opening_calc', label: 'opening',    unit: '%' },
-      { key: 'h_out',        label: 'h_out',      unit: 'kJ/kg' },
-      { key: 'T_out',        label: 'T_out',      unit: '°C' },
-      { key: 'x_out',        label: 'x_out',      unit: '-' },
-      { key: 'Cd_eff',       label: 'Cd_eff',     unit: '-' },
-      { key: 'rho_in',       label: 'ρ_in',       unit: 'kg/m³' },
-      { key: 'dP',           label: 'ΔP',         unit: 'bar' },
-      { key: 'dP_eff',       label: 'ΔP_eff',     unit: 'bar' },
-      { key: 'is_choked',    label: 'choked?',    unit: '-' },
-      { key: 'A_throat',     label: 'A_throat',   unit: 'mm²' },
+      { key: 'm_dot_ref',    label: 'ṁ_ref',  unit: 'kg/s' },
+      { key: 'opening_calc', label: 'opening', unit: '%' },
+      { key: 'h_out',        label: 'h_out',   unit: 'kJ/kg' },
+      { key: 'T_out',        label: 'T_out',   unit: '°C' },
+      { key: 'x_out',        label: 'x_out',   unit: '-' },
+      { key: 'Cd_eff',       label: 'Cd_eff',  unit: '-' },
+      { key: 'Re',           label: 'Re',      unit: '-' },
+      { key: 'T_sub',        label: 'T_sub',   unit: 'K' },
+      { key: 'rho_in',       label: 'ρ_in',    unit: 'kg/m³' },
+      { key: 'dP',           label: 'ΔP',      unit: 'bar' },
+      { key: 'dP_eff',       label: 'ΔP_eff',  unit: 'bar' },
+      { key: 'is_choked',    label: 'choked?', unit: '-' },
     ],
     compute: () => Object.fromEntries([
       'm_dot_ref','opening_calc','h_out','T_out','x_out',
-      'Cd_eff','rho_in','dP','dP_eff','is_choked','A_throat'
+      'Cd_eff','Re','T_sub','rho_in','dP','dP_eff','is_choked'
     ].map(k => [k, NaN])),
   },
 

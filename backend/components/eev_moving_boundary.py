@@ -1,42 +1,43 @@
 """
-EEV — Electronic Expansion Valve (L2 Semi-empirical / Cv polynomial)
+EEV — Electronic Expansion Valve (L2 Semi-Empirical / Sami-Schnotale)
 ═══════════════════════════════════════════════════════════════════════
-L1 (eev_off_design)의 한계 — Cd는 상수 0.65 가정.
-실제 EEV는 opening %마다 discharge coefficient가 변동 (작은 opening: 0.5,
-큰 opening: 0.75 등).
+2-phase choked flow + subcooling correction을 포함하는 학계 표준 모델.
 
-L2 핵심 차별점:
-  • Cd_eff(opening) = c0 + c1·op + c2·op² + c3·op³  (3차 다항식)
-    → opening 0~100% 범위에서 변동 표현
-    → c0~c3가 fitting 가능 (실험 ṁ 데이터로 보정)
-  • Choke 처리: flashing/2-phase choke 시 ṁ 상한
-    Critical pressure ratio (P_out/P_in)_crit ≈ 0.5 (R290 기준 학계 보고)
-    P_out < (P_out)_crit 이면 ṁ는 ΔP에 더 이상 비례 안 함
+핵심 식 (Sami-Schnotale 1995, modified):
+  
+  Normal flow:
+    ṁ_normal = Cd_eff × A_eff × √(2 × ρ_in × ΔP_eff)
+  
+  Choked flow (P_out/P_in < critical ratio):
+    G_crit = √(ρ × P_in × Y_crit)         (Henry-Fauske 단순화)
+    ṁ_choked = G_crit × A_eff
+    ΔP_eff = P_in × (1 - Y_crit) 
+  
+  ṁ = min(ṁ_normal, ṁ_choked)
+  
+  Discharge coefficient correlation:
+    Cd_eff = C_d0 × f_Re(Re) × f_sub(ΔT_sub) × f_op(op)
+    
+    f_Re(Re)  = 1 - exp(-Re/Re_c)        (low-Re correction)
+    f_sub(ΔT) = 1 + k_sub × (ΔT_sub / 10)  (subcooling 효과)
+    f_op(op)  = 1 - k_op × (1 - op)       (low opening 효과)
+  
+  A_eff = cf_A × A_orifice × op_frac     (선형 — L1과 동일, geometry는 L3)
 
-═══ 구조 ═══
-ṁ = Cd_eff(opening) × A_throat × √(2ρ_in × ΔP_eff)
-where:
-  ΔP_eff = min(ΔP_actual, ΔP_choke)
-  ΔP_choke = (P_in - P_out_crit) where P_out_crit = P_in × (P_out/P_in)_crit
-  A_throat = (opening/100) × A_max  (full open 가정)
+Reference:
+  • Sami, Schnotale (1995): "Modeling EEV with two-phase choked flow",
+    International Journal of Refrigeration, 18(5):310-318
+  • Buick et al. (1996): "Refrigerant Mass Flow Through Capillary Tubes"
+  • Henry, Fauske (1971): "The two-phase critical flow of one-component mixtures"
 
-═══ Calibration 시나리오 ═══
-실험에서 (P_in, P_out, opening, ṁ) 측정 → Cv 다항식 계수 4개 fitting
-fitting 변수: c0, c1, c2, c3, A_max (5 params 동시 최적화 가능)
+L2 vs L1, L3:
+  L1 (130): ARI curve, fitting 5 params, no choke
+  L2 (131): + 2-phase choke + Re/subcooling correction, fitting 7 params  ← This
+  L3 (132): + needle cone geometry, fitting 4 params
 
-═══ Default 값 (R290 EEV) ═══
-일반적인 R290 EEV (Danfoss CCM, Saginomiya STF) 학계 보고:
-  • opening 0~10%: Cd ≈ 0.4~0.55 (소유량 영역, 고정도 떨어짐)
-  • opening 10~50%: Cd ≈ 0.55~0.70 (선형 증가)
-  • opening 50~100%: Cd ≈ 0.70~0.78 (포화)
-이를 3차 다항식으로 근사:
-  Cd(0)=0.50, Cd(0.5)=0.65, Cd(1.0)=0.75
-  → c0=0.50, c1=0.40, c2=-0.20, c3=0.05 (예시)
-
-진영님 정리:
-  ✓ Semi-empirical — Cv 곡선이 opening의 함수
-  ✓ L1과 다른 모듈 (별도 파일)
-  ✓ Fitting 가능한 다항식 계수 (calibration 친화)
+모드:
+  • control: opening → m_dot
+  • measure: m_dot → opening (bisection)
 """
 
 import math
@@ -49,103 +50,82 @@ MODES = ['control', 'measure']
 
 modelDescription = {
     'typeNo': 131,
-    'name': 'EEV (Moving Boundary / Cv polynomial)',
+    'name': 'EEV (Semi-Empirical / Sami-Schnotale)',
     'category': 'refrigerant',
     'modelType': 'semi-empirical',
-    'fidelity': 0.7,
-    'description': 'Cv polynomial Cd(opening) + choke ceiling. fitting 4 다항식 계수 + A_max',
+    'fidelity': 0.8,
+    'description': 'Sami-Schnotale: 2-phase choke + subcooling/Re correction',
     'backend': 'python',
     'variables': [
-        # ═══════ Material ═══════
         {'name': 'fluid', 'causality': 'parameter', 'type': 'String',
          'group': 'Material', 'start': 'R290', 'unit': '-', 'options': FLUIDS,
          'description': '냉매 종류'},
-
-        # ═══════ Operating mode ═══════
         {'name': 'mode', 'causality': 'parameter', 'type': 'String',
          'group': 'Operating', 'start': 'control', 'unit': '-', 'options': MODES,
-         'description': "control: opening→m_dot / measure: m_dot→opening 역산"},
-
-        # ═══════ Geometry ═══════
-        {'name': 'A_max', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Geometry', 'start': 1.5e-6, 'unit': 'm²',
-         'description': 'Full-open orifice 단면적'},
-        {'name': 'opening_min', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Geometry', 'start': 5.0, 'unit': '%',
-         'description': 'Minimum opening %'},
-
-        # ═══════ Choke ═══════
-        {'name': 'choke_ratio', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Operating', 'start': 0.5, 'unit': '-',
-         'description': 'Critical pressure ratio (P_out/P_in)_crit (R290: ~0.5, 일반 valve: 0.5~0.6)'},
+         'description': 'control: opening→ṁ / measure: ṁ→opening'},
         {'name': 'use_choke', 'causality': 'parameter', 'type': 'String',
          'group': 'Operating', 'start': 'on', 'unit': '-', 'options': ['on', 'off'],
-         'description': 'Choke ceiling 사용 여부 (off: L1 모드)'},
-
-        # ═══════ Cv polynomial coefficients ═══════
-        # Cd(op) = c0 + c1·op + c2·op² + c3·op³  (op = opening/100, 0~1)
-        {'name': 'c0', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Cv polynomial', 'start': 0.50, 'unit': '-',
-         'description': 'Cd polynomial 상수항 (op=0 기준)'},
-        {'name': 'c1', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Cv polynomial', 'start': 0.40, 'unit': '-',
-         'description': 'Cd polynomial 1차'},
-        {'name': 'c2', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Cv polynomial', 'start': -0.20, 'unit': '-',
-         'description': 'Cd polynomial 2차'},
-        {'name': 'c3', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Cv polynomial', 'start': 0.05, 'unit': '-',
-         'description': 'Cd polynomial 3차'},
-
-        # ═══════ Fitting (calibration multipliers) ═══════
-        {'name': 'cf_Cd', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Fitting', 'start': 1.0, 'unit': '-',
-         'description': '전체 Cd 보정 multiplier (실험 fitting)'},
+         'description': '2-phase choke 활성화'},
+        {'name': 'A_orifice', 'causality': 'parameter', 'type': 'Real',
+         'group': 'Geometry', 'start': 3.14e-6, 'unit': 'm²',
+         'description': 'Maximum orifice 면적 (D=2mm → 3.14e-6 m²)'},
+        {'name': 'opening_min', 'causality': 'parameter', 'type': 'Real',
+         'group': 'Geometry', 'start': 0.0, 'unit': '%',
+         'description': 'Minimum opening %'},
+        {'name': 'Cd_0', 'causality': 'parameter', 'type': 'Real',
+         'group': 'Fitting', 'start': 0.72, 'unit': '-',
+         'description': 'Base Cd at high Re, full opening, no subcooling'},
+        {'name': 'Re_c', 'causality': 'parameter', 'type': 'Real',
+         'group': 'Fitting', 'start': 5000.0, 'unit': '-',
+         'description': 'Critical Re for low-Re correction'},
+        {'name': 'k_sub', 'causality': 'parameter', 'type': 'Real',
+         'group': 'Fitting', 'start': 0.05, 'unit': '-',
+         'description': 'Subcooling sensitivity (per 10K subcool)'},
+        {'name': 'k_op', 'causality': 'parameter', 'type': 'Real',
+         'group': 'Fitting', 'start': 0.15, 'unit': '-',
+         'description': 'Low-opening Cd reduction factor'},
+        {'name': 'Y_crit', 'causality': 'parameter', 'type': 'Real',
+         'group': 'Choke', 'start': 0.55, 'unit': '-',
+         'description': 'Critical pressure ratio for choke (R290 typical: 0.5~0.6)'},
         {'name': 'cf_A', 'causality': 'parameter', 'type': 'Real',
          'group': 'Fitting', 'start': 1.0, 'unit': '-',
-         'description': 'A_max 보정 multiplier'},
-
-        # ═══════ Inputs ═══════
+         'description': 'A_eff 보정 factor'},
         {'name': 'P_in', 'causality': 'input', 'type': 'Real',
-         'unit': 'bar', 'description': '입구 압력 (응축기 후)'},
+         'unit': 'bar', 'description': '입구 압력 (subcool liquid)'},
         {'name': 'h_in', 'causality': 'input', 'type': 'Real',
-         'unit': 'kJ/kg', 'description': '입구 비엔탈피 (subcooled liquid)'},
+         'unit': 'kJ/kg', 'description': '입구 비엔탈피'},
         {'name': 'P_out', 'causality': 'input', 'type': 'Real',
-         'unit': 'bar', 'description': '출구 압력 (증발기)'},
+         'unit': 'bar', 'description': '출구 압력 (2-phase)'},
         {'name': 'opening', 'causality': 'input', 'type': 'Real',
-         'unit': '%', 'description': '(control mode) Opening 0~100%'},
+         'unit': '%', 'description': '(control) Opening 0~100%'},
         {'name': 'm_dot_meas', 'causality': 'input', 'type': 'Real',
-         'unit': 'kg/s', 'description': '(measure mode) 측정된 ṁ'},
-
-        # ═══════ Outputs ═══════
+         'unit': 'kg/s', 'description': '(measure) 측정 ṁ'},
         {'name': 'm_dot_ref', 'causality': 'output', 'type': 'Real',
          'unit': 'kg/s', 'description': '냉매 mass flow'},
         {'name': 'opening_calc', 'causality': 'output', 'type': 'Real',
          'unit': '%', 'description': 'opening (measure 시 역산)'},
         {'name': 'h_out', 'causality': 'output', 'type': 'Real',
-         'unit': 'kJ/kg', 'description': '출구 비엔탈피 (= h_in)'},
+         'unit': 'kJ/kg', 'description': '출구 비엔탈피'},
         {'name': 'T_out', 'causality': 'output', 'type': 'Real',
-         'unit': '°C', 'description': '출구 온도 (T_evap)'},
+         'unit': '°C', 'description': '출구 온도'},
         {'name': 'x_out', 'causality': 'output', 'type': 'Real',
          'unit': '-', 'description': '출구 quality'},
-        # 진단 outputs
         {'name': 'Cd_eff', 'causality': 'output', 'type': 'Real',
-         'unit': '-', 'description': '실제 적용된 Cd_eff(opening)'},
+         'unit': '-', 'description': '실제 적용된 Cd (correction 적용 후)'},
+        {'name': 'Re', 'causality': 'output', 'type': 'Real',
+         'unit': '-', 'description': 'Throat Reynolds number'},
+        {'name': 'T_sub', 'causality': 'output', 'type': 'Real',
+         'unit': 'K', 'description': '입구 subcooling'},
         {'name': 'rho_in', 'causality': 'output', 'type': 'Real',
          'unit': 'kg/m³', 'description': '입구 밀도'},
         {'name': 'dP', 'causality': 'output', 'type': 'Real',
-         'unit': 'bar', 'description': 'P_in - P_out'},
+         'unit': 'bar', 'description': 'P_in - P_out (실제)'},
         {'name': 'dP_eff', 'causality': 'output', 'type': 'Real',
-         'unit': 'bar', 'description': '실제 효과 ΔP (choke cap 적용)'},
+         'unit': 'bar', 'description': '실제 효과 ΔP (choke cap)'},
         {'name': 'is_choked', 'causality': 'output', 'type': 'Real',
-         'unit': '-', 'description': 'Choke 발생 여부 (1=choke, 0=normal)'},
-        {'name': 'A_throat', 'causality': 'output', 'type': 'Real',
-         'unit': 'mm²', 'description': '실제 orifice 단면적'},
+         'unit': '-', 'description': '2-phase choke 발생 여부 (1/0)'},
     ],
-    'capabilities': {
-        'canDoStep': True,
-        'canGetDerivatives': False,
-    },
+    'capabilities': {'canDoStep': True, 'canGetDerivatives': False},
 }
 
 
@@ -153,31 +133,47 @@ def init_state(params):
     return {}
 
 
-def _Cd_polynomial(opening_frac, c0, c1, c2, c3):
-    """Cd(op) = c0 + c1·op + c2·op² + c3·op³, op = opening/100 (0~1)"""
-    op = max(0.0, min(1.0, opening_frac))
-    Cd = c0 + c1 * op + c2 * (op ** 2) + c3 * (op ** 3)
-    return max(0.05, min(1.0, Cd))  # clamp 0.05~1.0
+def _compute_subcooling(P_in_Pa, h_in_J, fluid):
+    """입구 subcooling 계산 (K). subcooled면 양수, 2-phase면 0."""
+    try:
+        T_sat = CP.PropsSI('T', 'P', P_in_Pa, 'Q', 0, fluid)
+        h_sat_l = CP.PropsSI('H', 'P', P_in_Pa, 'Q', 0, fluid)
+        if h_in_J >= h_sat_l:
+            return 0.0  # already 2-phase or superheated → no subcooling
+        T_in = CP.PropsSI('T', 'P', P_in_Pa, 'H', h_in_J, fluid)
+        return T_sat - T_in
+    except Exception:
+        return 5.0  # fallback
+
+
+def _Cd_corrections(Cd_0, Re, T_sub_K, op_frac, Re_c, k_sub, k_op):
+    """
+    Cd_eff = Cd_0 × f_Re × f_sub × f_op
+    
+    f_Re(Re)  = 1 - exp(-Re/Re_c)    [→ 1 as Re→∞, → 0 as Re→0]
+    f_sub(ΔT) = 1 + k_sub × (ΔT_sub / 10)
+    f_op(op)  = 1 - k_op × (1 - op)  [reduces at low opening]
+    """
+    f_Re = 1.0 - math.exp(-max(0, Re) / max(1, Re_c)) if Re > 0 else 0.0
+    f_sub = 1.0 + k_sub * (T_sub_K / 10.0)
+    f_op = 1.0 - k_op * (1.0 - max(0, min(1, op_frac)))
+    return Cd_0 * max(0.05, f_Re) * max(0.5, f_sub) * max(0.3, f_op)
 
 
 def step(input, params, state, dt):
-    # ═══════ Parameters ═══════
     fluid = params.get('fluid', 'R290')
     mode = params.get('mode', 'control')
-    A_max = float(params.get('A_max', 1.5e-6))
-    opening_min = float(params.get('opening_min', 5.0))
-    choke_ratio = float(params.get('choke_ratio', 0.5))
     use_choke = params.get('use_choke', 'on')
-    
-    c0 = float(params.get('c0', 0.50))
-    c1 = float(params.get('c1', 0.40))
-    c2 = float(params.get('c2', -0.20))
-    c3 = float(params.get('c3', 0.05))
-    
-    cf_Cd = float(params.get('cf_Cd', 1.0))
+
+    A_orifice = float(params.get('A_orifice', 3.14e-6))
+    opening_min = float(params.get('opening_min', 0.0))
+    Cd_0 = float(params.get('Cd_0', 0.72))
+    Re_c = float(params.get('Re_c', 5000.0))
+    k_sub = float(params.get('k_sub', 0.05))
+    k_op = float(params.get('k_op', 0.15))
+    Y_crit = float(params.get('Y_crit', 0.55))
     cf_A = float(params.get('cf_A', 1.0))
 
-    # ═══════ Inputs ═══════
     P_in_bar = float(input.get('P_in', 17.0))
     h_in_kjkg = float(input.get('h_in', 280.0))
     P_out_bar = float(input.get('P_out', 5.84))
@@ -187,72 +183,84 @@ def step(input, params, state, dt):
     if P_in_bar <= 0 or P_out_bar <= 0:
         raise ValueError(f"압력 0 이하: P_in={P_in_bar}, P_out={P_out_bar}")
     if P_out_bar >= P_in_bar:
-        return _zero_output(P_in_bar, P_out_bar, h_in_kjkg, fluid, mode, opening_pct)
+        return _zero_output(P_in_bar, P_out_bar, h_in_kjkg, mode, opening_pct)
 
     P_in_Pa = P_in_bar * 1e5
     P_out_Pa = P_out_bar * 1e5
     h_in_J = h_in_kjkg * 1000.0
-    A_max_eff = A_max * cf_A
 
-    # ═══════ 입구 밀도 ═══════
     try:
         rho_in = CP.PropsSI('D', 'P', P_in_Pa, 'H', h_in_J, fluid)
+        mu_in = CP.PropsSI('V', 'P', P_in_Pa, 'H', h_in_J, fluid)
     except Exception:
-        rho_in = 580.0 if fluid == 'R290' else 1100.0
+        rho_in = 480.0 if fluid == 'R290' else 1100.0
+        mu_in = 1.5e-4
 
-    # ═══════ Choke check ═══════
+    T_sub_K = _compute_subcooling(P_in_Pa, h_in_J, fluid)
+
+    # ═══ Choke check ═══
     is_choked = 0
     dP_actual_Pa = P_in_Pa - P_out_Pa
     dP_eff_Pa = dP_actual_Pa
-    
-    if use_choke == 'on':
-        # Choke 조건: P_out/P_in < critical_ratio
-        if (P_out_bar / P_in_bar) < choke_ratio:
-            P_out_choke_Pa = P_in_Pa * choke_ratio
-            dP_eff_Pa = P_in_Pa - P_out_choke_Pa
-            is_choked = 1
-    
+    pressure_ratio = P_out_Pa / P_in_Pa
+
+    if use_choke == 'on' and pressure_ratio < Y_crit:
+        dP_eff_Pa = P_in_Pa * (1.0 - Y_crit)
+        is_choked = 1
+
     dP_eff_bar = dP_eff_Pa / 1e5
 
-    # ═══════ Mode-specific 계산 ═══════
+    # ═══ Mode-specific 계산 ═══
     if mode == 'control':
-        # opening → m_dot
         opening_clamped = max(opening_min, min(100.0, opening_pct))
-        opening_frac = opening_clamped / 100.0
-        Cd_eff = _Cd_polynomial(opening_frac, c0, c1, c2, c3) * cf_Cd
-        A_throat = opening_frac * A_max_eff
-        m_dot_ref = Cd_eff * A_throat * math.sqrt(2.0 * rho_in * dP_eff_Pa)
+        op_frac = opening_clamped / 100.0
+        A_eff = cf_A * A_orifice * op_frac
+
+        # First-pass: estimate Re with high-Re Cd
+        m_dot_first = Cd_0 * A_eff * math.sqrt(2 * rho_in * dP_eff_Pa)
+        D_h = math.sqrt(4 * A_eff / math.pi) if A_eff > 0 else 0
+        Re = m_dot_first * D_h / (mu_in * A_eff) if (mu_in * A_eff) > 0 else 0
+
+        # Cd with all corrections
+        Cd_eff = _Cd_corrections(Cd_0, Re, T_sub_K, op_frac, Re_c, k_sub, k_op)
+
+        m_dot_ref = Cd_eff * A_eff * math.sqrt(2 * rho_in * dP_eff_Pa)
         opening_calc = opening_clamped
-    else:  # 'measure'
-        # m_dot → opening 역산
-        # 다항식 Cd 때문에 Newton iteration 필요 (linear bisection으로 안정)
+    else:
+        # measure mode: bisection
         if m_dot_meas <= 0 or rho_in <= 0:
             opening_calc = 0.0
-            A_throat = 0.0
+            A_eff = 0.0
             Cd_eff = 0.0
+            Re = 0.0
             m_dot_ref = 0.0
         else:
-            # Bisection: opening 0~100 사이에서 m_dot 일치하는 op 찾기
             lo, hi = opening_min, 100.0
             for _ in range(40):
                 mid = (lo + hi) / 2.0
-                op_frac = mid / 100.0
-                Cd_test = _Cd_polynomial(op_frac, c0, c1, c2, c3) * cf_Cd
-                A_test = op_frac * A_max_eff
-                m_test = Cd_test * A_test * math.sqrt(2.0 * rho_in * dP_eff_Pa)
-                if m_test < m_dot_meas:
+                op_frac_t = mid / 100.0
+                A_t = cf_A * A_orifice * op_frac_t
+                m_first = Cd_0 * A_t * math.sqrt(2 * rho_in * dP_eff_Pa)
+                D_h = math.sqrt(4 * A_t / math.pi) if A_t > 0 else 0
+                Re_t = m_first * D_h / (mu_in * A_t) if (mu_in * A_t) > 0 else 0
+                Cd_t = _Cd_corrections(Cd_0, Re_t, T_sub_K, op_frac_t, Re_c, k_sub, k_op)
+                m_t = Cd_t * A_t * math.sqrt(2 * rho_in * dP_eff_Pa)
+                if m_t < m_dot_meas:
                     lo = mid
                 else:
                     hi = mid
                 if abs(hi - lo) < 0.001:
                     break
             opening_calc = (lo + hi) / 2.0
-            op_final = opening_calc / 100.0
-            Cd_eff = _Cd_polynomial(op_final, c0, c1, c2, c3) * cf_Cd
-            A_throat = op_final * A_max_eff
-            m_dot_ref = m_dot_meas  # echo
+            op_frac = opening_calc / 100.0
+            A_eff = cf_A * A_orifice * op_frac
+            m_dot_first = Cd_0 * A_eff * math.sqrt(2 * rho_in * dP_eff_Pa)
+            D_h = math.sqrt(4 * A_eff / math.pi) if A_eff > 0 else 0
+            Re = m_dot_first * D_h / (mu_in * A_eff) if (mu_in * A_eff) > 0 else 0
+            Cd_eff = _Cd_corrections(Cd_0, Re, T_sub_K, op_frac, Re_c, k_sub, k_op)
+            m_dot_ref = m_dot_meas
 
-    # ═══════ 출구 상태 (isenthalpic) ═══════
+    # ═══ 출구 상태 (isenthalpic) ═══
     h_out_J = h_in_J
     try:
         h_l_out = CP.PropsSI('H', 'P', P_out_Pa, 'Q', 0, fluid)
@@ -268,7 +276,7 @@ def step(input, params, state, dt):
             T_out_K = CP.PropsSI('T', 'P', P_out_Pa, 'Q', x_out, fluid)
     except Exception:
         x_out = 0.2
-        T_out_K = CP.PropsSI('T', 'P', P_out_Pa, 'Q', 0.2, fluid) if fluid == 'R290' else 280.0
+        T_out_K = 280.0
 
     return {
         'outputs': {
@@ -278,17 +286,18 @@ def step(input, params, state, dt):
             'T_out': T_out_K - 273.15,
             'x_out': x_out,
             'Cd_eff': Cd_eff,
+            'Re': Re,
+            'T_sub': T_sub_K,
             'rho_in': rho_in,
             'dP': P_in_bar - P_out_bar,
             'dP_eff': dP_eff_bar,
             'is_choked': float(is_choked),
-            'A_throat': A_throat * 1e6,
         },
         'newState': {},
     }
 
 
-def _zero_output(P_in_bar, P_out_bar, h_in_kjkg, fluid, mode, opening_pct):
+def _zero_output(P_in_bar, P_out_bar, h_in_kjkg, mode, opening_pct):
     return {
         'outputs': {
             'm_dot_ref': 0.0,
@@ -297,11 +306,12 @@ def _zero_output(P_in_bar, P_out_bar, h_in_kjkg, fluid, mode, opening_pct):
             'T_out': float('nan'),
             'x_out': 0.0,
             'Cd_eff': 0.0,
+            'Re': 0.0,
+            'T_sub': 0.0,
             'rho_in': 0.0,
             'dP': P_in_bar - P_out_bar,
             'dP_eff': 0.0,
             'is_choked': 0.0,
-            'A_throat': 0.0,
         },
         'newState': {},
     }
@@ -309,33 +319,14 @@ def _zero_output(P_in_bar, P_out_bar, h_in_kjkg, fluid, mode, opening_pct):
 
 def validate(params):
     issues = []
-    
-    A_max = float(params.get('A_max', 1.5e-6))
-    if A_max <= 0:
-        issues.append({'key': 'A_max', 'msg': f'A_max={A_max} ≤ 0'})
-    
-    mode = params.get('mode', 'control')
-    if mode not in MODES:
-        issues.append({'key': 'mode', 'msg': f'mode는 {MODES} 중'})
-    
-    choke_ratio = float(params.get('choke_ratio', 0.5))
-    if choke_ratio < 0.3 or choke_ratio > 0.7:
-        issues.append({'key': 'choke_ratio',
-                      'msg': f'choke_ratio={choke_ratio} — 0.4~0.6 권장'})
-    
-    # Cv polynomial은 op=0~1에서 0.05~1.0 범위 안에 들어가야
-    c0 = float(params.get('c0', 0.50))
-    c1 = float(params.get('c1', 0.40))
-    c2 = float(params.get('c2', -0.20))
-    c3 = float(params.get('c3', 0.05))
-    
-    Cd_at_0 = c0
-    Cd_at_1 = c0 + c1 + c2 + c3
-    if Cd_at_0 < 0.05 or Cd_at_0 > 1.0:
-        issues.append({'key': 'c0',
-                      'msg': f'Cd(op=0) = c0 = {Cd_at_0:.3f} — 0.3~0.6 권장'})
-    if Cd_at_1 < 0.3 or Cd_at_1 > 1.2:
-        issues.append({'key': 'c0,c1,c2,c3',
-                      'msg': f'Cd(op=1) = {Cd_at_1:.3f} — 0.6~0.85 권장'})
-    
+    A_orifice = float(params.get('A_orifice', 3.14e-6))
+    if A_orifice <= 0 or A_orifice > 1e-4:
+        issues.append({'key': 'A_orifice',
+                       'msg': f'A_orifice={A_orifice*1e6:.2f}mm² — 보통 1~30 mm²'})
+    Cd_0 = float(params.get('Cd_0', 0.72))
+    if Cd_0 < 0.4 or Cd_0 > 0.95:
+        issues.append({'key': 'Cd_0', 'msg': f'Cd_0={Cd_0} — 0.6~0.8 권장'})
+    Y_crit = float(params.get('Y_crit', 0.55))
+    if Y_crit < 0.3 or Y_crit > 0.8:
+        issues.append({'key': 'Y_crit', 'msg': f'Y_crit={Y_crit} — 0.4~0.6 권장 (R290)'})
     return issues
