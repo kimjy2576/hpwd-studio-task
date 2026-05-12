@@ -2073,6 +2073,276 @@ function CoilView3D({ D_o, D_i, L_tube, FPI, t_fin, N_tubes, N_rows, P_t, P_l,
 }
 
 /* ═══════════════════════════════════════════════════════════════════
+   EEV 3D Viewer — Three.js
+   ═══════════════════════════════════════════════════════════════════
+   EEV body + needle + seat + inlet/outlet pipes 3D 모델
+   진영님 요청: 다른 부품과 동일하게 3D view 추가
+   - drag rotate, scroll zoom
+   - needle stroke가 opening %에 따라 움직임 (실시간)
+   ═══════════════════════════════════════════════════════════════════ */
+function EEVView3D({ D_seat_mm, stroke_max_mm, D_orifice_max_mm,
+                     L_inlet_mm, L_outlet_mm, needle_angle, needle_profile,
+                     opening_eff, stroke_m }) {
+  const mountRef = React.useRef(null);
+  const stateRef = React.useRef(null);
+  
+  React.useEffect(() => {
+    if (!mountRef.current || typeof THREE === 'undefined') return;
+    const mount = mountRef.current;
+    const w = mount.clientWidth || 600;
+    const h = mount.clientHeight || 400;
+    
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0xf1f5f9);
+    
+    const camera = new THREE.PerspectiveCamera(45, w/h, 0.1, 5000);
+    camera.position.set(80, 50, 100);
+    camera.lookAt(0, 0, 0);
+    
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(w, h);
+    renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
+    mount.appendChild(renderer.domElement);
+    
+    // Lights
+    const amb = new THREE.AmbientLight(0xffffff, 0.6);
+    scene.add(amb);
+    const dir = new THREE.DirectionalLight(0xffffff, 0.85);
+    dir.position.set(80, 100, 80);
+    scene.add(dir);
+    const dir2 = new THREE.DirectionalLight(0xffffff, 0.4);
+    dir2.position.set(-60, -30, -80);
+    scene.add(dir2);
+    
+    // Materials
+    const bodyMat = new THREE.MeshPhongMaterial({
+      color: 0x94a3b8, shininess: 60, specular: 0x666666,
+      transparent: true, opacity: 0.45, side: THREE.DoubleSide
+    });
+    const needleMat = new THREE.MeshPhongMaterial({
+      color: 0x475569, shininess: 100, specular: 0x888888
+    });
+    const stemMat = new THREE.MeshPhongMaterial({
+      color: 0x64748b, shininess: 80, specular: 0x666666
+    });
+    const seatMat = new THREE.MeshPhongMaterial({
+      color: 0xcbd5e1, shininess: 50, specular: 0x444444
+    });
+    const inletMat = new THREE.MeshPhongMaterial({
+      color: 0xa78bfa, shininess: 70, specular: 0x6b21a8,
+      transparent: true, opacity: 0.8
+    });
+    const outletMat = new THREE.MeshPhongMaterial({
+      color: 0xfbbf24, shininess: 70, specular: 0xd97706,
+      transparent: true, opacity: 0.8
+    });
+    const orificeMat = new THREE.MeshPhongMaterial({
+      color: 0xdc2626, side: THREE.DoubleSide
+    });
+    
+    // ── Geometry (mm units, scale up for visibility) ──
+    const scale = 10;  // 1mm → 10 scene units
+    const D_seat = D_seat_mm * scale;
+    const stroke_max = stroke_max_mm * scale;
+    const D_orif_max = D_orifice_max_mm * scale;
+    const stroke_now = stroke_m * 1000 * scale;
+    
+    // Body (외부 valve body, transparent box)
+    const bodyW = D_seat * 3;
+    const bodyH = stroke_max * 1.5 + 30;
+    const bodyD = D_seat * 3;
+    const bodyGeo = new THREE.BoxGeometry(bodyW, bodyH, bodyD);
+    const body = new THREE.Mesh(bodyGeo, bodyMat);
+    body.position.set(0, 0, 0);
+    scene.add(body);
+    
+    // Body wireframe (외곽선)
+    const wireGeo = new THREE.EdgesGeometry(bodyGeo);
+    const wireMat = new THREE.LineBasicMaterial({ color: 0x1e293b, linewidth: 2 });
+    const wire = new THREE.LineSegments(wireGeo, wireMat);
+    scene.add(wire);
+    
+    // Seat (cylinder with hole — torus + disk)
+    const seatY = -bodyH / 2 + 5;  // 하부
+    const seatThickness = 4;
+    const seatOuter = D_seat * 1.4;
+    const seatGeo = new THREE.CylinderGeometry(seatOuter / 2, seatOuter / 2, seatThickness, 32);
+    const seat = new THREE.Mesh(seatGeo, seatMat);
+    seat.position.set(0, seatY, 0);
+    scene.add(seat);
+    
+    // Orifice (red circle to mark the opening)
+    const orifGeo = new THREE.RingGeometry((D_seat / 2) * 0.9, D_seat / 2, 32);
+    const orif = new THREE.Mesh(orifGeo, orificeMat);
+    orif.rotation.x = -Math.PI / 2;
+    orif.position.set(0, seatY + seatThickness / 2 + 0.1, 0);
+    scene.add(orif);
+    
+    // Needle (cone — needle profile에 따라)
+    // Cone: half-angle α/2 (반각), height = D_seat / tan(α/2)
+    const alpha_half_rad = needle_angle * Math.PI / 180;
+    const coneBaseR = D_seat * 0.7;
+    const coneHeight = coneBaseR / Math.tan(alpha_half_rad);
+    const needleGeo = new THREE.ConeGeometry(coneBaseR, coneHeight, 32);
+    const needle = new THREE.Mesh(needleGeo, needleMat);
+    // Needle tip: seatY (when fully closed) + stroke_now
+    // ConeGeometry: apex at top, base at bottom by default. 우리는 apex가 아래 (seat 향함)
+    needle.rotation.x = Math.PI;  // flip — apex down
+    const needleTipY = seatY + stroke_now;  // tip 위치
+    needle.position.set(0, needleTipY + coneHeight / 2, 0);  // cone center
+    scene.add(needle);
+    
+    // Stem (cylinder, needle 위로 올라가는 shaft)
+    const stemR = D_seat * 0.3;
+    const stemTopY = bodyH / 2 + 8;
+    const needleBaseY = needleTipY + coneHeight;
+    const stemLen = stemTopY - needleBaseY;
+    const stemGeo = new THREE.CylinderGeometry(stemR, stemR, stemLen, 16);
+    const stem = new THREE.Mesh(stemGeo, stemMat);
+    stem.position.set(0, needleBaseY + stemLen / 2, 0);
+    scene.add(stem);
+    
+    // Inlet pipe (좌측, subcool liquid)
+    const pipeR = D_seat * 0.6;
+    const inletLen = L_inlet_mm * scale * 0.5;  // 시각화용 축소
+    const inletGeo = new THREE.CylinderGeometry(pipeR, pipeR, inletLen, 16);
+    const inlet = new THREE.Mesh(inletGeo, inletMat);
+    inlet.rotation.z = Math.PI / 2;
+    inlet.position.set(-bodyW/2 - inletLen/2, 0, 0);
+    scene.add(inlet);
+    
+    // Inlet cap (정면 보이게)
+    const inletCapGeo = new THREE.CircleGeometry(pipeR, 16);
+    const inletCap = new THREE.Mesh(inletCapGeo, inletMat);
+    inletCap.rotation.y = -Math.PI / 2;
+    inletCap.position.set(-bodyW/2 - inletLen - 0.1, 0, 0);
+    scene.add(inletCap);
+    
+    // Outlet pipe (하단, 2-phase) — seat 아래 방향
+    const outletLen = L_outlet_mm * scale * 0.5;
+    const outletGeo = new THREE.CylinderGeometry(pipeR, pipeR, outletLen, 16);
+    const outlet = new THREE.Mesh(outletGeo, outletMat);
+    outlet.position.set(0, seatY - outletLen/2 - 0.5, 0);
+    scene.add(outlet);
+    
+    // Outlet cap
+    const outletCapGeo = new THREE.CircleGeometry(pipeR, 16);
+    const outletCap = new THREE.Mesh(outletCapGeo, outletMat);
+    outletCap.rotation.x = -Math.PI / 2;
+    outletCap.position.set(0, seatY - outletLen - 0.6, 0);
+    scene.add(outletCap);
+    
+    // Floor grid for orientation
+    const grid = new THREE.GridHelper(120, 12, 0xcbd5e1, 0xe2e8f0);
+    grid.position.y = -bodyH/2 - outletLen - 5;
+    scene.add(grid);
+    
+    // Axis helper (작게)
+    const axes = new THREE.AxesHelper(15);
+    axes.position.set(-bodyW/2 - 5, bodyH/2 + 5, bodyD/2);
+    scene.add(axes);
+    
+    // ── Camera orbit (manual, OrbitControls 미사용) ──
+    const target = new THREE.Vector3(0, 0, 0);
+    let rotX = 0.25;  // pitch (radians)
+    let rotY = -0.4;  // yaw
+    let zoom = 1.0;
+    const baseDist = 130;
+    
+    const updateCamera = () => {
+      const dist = baseDist / zoom;
+      camera.position.set(
+        target.x + dist * Math.sin(rotY) * Math.cos(rotX),
+        target.y + dist * Math.sin(rotX),
+        target.z + dist * Math.cos(rotY) * Math.cos(rotX)
+      );
+      camera.lookAt(target);
+    };
+    updateCamera();
+    
+    // Mouse interaction
+    let isDragging = false, prevX = 0, prevY = 0;
+    const dom = renderer.domElement;
+    dom.style.cursor = 'grab';
+    dom.addEventListener('mousedown', (e) => {
+      isDragging = true; prevX = e.clientX; prevY = e.clientY;
+      dom.style.cursor = 'grabbing';
+    });
+    window.addEventListener('mouseup', () => {
+      isDragging = false; dom.style.cursor = 'grab';
+    });
+    window.addEventListener('mousemove', (e) => {
+      if (!isDragging) return;
+      rotY -= (e.clientX - prevX) * 0.008;
+      rotX = Math.max(-1.4, Math.min(1.4, rotX + (e.clientY - prevY) * 0.008));
+      prevX = e.clientX; prevY = e.clientY;
+      updateCamera();
+    });
+    dom.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      zoom *= e.deltaY > 0 ? 0.92 : 1.08;
+      zoom = Math.max(0.3, Math.min(3.0, zoom));
+      updateCamera();
+    }, { passive: false });
+    
+    // Animation loop
+    let raf;
+    const animate = () => {
+      raf = requestAnimationFrame(animate);
+      renderer.render(scene, camera);
+    };
+    animate();
+    
+    // Resize
+    const onResize = () => {
+      const w2 = mount.clientWidth, h2 = mount.clientHeight;
+      camera.aspect = w2 / h2;
+      camera.updateProjectionMatrix();
+      renderer.setSize(w2, h2);
+    };
+    const ro = new ResizeObserver(onResize);
+    ro.observe(mount);
+    
+    stateRef.current = { scene, camera, renderer, raf };
+    
+    return () => {
+      cancelAnimationFrame(raf);
+      ro.disconnect();
+      if (mount && renderer.domElement.parentNode === mount) {
+        mount.removeChild(renderer.domElement);
+      }
+      renderer.dispose();
+      bodyGeo.dispose();
+      wireGeo.dispose();
+      seatGeo.dispose();
+      orifGeo.dispose();
+      needleGeo.dispose();
+      stemGeo.dispose();
+      inletGeo.dispose();
+      inletCapGeo.dispose();
+      outletGeo.dispose();
+      outletCapGeo.dispose();
+      bodyMat.dispose();
+      needleMat.dispose();
+      stemMat.dispose();
+      seatMat.dispose();
+      inletMat.dispose();
+      outletMat.dispose();
+      orificeMat.dispose();
+    };
+  }, [D_seat_mm, stroke_max_mm, D_orifice_max_mm,
+      L_inlet_mm, L_outlet_mm, needle_angle, needle_profile,
+      opening_eff, stroke_m]);
+  
+  return (
+    <div ref={mountRef} style={{
+      width: '100%', height: 400, minHeight: 400,
+      borderRadius: 6, overflow: 'hidden', position: 'relative'
+    }} />
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════
    2D Coil Viewer — SVG plan view
    ═══════════════════════════════════════════════════════════════════ */
 function CoilViewer({ view, D_o, D_i, L_tube, FPI, t_fin, N_tubes, N_rows, P_t, P_l, N_circuits,
@@ -3905,8 +4175,8 @@ function EEVView({ onBack }) {
   const [opening_pct, setOpening] = useState(50.0);
   const [m_dot_meas_gs, setMdotMeas] = useState(15.0);
   
-  // View tabs (실제 부품 도면)
-  const [view, setView] = useState('Section');  // Section / Front / Top
+  // View tabs (실제 부품 도면 — 다른 view들과 동일 명명: 3D / Front / Side / Top)
+  const [view, setView] = useState('3D');
   
   // Apply / Save panels
   const [applyOpen, setApplyOpen] = useState(false);
@@ -4674,9 +4944,9 @@ function EEVView({ onBack }) {
               ✓ <b>On-design 모드</b> — 사이드바에서 변수를 변경하면 <b>Model design</b>에 <b>실시간 반영</b>됩니다.
             </div>
             
-            {/* View tabs (실제 부품 도면) */}
+            {/* View tabs (실제 부품 도면 — 다른 view들과 동일 명명) */}
             <div className="mb-3 flex gap-1.5">
-              {['Section', 'Front', 'Top'].map(v => (
+              {['3D', 'Front', 'Side', 'Top'].map(v => (
                 <button key={v} onClick={() => setView(v)}
                   className={`px-4 py-1.5 text-[12px] font-semibold rounded-lg transition-colors ${
                     view === v ? theme.tabActive : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
@@ -4690,8 +4960,9 @@ function EEVView({ onBack }) {
             <div className="bg-white border border-slate-200 rounded-lg p-4">
               <div className="text-[12px] text-slate-500 mb-2 flex items-center justify-between">
                 <span><b>{view} view</b> — {
-                  view === 'Section' ? 'EEV 단면도 — needle + seat + orifice geometry' :
+                  view === '3D' ? 'Three.js — drag to rotate, scroll to zoom' :
                   view === 'Front' ? 'EEV 정면 외관 — seat ring + orifice + needle cross-section' :
+                  view === 'Side' ? 'EEV 측면 단면도 — needle + seat + orifice geometry' :
                   'EEV 위에서 본 조립 도면 — body + stem + inlet/outlet ports'
                 }</span>
                 <span className="font-mono text-[10px] text-slate-400">
@@ -4699,8 +4970,19 @@ function EEVView({ onBack }) {
                 </span>
               </div>
               <div className="bg-slate-50 border border-slate-200 rounded">
-                {view === 'Section' && <SectionView/>}
+                {view === '3D' && <EEVView3D
+                  D_seat_mm={D_seat_mm}
+                  stroke_max_mm={stroke_max_mm}
+                  D_orifice_max_mm={D_orifice_max_mm}
+                  L_inlet_mm={L_inlet_mm}
+                  L_outlet_mm={L_outlet_mm}
+                  needle_angle={needle_angle}
+                  needle_profile={needle_profile}
+                  opening_eff={opening_eff}
+                  stroke_m={stroke_m}
+                />}
                 {view === 'Front' && <FrontView/>}
+                {view === 'Side' && <SectionView/>}
                 {view === 'Top' && <TopView/>}
               </div>
             </div>
@@ -4714,7 +4996,10 @@ function EEVView({ onBack }) {
               <div>• Cd_eff(Re) = Cd_base × (0.5 + 0.5 × Re/(Re+Re_trans)) — low-Re 보정</div>
               <div>• Choke: P_out/P_in &lt; ratio → ΔP_eff = P_in × (1 - ratio)</div>
               <div className="mt-1 text-slate-500">
-                💡 L1 (130, 단순 Cd 상수) / L2 (131, Cv polynomial)는 HPWD Studio canvas에서 노드로 추가, Calibration Studio에서 fitting 가능
+                💡 4 views: <b>3D</b> (Three.js drag/zoom) · <b>Front</b> (정면 orifice) · <b>Side</b> (단면 needle/seat) · <b>Top</b> (조립도)
+              </div>
+              <div className="text-slate-500">
+                L1 (130, 단순 Cd 상수) / L2 (131, Cv polynomial)는 HPWD Studio canvas + Calibration Studio에서 활용
               </div>
             </div>
           </div>
