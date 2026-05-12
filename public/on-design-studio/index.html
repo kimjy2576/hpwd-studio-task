@@ -3844,79 +3844,76 @@ function CompressorView({ onBack }) {
    - Main: 좌측 sidebar (group 별 params) + 우측 canvas (view tabs)
    - Fidelity는 L1/L2 toggle (다른 view의 fidelity 토글 패턴)
    ═══════════════════════════════════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════════════════════
+   EEV View — On-design only (L3)
+   ═══════════════════════════════════════════════════════════════════
+   진영님 정리:
+     ✓ On-design Studio = L3 only (L1/L2 toggle 제거)
+     ✓ EEV도 실제 부품 도면 (단면/조립)
+     ✓ FinTubeHXView / CompressorView와 동일한 UI 패턴
+   
+   View tabs: Section / Front / Top (실제 도면, FinTubeHX 패턴)
+   Sidebar: L3 geometry params (needle profile, angle, D_seat, stroke_max...)
+   ═══════════════════════════════════════════════════════════════════ */
 function EEVView({ onBack }) {
-  // ── Fidelity ──
-  const [fidelity, setFidelity] = useState('L1');
+  // ── Theme (다른 view들과 동일 구조, L3 only이므로 fidelity 분기 없음) ──
+  const theme = {
+    title: 'EEV',
+    subtitle: 'Needle cone · On-design',
+    accent: 'green',
+    accentText: 'text-green-600',
+    tabActive: 'bg-green-600 text-white',
+    applyBtn: 'bg-green-50 text-green-700 border-green-300',
+    applyBtnHover: 'bg-slate-50 hover:bg-green-50 text-slate-700 border-slate-200',
+    applyAction: 'bg-green-50 hover:bg-green-100 text-green-700 border-green-200',
+    ringActive: 'bg-green-50 border-green-400 text-green-700',
+    infoBg: 'bg-green-50 border-green-200 text-green-800',
+    typeNo: 132,
+    componentName: 'eev_on_design',
+  };
   
-  // ── Theme (fidelity별) ──
-  const theme = fidelity === 'L1'
-    ? {
-        title: 'EEV',
-        subtitle: 'Off-design · Isenthalpic',
-        accent: 'green',
-        accentText: 'text-green-600',
-        accentBg: 'bg-green-600',
-        applyBtn: 'bg-green-50 text-green-700 border-green-300',
-        applyBtnHover: 'bg-slate-50 hover:bg-green-50 text-slate-700 border-slate-200',
-        applyAction: 'bg-green-50 hover:bg-green-100 text-green-700 border-green-200',
-        tabActive: 'bg-green-600 text-white',
-        ringActive: 'bg-green-50 border-green-400 text-green-700',
-        typeNo: 130,
-        componentName: 'eev_off_design',
-      }
-    : {
-        title: 'EEV',
-        subtitle: 'Moving Boundary · Cv polynomial',
-        accent: 'emerald',
-        accentText: 'text-emerald-700',
-        accentBg: 'bg-emerald-700',
-        applyBtn: 'bg-emerald-50 text-emerald-700 border-emerald-300',
-        applyBtnHover: 'bg-slate-50 hover:bg-emerald-50 text-slate-700 border-slate-200',
-        applyAction: 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200',
-        tabActive: 'bg-emerald-700 text-white',
-        ringActive: 'bg-emerald-50 border-emerald-400 text-emerald-700',
-        typeNo: 131,
-        componentName: 'eev_moving_boundary',
-      };
-  
-  // ── State ──
+  // ─── State (L3 geometry) ───
   // Material
   const [fluid, setFluid] = useState('R290');
-  // Operating mode
+  const [needle_material, setNeedleMaterial] = useState('SUS304');
+  
+  // Operating
   const [mode, setMode] = useState('control');
-  // Geometry
-  const [A_max_mm2, setAmax] = useState(1.5);
-  const [opening_min, setOpeningMin] = useState(5.0);
-  // L1 전용
-  const [Cd, setCd] = useState(0.65);
-  // L2 전용 — Cv polynomial
-  const [c0, setC0] = useState(0.50);
-  const [c1, setC1] = useState(0.40);
-  const [c2, setC2] = useState(-0.20);
-  const [c3, setC3] = useState(0.05);
-  // L2 전용 — Choke
-  const [choke_ratio, setChokeRatio] = useState(0.5);
   const [use_choke, setUseChoke] = useState('on');
-  // L2 전용 — Fitting multipliers
-  const [cf_Cd, setCfCd] = useState(1.0);
+  const [use_Re_correction, setUseReCorr] = useState('on');
+  
+  // Geometry (L3 핵심)
+  const [needle_profile, setNeedleProfile] = useState('cone');
+  const [needle_angle, setNeedleAngle] = useState(30.0);  // deg (반각)
+  const [D_seat_mm, setDseat] = useState(2.0);             // mm
+  const [stroke_max_mm, setStrokeMax] = useState(1.0);     // mm
+  const [D_orifice_max_mm, setDorifMax] = useState(1.5);   // mm
+  const [L_inlet_mm, setLin] = useState(30.0);             // mm (시각화)
+  const [L_outlet_mm, setLout] = useState(30.0);           // mm
+  const [opening_min, setOpeningMin] = useState(5.0);      // %
+  
+  // Choke + Fitting
+  const [choke_ratio, setChokeRatio] = useState(0.5);
+  const [Cd_base, setCdBase] = useState(0.72);
+  const [Re_transition, setReTrans] = useState(1000.0);
   const [cf_A, setCfA] = useState(1.0);
   
-  // Operating conditions (시각화 input)
+  // Operating conditions
   const [P_in_bar, setPin] = useState(17.0);
   const [P_out_bar, setPout] = useState(5.84);
   const [h_in_kjkg, setHin] = useState(280.0);
   const [opening_pct, setOpening] = useState(50.0);
   const [m_dot_meas_gs, setMdotMeas] = useState(15.0);
   
-  // View tabs (다른 view 패턴 따라)
-  const [view, setView] = useState('Schematic');  // Schematic / Curve / Numerical
+  // View tabs (실제 부품 도면)
+  const [view, setView] = useState('Section');  // Section / Front / Top
   
-  // Apply / Save panels (다른 view 패턴 따라)
+  // Apply / Save panels
   const [applyOpen, setApplyOpen] = useState(false);
   const [saveOpen, setSaveOpen] = useState(false);
   const [applyMsg, setApplyMsg] = useState('');
   
-  // ─── 5-slot save system (다른 view와 동일) ───
+  // ─── 5-slot save system ───
   const STORAGE_KEY = '_eev_slots';
   const [saves, setSaves] = useState(() => {
     try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'); }
@@ -3926,30 +3923,31 @@ function EEVView({ onBack }) {
   
   const currentParams = () => ({
     _component: 'eev',
-    _fidelity: fidelity,
-    fluid, mode,
-    A_max_mm2, opening_min,
-    Cd,
-    c0, c1, c2, c3,
-    choke_ratio, use_choke,
-    cf_Cd, cf_A,
+    fluid, needle_material,
+    mode, use_choke, use_Re_correction,
+    needle_profile, needle_angle, D_seat_mm, stroke_max_mm, D_orifice_max_mm,
+    L_inlet_mm, L_outlet_mm, opening_min,
+    choke_ratio, Cd_base, Re_transition, cf_A,
     P_in_bar, P_out_bar, h_in_kjkg, opening_pct, m_dot_meas_gs,
   });
   
   const applyParams = (data) => {
-    if (data._fidelity) setFidelity(data._fidelity);
     if (data.fluid) setFluid(data.fluid);
+    if (data.needle_material) setNeedleMaterial(data.needle_material);
     if (data.mode) setMode(data.mode);
-    if (data.A_max_mm2 !== undefined) setAmax(data.A_max_mm2);
-    if (data.opening_min !== undefined) setOpeningMin(data.opening_min);
-    if (data.Cd !== undefined) setCd(data.Cd);
-    if (data.c0 !== undefined) setC0(data.c0);
-    if (data.c1 !== undefined) setC1(data.c1);
-    if (data.c2 !== undefined) setC2(data.c2);
-    if (data.c3 !== undefined) setC3(data.c3);
-    if (data.choke_ratio !== undefined) setChokeRatio(data.choke_ratio);
     if (data.use_choke) setUseChoke(data.use_choke);
-    if (data.cf_Cd !== undefined) setCfCd(data.cf_Cd);
+    if (data.use_Re_correction) setUseReCorr(data.use_Re_correction);
+    if (data.needle_profile) setNeedleProfile(data.needle_profile);
+    if (data.needle_angle !== undefined) setNeedleAngle(data.needle_angle);
+    if (data.D_seat_mm !== undefined) setDseat(data.D_seat_mm);
+    if (data.stroke_max_mm !== undefined) setStrokeMax(data.stroke_max_mm);
+    if (data.D_orifice_max_mm !== undefined) setDorifMax(data.D_orifice_max_mm);
+    if (data.L_inlet_mm !== undefined) setLin(data.L_inlet_mm);
+    if (data.L_outlet_mm !== undefined) setLout(data.L_outlet_mm);
+    if (data.opening_min !== undefined) setOpeningMin(data.opening_min);
+    if (data.choke_ratio !== undefined) setChokeRatio(data.choke_ratio);
+    if (data.Cd_base !== undefined) setCdBase(data.Cd_base);
+    if (data.Re_transition !== undefined) setReTrans(data.Re_transition);
     if (data.cf_A !== undefined) setCfA(data.cf_A);
     if (data.P_in_bar !== undefined) setPin(data.P_in_bar);
     if (data.P_out_bar !== undefined) setPout(data.P_out_bar);
@@ -3959,11 +3957,11 @@ function EEVView({ onBack }) {
   };
   
   const saveSlot = (slot) => {
-    const name = prompt(`Slot ${slot} 이름 (선택):`, `EEV ${fidelity} ${A_max_mm2}mm²`) || '';
+    const name = prompt(`Slot ${slot} 이름 (선택):`, `EEV ${needle_profile} D${D_seat_mm}/s${stroke_max_mm}`) || '';
     const data = { ...currentParams(), _name: name, _saved_at: new Date().toISOString() };
     const updated = { ...saves, [slot]: data };
     setSaves(updated);
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(updated)); } 
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(updated)); }
     catch (e) { alert('저장 실패: ' + e.message); }
   };
   const loadSlot = (slot) => {
@@ -3986,7 +3984,7 @@ function EEVView({ onBack }) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `eev-${fidelity}-${Date.now()}.json`;
+    a.download = `eev-L3-${Date.now()}.json`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -4008,21 +4006,36 @@ function EEVView({ onBack }) {
     e.target.value = '';
   };
   
-  // ── 계산 (fidelity 분기) ──
+  // ── 계산 (L3 needle cone 모델) ──
+  const D_seat_m = D_seat_mm * 1e-3;
+  const stroke_max_m = stroke_max_mm * 1e-3;
+  const D_orifice_max_m = D_orifice_max_mm * 1e-3;
+  
   const dP_actual_bar = Math.max(0.001, P_in_bar - P_out_bar);
   const dP_actual_Pa = dP_actual_bar * 1e5;
-  const A_max_m2 = A_max_mm2 * 1e-6;
   const rho_in_approx = fluid === 'R290' ? 480 : 1100;
+  const mu_in_approx = 1.5e-4;  // R290 liquid typical
   
-  const cd_at = (op_frac) => {
-    if (fidelity === 'L1') return Cd;
+  // A_throat from needle profile
+  const compute_A = (op_frac) => {
     const op = Math.max(0, Math.min(1, op_frac));
-    const Cd_poly = c0 + c1 * op + c2 * op * op + c3 * op * op * op;
-    return Math.max(0.05, Math.min(1.0, Cd_poly)) * cf_Cd;
+    const stroke = stroke_max_m * op;
+    const alpha_half_rad = needle_angle * Math.PI / 180;
+    let A;
+    if (needle_profile === 'cone') {
+      A = Math.PI * D_seat_m * stroke * Math.sin(alpha_half_rad);
+    } else if (needle_profile === 'parabolic') {
+      A = Math.PI * D_seat_m * stroke * Math.sqrt(op) * Math.sin(alpha_half_rad);
+    } else {
+      A = Math.PI * D_seat_m * stroke;
+    }
+    const A_max = Math.PI * (D_orifice_max_m / 2) ** 2;
+    return { A: Math.min(A, A_max) * cf_A, A_unclamped: A, stroke };
   };
   
+  // Choke
   const dP_effective = () => {
-    if (fidelity === 'L1' || use_choke !== 'on') return { dP_eff_Pa: dP_actual_Pa, is_choked: false };
+    if (use_choke !== 'on') return { dP_eff_Pa: dP_actual_Pa, is_choked: false };
     if (P_out_bar / P_in_bar < choke_ratio) {
       const dP_choke_Pa = P_in_bar * 1e5 * (1 - choke_ratio);
       return { dP_eff_Pa: dP_choke_Pa, is_choked: true };
@@ -4030,29 +4043,36 @@ function EEVView({ onBack }) {
     return { dP_eff_Pa: dP_actual_Pa, is_choked: false };
   };
   
-  const A_max_eff_m2 = fidelity === 'L2' ? A_max_m2 * cf_A : A_max_m2;
+  // Cd with Re correction
+  const compute_Cd = (Re) => {
+    if (use_Re_correction !== 'on' || Re <= 0) return Cd_base;
+    const f = Re / (Re + Re_transition);
+    return Cd_base * (0.5 + 0.5 * f);
+  };
+  
+  // 동작점 계산
   const opening_eff = Math.max(opening_min, Math.min(100, opening_pct));
-  const opening_frac = opening_eff / 100;
-  const Cd_eff_now = cd_at(opening_frac);
-  const A_throat_m2 = opening_frac * A_max_eff_m2;
+  const { A: A_throat_m2, A_unclamped: A_unc_m2, stroke: stroke_m } = compute_A(opening_eff / 100);
   const { dP_eff_Pa, is_choked } = dP_effective();
   const dP_eff_bar = dP_eff_Pa / 1e5;
-  const m_dot_calc_gs = Cd_eff_now * A_throat_m2 * Math.sqrt(2 * rho_in_approx * dP_eff_Pa) * 1000;
+  // First-pass Cd (no Re) → m_dot 추정
+  const m_dot_first = Cd_base * A_throat_m2 * Math.sqrt(2 * rho_in_approx * dP_eff_Pa);
+  const D_h = A_throat_m2 > 0 ? Math.sqrt(4 * A_throat_m2 / Math.PI) : 0;
+  const Re_throat = (mu_in_approx * A_throat_m2) > 0 ? m_dot_first * D_h / (mu_in_approx * A_throat_m2) : 0;
+  const Cd_eff = compute_Cd(Re_throat);
+  const m_dot_calc_gs = Cd_eff * A_throat_m2 * Math.sqrt(2 * rho_in_approx * dP_eff_Pa) * 1000;
   
-  // Measure mode 역산
-  let opening_calc_from_meas;
-  if (fidelity === 'L1') {
-    const denom = Cd * A_max_m2 * Math.sqrt(2 * rho_in_approx * dP_eff_Pa);
-    opening_calc_from_meas = denom > 0
-      ? Math.max(opening_min, Math.min(100, (m_dot_meas_gs / 1000) / denom * 100))
-      : 0;
-  } else {
+  // Measure 역산 (bisection)
+  let opening_calc_from_meas = 0;
+  if (m_dot_meas_gs > 0 && rho_in_approx > 0) {
     let lo = opening_min, hi = 100;
     for (let i = 0; i < 40; i++) {
       const mid = (lo + hi) / 2;
-      const op_f = mid / 100;
-      const Cd_t = cd_at(op_f);
-      const A_t = op_f * A_max_eff_m2;
+      const { A: A_t } = compute_A(mid / 100);
+      const m_first = Cd_base * A_t * Math.sqrt(2 * rho_in_approx * dP_eff_Pa);
+      const Dh_t = A_t > 0 ? Math.sqrt(4 * A_t / Math.PI) : 0;
+      const Re_t = (mu_in_approx * A_t) > 0 ? m_first * Dh_t / (mu_in_approx * A_t) : 0;
+      const Cd_t = compute_Cd(Re_t);
       const m_t = Cd_t * A_t * Math.sqrt(2 * rho_in_approx * dP_eff_Pa) * 1000;
       if (m_t < m_dot_meas_gs) lo = mid; else hi = mid;
       if (Math.abs(hi - lo) < 0.001) break;
@@ -4062,41 +4082,21 @@ function EEVView({ onBack }) {
   
   const display_m_dot_gs = mode === 'control' ? m_dot_calc_gs : m_dot_meas_gs;
   const display_opening = mode === 'control' ? opening_eff : opening_calc_from_meas;
-  const display_Cd = mode === 'control' ? Cd_eff_now : cd_at(display_opening / 100);
-  
-  // Curve sweep
-  const sweep_data = useMemo(() => {
-    const points = [];
-    for (let op = 0; op <= 100; op += 2) {
-      const op_eff = Math.max(opening_min, op);
-      const op_f = op_eff / 100;
-      const Cd_t = cd_at(op_f);
-      const A = op_f * A_max_eff_m2;
-      const m = Cd_t * A * Math.sqrt(2 * rho_in_approx * dP_eff_Pa) * 1000;
-      points.push({ opening: op, m_dot: m, Cd: Cd_t });
-    }
-    return points;
-  }, [fidelity, Cd, c0, c1, c2, c3, cf_Cd, cf_A, A_max_mm2, opening_min, rho_in_approx, dP_eff_Pa]);
   
   // ── Apply ──
-  const buildBackendParams = () => {
-    if (fidelity === 'L1') {
-      return { fluid, mode, A_max: A_max_m2, opening_min, Cd };
-    }
-    return {
-      fluid, mode, A_max: A_max_m2, opening_min,
-      c0, c1, c2, c3, cf_Cd, cf_A,
-      choke_ratio, use_choke,
-    };
-  };
+  const buildBackendParams = () => ({
+    fluid, needle_material,
+    mode, use_choke, use_Re_correction,
+    needle_profile, needle_angle,
+    D_seat: D_seat_m, stroke_max: stroke_max_m, D_orifice_max: D_orifice_max_m,
+    L_inlet: L_inlet_mm * 1e-3, L_outlet: L_outlet_mm * 1e-3, opening_min,
+    choke_ratio, Cd_base, Re_transition, cf_A,
+  });
   const applyToHPWD = () => {
     const payload = {
-      component: theme.componentName,
-      typeNo: theme.typeNo,
-      params: buildBackendParams(),
-      sourceParams: currentParams(),
-      _timestamp: new Date().toISOString(),
-      _source: 'on-design-studio',
+      component: theme.componentName, typeNo: theme.typeNo,
+      params: buildBackendParams(), sourceParams: currentParams(),
+      _timestamp: new Date().toISOString(), _source: 'on-design-studio',
     };
     try {
       localStorage.setItem('hpwd_pending_design', JSON.stringify(payload));
@@ -4106,12 +4106,9 @@ function EEVView({ onBack }) {
   };
   const applyToCalibration = () => {
     const payload = {
-      component: theme.componentName,
-      typeNo: theme.typeNo,
-      params: buildBackendParams(),
-      sourceParams: currentParams(),
-      _timestamp: new Date().toISOString(),
-      _source: 'on-design-studio',
+      component: theme.componentName, typeNo: theme.typeNo,
+      params: buildBackendParams(), sourceParams: currentParams(),
+      _timestamp: new Date().toISOString(), _source: 'on-design-studio',
     };
     try {
       localStorage.setItem('calibration_pending_design', JSON.stringify(payload));
@@ -4123,162 +4120,287 @@ function EEVView({ onBack }) {
   // ─── Validation ───
   const validation = useMemo(() => {
     const errs = [];
-    if (A_max_mm2 <= 0) errs.push({ level: 'error', msg: 'A_max는 양수여야 함' });
+    if (D_orifice_max_mm > D_seat_mm) errs.push({ level: 'error', msg: `D_orifice_max(${D_orifice_max_mm}) > D_seat(${D_seat_mm})` });
+    if (needle_angle < 5 || needle_angle > 60) errs.push({ level: 'warn', msg: `needle_angle ${needle_angle}° — 보통 15~45°` });
+    if (stroke_max_mm <= 0 || stroke_max_mm > 5) errs.push({ level: 'warn', msg: `stroke_max ${stroke_max_mm}mm — 보통 0.5~2mm` });
+    if (Cd_base < 0.4 || Cd_base > 0.95) errs.push({ level: 'warn', msg: `Cd_base ${Cd_base} — 0.6~0.8 권장` });
     if (P_out_bar >= P_in_bar) errs.push({ level: 'error', msg: 'P_out ≥ P_in — 팽창 안 일어남' });
-    if (fidelity === 'L1') {
-      if (Cd <= 0 || Cd > 1.0) errs.push({ level: 'warn', msg: `Cd=${Cd} — 0.5~0.9 권장` });
-    } else {
-      const Cd0 = cd_at(0);
-      const Cd1 = cd_at(1);
-      if (Cd0 < 0.05 || Cd0 > 1.0) errs.push({ level: 'warn', msg: `Cd(op=0)=${Cd0.toFixed(3)} — 0.3~0.6 권장` });
-      if (Cd1 < 0.3 || Cd1 > 1.2) errs.push({ level: 'warn', msg: `Cd(op=100%)=${Cd1.toFixed(3)} — 0.6~0.85 권장` });
-      if (choke_ratio < 0.3 || choke_ratio > 0.7) errs.push({ level: 'warn', msg: `choke_ratio=${choke_ratio} — 0.4~0.6 권장` });
-    }
     return errs;
-  }, [A_max_mm2, P_in_bar, P_out_bar, fidelity, Cd, c0, c1, c2, c3, choke_ratio]);
+  }, [D_seat_mm, D_orifice_max_mm, needle_angle, stroke_max_mm, Cd_base, P_in_bar, P_out_bar]);
   
-  // ═══════════════════════════════════════════════════════════════════
-  // Schematic SVG
-  // ═══════════════════════════════════════════════════════════════════
-  const SchemaSVG = () => {
-    const W = 600, H = 300;
-    const cx = W / 2, cy = H / 2;
-    const orificeOpenWidth = 60 * (opening_eff / 100);
-    const tubeR = 50;
-    const needleX = cx;
-    const needleY_top = cy - 80 + 80 * (1 - opening_eff / 100);
+  // ════════════════════════════════════════════════════════════════
+  // SectionView — 실제 부품 단면도 (가장 중요한 view)
+  // ════════════════════════════════════════════════════════════════
+  const SectionView = () => {
+    // 좌표: mm 단위, viewBox로 SVG 스케일
+    const W = 600, H = 320;
+    const padX = 40, cyEEV = H / 2;
+    
+    // EEV body 크기 (시각화 — 실제 부품 비율보다 보기 좋게)
+    const bodyW = 200, bodyH = 240;
+    const bodyX = (W - bodyW) / 2;
+    const bodyY = cyEEV - bodyH / 2;
+    
+    // Seat geometry (단면)
+    const cxBody = W / 2;
+    // Seat 단면 — pipe inlet hole
+    const seatTop = cyEEV + 20;  // seat 위치 (body 하부)
+    const seatHole_half = D_seat_mm * 8;  // 8x zoom factor (mm → px)
+    
+    // Needle (cone) 위치
+    const stroke_px = stroke_m * 1000 * 8;  // mm → px (8x zoom)
+    const needleTipY = seatTop - stroke_px;  // needle tip
+    const needle_angle_rad = needle_angle * Math.PI / 180;
+    const coneBase_half = seatHole_half * 1.6;  // needle base (cone)
+    const coneHeight = coneBase_half / Math.tan(needle_angle_rad);
+    const needleBaseY = needleTipY - coneHeight;
+    
+    // Stem (needle shaft)
+    const stemW = seatHole_half * 0.6;
+    const stemTopY = bodyY - 20;
     
     return (
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full bg-white">
         <defs>
-          <linearGradient id="liquid" x1="0" x2="1" y1="0" y2="0">
+          <linearGradient id="liquidGrad" x1="0" x2="1" y1="0" y2="0">
             <stop offset="0" stopColor="#a78bfa"/>
             <stop offset="1" stopColor="#c4b5fd"/>
           </linearGradient>
-          <linearGradient id="twophase" x1="0" x2="1" y1="0" y2="0">
+          <linearGradient id="twoPhaseGrad" x1="0" x2="1" y1="0" y2="0">
             <stop offset="0" stopColor="#fbbf24"/>
             <stop offset="1" stopColor="#fde68a"/>
           </linearGradient>
+          <pattern id="hatchEEV" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)">
+            <line x1="0" y1="0" x2="0" y2="6" stroke="#94a3b8" strokeWidth="0.5"/>
+          </pattern>
         </defs>
         
-        {/* Inlet pipe (subcool liquid) */}
-        <rect x="20" y={cy - tubeR/2} width={cx - 50} height={tubeR}
-              fill="url(#liquid)" stroke="#7c3aed" strokeWidth="1.5"/>
-        <text x="40" y={cy - tubeR/2 - 8} fontSize="10" fontFamily="monospace" fill="#7c3aed" fontWeight="bold">
-          P_in = {P_in_bar.toFixed(1)} bar (subcool liquid)
+        {/* Inlet pipe (subcool liquid 보라) */}
+        <rect x={padX} y={cyEEV - 30} width={bodyX - padX} height="20" 
+              fill="url(#liquidGrad)" stroke="#7c3aed" strokeWidth="1"/>
+        <text x={padX + 5} y={cyEEV - 35} fontSize="9" fontFamily="monospace" fill="#7c3aed" fontWeight="bold">
+          P_in={P_in_bar.toFixed(1)} bar
+        </text>
+        <text x={padX + 5} y={cyEEV - 22} fontSize="8" fontFamily="monospace" fill="#7c3aed">
+          subcool liquid
         </text>
         
-        {/* Valve body */}
-        <rect x={cx - 50} y={cy - 80} width="100" height="160"
-              fill="#e2e8f0" stroke="#475569" strokeWidth="2" rx="6"/>
+        {/* EEV body 외곽 (단면) */}
+        <rect x={bodyX} y={bodyY} width={bodyW} height={bodyH}
+              fill="url(#hatchEEV)" stroke="#475569" strokeWidth="2" rx="4"/>
+        <rect x={bodyX} y={bodyY} width={bodyW} height={bodyH}
+              fill="none" stroke="#1e293b" strokeWidth="2.5" rx="4"/>
         
-        {/* Needle */}
-        <polygon points={`${needleX-12},${needleY_top} ${needleX+12},${needleY_top} ${needleX},${needleY_top+50}`}
-                 fill="#64748b" stroke="#1e293b" strokeWidth="1.5"/>
-        <line x1={needleX} y1={needleY_top - 5} x2={needleX} y2={cy - 80} 
-              stroke="#1e293b" strokeWidth="3"/>
+        {/* Internal cavity */}
+        <rect x={bodyX + 25} y={bodyY + 30} width={bodyW - 50} height={bodyH - 60}
+              fill="#fff" stroke="#475569" strokeWidth="1.5" strokeDasharray="3 2"/>
         
-        {/* Orifice opening */}
-        <rect x={cx - orificeOpenWidth/2} y={cy + 15} width={orificeOpenWidth} height="20"
-              fill="#fff" stroke="#dc2626" strokeWidth="1.5" rx="2"/>
-        <text x={cx} y={cy + 50} textAnchor="middle" fontSize="10" fontFamily="monospace" fill="#dc2626" fontWeight="bold">
-          A_throat = {(A_throat_m2*1e6).toFixed(3)} mm²
+        {/* Stem (needle shaft) — 위로 올라감 */}
+        <rect x={cxBody - stemW/2} y={stemTopY} width={stemW} height={needleBaseY - stemTopY}
+              fill="#64748b" stroke="#1e293b" strokeWidth="1.5"/>
+        
+        {/* Needle (cone) */}
+        <polygon
+          points={`${cxBody - coneBase_half},${needleBaseY} ${cxBody + coneBase_half},${needleBaseY} ${cxBody},${needleTipY}`}
+          fill="#64748b" stroke="#1e293b" strokeWidth="1.5"/>
+        
+        {/* Seat (단면) */}
+        <rect x={bodyX + 25} y={seatTop} width={bodyW - 50} height={20}
+              fill="#94a3b8" stroke="#1e293b" strokeWidth="1.5"/>
+        {/* Seat orifice (gap) */}
+        <rect x={cxBody - seatHole_half} y={seatTop} width={seatHole_half * 2} height={20}
+              fill="#fff" stroke="#dc2626" strokeWidth="1.5"/>
+        
+        {/* Outlet pipe (2-phase 노랑) */}
+        <rect x={bodyX + 30} y={seatTop + 20} width={bodyW - 60} height="15"
+              fill="url(#twoPhaseGrad)" stroke="#d97706" strokeWidth="1"/>
+        <rect x={cxBody - 10} y={seatTop + 35} width="20" height={bodyY + bodyH - (seatTop + 35)}
+              fill="url(#twoPhaseGrad)" stroke="#d97706" strokeWidth="1"/>
+        <rect x={cxBody - 30} y={bodyY + bodyH} width="60" height="15"
+              fill="url(#twoPhaseGrad)" stroke="#d97706" strokeWidth="1"/>
+        <text x={cxBody + 35} y={bodyY + bodyH + 12} fontSize="9" fontFamily="monospace" fill="#d97706" fontWeight="bold">
+          P_out={P_out_bar.toFixed(2)} bar
         </text>
         
-        {/* Outlet pipe (2-phase) */}
-        <rect x={cx + 50} y={cy - tubeR/2} width={W - cx - 70} height={tubeR}
-              fill="url(#twophase)" stroke="#d97706" strokeWidth="1.5"/>
-        <text x={cx + 80} y={cy - tubeR/2 - 8} fontSize="10" fontFamily="monospace" fill="#d97706" fontWeight="bold">
-          P_out = {P_out_bar.toFixed(2)} bar (2-phase)
+        {/* Stroke dimension line */}
+        <g stroke="#0891b2" strokeWidth="1">
+          <line x1={cxBody - coneBase_half - 30} y1={needleTipY} x2={cxBody - coneBase_half - 10} y2={needleTipY}/>
+          <line x1={cxBody - coneBase_half - 30} y1={seatTop} x2={cxBody - coneBase_half - 10} y2={seatTop}/>
+          <line x1={cxBody - coneBase_half - 20} y1={needleTipY} x2={cxBody - coneBase_half - 20} y2={seatTop}
+                markerStart="url(#arrowDown)" markerEnd="url(#arrowUp)"/>
+        </g>
+        <text x={cxBody - coneBase_half - 60} y={(needleTipY + seatTop) / 2 + 3} fontSize="10" fontFamily="monospace" fill="#0891b2" fontWeight="bold">
+          stroke
+        </text>
+        <text x={cxBody - coneBase_half - 60} y={(needleTipY + seatTop) / 2 + 16} fontSize="9" fontFamily="monospace" fill="#0891b2">
+          {(stroke_m * 1000).toFixed(3)} mm
+        </text>
+        
+        {/* D_seat dimension */}
+        <g stroke="#dc2626" strokeWidth="1">
+          <line x1={cxBody - seatHole_half} y1={seatTop + 30} x2={cxBody + seatHole_half} y2={seatTop + 30}/>
+          <line x1={cxBody - seatHole_half} y1={seatTop + 28} x2={cxBody - seatHole_half} y2={seatTop + 32}/>
+          <line x1={cxBody + seatHole_half} y1={seatTop + 28} x2={cxBody + seatHole_half} y2={seatTop + 32}/>
+        </g>
+        <text x={cxBody} y={seatTop + 44} fontSize="9" fontFamily="monospace" fill="#dc2626" fontWeight="bold" textAnchor="middle">
+          D_seat = {D_seat_mm} mm
+        </text>
+        
+        {/* Needle angle dimension */}
+        <g stroke="#7c3aed" strokeWidth="0.5" fill="none">
+          <path d={`M ${cxBody} ${needleTipY - 20} A 20 20 0 0 0 ${cxBody + 20 * Math.sin(needle_angle_rad)} ${needleTipY - 20 + 20 * Math.cos(needle_angle_rad)}`}/>
+        </g>
+        <text x={cxBody + 25} y={needleTipY - 12} fontSize="9" fontFamily="monospace" fill="#7c3aed" fontWeight="bold">
+          α/2 = {needle_angle.toFixed(0)}°
         </text>
         
         {/* Flow arrows */}
-        <text x="100" y={cy + 5} fontSize="20" fill="#7c3aed" fontWeight="bold">→</text>
-        <text x={cx + 100} y={cy + 5} fontSize="20" fill="#d97706" fontWeight="bold">→</text>
+        <text x={padX + 50} y={cyEEV - 15} fontSize="16" fill="#7c3aed" fontWeight="bold">→</text>
+        <text x={cxBody + 70} y={bodyY + bodyH + 12} fontSize="16" fill="#d97706" fontWeight="bold">→</text>
         
         {/* RESULT box */}
-        <g transform={`translate(${W - 200}, 30)`}>
-          <rect x="0" y="0" width="180" height={fidelity === 'L2' ? 100 : 80} fill="#f8fafc" stroke="#cbd5e1" rx="4"/>
-          <text x="10" y="20" fontSize="10" fontFamily="monospace" fill="#64748b" fontWeight="bold">RESULT ({fidelity})</text>
-          <text x="10" y="40" fontSize="13" fontFamily="monospace" fill="#16a34a" fontWeight="bold">
+        <g transform={`translate(${W - 160}, 10)`}>
+          <rect x="0" y="0" width="150" height="85" fill="#f8fafc" stroke="#cbd5e1" rx="4"/>
+          <text x="8" y="16" fontSize="9" fontFamily="monospace" fill="#64748b" fontWeight="bold">RESULT (L3)</text>
+          <text x="8" y="32" fontSize="11" fontFamily="monospace" fill="#16a34a" fontWeight="bold">
             ṁ = {display_m_dot_gs.toFixed(2)} g/s
           </text>
-          <text x="10" y="58" fontSize="13" fontFamily="monospace" fill="#0891b2" fontWeight="bold">
-            opening = {display_opening.toFixed(1)}%
+          <text x="8" y="46" fontSize="11" fontFamily="monospace" fill="#0891b2" fontWeight="bold">
+            op = {display_opening.toFixed(1)}%
           </text>
-          <text x="10" y="73" fontSize="10" fontFamily="monospace" fill="#7c3aed" fontWeight="bold">
-            Cd_eff = {display_Cd.toFixed(3)}
+          <text x="8" y="58" fontSize="9" fontFamily="monospace" fill="#7c3aed">
+            A_throat = {(A_throat_m2*1e6).toFixed(3)} mm²
           </text>
-          {fidelity === 'L2' && (
-            <text x="10" y="90" fontSize="9" fontFamily="monospace" fill={is_choked ? '#d97706' : '#64748b'}>
-              ΔP_eff = {dP_eff_bar.toFixed(2)} bar {is_choked ? '(CHOKED)' : ''}
-            </text>
-          )}
+          <text x="8" y="70" fontSize="9" fontFamily="monospace" fill="#7c3aed">
+            Cd_eff = {Cd_eff.toFixed(3)}
+          </text>
+          <text x="8" y="82" fontSize="8" fontFamily="monospace" fill={is_choked ? '#d97706' : '#64748b'}>
+            {is_choked ? `CHOKED (ΔP_eff=${dP_eff_bar.toFixed(1)})` : `ΔP=${dP_actual_bar.toFixed(2)} bar`}
+          </text>
         </g>
         
-        {/* Mode badge */}
-        <g transform={`translate(20, ${H - 30})`}>
-          <rect x="0" y="0" width="120" height="22" fill={mode === 'control' ? '#dbeafe' : '#fef3c7'} 
-                stroke={mode === 'control' ? '#2563eb' : '#d97706'} rx="4"/>
-          <text x="10" y="15" fontSize="11" fontFamily="monospace" fontWeight="bold"
-                fill={mode === 'control' ? '#2563eb' : '#d97706'}>
-            mode: {mode}
-          </text>
+        <defs>
+          <marker id="arrowUp" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto">
+            <path d="M 0 6 L 4 0 L 8 6 z" fill="#0891b2"/>
+          </marker>
+          <marker id="arrowDown" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto">
+            <path d="M 0 2 L 4 8 L 8 2 z" fill="#0891b2"/>
+          </marker>
+        </defs>
+      </svg>
+    );
+  };
+  
+  // ════════════════════════════════════════════════════════════════
+  // FrontView — 정면 외관 (orifice 원형)
+  // ════════════════════════════════════════════════════════════════
+  const FrontView = () => {
+    const W = 600, H = 320;
+    const cx = W / 2, cy = H / 2;
+    const bodyR = 80;
+    const seat_r = D_seat_mm * 12;  // 12x zoom
+    const orifice_r = D_orifice_max_mm * 12;
+    
+    return (
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full bg-white">
+        {/* Body outline (front view = circle) */}
+        <circle cx={cx} cy={cy} r={bodyR} fill="#f1f5f9" stroke="#475569" strokeWidth="2.5"/>
+        
+        {/* Seat ring */}
+        <circle cx={cx} cy={cy} r={seat_r} fill="#fff" stroke="#94a3b8" strokeWidth="1.5"/>
+        <text x={cx + seat_r + 4} y={cy + 4} fontSize="9" fontFamily="monospace" fill="#94a3b8">
+          D_seat={D_seat_mm}mm
+        </text>
+        
+        {/* Orifice center (when fully open) */}
+        <circle cx={cx} cy={cy} r={orifice_r} fill="#fef3c7" stroke="#dc2626" strokeWidth="1.5" strokeDasharray="2 2"/>
+        <text x={cx + orifice_r + 4} y={cy - 8} fontSize="9" fontFamily="monospace" fill="#dc2626">
+          D_orifice_max={D_orifice_max_mm}mm
+        </text>
+        
+        {/* Needle center (현재 opening 표시) */}
+        <circle cx={cx} cy={cy} r={Math.max(1, orifice_r * (1 - opening_eff/100))} fill="#64748b" stroke="#1e293b" strokeWidth="1"/>
+        
+        {/* Body outer label */}
+        <text x={cx} y={cy - bodyR - 8} fontSize="10" fontFamily="monospace" fill="#475569" textAnchor="middle" fontWeight="bold">
+          EEV Body (front)
+        </text>
+        <text x={cx} y={cy + bodyR + 18} fontSize="9" fontFamily="monospace" fill="#475569" textAnchor="middle">
+          opening = {opening_eff.toFixed(0)}% · A_throat = {(A_throat_m2*1e6).toFixed(3)} mm²
+        </text>
+        
+        {/* Legend */}
+        <g transform="translate(20, 20)">
+          <rect x="0" y="0" width="160" height="80" fill="#f8fafc" stroke="#cbd5e1" rx="4"/>
+          <text x="8" y="14" fontSize="9" fontFamily="monospace" fill="#64748b" fontWeight="bold">LEGEND</text>
+          <circle cx="14" cy="28" r="5" fill="#fff" stroke="#94a3b8"/>
+          <text x="24" y="32" fontSize="9" fontFamily="monospace" fill="#475569">Seat ring</text>
+          <circle cx="14" cy="44" r="5" fill="#fef3c7" stroke="#dc2626" strokeDasharray="2 2"/>
+          <text x="24" y="48" fontSize="9" fontFamily="monospace" fill="#475569">Orifice max</text>
+          <circle cx="14" cy="60" r="4" fill="#64748b"/>
+          <text x="24" y="64" fontSize="9" fontFamily="monospace" fill="#475569">Needle cross-section</text>
         </g>
       </svg>
     );
   };
   
-  // ═══════════════════════════════════════════════════════════════════
-  // Curve plot
-  // ═══════════════════════════════════════════════════════════════════
-  const CurvePlot = () => {
-    const W = 600, H = 280;
-    const padX = 50, padY = 25;
-    const xMax = 100;
-    const yMax = Math.max(...sweep_data.map(p => p.m_dot)) * 1.1 || 50;
-    const xToPx = x => padX + x / xMax * (W - 2*padX);
-    const yToPx = y => H - padY - y / yMax * (H - 2*padY);
-    const pathD = sweep_data.map((p, i) => 
-      (i === 0 ? 'M' : 'L') + xToPx(p.opening) + ',' + yToPx(p.m_dot)).join(' ');
+  // ════════════════════════════════════════════════════════════════
+  // TopView — 위에서 본 도면 (조립)
+  // ════════════════════════════════════════════════════════════════
+  const TopView = () => {
+    const W = 600, H = 320;
+    const cx = W / 2, cy = H / 2;
     
-    const currentX = xToPx(display_opening);
-    const currentY = yToPx(display_m_dot_gs);
+    // Top view: needle stem + valve body silhouette
+    const bodyW = 160, bodyH = 80;
+    const bodyX = cx - bodyW/2, bodyY = cy - bodyH/2;
+    const stem_r = D_seat_mm * 5;
     
     return (
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full bg-white">
-        {[0, 25, 50, 75, 100].map(x => (
-          <g key={x}>
-            <line x1={xToPx(x)} y1={padY} x2={xToPx(x)} y2={H - padY} stroke="#e2e8f0" strokeWidth="0.5"/>
-            <text x={xToPx(x)} y={H - 8} fontSize="9" fontFamily="monospace" textAnchor="middle" fill="#64748b">{x}</text>
-          </g>
-        ))}
-        {[0, 0.25, 0.5, 0.75, 1].map(f => (
-          <g key={f}>
-            <line x1={padX} y1={yToPx(yMax * f)} x2={W - padX} y2={yToPx(yMax * f)} stroke="#e2e8f0" strokeWidth="0.5"/>
-            <text x={padX - 5} y={yToPx(yMax * f) + 3} fontSize="9" fontFamily="monospace" textAnchor="end" fill="#64748b">
-              {(yMax * f).toFixed(0)}
-            </text>
-          </g>
-        ))}
+        {/* Body silhouette (top view = rect with rounded) */}
+        <rect x={bodyX} y={bodyY} width={bodyW} height={bodyH}
+              fill="#f1f5f9" stroke="#475569" strokeWidth="2.5" rx="8"/>
         
-        <text x={W/2} y={H - 2} fontSize="10" fontFamily="monospace" textAnchor="middle" fill="#475569">opening (%)</text>
-        <text x="10" y={H/2} fontSize="10" fontFamily="monospace" fill="#475569" 
-              transform={`rotate(-90 10 ${H/2})`}>ṁ (g/s)</text>
+        {/* Stem center (needle motor stem from top) */}
+        <circle cx={cx} cy={cy} r={stem_r * 1.5} fill="#94a3b8" stroke="#1e293b" strokeWidth="1.5"/>
+        <text x={cx} y={cy + 3} fontSize="9" fontFamily="monospace" fill="#fff" textAnchor="middle" fontWeight="bold">
+          Stem
+        </text>
         
-        <path d={pathD} fill="none" stroke="#16a34a" strokeWidth="2"/>
+        {/* Inlet/outlet ports (perpendicular pipes from above) */}
+        <rect x={bodyX - 40} y={cy - 10} width="40" height="20" fill="url(#liquidGrad)" stroke="#7c3aed" strokeWidth="1.5"/>
+        <text x={bodyX - 38} y={cy - 14} fontSize="8" fontFamily="monospace" fill="#7c3aed" fontWeight="bold">IN</text>
         
-        <circle cx={currentX} cy={currentY} r="6" fill="#dc2626" stroke="#fff" strokeWidth="2"/>
-        <text x={currentX + 10} y={currentY - 5} fontSize="10" fontFamily="monospace" fill="#dc2626" fontWeight="bold">
-          ({display_opening.toFixed(0)}%, {display_m_dot_gs.toFixed(1)} g/s)
+        <rect x={bodyX + bodyW} y={cy - 10} width="40" height="20" fill="url(#twoPhaseGrad)" stroke="#d97706" strokeWidth="1.5"/>
+        <text x={bodyX + bodyW + 30} y={cy - 14} fontSize="8" fontFamily="monospace" fill="#d97706" fontWeight="bold">OUT</text>
+        
+        {/* Motor housing (if any, sketched from top) */}
+        <circle cx={cx} cy={cy} r={stem_r * 3} fill="none" stroke="#cbd5e1" strokeWidth="1" strokeDasharray="3 3"/>
+        <text x={cx} y={cy - stem_r * 3 - 5} fontSize="8" fontFamily="monospace" fill="#94a3b8" textAnchor="middle">
+          Stepper motor housing
+        </text>
+        
+        {/* Dimensions */}
+        <g stroke="#0891b2" strokeWidth="1">
+          <line x1={bodyX} y1={bodyY - 15} x2={bodyX + bodyW} y2={bodyY - 15}/>
+          <line x1={bodyX} y1={bodyY - 12} x2={bodyX} y2={bodyY - 18}/>
+          <line x1={bodyX + bodyW} y1={bodyY - 12} x2={bodyX + bodyW} y2={bodyY - 18}/>
+        </g>
+        <text x={cx} y={bodyY - 22} fontSize="9" fontFamily="monospace" fill="#0891b2" textAnchor="middle" fontWeight="bold">
+          Body length
+        </text>
+        
+        <text x={cx} y={bodyY + bodyH + 20} fontSize="9" fontFamily="monospace" fill="#475569" textAnchor="middle">
+          EEV — Top view (조립 도면)
         </text>
       </svg>
     );
   };
   
-  // ═══════════════════════════════════════════════════════════════════
-  // Render (다른 view들과 완전 동일 layout)
-  // ═══════════════════════════════════════════════════════════════════
+  // ════════════════════════════════════════════════════════════════
+  // Render
+  // ════════════════════════════════════════════════════════════════
   return (
     <div className="flex flex-col h-screen bg-slate-50">
       {/* ─── Header ─── */}
@@ -4295,22 +4417,6 @@ function EEVView({ onBack }) {
         
         <div className="flex-1"></div>
         
-        {/* Fidelity toggle (HX의 mode toggle 패턴 따라) */}
-        <div className="flex gap-1 mr-2">
-          <button onClick={() => setFidelity('L1')}
-            className={`px-2.5 py-1 text-[11px] font-mono font-semibold rounded transition-colors ${
-              fidelity === 'L1' 
-                ? 'bg-green-600 text-white' 
-                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-            }`}>L1</button>
-          <button onClick={() => setFidelity('L2')}
-            className={`px-2.5 py-1 text-[11px] font-mono font-semibold rounded transition-colors ${
-              fidelity === 'L2' 
-                ? 'bg-emerald-700 text-white' 
-                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-            }`}>L2</button>
-        </div>
-        
         <button onClick={() => setApplyOpen(o => !o)}
           className={`text-[11px] px-2.5 py-1.5 rounded font-mono font-semibold transition-colors flex items-center gap-1 ${
             applyOpen ? `border ${theme.applyBtn}` : `border ${theme.applyBtnHover}`
@@ -4324,7 +4430,7 @@ function EEVView({ onBack }) {
           title="Save / Load">💾</button>
       </div>
       
-      {/* ─── Apply panel (collapsible) ─── */}
+      {/* ─── Apply panel ─── */}
       {applyOpen && (
         <div className="bg-white border-b border-slate-200 px-4 py-3 shrink-0">
           <div className="max-w-4xl mx-auto">
@@ -4342,14 +4448,12 @@ function EEVView({ onBack }) {
                 <span>↗</span> Calibration Studio (fitting)
               </button>
             </div>
-            {applyMsg && (
-              <div className="mt-2 text-[11px] text-slate-600 font-mono">{applyMsg}</div>
-            )}
+            {applyMsg && <div className="mt-2 text-[11px] text-slate-600 font-mono">{applyMsg}</div>}
           </div>
         </div>
       )}
       
-      {/* ─── Save / Load panel (collapsible) ─── */}
+      {/* ─── Save panel ─── */}
       {saveOpen && (
         <div className="bg-white border-b border-slate-200 px-4 py-3 shrink-0">
           <div className="max-w-4xl mx-auto">
@@ -4379,27 +4483,13 @@ function EEVView({ onBack }) {
                     <div className={`flex-1 px-2.5 py-1 rounded border text-[11px] font-mono truncate ${
                       isEmpty ? 'bg-slate-50 border-slate-200 text-slate-400' : 'bg-blue-50 border-blue-200 text-slate-800'
                     }`}>
-                      {isEmpty ? (
-                        <span>— 비어 있음 —</span>
-                      ) : (
-                        <span>
-                          <b className="text-blue-900">{s._name || `Slot ${slot}`}</b>
-                          <span className="text-slate-400 ml-2">
-                            {s._fidelity}/A={s.A_max_mm2}mm²/{s.mode}
-                          </span>
-                        </span>
-                      )}
+                      {isEmpty ? <span>— 비어 있음 —</span> : <span><b className="text-blue-900">{s._name || `Slot ${slot}`}</b><span className="text-slate-400 ml-2">{s.needle_profile}/D={s.D_seat_mm}/s={s.stroke_max_mm}</span></span>}
                     </div>
-                    <button onClick={() => saveSlot(slot)}
-                      className="px-2 py-0.5 text-[11px] bg-green-100 hover:bg-green-200 text-green-700 rounded font-semibold">저장</button>
-                    {!isEmpty && (
-                      <>
-                        <button onClick={() => loadSlot(slot)}
-                          className="px-2 py-0.5 text-[11px] bg-blue-100 hover:bg-blue-200 text-blue-700 rounded font-semibold">로드</button>
-                        <button onClick={() => deleteSlot(slot)}
-                          className="px-2 py-0.5 text-[11px] bg-red-100 hover:bg-red-200 text-red-700 rounded font-semibold">×</button>
-                      </>
-                    )}
+                    <button onClick={() => saveSlot(slot)} className="px-2 py-0.5 text-[11px] bg-green-100 hover:bg-green-200 text-green-700 rounded font-semibold">저장</button>
+                    {!isEmpty && <>
+                      <button onClick={() => loadSlot(slot)} className="px-2 py-0.5 text-[11px] bg-blue-100 hover:bg-blue-200 text-blue-700 rounded font-semibold">로드</button>
+                      <button onClick={() => deleteSlot(slot)} className="px-2 py-0.5 text-[11px] bg-red-100 hover:bg-red-200 text-red-700 rounded font-semibold">×</button>
+                    </>}
                   </div>
                 );
               })}
@@ -4412,217 +4502,154 @@ function EEVView({ onBack }) {
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar */}
         <div className="w-72 bg-white border-r border-slate-200 overflow-y-auto p-3">
-          {/* ── Group: Material ── */}
+          {/* Material */}
           <div className="mb-4">
-            <div className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider mb-2 pb-1 border-b border-slate-200">
-              Material
-            </div>
+            <div className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider mb-2 pb-1 border-b border-slate-200">Material</div>
             <div className="text-[11px] mb-1">Fluid</div>
             <select value={fluid} onChange={e => setFluid(e.target.value)}
+              className="w-full px-2 py-1 border border-slate-300 rounded text-[12px] mb-2">
+              <option>R290</option><option>R134a</option><option>R410A</option><option>R32</option><option>R1234yf</option>
+            </select>
+            <div className="text-[11px] mb-1">Needle material</div>
+            <select value={needle_material} onChange={e => setNeedleMaterial(e.target.value)}
               className="w-full px-2 py-1 border border-slate-300 rounded text-[12px]">
-              <option value="R290">R290</option>
-              <option value="R134a">R134a</option>
-              <option value="R410A">R410A</option>
-              <option value="R32">R32</option>
-              <option value="R1234yf">R1234yf</option>
+              <option>SUS304</option><option>SUS316</option><option>Brass</option><option>Steel</option>
             </select>
           </div>
           
-          {/* ── Group: Operating ── */}
+          {/* Operating */}
           <div className="mb-4">
-            <div className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider mb-2 pb-1 border-b border-slate-200">
-              Operating
-            </div>
+            <div className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider mb-2 pb-1 border-b border-slate-200">Operating</div>
             <div className="text-[11px] mb-1">Mode</div>
-            <div className="flex gap-1 mb-3">
+            <div className="flex gap-1 mb-2">
               <button onClick={() => setMode('control')}
-                className={`flex-1 px-2 py-1 text-[11px] font-bold rounded border ${
-                  mode === 'control' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white border-slate-300 text-slate-600'
-                }`}>Control</button>
+                className={`flex-1 px-2 py-1 text-[11px] font-bold rounded border ${mode === 'control' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white border-slate-300 text-slate-600'}`}>Control</button>
               <button onClick={() => setMode('measure')}
-                className={`flex-1 px-2 py-1 text-[11px] font-bold rounded border ${
-                  mode === 'measure' ? 'bg-amber-500 text-white border-amber-500' : 'bg-white border-slate-300 text-slate-600'
-                }`}>Measure</button>
+                className={`flex-1 px-2 py-1 text-[11px] font-bold rounded border ${mode === 'measure' ? 'bg-amber-500 text-white border-amber-500' : 'bg-white border-slate-300 text-slate-600'}`}>Measure</button>
             </div>
-            <div className="text-[9px] text-slate-500 mb-3">
-              {mode === 'control' ? 'opening % → ṁ' : 'ṁ → opening 역산'}
-            </div>
-            
-            {/* P_in, P_out, h_in, opening or m_dot_meas */}
             <div className="space-y-1.5 text-[11px]">
               <div className="flex justify-between items-center">
                 <span>P_in</span>
-                <input type="number" step="0.1" value={P_in_bar}
-                  onChange={e => setPin(parseFloat(e.target.value) || 0)}
-                  className="w-16 text-right px-1 border border-slate-300 rounded"/>
+                <input type="number" step="0.1" value={P_in_bar} onChange={e => setPin(parseFloat(e.target.value) || 0)} className="w-16 text-right px-1 border border-slate-300 rounded"/>
                 <span className="text-slate-500 w-8 text-right">bar</span>
               </div>
               <div className="flex justify-between items-center">
                 <span>P_out</span>
-                <input type="number" step="0.1" value={P_out_bar}
-                  onChange={e => setPout(parseFloat(e.target.value) || 0)}
-                  className="w-16 text-right px-1 border border-slate-300 rounded"/>
+                <input type="number" step="0.1" value={P_out_bar} onChange={e => setPout(parseFloat(e.target.value) || 0)} className="w-16 text-right px-1 border border-slate-300 rounded"/>
                 <span className="text-slate-500 w-8 text-right">bar</span>
               </div>
               <div className="flex justify-between items-center">
                 <span>h_in</span>
-                <input type="number" step="1" value={h_in_kjkg}
-                  onChange={e => setHin(parseFloat(e.target.value) || 0)}
-                  className="w-16 text-right px-1 border border-slate-300 rounded"/>
+                <input type="number" step="1" value={h_in_kjkg} onChange={e => setHin(parseFloat(e.target.value) || 0)} className="w-16 text-right px-1 border border-slate-300 rounded"/>
                 <span className="text-slate-500 w-8 text-right">kJ/kg</span>
               </div>
               {mode === 'control' ? (
                 <>
                   <div className="flex justify-between items-center">
                     <span>opening</span>
-                    <input type="number" step="1" value={opening_pct}
-                      onChange={e => setOpening(parseFloat(e.target.value) || 0)}
-                      className="w-16 text-right px-1 border border-slate-300 rounded"/>
+                    <input type="number" step="1" value={opening_pct} onChange={e => setOpening(parseFloat(e.target.value) || 0)} className="w-16 text-right px-1 border border-slate-300 rounded"/>
                     <span className="text-slate-500 w-8 text-right">%</span>
                   </div>
-                  <input type="range" min="0" max="100" value={opening_pct}
-                    onChange={e => setOpening(parseFloat(e.target.value))}
-                    className="w-full"/>
+                  <input type="range" min="0" max="100" value={opening_pct} onChange={e => setOpening(parseFloat(e.target.value))} className="w-full"/>
                 </>
               ) : (
                 <div className="flex justify-between items-center">
                   <span>ṁ_meas</span>
-                  <input type="number" step="0.5" value={m_dot_meas_gs}
-                    onChange={e => setMdotMeas(parseFloat(e.target.value) || 0)}
-                    className="w-16 text-right px-1 border border-slate-300 rounded"/>
+                  <input type="number" step="0.5" value={m_dot_meas_gs} onChange={e => setMdotMeas(parseFloat(e.target.value) || 0)} className="w-16 text-right px-1 border border-slate-300 rounded"/>
                   <span className="text-slate-500 w-8 text-right">g/s</span>
                 </div>
               )}
             </div>
           </div>
           
-          {/* ── Group: Geometry ── */}
+          {/* Geometry (L3 핵심) */}
           <div className="mb-4">
-            <div className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider mb-2 pb-1 border-b border-slate-200">
-              Geometry
-            </div>
+            <div className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider mb-2 pb-1 border-b border-slate-200">Geometry</div>
+            <div className="text-[11px] mb-1">Needle profile</div>
+            <select value={needle_profile} onChange={e => setNeedleProfile(e.target.value)}
+              className="w-full px-2 py-1 border border-slate-300 rounded text-[12px] mb-2">
+              <option value="cone">Cone (원추)</option>
+              <option value="parabolic">Parabolic</option>
+              <option value="linear">Linear</option>
+            </select>
             <div className="space-y-1.5 text-[11px]">
               <div className="flex justify-between items-center">
-                <span>A_max</span>
-                <input type="number" step="0.1" value={A_max_mm2}
-                  onChange={e => setAmax(parseFloat(e.target.value) || 0)}
-                  className="w-16 text-right px-1 border border-slate-300 rounded"/>
-                <span className="text-slate-500 w-8 text-right">mm²</span>
+                <span>α/2 (반각)</span>
+                <input type="number" step="1" value={needle_angle} onChange={e => setNeedleAngle(parseFloat(e.target.value) || 0)} className="w-16 text-right px-1 border border-slate-300 rounded"/>
+                <span className="text-slate-500 w-8 text-right">°</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span>D_seat</span>
+                <input type="number" step="0.1" value={D_seat_mm} onChange={e => setDseat(parseFloat(e.target.value) || 0)} className="w-16 text-right px-1 border border-slate-300 rounded"/>
+                <span className="text-slate-500 w-8 text-right">mm</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span>stroke_max</span>
+                <input type="number" step="0.1" value={stroke_max_mm} onChange={e => setStrokeMax(parseFloat(e.target.value) || 0)} className="w-16 text-right px-1 border border-slate-300 rounded"/>
+                <span className="text-slate-500 w-8 text-right">mm</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span>D_orifice_max</span>
+                <input type="number" step="0.1" value={D_orifice_max_mm} onChange={e => setDorifMax(parseFloat(e.target.value) || 0)} className="w-16 text-right px-1 border border-slate-300 rounded"/>
+                <span className="text-slate-500 w-8 text-right">mm</span>
               </div>
               <div className="flex justify-between items-center">
                 <span>opening_min</span>
-                <input type="number" step="1" value={opening_min}
-                  onChange={e => setOpeningMin(parseFloat(e.target.value) || 0)}
-                  className="w-16 text-right px-1 border border-slate-300 rounded"/>
+                <input type="number" step="1" value={opening_min} onChange={e => setOpeningMin(parseFloat(e.target.value) || 0)} className="w-16 text-right px-1 border border-slate-300 rounded"/>
                 <span className="text-slate-500 w-8 text-right">%</span>
               </div>
             </div>
           </div>
           
-          {/* ── Group: Discharge coefficient ── */}
+          {/* Choke */}
           <div className="mb-4">
-            <div className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider mb-2 pb-1 border-b border-slate-200">
-              {fidelity === 'L1' ? 'Discharge Coefficient' : 'Cv Polynomial · Cd(op)=c0+c1·op+c2·op²+c3·op³'}
+            <div className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider mb-2 pb-1 border-b border-slate-200">Choke (2-phase)</div>
+            <div className="flex gap-1 mb-2">
+              <button onClick={() => setUseChoke('on')} className={`flex-1 px-2 py-1 text-[10px] font-bold rounded border ${use_choke === 'on' ? 'bg-amber-500 text-white border-amber-500' : 'bg-white border-slate-300 text-slate-600'}`}>ON</button>
+              <button onClick={() => setUseChoke('off')} className={`flex-1 px-2 py-1 text-[10px] font-bold rounded border ${use_choke === 'off' ? 'bg-slate-500 text-white border-slate-500' : 'bg-white border-slate-300 text-slate-600'}`}>OFF</button>
             </div>
-            {fidelity === 'L1' ? (
-              <div className="space-y-1.5 text-[11px]">
-                <div className="flex justify-between items-center">
-                  <span>Cd</span>
-                  <input type="number" step="0.01" value={Cd}
-                    onChange={e => setCd(parseFloat(e.target.value) || 0)}
-                    className="w-16 text-right px-1 border border-slate-300 rounded"/>
-                  <span className="text-slate-500 w-8 text-right">-</span>
-                </div>
-                <div className="text-[9px] text-slate-400">R290 EEV 표준: 0.6~0.7</div>
-              </div>
-            ) : (
-              <div className="space-y-1.5 text-[11px]">
-                {[
-                  ['c0', c0, setC0, 0.01],
-                  ['c1', c1, setC1, 0.01],
-                  ['c2', c2, setC2, 0.01],
-                  ['c3', c3, setC3, 0.01],
-                ].map(([name, val, setter, step]) => (
-                  <div key={name} className="flex justify-between items-center">
-                    <span className="font-mono">{name}</span>
-                    <input type="number" step={step} value={val}
-                      onChange={e => setter(parseFloat(e.target.value) || 0)}
-                      className="w-16 text-right px-1 border border-slate-300 rounded"/>
-                    <span className="text-slate-500 w-8 text-right">-</span>
-                  </div>
-                ))}
-                <div className="mt-1 pt-1 border-t border-slate-100 text-[10px] text-slate-600 space-y-0.5">
-                  <div>Cd(0%) = <b>{cd_at(0).toFixed(3)}</b></div>
-                  <div>Cd(50%) = <b>{cd_at(0.5).toFixed(3)}</b></div>
-                  <div>Cd(100%) = <b>{cd_at(1.0).toFixed(3)}</b></div>
-                </div>
-              </div>
-            )}
+            <div className="flex justify-between items-center text-[11px]">
+              <span>choke_ratio</span>
+              <input type="number" step="0.05" value={choke_ratio} onChange={e => setChokeRatio(parseFloat(e.target.value) || 0)} className="w-16 text-right px-1 border border-slate-300 rounded"/>
+              <span className="text-slate-500 w-8 text-right">-</span>
+            </div>
+            <div className="text-[9px] text-slate-500 mt-1">P_out/P_in = {(P_out_bar/P_in_bar).toFixed(3)} {is_choked ? <span className="text-amber-700 font-bold">CHOKED</span> : 'normal'}</div>
           </div>
           
-          {/* ── Group: Choke (L2 only) ── */}
-          {fidelity === 'L2' && (
-            <div className="mb-4">
-              <div className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider mb-2 pb-1 border-b border-slate-200">
-                Choke Ceiling
+          {/* Fitting */}
+          <div className="mb-4">
+            <div className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider mb-2 pb-1 border-b border-slate-200">Fitting</div>
+            <div className="space-y-1.5 text-[11px]">
+              <div className="flex justify-between items-center">
+                <span>Cd_base</span>
+                <input type="number" step="0.01" value={Cd_base} onChange={e => setCdBase(parseFloat(e.target.value) || 0)} className="w-16 text-right px-1 border border-slate-300 rounded"/>
+                <span className="text-slate-500 w-8 text-right">-</span>
               </div>
-              <div className="space-y-1.5 text-[11px]">
-                <div className="flex gap-1">
-                  <button onClick={() => setUseChoke('on')}
-                    className={`flex-1 px-2 py-1 text-[10px] font-bold rounded border ${
-                      use_choke === 'on' ? 'bg-amber-500 text-white border-amber-500' : 'bg-white border-slate-300 text-slate-600'
-                    }`}>ON</button>
-                  <button onClick={() => setUseChoke('off')}
-                    className={`flex-1 px-2 py-1 text-[10px] font-bold rounded border ${
-                      use_choke === 'off' ? 'bg-slate-500 text-white border-slate-500' : 'bg-white border-slate-300 text-slate-600'
-                    }`}>OFF</button>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span>choke_ratio</span>
-                  <input type="number" step="0.05" value={choke_ratio}
-                    onChange={e => setChokeRatio(parseFloat(e.target.value) || 0)}
-                    className="w-16 text-right px-1 border border-slate-300 rounded"/>
-                  <span className="text-slate-500 w-8 text-right">-</span>
-                </div>
-                <div className="text-[9px] text-slate-500">현재 ratio: {(P_out_bar/P_in_bar).toFixed(3)} {is_choked ? <span className="text-amber-700 font-bold">CHOKED</span> : <span className="text-slate-500">normal</span>}</div>
+              <div className="flex justify-between items-center">
+                <span>Re_trans</span>
+                <input type="number" step="100" value={Re_transition} onChange={e => setReTrans(parseFloat(e.target.value) || 0)} className="w-16 text-right px-1 border border-slate-300 rounded"/>
+                <span className="text-slate-500 w-8 text-right">-</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span>cf_A</span>
+                <input type="number" step="0.01" value={cf_A} onChange={e => setCfA(parseFloat(e.target.value) || 0)} className="w-16 text-right px-1 border border-slate-300 rounded"/>
+                <span className="text-slate-500 w-8 text-right">-</span>
+              </div>
+              <div className="flex gap-1 mt-2">
+                <span className="text-[10px]">Re corr</span>
+                <button onClick={() => setUseReCorr('on')} className={`flex-1 px-1 py-0.5 text-[10px] font-bold rounded border ${use_Re_correction === 'on' ? 'bg-purple-500 text-white border-purple-500' : 'bg-white border-slate-300 text-slate-600'}`}>ON</button>
+                <button onClick={() => setUseReCorr('off')} className={`flex-1 px-1 py-0.5 text-[10px] font-bold rounded border ${use_Re_correction === 'off' ? 'bg-slate-500 text-white border-slate-500' : 'bg-white border-slate-300 text-slate-600'}`}>OFF</button>
               </div>
             </div>
-          )}
+          </div>
           
-          {/* ── Group: Fitting (L2 only) ── */}
-          {fidelity === 'L2' && (
-            <div className="mb-4">
-              <div className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider mb-2 pb-1 border-b border-slate-200">
-                Fitting (Calibration)
-              </div>
-              <div className="space-y-1.5 text-[11px]">
-                <div className="flex justify-between items-center">
-                  <span className="font-mono">cf_Cd</span>
-                  <input type="number" step="0.01" value={cf_Cd}
-                    onChange={e => setCfCd(parseFloat(e.target.value) || 0)}
-                    className="w-16 text-right px-1 border border-slate-300 rounded"/>
-                  <span className="text-slate-500 w-8 text-right">-</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="font-mono">cf_A</span>
-                  <input type="number" step="0.01" value={cf_A}
-                    onChange={e => setCfA(parseFloat(e.target.value) || 0)}
-                    className="w-16 text-right px-1 border border-slate-300 rounded"/>
-                  <span className="text-slate-500 w-8 text-right">-</span>
-                </div>
-              </div>
-            </div>
-          )}
-          
-          {/* Validation messages */}
+          {/* Validation */}
           {validation.length > 0 && (
             <div className="mt-3 pt-3 border-t border-slate-200 space-y-1">
               {validation.map((v, i) => (
                 <div key={i} className={`text-[10px] px-2 py-1 rounded ${
                   v.level === 'error' ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-700'
-                }`}>
-                  {v.level === 'error' ? '✗' : '⚠'} {v.msg}
-                </div>
+                }`}>{v.level === 'error' ? '✗' : '⚠'} {v.msg}</div>
               ))}
             </div>
           )}
@@ -4631,34 +4658,28 @@ function EEVView({ onBack }) {
         {/* Main canvas */}
         <div className="flex-1 overflow-y-auto p-6 bg-slate-50">
           <div className="max-w-4xl mx-auto">
-            {/* Title + status banner */}
+            {/* Title */}
             <div className="mb-4">
               <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-3">
                 EEV — Expansion Valve
-                <span className={`text-sm font-mono ${theme.accentText} bg-${theme.accent}-50 px-2 py-1 rounded`}>
-                  {fidelity} · {theme.subtitle.split(' · ')[1] || ''}
-                </span>
+                <span className={`text-sm font-mono ${theme.accentText} bg-green-50 px-2 py-1 rounded`}>L3 · Needle Cone</span>
               </h2>
               <div className="text-[12px] text-slate-500 mt-1">
-                Isenthalpic expansion · {fidelity === 'L1' 
-                  ? 'Cd = const × A_throat × √(2ρΔP)' 
-                  : 'Cd(op) polynomial × A_throat × √(2ρΔP_eff with choke)'}
+                Isenthalpic expansion · Needle cone profile + 2-phase choke + Re-based Cd
               </div>
             </div>
             
             {/* Status banner */}
             <div className={`mb-4 ${theme.ringActive} border rounded-lg px-4 py-2 text-[12px]`}>
-              ✓ <b>{fidelity === 'L1' ? 'Off-design' : 'Moving Boundary'} 모드</b> — 사이드바에서 변수 변경하면 view에 <b>실시간 반영</b>됩니다.
+              ✓ <b>On-design 모드</b> — 사이드바에서 변수를 변경하면 <b>Model design</b>에 <b>실시간 반영</b>됩니다.
             </div>
             
-            {/* View tabs */}
+            {/* View tabs (실제 부품 도면) */}
             <div className="mb-3 flex gap-1.5">
-              {['Schematic', 'Curve', 'Numerical'].map(v => (
+              {['Section', 'Front', 'Top'].map(v => (
                 <button key={v} onClick={() => setView(v)}
                   className={`px-4 py-1.5 text-[12px] font-semibold rounded-lg transition-colors ${
-                    view === v
-                      ? theme.tabActive
-                      : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                    view === v ? theme.tabActive : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
                   }`}>
                   {v} view
                 </button>
@@ -4669,61 +4690,32 @@ function EEVView({ onBack }) {
             <div className="bg-white border border-slate-200 rounded-lg p-4">
               <div className="text-[12px] text-slate-500 mb-2 flex items-center justify-between">
                 <span><b>{view} view</b> — {
-                  view === 'Schematic' ? 'Orifice + needle + opening 시각화' :
-                  view === 'Curve' ? `ṁ vs opening curve (ΔP=${dP_actual_bar.toFixed(2)} bar)` :
-                  '수치 결과 카드'
+                  view === 'Section' ? 'EEV 단면도 — needle + seat + orifice geometry' :
+                  view === 'Front' ? 'EEV 정면 외관 — seat ring + orifice + needle cross-section' :
+                  'EEV 위에서 본 조립 도면 — body + stem + inlet/outlet ports'
                 }</span>
                 <span className="font-mono text-[10px] text-slate-400">
-                  ΔP={dP_actual_bar.toFixed(2)} bar {is_choked ? '· CHOKED' : ''}
+                  {needle_profile} / α/2={needle_angle}° / D_seat={D_seat_mm}mm
                 </span>
               </div>
               <div className="bg-slate-50 border border-slate-200 rounded">
-                {view === 'Schematic' && <SchemaSVG/>}
-                {view === 'Curve' && <CurvePlot/>}
-                {view === 'Numerical' && (
-                  <div className="p-6 grid grid-cols-2 gap-4">
-                    <div className="bg-white border border-green-300 rounded p-4">
-                      <div className="text-[10px] font-mono text-slate-500 uppercase">ṁ_ref</div>
-                      <div className="text-3xl font-bold text-green-700">{display_m_dot_gs.toFixed(2)}</div>
-                      <div className="text-[10px] text-slate-500">g/s</div>
-                    </div>
-                    <div className="bg-white border border-cyan-300 rounded p-4">
-                      <div className="text-[10px] font-mono text-slate-500 uppercase">opening</div>
-                      <div className="text-3xl font-bold text-cyan-700">{display_opening.toFixed(1)}</div>
-                      <div className="text-[10px] text-slate-500">% {mode === 'measure' ? '(역산)' : ''}</div>
-                    </div>
-                    <div className="bg-white border border-purple-300 rounded p-4">
-                      <div className="text-[10px] font-mono text-slate-500 uppercase">Cd_eff</div>
-                      <div className="text-3xl font-bold text-purple-700">{display_Cd.toFixed(3)}</div>
-                      <div className="text-[10px] text-slate-500">{fidelity === 'L2' ? 'poly(op)' : 'const'}</div>
-                    </div>
-                    <div className="bg-white border border-amber-300 rounded p-4">
-                      <div className="text-[10px] font-mono text-slate-500 uppercase">A_throat</div>
-                      <div className="text-3xl font-bold text-amber-700">{(A_throat_m2*1e6).toFixed(3)}</div>
-                      <div className="text-[10px] text-slate-500">mm² {is_choked ? '· CHOKED' : ''}</div>
-                    </div>
-                  </div>
-                )}
+                {view === 'Section' && <SectionView/>}
+                {view === 'Front' && <FrontView/>}
+                {view === 'Top' && <TopView/>}
               </div>
             </div>
             
             {/* Model design note */}
             <div className="mt-4 p-3 bg-slate-100 rounded text-[11px] text-slate-600 leading-relaxed">
-              <div className="font-bold mb-1">📌 모델 구조 ({fidelity === 'L1' ? 'L1 Off-design' : 'L2 Moving Boundary / Cv polynomial'})</div>
+              <div className="font-bold mb-1">📌 모델 구조 (L3 On-design / Needle Cone)</div>
               <div>• Isenthalpic 가정: h_out = h_in</div>
-              {fidelity === 'L1' ? (
-                <>
-                  <div>• Mass flow: ṁ = Cd × A_throat × √(2ρ_in × ΔP)</div>
-                  <div>• Cd 학계 표준: R290 EEV 0.6~0.7 (default 0.65)</div>
-                </>
-              ) : (
-                <>
-                  <div>• Mass flow: ṁ = Cd_eff(op) × A_throat × √(2ρ_in × ΔP_eff)</div>
-                  <div>• Cd_eff(op) = c0 + c1·op + c2·op² + c3·op³ — 다항식 fitting</div>
-                  <div>• Choke ceiling: P_out/P_in &lt; ratio → ΔP_eff = P_in·(1-ratio)</div>
-                  <div>• Calibration: 4 polynomial 계수 + 2 multiplier = 6 params</div>
-                </>
-              )}
+              <div>• A_throat = π × D_seat × stroke × sin(α/2) · stroke = stroke_max × (op/100)</div>
+              <div>• Saturate at π × (D_orifice_max/2)² · profile = cone / parabolic / linear</div>
+              <div>• Cd_eff(Re) = Cd_base × (0.5 + 0.5 × Re/(Re+Re_trans)) — low-Re 보정</div>
+              <div>• Choke: P_out/P_in &lt; ratio → ΔP_eff = P_in × (1 - ratio)</div>
+              <div className="mt-1 text-slate-500">
+                💡 L1 (130, 단순 Cd 상수) / L2 (131, Cv polynomial)는 HPWD Studio canvas에서 노드로 추가, Calibration Studio에서 fitting 가능
+              </div>
             </div>
           </div>
         </div>
@@ -4731,6 +4723,7 @@ function EEVView({ onBack }) {
     </div>
   );
 }
+
 
 
 

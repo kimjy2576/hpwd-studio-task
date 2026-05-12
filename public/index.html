@@ -1425,6 +1425,81 @@ const TYPES = {
     ].map(k => [k, NaN])),
   },
 
+  // ================ EEV (On-Design L3) ================
+  // Needle cone profile + 2-phase choke + Re-based Cd correction.
+  // L3 — On-design Studio 메인 모델, 실제 부품 도면 기반.
+  eev_on_design: {
+    typeNo: 132, name: 'EEV (On-Design)', category: 'refrigerant',
+    color: '#14532d', icon: Zap, image: './images/eev.png',
+    desc: 'Needle cone geometry + 2-phase choke + Re-based Cd — L3 정밀 모델',
+    backend: 'python',
+    pythonComponent: 'eev_on_design',
+    parameters: [
+      // ─── Material ───
+      { key: 'fluid', group: 'Material', label: 'Fluid', value: 'R290',
+        options: ['R290','R134a','R410A','R32','R1234yf'], unit: '' },
+      { key: 'needle_material', group: 'Material', label: 'Needle material', value: 'SUS304',
+        options: ['SUS304','SUS316','Brass','Steel'], unit: '' },
+      // ─── Operating ───
+      { key: 'mode', group: 'Operating', label: 'Mode', value: 'control',
+        options: ['control','measure'], unit: '' },
+      { key: 'use_choke', group: 'Operating', label: 'Choke', value: 'on',
+        options: ['on','off'], unit: '' },
+      { key: 'use_Re_correction', group: 'Operating', label: 'Re correction', value: 'on',
+        options: ['on','off'], unit: '' },
+      // ─── Geometry (needle/seat) ───
+      { key: 'needle_profile', group: 'Geometry', label: 'Needle profile', value: 'cone',
+        options: ['cone','parabolic','linear'], unit: '' },
+      { key: 'needle_angle',  group: 'Geometry', label: 'α/2 (반각)', value: 30.0,  unit: 'deg' },
+      { key: 'D_seat',        group: 'Geometry', label: 'D_seat',      value: 2.0e-3, unit: 'm' },
+      { key: 'stroke_max',    group: 'Geometry', label: 'stroke_max',  value: 1.0e-3, unit: 'm' },
+      { key: 'D_orifice_max', group: 'Geometry', label: 'D_orifice_max', value: 1.5e-3, unit: 'm' },
+      { key: 'L_inlet',       group: 'Geometry', label: 'L_inlet',     value: 30e-3, unit: 'm' },
+      { key: 'L_outlet',      group: 'Geometry', label: 'L_outlet',    value: 30e-3, unit: 'm' },
+      { key: 'opening_min',   group: 'Geometry', label: 'opening_min', value: 5.0,   unit: '%' },
+      // ─── Choke ───
+      { key: 'choke_ratio',   group: 'Choke', label: 'choke_ratio', value: 0.5, unit: '-' },
+      // ─── Fitting ───
+      { key: 'Cd_base',       group: 'Fitting', label: 'Cd_base',      value: 0.72,   unit: '-' },
+      { key: 'Re_transition', group: 'Fitting', label: 'Re_transition', value: 1000.0, unit: '-' },
+      { key: 'cf_A',          group: 'Fitting', label: 'cf_A',         value: 1.0,    unit: '-' },
+      // ─── Outputs ───
+      { key: 'output_select', label: 'Outputs',
+        value: ['m_dot_ref', 'opening_calc', 'Cd_eff', 'T_out', 'x_out', 'A_throat', 'is_choked'],
+        multiSelect: ['m_dot_ref','opening_calc','h_out','T_out','x_out',
+                      'stroke','A_throat','A_throat_unclamped','Cd_eff','Re_throat',
+                      'rho_in','dP_actual','dP_eff','is_choked'], unit: '' },
+    ],
+    inputs: [
+      { key: 'P_in',        label: 'P_in',        unit: 'bar' },
+      { key: 'h_in',        label: 'h_in',        unit: 'kJ/kg' },
+      { key: 'P_out',       label: 'P_out',       unit: 'bar' },
+      { key: 'opening',     label: 'opening',     unit: '%' },
+      { key: 'm_dot_meas',  label: 'ṁ_meas',     unit: 'kg/s' },
+    ],
+    outputs: [
+      { key: 'm_dot_ref',          label: 'ṁ_ref',             unit: 'kg/s' },
+      { key: 'opening_calc',       label: 'opening',            unit: '%' },
+      { key: 'h_out',              label: 'h_out',              unit: 'kJ/kg' },
+      { key: 'T_out',              label: 'T_out',              unit: '°C' },
+      { key: 'x_out',              label: 'x_out',              unit: '-' },
+      { key: 'stroke',             label: 'stroke',             unit: 'mm' },
+      { key: 'A_throat',           label: 'A_throat',           unit: 'mm²' },
+      { key: 'A_throat_unclamped', label: 'A_throat_unclamped', unit: 'mm²' },
+      { key: 'Cd_eff',             label: 'Cd_eff',             unit: '-' },
+      { key: 'Re_throat',          label: 'Re_throat',          unit: '-' },
+      { key: 'rho_in',             label: 'ρ_in',               unit: 'kg/m³' },
+      { key: 'dP_actual',          label: 'ΔP_actual',          unit: 'bar' },
+      { key: 'dP_eff',             label: 'ΔP_eff',             unit: 'bar' },
+      { key: 'is_choked',          label: 'choked?',            unit: '-' },
+    ],
+    compute: () => Object.fromEntries([
+      'm_dot_ref','opening_calc','h_out','T_out','x_out',
+      'stroke','A_throat','A_throat_unclamped','Cd_eff','Re_throat',
+      'rho_in','dP_actual','dP_eff','is_choked'
+    ].map(k => [k, NaN])),
+  },
+
   // ================ 결과 디스플레이 ================
   display: {
     typeNo: 901, name: 'Display', category: 'output', color: '#7c3aed', icon: Eye,
