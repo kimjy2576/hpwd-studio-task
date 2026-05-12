@@ -80,13 +80,10 @@ modelDescription = {
          'description': 'Needle cone 반각 α/2 (보통 15~45°)'},
         {'name': 'D_seat', 'causality': 'parameter', 'type': 'Real',
          'group': 'Geometry', 'start': 2.0e-3, 'unit': 'm',
-         'description': 'Seat 내경 (보통 1.5~3 mm for R290 EEV)'},
+         'description': 'Seat 내경 = 오리피스 직경 (보통 1.5~3 mm for R290 EEV)'},
         {'name': 'stroke_max', 'causality': 'parameter', 'type': 'Real',
          'group': 'Geometry', 'start': 1.0e-3, 'unit': 'm',
          'description': 'Needle 최대 stroke (full-open 시, 보통 0.5~2 mm)'},
-        {'name': 'D_orifice_max', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Geometry', 'start': 1.5e-3, 'unit': 'm',
-         'description': 'Orifice 최대 직경 (full-open A_max 한계, mm 단위 입력 권장)'},
         {'name': 'L_inlet', 'causality': 'parameter', 'type': 'Real',
          'group': 'Geometry', 'start': 30.0e-3, 'unit': 'm',
          'description': 'Inlet pipe 길이 (시각화용)'},
@@ -94,8 +91,8 @@ modelDescription = {
          'group': 'Geometry', 'start': 30.0e-3, 'unit': 'm',
          'description': 'Outlet pipe 길이 (시각화용)'},
         {'name': 'opening_min', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Geometry', 'start': 5.0, 'unit': '%',
-         'description': 'Minimum opening %'},
+         'group': 'Geometry', 'start': 0.0, 'unit': '%',
+         'description': 'Minimum opening % (default 0, leakage 시뮬용)'},
 
         # ═══ Choke ═══
         {'name': 'choke_ratio', 'causality': 'parameter', 'type': 'Real',
@@ -167,7 +164,7 @@ def init_state(params):
     return {}
 
 
-def _A_throat_from_geometry(opening_frac, profile, angle_deg, D_seat, stroke_max, D_orifice_max):
+def _A_throat_from_geometry(opening_frac, profile, angle_deg, D_seat, stroke_max):
     """
     Needle profile 기반 throat 면적 계산.
     
@@ -176,7 +173,8 @@ def _A_throat_from_geometry(opening_frac, profile, angle_deg, D_seat, stroke_max
     parabolic: A = π × D_seat × stroke × (op_frac)^0.5  (parabolic profile)
     linear: A = π × D_seat × stroke × op_frac
     
-    A_max = π × (D_orifice_max/2)² 로 saturate
+    A_max = π × (D_seat/2)² 로 saturate
+    (needle이 hole에서 완전히 빠져나오면 유효 통로 = seat hole 원판 면적)
     """
     op = max(0.0, min(1.0, opening_frac))
     stroke = stroke_max * op  # m
@@ -193,8 +191,8 @@ def _A_throat_from_geometry(opening_frac, profile, angle_deg, D_seat, stroke_max
     else:  # 'linear'
         A = math.pi * D_seat * stroke
     
-    # Saturate at full-open orifice area
-    A_max = math.pi * (D_orifice_max / 2.0) ** 2
+    # Saturate at full-open orifice area (= seat hole 원판 면적)
+    A_max = math.pi * (D_seat / 2.0) ** 2
     A_unclamped = A
     A_eff = min(A, A_max)
     
@@ -234,8 +232,7 @@ def step(input, params, state, dt):
     needle_angle = float(params.get('needle_angle', 30.0))
     D_seat = float(params.get('D_seat', 2.0e-3))
     stroke_max = float(params.get('stroke_max', 1.0e-3))
-    D_orifice_max = float(params.get('D_orifice_max', 1.5e-3))
-    opening_min = float(params.get('opening_min', 5.0))
+    opening_min = float(params.get('opening_min', 0.0))
     
     choke_ratio = float(params.get('choke_ratio', 0.5))
     Cd_base = float(params.get('Cd_base', 0.72))
@@ -286,7 +283,7 @@ def step(input, params, state, dt):
         
         # Needle profile 기반 A_throat
         A_throat, A_unclamped, stroke = _A_throat_from_geometry(
-            opening_frac, needle_profile, needle_angle, D_seat, stroke_max, D_orifice_max
+            opening_frac, needle_profile, needle_angle, D_seat, stroke_max
         )
         A_throat *= cf_A
         
@@ -318,7 +315,7 @@ def step(input, params, state, dt):
                 mid = (lo + hi) / 2.0
                 op_frac = mid / 100.0
                 A_t, A_unc, s = _A_throat_from_geometry(
-                    op_frac, needle_profile, needle_angle, D_seat, stroke_max, D_orifice_max
+                    op_frac, needle_profile, needle_angle, D_seat, stroke_max
                 )
                 A_t *= cf_A
                 # Cd at this A (with Re estimate)
@@ -337,7 +334,7 @@ def step(input, params, state, dt):
             opening_calc = (lo + hi) / 2.0
             op_final = opening_calc / 100.0
             A_throat, A_unclamped, stroke = _A_throat_from_geometry(
-                op_final, needle_profile, needle_angle, D_seat, stroke_max, D_orifice_max
+                op_final, needle_profile, needle_angle, D_seat, stroke_max
             )
             A_throat *= cf_A
             # Final Cd at this opening
@@ -412,10 +409,9 @@ def validate(params):
     issues = []
     
     D_seat = float(params.get('D_seat', 2.0e-3))
-    D_orifice_max = float(params.get('D_orifice_max', 1.5e-3))
-    if D_orifice_max > D_seat:
-        issues.append({'key': 'D_orifice_max',
-                      'msg': f'D_orifice_max({D_orifice_max*1000:.2f}mm) > D_seat({D_seat*1000:.2f}mm) — orifice가 seat보다 큼'})
+    if D_seat <= 0 or D_seat > 10e-3:
+        issues.append({'key': 'D_seat',
+                      'msg': f'D_seat={D_seat*1000:.2f}mm — 보통 1~3mm (R290 EEV)'})
     
     needle_angle = float(params.get('needle_angle', 30.0))
     if needle_angle < 5 or needle_angle > 60:

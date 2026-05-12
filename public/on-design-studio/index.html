@@ -2090,7 +2090,7 @@ function CoilView3D({ D_o, D_i, L_tube, FPI, t_fin, N_tubes, N_rows, P_t, P_l,
      • opening 0%: needle tip이 seat 하부 (hole 안으로 깊이 들어감) → CLOSED
      • opening 100%: needle이 seat 위 stroke_max만큼 → OPEN
    ═══════════════════════════════════════════════════════════════════ */
-function EEVView3D({ D_seat_mm, stroke_max_mm, D_orifice_max_mm,
+function EEVView3D({ D_seat_mm, stroke_max_mm,
                      L_inlet_mm, L_outlet_mm, needle_angle, needle_profile,
                      opening_eff, stroke_m }) {
   const mountRef = React.useRef(null);
@@ -2339,7 +2339,7 @@ function EEVView3D({ D_seat_mm, stroke_max_mm, D_orifice_max_mm,
       needleMat.dispose(); stemMat.dispose();
       inletMat.dispose(); outletMat.dispose();
     };
-  }, [D_seat_mm, stroke_max_mm, D_orifice_max_mm,
+  }, [D_seat_mm, stroke_max_mm,
       L_inlet_mm, L_outlet_mm, needle_angle, needle_profile,
       opening_eff, stroke_m]);
   
@@ -4168,10 +4168,10 @@ function EEVView({ onBack }) {
   const [needle_angle, setNeedleAngle] = useState(30.0);  // deg (반각)
   const [D_seat_mm, setDseat] = useState(2.0);             // mm
   const [stroke_max_mm, setStrokeMax] = useState(1.0);     // mm
-  const [D_orifice_max_mm, setDorifMax] = useState(1.5);   // mm
+  // D_orifice_max는 D_seat과 동일 (needle이 hole에서 빠져나오면 유효 통로 = seat hole)
   const [L_inlet_mm, setLin] = useState(30.0);             // mm (시각화)
   const [L_outlet_mm, setLout] = useState(30.0);           // mm
-  const [opening_min, setOpeningMin] = useState(5.0);      // %
+  const [opening_min, setOpeningMin] = useState(0.0);      // % (default 0 — 사용자가 원하면 올릴 수 있게)
   
   // Choke + Fitting
   const [choke_ratio, setChokeRatio] = useState(0.5);
@@ -4206,7 +4206,7 @@ function EEVView({ onBack }) {
     _component: 'eev',
     fluid, needle_material,
     mode, use_choke, use_Re_correction,
-    needle_profile, needle_angle, D_seat_mm, stroke_max_mm, D_orifice_max_mm,
+    needle_profile, needle_angle, D_seat_mm, stroke_max_mm,
     L_inlet_mm, L_outlet_mm, opening_min,
     choke_ratio, Cd_base, Re_transition, cf_A,
     P_in_bar, P_out_bar, h_in_kjkg, opening_pct, m_dot_meas_gs,
@@ -4222,7 +4222,6 @@ function EEVView({ onBack }) {
     if (data.needle_angle !== undefined) setNeedleAngle(data.needle_angle);
     if (data.D_seat_mm !== undefined) setDseat(data.D_seat_mm);
     if (data.stroke_max_mm !== undefined) setStrokeMax(data.stroke_max_mm);
-    if (data.D_orifice_max_mm !== undefined) setDorifMax(data.D_orifice_max_mm);
     if (data.L_inlet_mm !== undefined) setLin(data.L_inlet_mm);
     if (data.L_outlet_mm !== undefined) setLout(data.L_outlet_mm);
     if (data.opening_min !== undefined) setOpeningMin(data.opening_min);
@@ -4290,7 +4289,7 @@ function EEVView({ onBack }) {
   // ── 계산 (L3 needle cone 모델) ──
   const D_seat_m = D_seat_mm * 1e-3;
   const stroke_max_m = stroke_max_mm * 1e-3;
-  const D_orifice_max_m = D_orifice_max_mm * 1e-3;
+  // A_max는 D_seat (full-open 시 needle이 hole에서 빠져나오면 유효 통로 = seat hole)
   
   const dP_actual_bar = Math.max(0.001, P_in_bar - P_out_bar);
   const dP_actual_Pa = dP_actual_bar * 1e5;
@@ -4310,7 +4309,8 @@ function EEVView({ onBack }) {
     } else {
       A = Math.PI * D_seat_m * stroke;
     }
-    const A_max = Math.PI * (D_orifice_max_m / 2) ** 2;
+    // A_max = π × (D_seat/2)² — full-open 시 needle이 빠져나오면 hole 원판 면적
+    const A_max = Math.PI * (D_seat_m / 2) ** 2;
     return { A: Math.min(A, A_max) * cf_A, A_unclamped: A, stroke };
   };
   
@@ -4369,7 +4369,7 @@ function EEVView({ onBack }) {
     fluid, needle_material,
     mode, use_choke, use_Re_correction,
     needle_profile, needle_angle,
-    D_seat: D_seat_m, stroke_max: stroke_max_m, D_orifice_max: D_orifice_max_m,
+    D_seat: D_seat_m, stroke_max: stroke_max_m,
     L_inlet: L_inlet_mm * 1e-3, L_outlet: L_outlet_mm * 1e-3, opening_min,
     choke_ratio, Cd_base, Re_transition, cf_A,
   });
@@ -4401,13 +4401,13 @@ function EEVView({ onBack }) {
   // ─── Validation ───
   const validation = useMemo(() => {
     const errs = [];
-    if (D_orifice_max_mm > D_seat_mm) errs.push({ level: 'error', msg: `D_orifice_max(${D_orifice_max_mm}) > D_seat(${D_seat_mm})` });
+    if (D_seat_mm <= 0 || D_seat_mm > 10) errs.push({ level: 'warn', msg: `D_seat ${D_seat_mm}mm — 보통 1~3mm (R290 EEV)` });
     if (needle_angle < 5 || needle_angle > 60) errs.push({ level: 'warn', msg: `needle_angle ${needle_angle}° — 보통 15~45°` });
     if (stroke_max_mm <= 0 || stroke_max_mm > 5) errs.push({ level: 'warn', msg: `stroke_max ${stroke_max_mm}mm — 보통 0.5~2mm` });
     if (Cd_base < 0.4 || Cd_base > 0.95) errs.push({ level: 'warn', msg: `Cd_base ${Cd_base} — 0.6~0.8 권장` });
     if (P_out_bar >= P_in_bar) errs.push({ level: 'error', msg: 'P_out ≥ P_in — 팽창 안 일어남' });
     return errs;
-  }, [D_seat_mm, D_orifice_max_mm, needle_angle, stroke_max_mm, Cd_base, P_in_bar, P_out_bar]);
+  }, [D_seat_mm, needle_angle, stroke_max_mm, Cd_base, P_in_bar, P_out_bar]);
   
   // ════════════════════════════════════════════════════════════════
   // SectionView — 실제 부품 단면도 (가장 중요한 view)
@@ -4573,34 +4573,27 @@ function EEVView({ onBack }) {
   };
   
   // ════════════════════════════════════════════════════════════════
-  // FrontView — 정면 외관 (orifice 원형)
+  // FrontView — 정면 외관 (orifice 원형 = D_seat)
   // ════════════════════════════════════════════════════════════════
   const FrontView = () => {
     const W = 600, H = 320;
     const cx = W / 2, cy = H / 2;
     const bodyR = 80;
-    const seat_r = D_seat_mm * 12;  // 12x zoom
-    const orifice_r = D_orifice_max_mm * 12;
+    const seat_r = D_seat_mm * 12;  // 12x zoom (seat = orifice 가장자리)
     
     return (
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full bg-white">
         {/* Body outline (front view = circle) */}
         <circle cx={cx} cy={cy} r={bodyR} fill="#f1f5f9" stroke="#475569" strokeWidth="2.5"/>
         
-        {/* Seat ring */}
-        <circle cx={cx} cy={cy} r={seat_r} fill="#fff" stroke="#94a3b8" strokeWidth="1.5"/>
-        <text x={cx + seat_r + 4} y={cy + 4} fontSize="9" fontFamily="monospace" fill="#94a3b8">
-          D_seat={D_seat_mm}mm
+        {/* Seat ring (= orifice hole) */}
+        <circle cx={cx} cy={cy} r={seat_r} fill="#fef3c7" stroke="#dc2626" strokeWidth="1.5"/>
+        <text x={cx + seat_r + 4} y={cy + 4} fontSize="9" fontFamily="monospace" fill="#dc2626" fontWeight="bold">
+          D_seat = orifice = {D_seat_mm}mm
         </text>
         
-        {/* Orifice center (when fully open) */}
-        <circle cx={cx} cy={cy} r={orifice_r} fill="#fef3c7" stroke="#dc2626" strokeWidth="1.5" strokeDasharray="2 2"/>
-        <text x={cx + orifice_r + 4} y={cy - 8} fontSize="9" fontFamily="monospace" fill="#dc2626">
-          D_orifice_max={D_orifice_max_mm}mm
-        </text>
-        
-        {/* Needle center (현재 opening 표시) */}
-        <circle cx={cx} cy={cy} r={Math.max(1, orifice_r * (1 - opening_eff/100))} fill="#64748b" stroke="#1e293b" strokeWidth="1"/>
+        {/* Needle center (현재 opening 표시 — opening 0%면 가득, 100%면 사라짐) */}
+        <circle cx={cx} cy={cy} r={Math.max(1, seat_r * (1 - opening_eff/100))} fill="#64748b" stroke="#1e293b" strokeWidth="1"/>
         
         {/* Body outer label */}
         <text x={cx} y={cy - bodyR - 8} fontSize="10" fontFamily="monospace" fill="#475569" textAnchor="middle" fontWeight="bold">
@@ -4612,14 +4605,12 @@ function EEVView({ onBack }) {
         
         {/* Legend */}
         <g transform="translate(20, 20)">
-          <rect x="0" y="0" width="160" height="80" fill="#f8fafc" stroke="#cbd5e1" rx="4"/>
+          <rect x="0" y="0" width="160" height="65" fill="#f8fafc" stroke="#cbd5e1" rx="4"/>
           <text x="8" y="14" fontSize="9" fontFamily="monospace" fill="#64748b" fontWeight="bold">LEGEND</text>
-          <circle cx="14" cy="28" r="5" fill="#fff" stroke="#94a3b8"/>
-          <text x="24" y="32" fontSize="9" fontFamily="monospace" fill="#475569">Seat ring</text>
-          <circle cx="14" cy="44" r="5" fill="#fef3c7" stroke="#dc2626" strokeDasharray="2 2"/>
-          <text x="24" y="48" fontSize="9" fontFamily="monospace" fill="#475569">Orifice max</text>
-          <circle cx="14" cy="60" r="4" fill="#64748b"/>
-          <text x="24" y="64" fontSize="9" fontFamily="monospace" fill="#475569">Needle cross-section</text>
+          <circle cx="14" cy="30" r="5" fill="#fef3c7" stroke="#dc2626"/>
+          <text x="24" y="34" fontSize="9" fontFamily="monospace" fill="#475569">Orifice (= seat hole)</text>
+          <circle cx="14" cy="48" r="4" fill="#64748b"/>
+          <text x="24" y="52" fontSize="9" fontFamily="monospace" fill="#475569">Needle cross-section</text>
         </g>
       </svg>
     );
@@ -4870,11 +4861,6 @@ function EEVView({ onBack }) {
                 <span className="text-slate-500 w-8 text-right">mm</span>
               </div>
               <div className="flex justify-between items-center">
-                <span>D_orifice_max</span>
-                <input type="number" step="0.1" value={D_orifice_max_mm} onChange={e => setDorifMax(parseFloat(e.target.value) || 0)} className="w-16 text-right px-1 border border-slate-300 rounded"/>
-                <span className="text-slate-500 w-8 text-right">mm</span>
-              </div>
-              <div className="flex justify-between items-center">
                 <span>opening_min</span>
                 <input type="number" step="1" value={opening_min} onChange={e => setOpeningMin(parseFloat(e.target.value) || 0)} className="w-16 text-right px-1 border border-slate-300 rounded"/>
                 <span className="text-slate-500 w-8 text-right">%</span>
@@ -4984,7 +4970,6 @@ function EEVView({ onBack }) {
                 {view === '3D' && <EEVView3D
                   D_seat_mm={D_seat_mm}
                   stroke_max_mm={stroke_max_mm}
-                  D_orifice_max_mm={D_orifice_max_mm}
                   L_inlet_mm={L_inlet_mm}
                   L_outlet_mm={L_outlet_mm}
                   needle_angle={needle_angle}
@@ -5010,7 +4995,7 @@ function EEVView({ onBack }) {
               <div className="font-bold mb-1">📌 모델 구조 (L3 On-design / Needle Cone)</div>
               <div>• Isenthalpic 가정: h_out = h_in</div>
               <div>• A_throat = π × D_seat × stroke × sin(α/2) · stroke = stroke_max × (op/100)</div>
-              <div>• Saturate at π × (D_orifice_max/2)² · profile = cone / parabolic / linear</div>
+              <div>• Saturate at π × (D_seat/2)² · profile = cone / parabolic / linear</div>
               <div>• Cd_eff(Re) = Cd_base × (0.5 + 0.5 × Re/(Re+Re_trans)) — low-Re 보정</div>
               <div>• Choke: P_out/P_in &lt; ratio → ΔP_eff = P_in × (1 - ratio)</div>
               <div className="mt-1 text-slate-500">
