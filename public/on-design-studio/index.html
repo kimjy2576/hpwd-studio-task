@@ -2073,21 +2073,27 @@ function CoilView3D({ D_o, D_i, L_tube, FPI, t_fin, N_tubes, N_rows, P_t, P_l,
 }
 
 /* ═══════════════════════════════════════════════════════════════════
-   EEV 3D Viewer — Three.js (개선판)
+   EEV 3D Viewer — Three.js (심플 버전)
    ═══════════════════════════════════════════════════════════════════
    진영님 요청 반영:
-   1) stroke 시각 amplification (5x default) — needle 움직임이 더 잘 보이게
-   2) 실제 R290 EEV 형상 — motor housing (상단 cylinder) + flange + body
-   3) Cutaway — body 절반 절단 (앞쪽 반쪽), 내부 needle/seat 보임
-   4) Dimension lines (D_seat, stroke, α/2)
-   5) 더 좋은 lighting (3-point) + material (Standard with metalness)
+   - 심플하게 (motor housing, coil, flange, cutaway 다 제거)
+   - 개도 비율 정확하게 (visual amplification 없음)
+   - orifice가 needle로 조여지는 것이 핵심으로 보여야 함
+   
+   핵심 시각화:
+     • Seat plate (가운데 hole이 orifice)
+     • Needle (cone) — opening 0%면 orifice 안에 박혀서 막음, 100%면 위로
+     • Inlet pipe (좌측, subcool liquid)
+     • Outlet pipe (하단, 2-phase)
+   
+   needle 위치 (NEW):
+     • opening 0%: needle tip이 seat 하부 (hole 안으로 깊이 들어감) → CLOSED
+     • opening 100%: needle이 seat 위 stroke_max만큼 → OPEN
    ═══════════════════════════════════════════════════════════════════ */
 function EEVView3D({ D_seat_mm, stroke_max_mm, D_orifice_max_mm,
                      L_inlet_mm, L_outlet_mm, needle_angle, needle_profile,
-                     opening_eff, stroke_m,
-                     cutaway = true, strokeAmp = 5 }) {
+                     opening_eff, stroke_m }) {
   const mountRef = React.useRef(null);
-  const stateRef = React.useRef(null);
   
   React.useEffect(() => {
     if (!mountRef.current || typeof THREE === 'undefined') return;
@@ -2096,403 +2102,186 @@ function EEVView3D({ D_seat_mm, stroke_max_mm, D_orifice_max_mm,
     const h = mount.clientHeight || 400;
     
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0xf8fafc);  // 더 밝은 배경
-    // Fog로 깊이감
-    scene.fog = new THREE.Fog(0xf8fafc, 200, 400);
+    scene.background = new THREE.Color(0xf1f5f9);
     
-    const camera = new THREE.PerspectiveCamera(40, w/h, 0.1, 5000);
-    camera.position.set(80, 50, 100);
+    const camera = new THREE.PerspectiveCamera(45, w/h, 0.1, 5000);
+    camera.position.set(80, 30, 100);
     camera.lookAt(0, 0, 0);
     
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(w, h);
     renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
-    renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     mount.appendChild(renderer.domElement);
     
-    // ─── 3-point lighting ───
-    const amb = new THREE.AmbientLight(0xffffff, 0.4);
+    // Lights (simple)
+    const amb = new THREE.AmbientLight(0xffffff, 0.55);
     scene.add(amb);
-    // Key light (위 + 살짝 앞)
-    const key = new THREE.DirectionalLight(0xffffff, 0.9);
-    key.position.set(60, 120, 80);
-    key.castShadow = true;
-    key.shadow.mapSize.set(1024, 1024);
-    scene.add(key);
-    // Fill light (반대 방향, 부드럽게)
-    const fill = new THREE.DirectionalLight(0xddeeff, 0.4);
-    fill.position.set(-80, 30, 40);
-    scene.add(fill);
-    // Rim light (뒤에서, 외곽선 강조)
-    const rim = new THREE.DirectionalLight(0xfff6e0, 0.35);
-    rim.position.set(0, 20, -100);
-    scene.add(rim);
+    const dir = new THREE.DirectionalLight(0xffffff, 0.85);
+    dir.position.set(60, 100, 80);
+    scene.add(dir);
+    const dir2 = new THREE.DirectionalLight(0xffffff, 0.35);
+    dir2.position.set(-60, 30, -40);
+    scene.add(dir2);
     
-    // ─── Materials (more realistic) ───
-    // Body — 알루미늄/스테인리스 느낌
-    const bodyMat = new THREE.MeshStandardMaterial({
-      color: 0xc8ced6, metalness: 0.7, roughness: 0.35,
-      transparent: !cutaway, opacity: cutaway ? 1.0 : 0.42,
-      side: THREE.DoubleSide,
+    // Materials (simple Phong)
+    const seatMat = new THREE.MeshPhongMaterial({
+      color: 0x64748b, shininess: 60, specular: 0x666666,
     });
-    // Motor housing — 위쪽 cylinder (다른 색)
-    const motorMat = new THREE.MeshStandardMaterial({
-      color: 0x4b5563, metalness: 0.85, roughness: 0.25,
+    const needleMat = new THREE.MeshPhongMaterial({
+      color: 0x94a3b8, shininess: 100, specular: 0xaaaaaa,
     });
-    // Coil wrap (motor housing 위)
-    const coilMat = new THREE.MeshStandardMaterial({
-      color: 0xb45309, metalness: 0.3, roughness: 0.6,  // copper-ish
+    const stemMat = new THREE.MeshPhongMaterial({
+      color: 0x6b7280, shininess: 80, specular: 0x777777,
     });
-    // Needle — 스테인리스
-    const needleMat = new THREE.MeshStandardMaterial({
-      color: 0x9ca3af, metalness: 0.85, roughness: 0.15,
+    const inletMat = new THREE.MeshPhongMaterial({
+      color: 0xa78bfa, shininess: 60, specular: 0x7c3aed,
+      transparent: true, opacity: 0.85,
     });
-    // Stem — needle과 유사
-    const stemMat = new THREE.MeshStandardMaterial({
-      color: 0x6b7280, metalness: 0.8, roughness: 0.25,
-    });
-    // Seat — 더 진한 stainless
-    const seatMat = new THREE.MeshStandardMaterial({
-      color: 0x475569, metalness: 0.75, roughness: 0.3,
-    });
-    // Orifice marker
-    const orificeMat = new THREE.MeshBasicMaterial({
-      color: 0xdc2626, side: THREE.DoubleSide,
-    });
-    // Pipes (refrigerant)
-    const inletMat = new THREE.MeshStandardMaterial({
-      color: 0xa78bfa, metalness: 0.4, roughness: 0.4,
-      transparent: true, opacity: 0.92,
-    });
-    const outletMat = new THREE.MeshStandardMaterial({
-      color: 0xfbbf24, metalness: 0.4, roughness: 0.4,
-      transparent: true, opacity: 0.92,
-    });
-    // Flange — body와 pipe 연결부
-    const flangeMat = new THREE.MeshStandardMaterial({
-      color: 0x6b7280, metalness: 0.8, roughness: 0.3,
+    const outletMat = new THREE.MeshPhongMaterial({
+      color: 0xfbbf24, shininess: 60, specular: 0xd97706,
+      transparent: true, opacity: 0.85,
     });
     
     // ─── Geometry (mm units, scale up) ───
-    const scale = 10;
+    const scale = 10;  // 1mm → 10 scene units
     const D_seat = D_seat_mm * scale;
     const stroke_max = stroke_max_mm * scale;
-    const D_orif_max = D_orifice_max_mm * scale;
     
-    // Visual stroke amplification (진영님 요청)
-    const stroke_now_real = stroke_m * 1000 * scale;
-    const stroke_now = stroke_now_real * strokeAmp;
-    const stroke_max_visual = stroke_max * strokeAmp;
+    // Needle (cone) 치수
+    const alpha_half_rad = needle_angle * Math.PI / 180;
+    // needle base 반경: seat hole보다 약간 더 큼 (sealing 가능하게)
+    const coneBaseR = (D_seat / 2) / Math.sin(alpha_half_rad);
+    const coneHeight = coneBaseR / Math.tan(alpha_half_rad);
+    // (즉 cone 옆면이 정확히 seat hole 가장자리에 닿음 — fully closed 시 sealing)
     
-    // ─── Body (R290 EEV 형상 — 하단부) ───
-    // 실제 EEV body: 보통 brass/aluminum 원통형 + 측면 inlet port + 하단 outlet
-    const bodyR = D_seat * 1.8;
-    const bodyH = stroke_max_visual + D_seat * 1.5;  // stroke 따라 body도 적당히
-    const bodyTopY = bodyH / 2;
-    const bodyBottomY = -bodyH / 2;
+    // ─── Seat plate (orifice가 가운데 hole) ───
+    // Seat은 평면 plate로 처리 (단순), hole은 RingGeometry
+    const seatThickness = D_seat * 0.4;
+    const seatOuterR = D_seat * 2.0;
+    const seatY = 0;  // 좌표 원점
     
-    // Cutaway면 반원 (CylinderGeometry with thetaLength = π)
-    const bodyTheta = cutaway ? Math.PI : Math.PI * 2;
-    const bodyThetaStart = cutaway ? -Math.PI / 2 : 0;
+    // Seat top surface (도넛 — outer ring with hole)
+    const seatTopGeo = new THREE.RingGeometry(D_seat / 2, seatOuterR, 48);
+    const seatTop = new THREE.Mesh(seatTopGeo, seatMat);
+    seatTop.rotation.x = -Math.PI / 2;
+    seatTop.position.set(0, seatY + seatThickness / 2, 0);
+    scene.add(seatTop);
     
-    const bodyGeo = new THREE.CylinderGeometry(
-      bodyR, bodyR, bodyH, 48, 1, false,
-      bodyThetaStart, bodyTheta
+    // Seat bottom surface (같음)
+    const seatBotGeo = new THREE.RingGeometry(D_seat / 2, seatOuterR, 48);
+    const seatBot = new THREE.Mesh(seatBotGeo, seatMat);
+    seatBot.rotation.x = Math.PI / 2;
+    seatBot.position.set(0, seatY - seatThickness / 2, 0);
+    scene.add(seatBot);
+    
+    // Seat outer wall
+    const seatOuterGeo = new THREE.CylinderGeometry(
+      seatOuterR, seatOuterR, seatThickness, 48, 1, true
     );
-    const body = new THREE.Mesh(bodyGeo, bodyMat);
-    body.position.set(0, 0, 0);
-    body.castShadow = true;
-    body.receiveShadow = true;
-    scene.add(body);
+    const seatOuter = new THREE.Mesh(seatOuterGeo, seatMat);
+    seatOuter.position.set(0, seatY, 0);
+    scene.add(seatOuter);
     
-    // Body top cap (cutaway면 반원)
-    const bodyTopCapGeo = new THREE.CircleGeometry(bodyR, 48, bodyThetaStart, bodyTheta);
-    const bodyTopCap = new THREE.Mesh(bodyTopCapGeo, bodyMat);
-    bodyTopCap.rotation.x = -Math.PI / 2;
-    bodyTopCap.position.set(0, bodyTopY, 0);
-    scene.add(bodyTopCap);
-    
-    // Body bottom cap
-    const bodyBotCapGeo = new THREE.CircleGeometry(bodyR, 48, bodyThetaStart, bodyTheta);
-    const bodyBotCap = new THREE.Mesh(bodyBotCapGeo, bodyMat);
-    bodyBotCap.rotation.x = Math.PI / 2;
-    bodyBotCap.position.set(0, bodyBottomY, 0);
-    scene.add(bodyBotCap);
-    
-    // ─── Motor housing (R290 EEV stepper motor — body 위쪽) ───
-    const motorR = bodyR * 0.85;
-    const motorH = D_seat * 2.0;
-    const motorY = bodyTopY + motorH / 2 + 1;
-    const motorTheta = cutaway ? Math.PI : Math.PI * 2;
-    
-    const motorGeo = new THREE.CylinderGeometry(
-      motorR, motorR, motorH, 48, 1, false,
-      bodyThetaStart, motorTheta
-    );
-    const motor = new THREE.Mesh(motorGeo, motorMat);
-    motor.position.set(0, motorY, 0);
-    scene.add(motor);
-    
-    // Motor caps
-    const motorTopCapGeo = new THREE.CircleGeometry(motorR, 48, bodyThetaStart, motorTheta);
-    const motorTopCap = new THREE.Mesh(motorTopCapGeo, motorMat);
-    motorTopCap.rotation.x = -Math.PI / 2;
-    motorTopCap.position.set(0, motorY + motorH/2, 0);
-    scene.add(motorTopCap);
-    
-    const motorBotCapGeo = new THREE.CircleGeometry(motorR, 48, bodyThetaStart, motorTheta);
-    const motorBotCap = new THREE.Mesh(motorBotCapGeo, motorMat);
-    motorBotCap.rotation.x = Math.PI / 2;
-    motorBotCap.position.set(0, motorY - motorH/2, 0);
-    scene.add(motorBotCap);
-    
-    // Coil wrap (motor 외부 — 가는 wrapping line)
-    const coilR_outer = motorR * 1.05;
-    const coilH = motorH * 0.9;
-    const coilGeo = new THREE.TorusGeometry(coilR_outer, motorR * 0.08, 8, 32, motorTheta);
-    for (let i = 0; i < 4; i++) {
-      const coil = new THREE.Mesh(coilGeo, coilMat);
-      coil.rotation.x = Math.PI / 2;
-      if (cutaway) coil.rotation.y = -Math.PI / 2;
-      coil.position.set(0, motorY - coilH/2 + (i + 0.5) * coilH / 4, 0);
-      scene.add(coil);
-    }
-    
-    // ─── Flange (body와 motor 연결부) ───
-    const flangeR = bodyR * 1.15;
-    const flangeH = 2;
-    const flangeY = bodyTopY + flangeH / 2;
-    const flangeGeo = new THREE.CylinderGeometry(
-      flangeR, flangeR, flangeH, 48, 1, false,
-      bodyThetaStart, bodyTheta
-    );
-    const flange = new THREE.Mesh(flangeGeo, flangeMat);
-    flange.position.set(0, flangeY, 0);
-    scene.add(flange);
-    
-    // ─── Seat (body 내부 하부) ───
-    const seatThickness = D_seat * 0.5;
-    const seatY = bodyBottomY + seatThickness / 2 + 2;
-    const seatOuterR = bodyR * 0.55;
-    const seatTheta = cutaway ? Math.PI : Math.PI * 2;
-    
-    const seatGeo = new THREE.CylinderGeometry(
-      seatOuterR, seatOuterR, seatThickness, 32, 1, false,
-      bodyThetaStart, seatTheta
-    );
-    const seat = new THREE.Mesh(seatGeo, seatMat);
-    seat.position.set(0, seatY, 0);
-    scene.add(seat);
-    
-    // Seat top cap
-    const seatTopCapGeo = new THREE.RingGeometry(D_seat / 2, seatOuterR, 32, 1, bodyThetaStart, seatTheta);
-    const seatTopCap = new THREE.Mesh(seatTopCapGeo, seatMat);
-    seatTopCap.rotation.x = -Math.PI / 2;
-    seatTopCap.position.set(0, seatY + seatThickness / 2 + 0.05, 0);
-    scene.add(seatTopCap);
-    
-    // Seat bottom cap (with hole)
-    const seatBotCapGeo = new THREE.RingGeometry(D_seat / 2, seatOuterR, 32, 1, bodyThetaStart, seatTheta);
-    const seatBotCap = new THREE.Mesh(seatBotCapGeo, seatMat);
-    seatBotCap.rotation.x = Math.PI / 2;
-    seatBotCap.position.set(0, seatY - seatThickness / 2 - 0.05, 0);
-    scene.add(seatBotCap);
-    
-    // Seat inner wall (orifice hole side)
-    const seatInnerGeo = new THREE.CylinderGeometry(
-      D_seat / 2, D_seat / 2, seatThickness, 24, 1, true,
-      bodyThetaStart, seatTheta
-    );
-    const seatInnerMat = new THREE.MeshStandardMaterial({
-      color: 0x334155, metalness: 0.8, roughness: 0.3,
+    // Seat inner wall (orifice hole 안쪽 면)
+    const seatInnerMat = new THREE.MeshPhongMaterial({
+      color: 0x334155, shininess: 80, specular: 0x444444,
       side: THREE.DoubleSide,
     });
+    const seatInnerGeo = new THREE.CylinderGeometry(
+      D_seat / 2, D_seat / 2, seatThickness, 32, 1, true
+    );
     const seatInner = new THREE.Mesh(seatInnerGeo, seatInnerMat);
     seatInner.position.set(0, seatY, 0);
     scene.add(seatInner);
     
-    // Orifice marker ring (top of seat)
-    const orifMarkerGeo = new THREE.RingGeometry((D_seat / 2) * 0.95, D_seat / 2 * 1.05, 32, 1, bodyThetaStart, seatTheta);
-    const orifMarker = new THREE.Mesh(orifMarkerGeo, orificeMat);
-    orifMarker.rotation.x = -Math.PI / 2;
-    orifMarker.position.set(0, seatY + seatThickness / 2 + 0.1, 0);
-    scene.add(orifMarker);
+    // ─── Needle (cone) ───
+    // 핵심: opening에 따른 위치 계산
+    // 
+    // opening 0% (CLOSED): needle이 seat hole 안에 박혀서 막음
+    //   → needle tip이 seat hole 깊이까지 들어감
+    //   → cone의 옆면이 seat hole 가장자리에 접촉 (sealing)
+    // 
+    // opening 100% (OPEN): needle이 위로 stroke_max만큼 올라감
+    // 
+    // 좌표:
+    //   seat top surface Y = +seatThickness/2
+    //   opening 0% 기준: cone의 어느 지점이 seat hole 가장자리와 만나는가?
+    //   → cone 옆면 식: 반경 R(y) = coneBaseR × y/coneHeight (apex가 y=0)
+    //   → R(y) = D_seat/2 일 때 y = D_seat/2 / coneBaseR × coneHeight
+    //   → = sin(α/2) × coneHeight = D_seat/2 / tan(α/2)
+    //   이 거리만큼 cone apex가 seat top surface 아래로 내려가야 sealing 가능
+    //   
+    //   즉 closed position의 cone apex Y = seatTopY - D_seat/2 / tan(α/2)
     
-    // ─── Needle (cone, opening 따라 움직임) ───
-    const alpha_half_rad = needle_angle * Math.PI / 180;
-    const coneBaseR = D_seat * 0.55;  // seat hole보다 약간 큼 (sealing 위해)
-    const coneHeight = coneBaseR / Math.tan(alpha_half_rad);
+    const stroke_now = stroke_m * 1000 * scale;  // 실제 stroke (visual amp 없음)
+    const seatTopY = seatY + seatThickness / 2;
     
-    const seatTopSurfaceY = seatY + seatThickness / 2;
-    const needleTipY = seatTopSurfaceY + stroke_now;  // visual amplified
+    // Closed position 계산: cone이 seat hole에 막 들어맞는 위치
+    // (반경이 D_seat/2 되는 cone의 y좌표 = D_seat/2 / tan(α/2))
+    const sealPenetration = (D_seat / 2) / Math.tan(alpha_half_rad);
+    const apexY_closed = seatTopY - sealPenetration;
+    
+    // 실제 apex Y (opening에 따라 위로 올라감)
+    const apexY = apexY_closed + stroke_now;
     
     const needleGeo = new THREE.ConeGeometry(coneBaseR, coneHeight, 32);
     const needle = new THREE.Mesh(needleGeo, needleMat);
     needle.rotation.x = Math.PI;  // apex down
-    needle.position.set(0, needleTipY + coneHeight / 2, 0);
-    needle.castShadow = true;
+    // ConeGeometry: default apex at top, base at bottom. flip 후 apex가 아래로.
+    // mesh.position.y = center → apex가 그 아래 coneHeight/2 만큼
+    needle.position.set(0, apexY + coneHeight / 2, 0);
     scene.add(needle);
     
-    // Needle base cap (cone base is open by default)
-    const needleBaseY = needleTipY + coneHeight;
-    
     // ─── Stem (cylinder, needle 위) ───
-    const stemR = coneBaseR * 0.4;
-    const stemTopY = motorY + motorH / 2 - 1;  // motor 안쪽으로 들어감
-    const stemLen = stemTopY - needleBaseY;
-    if (stemLen > 0) {
-      const stemGeo = new THREE.CylinderGeometry(stemR, stemR, stemLen, 24);
-      const stem = new THREE.Mesh(stemGeo, stemMat);
-      stem.position.set(0, needleBaseY + stemLen / 2, 0);
-      stem.castShadow = true;
-      scene.add(stem);
-    }
+    const stemR = coneBaseR * 0.3;
+    const needleBaseY = apexY + coneHeight;
+    const stemLen = stroke_max * 2.5 + D_seat * 1.5;  // 시각화용 충분히 길게
+    const stemGeo = new THREE.CylinderGeometry(stemR, stemR, stemLen, 24);
+    const stem = new THREE.Mesh(stemGeo, stemMat);
+    stem.position.set(0, needleBaseY + stemLen / 2, 0);
+    scene.add(stem);
     
-    // ─── Inlet pipe (좌측, 측면) ───
-    const pipeR = D_seat * 0.45;
-    const inletLen = bodyR * 1.5;
-    const inletY = -bodyH * 0.15;  // body 중하부 측면
+    // ─── Inlet pipe (좌측, seat 위 — refrigerant 들어옴) ───
+    const pipeR = D_seat * 0.5;
+    const inletLen = D_seat * 4;
     const inletGeo = new THREE.CylinderGeometry(pipeR, pipeR, inletLen, 24);
     const inlet = new THREE.Mesh(inletGeo, inletMat);
     inlet.rotation.z = Math.PI / 2;
-    inlet.position.set(-bodyR - inletLen / 2 + 2, inletY, 0);
-    inlet.castShadow = true;
+    inlet.position.set(-inletLen/2 - D_seat * 0.5, seatTopY + D_seat * 0.8, 0);
     scene.add(inlet);
     
-    // Inlet cap (단면 보이게)
+    // Inlet cap (왼쪽 끝, 단면 보이게)
     const inletCapGeo = new THREE.CircleGeometry(pipeR, 24);
     const inletCap = new THREE.Mesh(inletCapGeo, inletMat);
     inletCap.rotation.y = -Math.PI / 2;
-    inletCap.position.set(-bodyR - inletLen + 1.9, inletY, 0);
+    inletCap.position.set(-inletLen - D_seat * 0.5 - 0.1, seatTopY + D_seat * 0.8, 0);
     scene.add(inletCap);
     
-    // Inlet flange (body 측면 부착부)
-    const inletFlangeGeo = new THREE.CylinderGeometry(pipeR * 1.6, pipeR * 1.6, 2, 24);
-    const inletFlange = new THREE.Mesh(inletFlangeGeo, flangeMat);
-    inletFlange.rotation.z = Math.PI / 2;
-    inletFlange.position.set(-bodyR + 1, inletY, 0);
-    scene.add(inletFlange);
-    
-    // ─── Outlet pipe (하단) ───
-    const outletLen = bodyR * 1.5;
+    // ─── Outlet pipe (하단, seat 아래 — 2-phase 나감) ───
+    const outletLen = D_seat * 4;
     const outletGeo = new THREE.CylinderGeometry(pipeR, pipeR, outletLen, 24);
     const outlet = new THREE.Mesh(outletGeo, outletMat);
-    outlet.position.set(0, bodyBottomY - outletLen / 2 - 1, 0);
-    outlet.castShadow = true;
+    outlet.position.set(0, seatY - seatThickness/2 - outletLen/2 - 0.5, 0);
     scene.add(outlet);
     
     // Outlet cap (단면)
     const outletCapGeo = new THREE.CircleGeometry(pipeR, 24);
     const outletCap = new THREE.Mesh(outletCapGeo, outletMat);
     outletCap.rotation.x = -Math.PI / 2;
-    outletCap.position.set(0, bodyBottomY - outletLen - 1.1, 0);
+    outletCap.position.set(0, seatY - seatThickness/2 - outletLen - 0.6, 0);
     scene.add(outletCap);
     
-    // Outlet flange
-    const outletFlangeGeo = new THREE.CylinderGeometry(pipeR * 1.6, pipeR * 1.6, 2, 24);
-    const outletFlange = new THREE.Mesh(outletFlangeGeo, flangeMat);
-    outletFlange.position.set(0, bodyBottomY - 1, 0);
-    scene.add(outletFlange);
-    
-    // ─── Dimension lines (간략) ───
-    // D_seat 표시 (seat top, 수평 line + label)
-    const dimMat = new THREE.LineBasicMaterial({ color: 0xdc2626, linewidth: 1.5 });
-    // 미세한 dimension lines은 너무 작아져서 생략하고 — 대신 label sprite로
-    
-    // Stroke 표시 (seat ↔ needle tip)
-    const strokeMat = new THREE.LineBasicMaterial({ color: 0x0891b2, linewidth: 2 });
-    const strokeLineGeo = new THREE.BufferGeometry().setFromPoints([
-      new THREE.Vector3(-bodyR * 1.4, seatTopSurfaceY, 0),
-      new THREE.Vector3(-bodyR * 1.4, needleTipY, 0),
-    ]);
-    if (stroke_now > 0.1) {
-      const strokeLine = new THREE.Line(strokeLineGeo, strokeMat);
-      scene.add(strokeLine);
-      
-      // Tick marks at endpoints
-      const tickH = 1.5;
-      const tick1Geo = new THREE.BufferGeometry().setFromPoints([
-        new THREE.Vector3(-bodyR * 1.4 - tickH, seatTopSurfaceY, 0),
-        new THREE.Vector3(-bodyR * 1.4 + tickH, seatTopSurfaceY, 0),
-      ]);
-      scene.add(new THREE.Line(tick1Geo, strokeMat));
-      const tick2Geo = new THREE.BufferGeometry().setFromPoints([
-        new THREE.Vector3(-bodyR * 1.4 - tickH, needleTipY, 0),
-        new THREE.Vector3(-bodyR * 1.4 + tickH, needleTipY, 0),
-      ]);
-      scene.add(new THREE.Line(tick2Geo, strokeMat));
-    }
-    
-    // ─── Text labels (HTML overlay via Sprite) ───
-    const makeLabel = (text, x, y, z, color = '#0891b2') => {
-      const canvas = document.createElement('canvas');
-      canvas.width = 256; canvas.height = 64;
-      const ctx = canvas.getContext('2d');
-      ctx.fillStyle = 'rgba(255,255,255,0.92)';
-      ctx.fillRect(0, 0, 256, 64);
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 2;
-      ctx.strokeRect(1, 1, 254, 62);
-      ctx.font = 'bold 24px monospace';
-      ctx.fillStyle = color;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(text, 128, 32);
-      const texture = new THREE.CanvasTexture(canvas);
-      const spriteMat = new THREE.SpriteMaterial({ map: texture, transparent: true });
-      const sprite = new THREE.Sprite(spriteMat);
-      sprite.scale.set(20, 5, 1);
-      sprite.position.set(x, y, z);
-      scene.add(sprite);
-      return { texture, spriteMat };
-    };
-    
-    // Stroke label
-    let labelResources = [];
-    if (stroke_now > 0.5) {
-      const real_stroke_mm = stroke_max_mm * (opening_eff / 100);
-      labelResources.push(makeLabel(
-        `stroke: ${real_stroke_mm.toFixed(3)}mm`,
-        -bodyR * 1.4 - 18, (seatTopSurfaceY + needleTipY) / 2, 0,
-        '#0891b2'
-      ));
-    }
-    
-    // D_seat label (seat 옆)
-    labelResources.push(makeLabel(
-      `D_seat: ${D_seat_mm}mm`,
-      bodyR * 1.5, seatY, 0,
-      '#dc2626'
-    ));
-    
-    // α/2 label (needle 옆)
-    labelResources.push(makeLabel(
-      `α/2: ${needle_angle.toFixed(0)}°`,
-      bodyR * 1.5, needleTipY + coneHeight / 2, 0,
-      '#7c3aed'
-    ));
-    
-    // Stroke amplification label (진영님이 visual scaling 알 수 있게)
-    if (strokeAmp !== 1) {
-      labelResources.push(makeLabel(
-        `Visual ${strokeAmp}× stroke`,
-        0, motorY + motorH / 2 + 12, 0,
-        '#d97706'
-      ));
-    }
-    
-    // ─── Floor & axes ───
-    const grid = new THREE.GridHelper(200, 20, 0xcbd5e1, 0xe2e8f0);
-    grid.position.y = bodyBottomY - outletLen - 4;
+    // ─── Floor grid ───
+    const grid = new THREE.GridHelper(160, 16, 0xcbd5e1, 0xe2e8f0);
+    grid.position.y = seatY - seatThickness/2 - outletLen - 4;
     scene.add(grid);
     
     // ─── Camera orbit (manual) ───
-    const target = new THREE.Vector3(0, 0, 0);
-    let rotX = 0.15;
-    let rotY = -0.4;
+    const target = new THREE.Vector3(0, seatY + stroke_max/2, 0);  // seat 중심 가까이
+    let rotX = 0.1;
+    let rotY = -0.3;
     let zoom = 1.0;
-    const baseDist = 130;
+    const baseDist = D_seat * 8;
     
     const updateCamera = () => {
       const dist = baseDist / zoom;
@@ -2549,8 +2338,6 @@ function EEVView3D({ D_seat_mm, stroke_max_mm, D_orifice_max_mm,
     const ro = new ResizeObserver(onResize);
     ro.observe(mount);
     
-    stateRef.current = { scene, camera, renderer, raf };
-    
     return () => {
       cancelAnimationFrame(raf);
       ro.disconnect();
@@ -2562,35 +2349,26 @@ function EEVView3D({ D_seat_mm, stroke_max_mm, D_orifice_max_mm,
         mount.removeChild(renderer.domElement);
       }
       renderer.dispose();
-      // Dispose all geometry/materials
-      bodyGeo.dispose(); bodyTopCapGeo.dispose(); bodyBotCapGeo.dispose();
-      motorGeo.dispose(); motorTopCapGeo.dispose(); motorBotCapGeo.dispose();
-      coilGeo.dispose();
-      flangeGeo.dispose();
-      seatGeo.dispose(); seatTopCapGeo.dispose(); seatBotCapGeo.dispose();
-      seatInnerGeo.dispose(); orifMarkerGeo.dispose();
-      needleGeo.dispose();
-      inletGeo.dispose(); inletCapGeo.dispose(); inletFlangeGeo.dispose();
-      outletGeo.dispose(); outletCapGeo.dispose(); outletFlangeGeo.dispose();
-      strokeLineGeo.dispose();
-      bodyMat.dispose(); motorMat.dispose(); coilMat.dispose();
-      needleMat.dispose(); stemMat.dispose(); seatMat.dispose(); seatInnerMat.dispose();
-      orificeMat.dispose();
-      inletMat.dispose(); outletMat.dispose(); flangeMat.dispose();
-      dimMat.dispose(); strokeMat.dispose();
-      labelResources.forEach(r => { r.texture.dispose(); r.spriteMat.dispose(); });
+      seatTopGeo.dispose(); seatBotGeo.dispose(); seatOuterGeo.dispose(); seatInnerGeo.dispose();
+      needleGeo.dispose(); stemGeo.dispose();
+      inletGeo.dispose(); inletCapGeo.dispose();
+      outletGeo.dispose(); outletCapGeo.dispose();
+      seatMat.dispose(); seatInnerMat.dispose();
+      needleMat.dispose(); stemMat.dispose();
+      inletMat.dispose(); outletMat.dispose();
     };
   }, [D_seat_mm, stroke_max_mm, D_orifice_max_mm,
       L_inlet_mm, L_outlet_mm, needle_angle, needle_profile,
-      opening_eff, stroke_m, cutaway, strokeAmp]);
+      opening_eff, stroke_m]);
   
   return (
     <div ref={mountRef} style={{
-      width: '100%', height: 460, minHeight: 460,
+      width: '100%', height: 400, minHeight: 400,
       borderRadius: 6, overflow: 'hidden', position: 'relative'
     }} />
   );
 }
+
 
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -4407,7 +4185,7 @@ function EEVView({ onBack }) {
   const [needle_profile, setNeedleProfile] = useState('cone');
   const [needle_angle, setNeedleAngle] = useState(30.0);  // deg (반각)
   const [D_seat_mm, setDseat] = useState(2.0);             // mm
-  const [stroke_max_mm, setStrokeMax] = useState(1.0);     // mm
+  const [stroke_max_mm, setStrokeMax] = useState(2.5);     // mm (R290 EEV typical, sealing 위해 D_seat 보다 큼)
   const [D_orifice_max_mm, setDorifMax] = useState(1.5);   // mm
   const [L_inlet_mm, setLin] = useState(30.0);             // mm (시각화)
   const [L_outlet_mm, setLout] = useState(30.0);           // mm
@@ -4428,10 +4206,6 @@ function EEVView({ onBack }) {
   
   // View tabs (실제 부품 도면 — 다른 view들과 동일 명명: 3D / Front / Side / Top)
   const [view, setView] = useState('3D');
-  
-  // 3D view options (진영님 요청)
-  const [cutaway, setCutaway] = useState(true);     // body 절반 절단
-  const [strokeAmp, setStrokeAmp] = useState(5);    // stroke 시각 확대 배수 (1, 2, 5, 10)
   
   // Apply / Save panels
   const [applyOpen, setApplyOpen] = useState(false);
@@ -5235,50 +5009,16 @@ function EEVView({ onBack }) {
                   needle_profile={needle_profile}
                   opening_eff={opening_eff}
                   stroke_m={stroke_m}
-                  cutaway={cutaway}
-                  strokeAmp={strokeAmp}
                 />}
                 {view === 'Front' && <FrontView/>}
                 {view === 'Side' && <SectionView/>}
                 {view === 'Top' && <TopView/>}
               </div>
               
-              {/* 3D view controls (3D view일 때만 보임) */}
+              {/* 3D view 안내 */}
               {view === '3D' && (
-                <div className="mt-2 flex items-center gap-3 text-[11px]">
-                  <span className="font-mono text-slate-500 uppercase">3D Options:</span>
-                  
-                  {/* Cutaway toggle */}
-                  <div className="flex items-center gap-1">
-                    <span className="text-slate-600">Cutaway</span>
-                    <button onClick={() => setCutaway(c => !c)}
-                      className={`px-2 py-0.5 rounded font-bold text-[10px] ${
-                        cutaway 
-                          ? 'bg-green-600 text-white' 
-                          : 'bg-slate-200 text-slate-600'
-                      }`}>
-                      {cutaway ? 'ON (반쪽 절단)' : 'OFF (완전 body)'}
-                    </button>
-                  </div>
-                  
-                  {/* Stroke amplification */}
-                  <div className="flex items-center gap-1">
-                    <span className="text-slate-600">Stroke 시각 확대</span>
-                    {[1, 2, 5, 10].map(amp => (
-                      <button key={amp} onClick={() => setStrokeAmp(amp)}
-                        className={`px-2 py-0.5 rounded font-mono text-[10px] font-bold ${
-                          strokeAmp === amp 
-                            ? 'bg-amber-500 text-white' 
-                            : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
-                        }`}>
-                        {amp}×
-                      </button>
-                    ))}
-                  </div>
-                  
-                  <span className="text-[10px] text-slate-400 ml-auto">
-                    drag로 회전, scroll로 zoom
-                  </span>
+                <div className="mt-2 text-[10px] text-slate-400 text-right">
+                  drag로 회전, scroll로 zoom · 실제 비율 (visual scaling 없음)
                 </div>
               )}
             </div>
