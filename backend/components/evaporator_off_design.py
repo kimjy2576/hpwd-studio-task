@@ -105,8 +105,8 @@ modelDescription = {
          'unit': '°C', 'description': '공기 입구 온도 (드럼 출구, HPWD에선 40~60°C)'},
         {'name': 'RH_air_in', 'causality': 'input', 'type': 'Real',
          'unit': '%', 'description': '공기 입구 상대습도 (HPWD에선 80~100%)'},
-        {'name': 'm_dot_air', 'causality': 'input', 'type': 'Real',
-         'unit': 'kg/s', 'description': '공기 질량 유량 (건조공기 기준)'},
+        {'name': 'V_air_CMM', 'causality': 'input', 'type': 'Real',
+         'unit': 'CMM', 'description': '공기 풍량 (m³/min, CMM) — 한국 HVAC 표준 단위'},
 
         # ═══════ Outputs ═══════
         # Refrigerant 측
@@ -186,6 +186,19 @@ def _W_sat(T_surface_C, P_atm_Pa=101325.0):
         return 0.622 * Psat / (P_atm_Pa - Psat)
 
 
+
+def _cmm_to_mass(V_air_CMM, T_air_C=20.0, RH=50.0, P_atm=101325.0):
+    """공기 풍량 CMM (m³/min) → mass flow kg/s.
+    한국 HVAC 표준 단위 CMM = m³/min. m_dot = ρ × V / 60.
+    """
+    try:
+        Vha = CP.HAPropsSI('Vha', 'T', T_air_C + 273.15, 'P', P_atm, 'R', max(0.001, min(0.999, RH/100.0)))
+        rho = 1.0 / Vha if Vha > 0 else 1.18
+    except Exception:
+        rho = 1.18  # 표준 공기
+    return rho * (V_air_CMM / 60.0)
+
+
 def step(input, params, state, dt):
     # ── Parameters ──
     fluid       = params.get('fluid', 'R290')
@@ -203,7 +216,10 @@ def step(input, params, state, dt):
     m_dot_ref  = float(input.get('m_dot_ref', 0.005))
     T_air_in_C = float(input.get('T_air_in', 50.0))
     RH_air_in  = float(input.get('RH_air_in', 90.0))
-    m_dot_air  = float(input.get('m_dot_air', 0.05))
+    m_dot_air  = _cmm_to_mass(
+        V_air_CMM=float(input.get('V_air_CMM', 2.54)),
+        T_air_C=T_air_in_C, RH=RH_air_in,
+    )
 
     # ── 입력 검증 ──
     if P_evap_bar <= 0:

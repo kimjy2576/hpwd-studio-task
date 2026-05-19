@@ -220,8 +220,8 @@ modelDescription = {
          'unit': '°C', 'description': '공기 입구 온도'},
         {'name': 'RH_air_in', 'causality': 'input', 'type': 'Real',
          'unit': '%', 'description': '공기 입구 상대습도'},
-        {'name': 'V_air', 'causality': 'input', 'type': 'Real',
-         'unit': 'm/s', 'description': '공기 face velocity'},
+        {'name': 'V_air_CMM', 'causality': 'input', 'type': 'Real',
+         'unit': 'CMM', 'description': '공기 풍량 (m³/min, CMM) — 한국 HVAC 표준 단위'},
         
         # ═══════ Outputs ═══════
         # Refrigerant
@@ -393,7 +393,10 @@ def step(input, params, state, dt):
     m_dot_ref = float(input.get('m_dot_ref', 0.005))
     T_air_in_C = float(input.get('T_air_in', 35.0))
     RH_air_in_pct = float(input.get('RH_air_in', 50.0))
-    V_air = float(input.get('V_air', 2.0))
+    V_air_CMM = float(input.get('V_air_CMM', 9.0))  # CMM (m³/min) — 한국 HVAC 표준 단위
+    # CMM → face velocity (m/s) 변환: V = (CMM / 60) / A_fr,  A_fr = W × H
+    A_fr = W * H if (W > 0 and H > 0) else 0.12
+    V_air = (V_air_CMM / 60.0) / A_fr if A_fr > 0 else 0.0
     
     if P_evap_bar <= 0 or m_dot_ref <= 0:
         raise ValueError(f"입력 0 이하: P_evap={P_evap_bar}, m_dot_ref={m_dot_ref}")
