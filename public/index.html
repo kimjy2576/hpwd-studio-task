@@ -2054,10 +2054,21 @@ function HPWDStudio() {
       console.warn('hpwd_pending_design 읽기 실패:', e);
     }
     
+    // ─── 노드 이름: 메타 컴포넌트의 깔끔한 이름 사용, 자동 번호 없음 ───
+    // 진영님 결정: 'Compressor (Off)_1' 같은 거 말고 그냥 'Compressor'로
+    // 만약 fidelity 노드(예: compressor_ahri)면 메타 (__meta_compressor)의 name 사용
+    let blockName = def.name;
+    const metaEntry = Object.entries(TYPES).find(([k, v]) =>
+      v.isMeta && v.fidelityKeys && Object.values(v.fidelityKeys).includes(typeKey)
+    );
+    if (metaEntry) {
+      blockName = metaEntry[1].name;  // 예: 'Compressor' (대신 'Compressor (Off)')
+    }
+
     pushHistory(blocks, connections);
     setBlocks(bs => [...bs, {
       id, type: typeKey, x: snap(x - 90), y: snap(y - 40),
-      name: `${def.name}_${bs.filter(b => b.type === typeKey).length + 1}`,
+      name: blockName,
       params, outputs: {},
       state: def.stateInit ? JSON.parse(JSON.stringify(def.stateInit)) : {},
     }]);
