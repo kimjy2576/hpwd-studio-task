@@ -701,19 +701,19 @@ const TYPES = {
     pythonComponent: 'compressor_pdsim_rom',
     parameters: [
       // ─── Material ───
-      { key: 'fluid',     group: 'Material', label: 'Fluid',     value: 'R290', options: ['R290'], unit: '' },
-      { key: 'comp_type', group: 'Material', label: 'Type',      value: 'reciprocating', options: ['reciprocating'], unit: '' },
+      { key: 'fluid',     group: 'Material', label: 'Fluid',     value: 'R290', options: ['R290'], unit: '' , hidden: true },
+      { key: 'comp_type', group: 'Material', label: 'Type',      value: 'reciprocating', options: ['reciprocating'], unit: '' , hidden: true },
       // ─── Operating ───
-      { key: 'T_amb',     group: 'Operating', label: 'T_amb',    value: 25.0, unit: '°C' },
+      { key: 'T_amb',     group: 'Operating', label: 'T_amb',    value: 25.0, unit: '°C' , hidden: true },
       // ─── Geometry ───
-      { key: 'V_disp',          group: 'Geometry', label: 'V_disp',      value: 10.0, unit: 'cm³' },
-      { key: 'clearance_ratio', group: 'Geometry', label: 'Clearance',   value: 0.04, unit: '-' },
-      { key: 'rv_in',           group: 'Geometry', label: 'rv_in',       value: 2.5,  unit: '-' },
-      { key: 'A_valve_in_mm2',  group: 'Geometry', label: 'A_valve_in',  value: 8.0,  unit: 'mm²' },
-      { key: 'A_valve_out_mm2', group: 'Geometry', label: 'A_valve_out', value: 6.0,  unit: 'mm²' },
-      { key: 'N_rated',         group: 'Geometry', label: 'N_rated',     value: 3000.0, unit: 'rpm' },
-      { key: 'eta_motor',       group: 'Geometry', label: 'η_motor',     value: 0.92, unit: '-' },
-      { key: 'eta_inv',         group: 'Geometry', label: 'η_inv',       value: 0.95, unit: '-' },
+      { key: 'V_disp',          group: 'Geometry', label: 'V_disp',      value: 10.0, unit: 'cm³' , hidden: true },
+      { key: 'clearance_ratio', group: 'Geometry', label: 'Clearance',   value: 0.04, unit: '-' , hidden: true },
+      { key: 'rv_in',           group: 'Geometry', label: 'rv_in',       value: 2.5,  unit: '-' , hidden: true },
+      { key: 'A_valve_in_mm2',  group: 'Geometry', label: 'A_valve_in',  value: 8.0,  unit: 'mm²' , hidden: true },
+      { key: 'A_valve_out_mm2', group: 'Geometry', label: 'A_valve_out', value: 6.0,  unit: 'mm²' , hidden: true },
+      { key: 'N_rated',         group: 'Geometry', label: 'N_rated',     value: 3000.0, unit: 'rpm' , hidden: true },
+      { key: 'eta_motor',       group: 'Geometry', label: 'η_motor',     value: 0.92, unit: '-' , hidden: true },
+      { key: 'eta_inv',         group: 'Geometry', label: 'η_inv',       value: 0.95, unit: '-' , hidden: true },
       // ─── Fitting Parameters ───
       { key: 'zeta_valve',       group: 'Fitting', label: 'ζ_valve',         value: 1.5,  unit: '-' },
       { key: 'A_leak_mm2',       group: 'Fitting', label: 'A_leak',          value: 0.02, unit: 'mm²' },
@@ -932,41 +932,41 @@ const TYPES = {
     parameters: [
       // ─── Material ───
       { key: 'fluid', group: 'Material', label: 'Fluid', value: 'R290',
-        options: ['R290','R134a','R410A','R32','R1234yf','R22','R407C'], unit: '' },
+        options: ['R290','R134a','R410A','R32','R1234yf','R22','R407C'], unit: '' , hidden: true },
       // ─── Operating mode ───
       { key: 'mode', group: 'Operating', label: 'Mode', value: 'evap',
-        options: ['evap', 'cond'], unit: '' },
+        options: ['evap', 'cond'], unit: '' , hidden: true },
       // ─── Geometry — 외관 ───
-      { key: 'W',  group: 'Geometry', label: 'W (코일 width)',  value: 0.40,  unit: 'm' },
-      { key: 'H',  group: 'Geometry', label: 'H (face 높이)',   value: 0.30,  unit: 'm' },
-      { key: 'D',  group: 'Geometry', label: 'D (depth)',       value: 0.044, unit: 'm' },
+      { key: 'W',  group: 'Geometry', label: 'W (코일 width)',  value: 0.40,  unit: 'm' , hidden: true },
+      { key: 'H',  group: 'Geometry', label: 'H (face 높이)',   value: 0.30,  unit: 'm' , hidden: true },
+      { key: 'D',  group: 'Geometry', label: 'D (depth)',       value: 0.044, unit: 'm' , hidden: true },
       // ─── Tube ───
-      { key: 'D_o',             group: 'Tube', label: 'D_o',     value: 7.0e-3,  unit: 'm' },
-      { key: 'D_i',             group: 'Tube', label: 'D_i',     value: 6.5e-3,  unit: 'm' },
-      { key: 'P_t',             group: 'Tube', label: 'P_t',     value: 25.0e-3, unit: 'm' },
-      { key: 'P_l',             group: 'Tube', label: 'P_l',     value: 22.0e-3, unit: 'm' },
-      { key: 'N_rows',          group: 'Tube', label: 'N_rows',  value: 2,       unit: '-' },
-      { key: 'N_tubes_per_row', group: 'Tube', label: 'N_tubes/row', value: 12,  unit: '-' },
+      { key: 'D_o',             group: 'Tube', label: 'D_o',     value: 7.0e-3,  unit: 'm' , hidden: true },
+      { key: 'D_i',             group: 'Tube', label: 'D_i',     value: 6.5e-3,  unit: 'm' , hidden: true },
+      { key: 'P_t',             group: 'Tube', label: 'P_t',     value: 25.0e-3, unit: 'm' , hidden: true },
+      { key: 'P_l',             group: 'Tube', label: 'P_l',     value: 22.0e-3, unit: 'm' , hidden: true },
+      { key: 'N_rows',          group: 'Tube', label: 'N_rows',  value: 2,       unit: '-' , hidden: true },
+      { key: 'N_tubes_per_row', group: 'Tube', label: 'N_tubes/row', value: 12,  unit: '-' , hidden: true },
       { key: 'layout',          group: 'Tube', label: 'Layout',  value: 'staggered',
-        options: ['staggered', 'inline'], unit: '' },
+        options: ['staggered', 'inline'], unit: '' , hidden: true },
       // ─── Fin ───
-      { key: 'FPI',     group: 'Fin', label: 'FPI',      value: 12,      unit: 'fins/in' },
-      { key: 't_fin',   group: 'Fin', label: 't_fin',    value: 0.12e-3, unit: 'm' },
+      { key: 'FPI',     group: 'Fin', label: 'FPI',      value: 12,      unit: 'fins/in' , hidden: true },
+      { key: 't_fin',   group: 'Fin', label: 't_fin',    value: 0.12e-3, unit: 'm' , hidden: true },
       { key: 'fin_type', group: 'Fin', label: 'Fin type', value: 'plain',
-        options: ['plain', 'wavy', 'louver', 'slit'], unit: '' },
-      { key: 'k_fin',   group: 'Fin', label: 'k_fin',    value: 200,     unit: 'W/(m·K)' },
+        options: ['plain', 'wavy', 'louver', 'slit'], unit: '' , hidden: true },
+      { key: 'k_fin',   group: 'Fin', label: 'k_fin',    value: 200,     unit: 'W/(m·K)' , hidden: true },
       { key: 'edge_type', group: 'Fin', label: 'Edge type', value: 'rounded',
-        options: ['sharp', 'rounded', 'chamfered'], unit: '' },
-      { key: 'wavy_amplitude',  group: 'Fin', label: 'Wavy 진폭', value: 1.0e-3,  unit: 'm' },
-      { key: 'wavy_wavelength', group: 'Fin', label: 'Wavy 파장', value: 10.0e-3, unit: 'm' },
-      { key: 'louver_pitch',    group: 'Fin', label: 'Louver Lp', value: 1.7e-3,  unit: 'm' },
-      { key: 'louver_angle',    group: 'Fin', label: 'Louver θ',  value: 27.0,    unit: 'deg' },
+        options: ['sharp', 'rounded', 'chamfered'], unit: '' , hidden: true },
+      { key: 'wavy_amplitude',  group: 'Fin', label: 'Wavy 진폭', value: 1.0e-3,  unit: 'm' , hidden: true },
+      { key: 'wavy_wavelength', group: 'Fin', label: 'Wavy 파장', value: 10.0e-3, unit: 'm' , hidden: true },
+      { key: 'louver_pitch',    group: 'Fin', label: 'Louver Lp', value: 1.7e-3,  unit: 'm' , hidden: true },
+      { key: 'louver_angle',    group: 'Fin', label: 'Louver θ',  value: 27.0,    unit: 'deg' , hidden: true },
       // ─── Circuit ───
       { key: 'circuit_mode', group: 'Circuit', label: 'Circuit mode',
         value: 'row_parallel',
-        options: ['row_parallel', 'serpentine_2', 'serpentine_4', 'single', 'custom'], unit: '' },
+        options: ['row_parallel', 'serpentine_2', 'serpentine_4', 'single', 'custom'], unit: '' , hidden: true },
       { key: 'custom_circuits', group: 'Circuit', label: 'Custom circuits (JSON)',
-        value: '', unit: '' },
+        value: '', unit: '' , hidden: true },
       // ─── Numerical ───
       { key: 'N_seg',      group: 'Numerical', label: 'N_seg', value: 10, unit: '-' },
       { key: 'N_seg_auto', group: 'Numerical', label: 'Auto N_seg', value: 'off',
@@ -974,22 +974,22 @@ const TYPES = {
       // ─── Correlations ───
       { key: 'evap_corr', group: 'Correlations', label: 'Evap HTC',
         value: 'chen1966',
-        options: ['chen1966', 'gungor_winterton1986', 'kandlikar1990'], unit: '' },
+        options: ['chen1966', 'gungor_winterton1986', 'kandlikar1990'], unit: '' , hidden: true },
       { key: 'cond_corr', group: 'Correlations', label: 'Cond HTC',
         value: 'shah1979',
-        options: ['shah1979', 'cavallini2006', 'dobson_chato1998'], unit: '' },
+        options: ['shah1979', 'cavallini2006', 'dobson_chato1998'], unit: '' , hidden: true },
       { key: 'dp_corr', group: 'Correlations', label: 'Ref dP',
         value: 'friedel1979',
-        options: ['friedel1979', 'lockhart_martinelli1949', 'muller_steinhagen1986'], unit: '' },
+        options: ['friedel1979', 'lockhart_martinelli1949', 'muller_steinhagen1986'], unit: '' , hidden: true },
       { key: 'air_j_corr', group: 'Correlations', label: 'Air j-factor',
         value: 'auto',
         options: ['auto', 'wang2000_plain', 'gray_webb1986', 'kim1999_plain', 'kayansayan1993',
                   'wang1999_wavy', 'wang2002_wavy', 'beecher_fagan1987', 'kim1997_wavy', 'jang1996_wavy',
                   'wang2000_louver', 'chang2000_louver', 'achaichia_cowell1988', 'davenport1983',
-                  'wang2001_slit', 'manglik_bergles1995', 'nakayama_xu1983', 'du_wang2000'], unit: '' },
+                  'wang2001_slit', 'manglik_bergles1995', 'nakayama_xu1983', 'du_wang2000'], unit: '' , hidden: true },
       // ─── Tuning (학계 평균, 사용자 보정 가능) ───
-      { key: 'wet_dp_max', group: 'Tuning', label: 'Wet dP max', value: 1.20, unit: '-' },
-      { key: 'K_bend',     group: 'Tuning', label: 'K_bend',     value: 0.75, unit: '-' },
+      { key: 'wet_dp_max', group: 'Tuning', label: 'Wet dP max', value: 1.20, unit: '-' , hidden: true },
+      { key: 'K_bend',     group: 'Tuning', label: 'K_bend',     value: 0.75, unit: '-' , hidden: true },
       // ─── Fitting (calibration multipliers) ───
       { key: 'cf_j',       group: 'Fitting', label: 'cf_j',       value: 1.0, unit: '-' },
       { key: 'cf_f',       group: 'Fitting', label: 'cf_f',       value: 1.0, unit: '-' },
@@ -1218,47 +1218,47 @@ const TYPES = {
     parameters: [
       // ─── Material ───
       { key: 'fluid', group: 'Material', label: 'Fluid', value: 'R290',
-        options: ['R290','R134a','R410A','R32','R1234yf','R22','R407C'], unit: '' },
+        options: ['R290','R134a','R410A','R32','R1234yf','R22','R407C'], unit: '' , hidden: true },
       // ─── Operating mode ───
       { key: 'mode', group: 'Operating', label: 'Mode', value: 'cond',
-        options: ['evap', 'cond'], unit: '' },
+        options: ['evap', 'cond'], unit: '' , hidden: true },
       // ─── Geometry — 외관 ───
-      { key: 'W',  group: 'Geometry', label: 'W (코일 width)',  value: 0.40,  unit: 'm' },
-      { key: 'H',  group: 'Geometry', label: 'H (face 높이)',   value: 0.30,  unit: 'm' },
-      { key: 'D',  group: 'Geometry', label: 'D (depth)',       value: 0.044, unit: 'm' },
+      { key: 'W',  group: 'Geometry', label: 'W (코일 width)',  value: 0.40,  unit: 'm' , hidden: true },
+      { key: 'H',  group: 'Geometry', label: 'H (face 높이)',   value: 0.30,  unit: 'm' , hidden: true },
+      { key: 'D',  group: 'Geometry', label: 'D (depth)',       value: 0.044, unit: 'm' , hidden: true },
       // ─── Tube ───
-      { key: 'D_o',             group: 'Tube', label: 'D_o',     value: 7.0e-3,  unit: 'm' },
-      { key: 'D_i',             group: 'Tube', label: 'D_i',     value: 6.5e-3,  unit: 'm' },
-      { key: 'P_t',             group: 'Tube', label: 'P_t',     value: 25.0e-3, unit: 'm' },
-      { key: 'P_l',             group: 'Tube', label: 'P_l',     value: 22.0e-3, unit: 'm' },
-      { key: 'N_rows',          group: 'Tube', label: 'N_rows',  value: 2,       unit: '-' },
-      { key: 'N_tubes_per_row', group: 'Tube', label: 'N_tubes/row', value: 12,  unit: '-' },
+      { key: 'D_o',             group: 'Tube', label: 'D_o',     value: 7.0e-3,  unit: 'm' , hidden: true },
+      { key: 'D_i',             group: 'Tube', label: 'D_i',     value: 6.5e-3,  unit: 'm' , hidden: true },
+      { key: 'P_t',             group: 'Tube', label: 'P_t',     value: 25.0e-3, unit: 'm' , hidden: true },
+      { key: 'P_l',             group: 'Tube', label: 'P_l',     value: 22.0e-3, unit: 'm' , hidden: true },
+      { key: 'N_rows',          group: 'Tube', label: 'N_rows',  value: 2,       unit: '-' , hidden: true },
+      { key: 'N_tubes_per_row', group: 'Tube', label: 'N_tubes/row', value: 12,  unit: '-' , hidden: true },
       { key: 'layout',          group: 'Tube', label: 'Layout',  value: 'staggered',
-        options: ['staggered', 'inline'], unit: '' },
+        options: ['staggered', 'inline'], unit: '' , hidden: true },
       // ─── Fin ───
-      { key: 'FPI',     group: 'Fin', label: 'FPI',      value: 12,      unit: 'fins/in' },
-      { key: 't_fin',   group: 'Fin', label: 't_fin',    value: 0.12e-3, unit: 'm' },
+      { key: 'FPI',     group: 'Fin', label: 'FPI',      value: 12,      unit: 'fins/in' , hidden: true },
+      { key: 't_fin',   group: 'Fin', label: 't_fin',    value: 0.12e-3, unit: 'm' , hidden: true },
       { key: 'fin_type', group: 'Fin', label: 'Fin type', value: 'plain',
-        options: ['plain', 'wavy', 'louver', 'slit'], unit: '' },
-      { key: 'k_fin',   group: 'Fin', label: 'k_fin',    value: 200,     unit: 'W/(m·K)' },
+        options: ['plain', 'wavy', 'louver', 'slit'], unit: '' , hidden: true },
+      { key: 'k_fin',   group: 'Fin', label: 'k_fin',    value: 200,     unit: 'W/(m·K)' , hidden: true },
       { key: 'edge_type', group: 'Fin', label: 'Edge type', value: 'rounded',
-        options: ['sharp', 'rounded', 'chamfered'], unit: '' },
+        options: ['sharp', 'rounded', 'chamfered'], unit: '' , hidden: true },
       // ─── Circuit ───
       { key: 'circuit_mode', group: 'Circuit', label: 'Circuit mode',
         value: 'row_parallel',
-        options: ['row_parallel', 'serpentine_2', 'serpentine_4', 'single', 'custom'], unit: '' },
+        options: ['row_parallel', 'serpentine_2', 'serpentine_4', 'single', 'custom'], unit: '' , hidden: true },
       // ─── Numerical ───
       { key: 'N_seg',      group: 'Numerical', label: 'N_seg', value: 10, unit: '-' },
       // ─── Correlations ───
       { key: 'cond_corr', group: 'Correlations', label: 'Cond HTC',
         value: 'shah1979',
-        options: ['shah1979', 'cavallini2006', 'dobson_chato1998'], unit: '' },
+        options: ['shah1979', 'cavallini2006', 'dobson_chato1998'], unit: '' , hidden: true },
       { key: 'dp_corr', group: 'Correlations', label: 'Ref dP',
         value: 'friedel1979',
-        options: ['friedel1979', 'lockhart_martinelli1949', 'muller_steinhagen1986'], unit: '' },
+        options: ['friedel1979', 'lockhart_martinelli1949', 'muller_steinhagen1986'], unit: '' , hidden: true },
       { key: 'air_j_corr', group: 'Correlations', label: 'Air j-factor',
         value: 'auto',
-        options: ['auto', 'wang2000_plain', 'gray_webb1986'], unit: '' },
+        options: ['auto', 'wang2000_plain', 'gray_webb1986'], unit: '' , hidden: true },
       // ─── Fitting ───
       { key: 'cf_j',       group: 'Fitting', label: 'cf_j',       value: 1.0, unit: '-' },
       { key: 'cf_f',       group: 'Fitting', label: 'cf_f',       value: 1.0, unit: '-' },
@@ -1429,25 +1429,25 @@ const TYPES = {
     parameters: [
       // ─── Material ───
       { key: 'fluid', group: 'Material', label: 'Fluid', value: 'R290',
-        options: ['R290','R134a','R410A','R32','R1234yf'], unit: '' },
+        options: ['R290','R134a','R410A','R32','R1234yf'], unit: '' , hidden: true },
       { key: 'needle_material', group: 'Material', label: 'Needle material', value: 'SUS304',
-        options: ['SUS304','SUS316','Brass','Steel'], unit: '' },
+        options: ['SUS304','SUS316','Brass','Steel'], unit: '' , hidden: true },
       // ─── Operating ───
       { key: 'mode', group: 'Operating', label: 'Mode', value: 'control',
-        options: ['control','measure'], unit: '' },
+        options: ['control','measure'], unit: '' , hidden: true },
       { key: 'use_choke', group: 'Operating', label: 'Choke', value: 'on',
-        options: ['on','off'], unit: '' },
+        options: ['on','off'], unit: '' , hidden: true },
       { key: 'use_Re_correction', group: 'Operating', label: 'Re correction', value: 'on',
-        options: ['on','off'], unit: '' },
+        options: ['on','off'], unit: '' , hidden: true },
       // ─── Geometry (needle/seat) ───
       { key: 'needle_profile', group: 'Geometry', label: 'Needle profile', value: 'cone',
-        options: ['cone','parabolic','linear'], unit: '' },
-      { key: 'needle_angle',  group: 'Geometry', label: 'α/2 (반각)', value: 30.0,  unit: 'deg' },
-      { key: 'D_seat',        group: 'Geometry', label: 'D_seat',      value: 2.0e-3, unit: 'm' },
-      { key: 'stroke_max',    group: 'Geometry', label: 'stroke_max',  value: 1.0e-3, unit: 'm' },
-      { key: 'L_inlet',       group: 'Geometry', label: 'L_inlet',     value: 30e-3, unit: 'm' },
-      { key: 'L_outlet',      group: 'Geometry', label: 'L_outlet',    value: 30e-3, unit: 'm' },
-      { key: 'opening_min',   group: 'Geometry', label: 'opening_min', value: 0.0,   unit: '%' },
+        options: ['cone','parabolic','linear'], unit: '' , hidden: true },
+      { key: 'needle_angle',  group: 'Geometry', label: 'α/2 (반각)', value: 30.0,  unit: 'deg' , hidden: true },
+      { key: 'D_seat',        group: 'Geometry', label: 'D_seat',      value: 2.0e-3, unit: 'm' , hidden: true },
+      { key: 'stroke_max',    group: 'Geometry', label: 'stroke_max',  value: 1.0e-3, unit: 'm' , hidden: true },
+      { key: 'L_inlet',       group: 'Geometry', label: 'L_inlet',     value: 30e-3, unit: 'm' , hidden: true },
+      { key: 'L_outlet',      group: 'Geometry', label: 'L_outlet',    value: 30e-3, unit: 'm' , hidden: true },
+      { key: 'opening_min',   group: 'Geometry', label: 'opening_min', value: 0.0,   unit: '%' , hidden: true },
       // ─── Choke ───
       { key: 'choke_ratio',   group: 'Choke', label: 'choke_ratio', value: 0.5, unit: '-' },
       // ─── Fitting ───
@@ -4793,9 +4793,10 @@ function HPWDStudio() {
                 // 기본 펼침: Geometry만 펼침 (사용자 첫 보기에 적당). 나머진 접힘.
                 const DEFAULT_OPEN = { Geometry: true };
 
-                // group 분류
+                // group 분류 (hidden parameter 제외 — On-Design Studio 등에서 결정)
                 const groups = {};
                 selectedDef.parameters.forEach(p => {
+                  if (p.hidden) return;  // hidden 파라미터는 sidebar에 표시 안 함 (값은 backend로 그대로 전달)
                   let g = p.group || 'Other';
                   if (p.multiSelect) g = 'Outputs';
                   if (!groups[g]) groups[g] = [];
