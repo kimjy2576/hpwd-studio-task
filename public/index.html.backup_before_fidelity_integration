@@ -180,10 +180,172 @@ const TYPES = {
     ],
     compute: (inp, par) => ({ T_out: par.T_amb, RH_out: par.RH_amb, P_out: par.P_atm }),
   },
-  // ─── 단순 frontend 노드 (Compressor, Condenser, EEV, TXV, Evaporator) 삭제됨 ───
-  // 진영님 결정: Off/Semi/On 통합 컴포넌트로 대체 (compressor, evaporator, condenser, eev 통합)
-  // 기존 typeNo 100, 101_simple, 102_simple, 103_simple, 104(TXV)는 더 이상 사용 안 함
-
+  compressor: {
+    typeNo: 100, name: 'Compressor', category: 'refrigerant', color: '#dc2626', icon: CircleDot, image: './images/compressor.png',
+    desc: '로터리/리시프로 압축기',
+    parameters: [
+      { key: 'V_disp', label: 'Displacement', value: 10.0, unit: 'cc' },
+      { key: 'RPM', label: 'Speed', value: 3000, unit: 'rpm' },
+      { key: 'eta_v', label: 'η_vol', value: 0.85, unit: '-' },
+      { key: 'eta_is', label: 'η_is', value: 0.70, unit: '-' },
+      { key: 'PR', label: 'Press. Ratio', value: 3.5, unit: '-' },
+    ],
+    inputs: [
+      { key: 'P_suc', label: 'P_suc', unit: 'kPa' },
+      { key: 'T_suc', label: 'T_suc', unit: '°C' },
+    ],
+    outputs: [
+      { key: 'm_dot', label: 'm_dot', unit: 'g/s' },
+      { key: 'T_dis', label: 'T_dis', unit: '°C' },
+      { key: 'P_dis', label: 'P_dis', unit: 'kPa' },
+      { key: 'W_comp', label: 'W_comp', unit: 'W' },
+    ],
+    compute: (inp, par) => {
+      const P_suc = inp.P_suc ?? 500;
+      const T_suc = inp.T_suc ?? 10;
+      const T_suc_K = T_suc + 273.15;
+      const rho = (P_suc * 1000) / (120 * T_suc_K);
+      const m_dot = par.eta_v * rho * par.V_disp * 1e-6 * par.RPM / 60 * 1000;
+      const P_dis = P_suc * par.PR;
+      const T_dis_is = T_suc_K * Math.pow(par.PR, 0.28);
+      const T_dis = T_suc_K + (T_dis_is - T_suc_K) / par.eta_is;
+      const W_comp = (m_dot / 1000) * 1.0 * (T_dis - T_suc_K) * 1000;
+      return { m_dot, T_dis: T_dis - 273.15, P_dis, W_comp };
+    },
+  },
+  condenser: {
+    typeNo: 101, name: 'Condenser', category: 'refrigerant', color: '#ea580c', icon: Box, image: './images/condenser.png',
+    desc: '응축기 (고온측 열교환기)',
+    parameters: [
+      { key: 'UA', label: 'UA', value: 150, unit: 'W/K' },
+      { key: 'dP_ref', label: 'ΔP_ref', value: 20, unit: 'kPa' },
+    ],
+    inputs: [
+      { key: 'm_dot', label: 'm_dot', unit: 'g/s' },
+      { key: 'T_in', label: 'T_ref_in', unit: '°C' },
+      { key: 'P_in', label: 'P_ref_in', unit: 'kPa' },
+      { key: 'T_air', label: 'T_air', unit: '°C' },
+      { key: 'm_air', label: 'm_air', unit: 'kg/s' },
+    ],
+    outputs: [
+      { key: 'T_out', label: 'T_ref_out', unit: '°C' },
+      { key: 'P_out', label: 'P_ref_out', unit: 'kPa' },
+      { key: 'Q', label: 'Q_cond', unit: 'W' },
+      { key: 'T_air_out', label: 'T_air_out', unit: '°C' },
+    ],
+    compute: (inp, par) => {
+      const m = (inp.m_dot ?? 1) / 1000;
+      const T_in = inp.T_in ?? 80;
+      const T_air = inp.T_air ?? 25;
+      const m_air = inp.m_air ?? 0.05;
+      const C_min = Math.min(m * 1200, m_air * 1005);
+      const NTU = par.UA / Math.max(C_min, 1e-6);
+      const eps = 1 - Math.exp(-NTU);
+      const Q = eps * C_min * (T_in - T_air);
+      const T_out = T_in - Q / (m * 1200 + 1e-6);
+      const T_air_out = T_air + Q / (m_air * 1005 + 1e-6);
+      return { T_out, P_out: (inp.P_in ?? 1800) - par.dP_ref, Q, T_air_out };
+    },
+  },
+  exv: {
+    typeNo: 102, name: 'EEV', category: 'refrigerant', color: '#d97706', icon: Zap, image: './images/eev.png',
+    desc: '전자팽창밸브 (Electronic EEV)',
+    parameters: [
+      { key: 'A_orifice', label: 'A_orifice', value: 0.5, unit: 'mm²' },
+      { key: 'opening', label: 'Opening', value: 100, unit: '%' },
+      { key: 'Cd', label: 'Cd', value: 0.65, unit: '-' },
+    ],
+    inputs: [
+      { key: 'P_in', label: 'P_in', unit: 'kPa' },
+      { key: 'T_in', label: 'T_in', unit: '°C' },
+      { key: 'P_out_target', label: 'P_out', unit: 'kPa' },
+    ],
+    outputs: [
+      { key: 'm_dot', label: 'm_dot', unit: 'g/s' },
+      { key: 'T_out', label: 'T_out', unit: '°C' },
+      { key: 'P_out', label: 'P_out', unit: 'kPa' },
+    ],
+    compute: (inp, par) => {
+      const P_in = inp.P_in ?? 1800;
+      const P_out = inp.P_out_target ?? 500;
+      const T_in = inp.T_in ?? 35;
+      const A_eff = par.A_orifice * (par.opening / 100) * 1e-6;
+      const rho = (P_in * 1000) / (120 * (T_in + 273.15));
+      const dP = Math.max((P_in - P_out) * 1000, 0);
+      const m_dot = par.Cd * A_eff * Math.sqrt(2 * rho * dP) * 1000;
+      return { m_dot, T_out: 0.03 * P_out - 20, P_out };
+    },
+  },
+  txv: {
+    typeNo: 104, name: 'TXV', category: 'refrigerant', color: '#b45309', icon: Zap, image: './images/txv.png',
+    desc: '온도식 팽창밸브 (TXV) — superheat 자기조절',
+    parameters: [
+      { key: 'SH_target', label: 'SH_target', value: 7, unit: 'K' },
+      { key: 'A_max', label: 'A_max', value: 0.6, unit: 'mm²' },
+      { key: 'Cd', label: 'Cd', value: 0.62, unit: '-' },
+      { key: 'gain', label: 'gain', value: 0.15, unit: '1/K' },
+    ],
+    inputs: [
+      { key: 'P_in', label: 'P_in', unit: 'kPa' },
+      { key: 'T_in', label: 'T_in', unit: '°C' },
+      { key: 'P_out_target', label: 'P_out', unit: 'kPa' },
+      { key: 'SH_meas', label: 'SH_meas', unit: 'K' },
+    ],
+    outputs: [
+      { key: 'm_dot', label: 'm_dot', unit: 'g/s' },
+      { key: 'T_out', label: 'T_out', unit: '°C' },
+      { key: 'P_out', label: 'P_out', unit: 'kPa' },
+      { key: 'opening', label: 'opening', unit: '%' },
+    ],
+    compute: (inp, par) => {
+      // TXV: SH_meas와 SH_target 차이로 opening 자기조절 (간이 모델)
+      const P_in = inp.P_in ?? 1800;
+      const P_out = inp.P_out_target ?? 500;
+      const T_in = inp.T_in ?? 35;
+      const SH_meas = inp.SH_meas ?? par.SH_target;
+      // SH가 target보다 높으면 더 열고, 낮으면 더 닫음 (시뮬 안정성을 위해 0~100% clamp)
+      const opening = Math.max(0, Math.min(100, 70 + par.gain * (SH_meas - par.SH_target) * 100));
+      const A_eff = par.A_max * (opening / 100) * 1e-6;
+      const rho = (P_in * 1000) / (120 * (T_in + 273.15));
+      const dP = Math.max((P_in - P_out) * 1000, 0);
+      const m_dot = par.Cd * A_eff * Math.sqrt(2 * rho * dP) * 1000;
+      return { m_dot, T_out: 0.03 * P_out - 20, P_out, opening };
+    },
+  },
+  evaporator: {
+    typeNo: 103, name: 'Evaporator', category: 'refrigerant', color: '#2563eb', icon: Droplet, image: './images/evaporator.png',
+    desc: '증발기 (저온측 열교환기)',
+    parameters: [
+      { key: 'UA', label: 'UA', value: 120, unit: 'W/K' },
+      { key: 'dP_ref', label: 'ΔP_ref', value: 15, unit: 'kPa' },
+      { key: 'SH', label: 'Superheat', value: 5, unit: 'K' },
+    ],
+    inputs: [
+      { key: 'm_dot', label: 'm_dot', unit: 'g/s' },
+      { key: 'T_in', label: 'T_ref_in', unit: '°C' },
+      { key: 'P_in', label: 'P_ref_in', unit: 'kPa' },
+      { key: 'T_air', label: 'T_air', unit: '°C' },
+      { key: 'm_air', label: 'm_air', unit: 'kg/s' },
+    ],
+    outputs: [
+      { key: 'T_out', label: 'T_ref_out', unit: '°C' },
+      { key: 'P_out', label: 'P_ref_out', unit: 'kPa' },
+      { key: 'Q', label: 'Q_evap', unit: 'W' },
+      { key: 'T_air_out', label: 'T_air_out', unit: '°C' },
+    ],
+    compute: (inp, par) => {
+      const m = (inp.m_dot ?? 1) / 1000;
+      const T_in = inp.T_in ?? -10;
+      const T_air = inp.T_air ?? 40;
+      const m_air = inp.m_air ?? 0.05;
+      const C_min = Math.min(m * 1500, m_air * 1005);
+      const NTU = par.UA / Math.max(C_min, 1e-6);
+      const eps = 1 - Math.exp(-NTU);
+      const Q = eps * C_min * (T_air - T_in);
+      const T_air_out = T_air - Q / (m_air * 1005 + 1e-6);
+      return { T_out: T_in + par.SH, P_out: (inp.P_in ?? 500) - par.dP_ref, Q, T_air_out };
+    },
+  },
   fan: {
     typeNo: 200, name: 'Fan', category: 'air', color: '#0891b2', icon: Wind, image: './images/fan.png',
     desc: '송풍기 (시로코/축류)',
