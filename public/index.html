@@ -184,6 +184,65 @@ const TYPES = {
   // 진영님 결정: Off/Semi/On 통합 컴포넌트로 대체 (compressor, evaporator, condenser, eev 통합)
   // 기존 typeNo 100, 101_simple, 102_simple, 103_simple, 104(TXV)는 더 이상 사용 안 함
 
+  // ═══════════════════════════════════════════════════════════════════
+  // 통합 메타 컴포넌트 — 사이드바에 표시되는 4개 (Compressor/Evaporator/Condenser/EEV)
+  // ───────────────────────────────────────────────────────────────────
+  // 사용자는 사이드바에서 이 4개만 봄. 드래그 → defaultFidelity (Off)로 노드 추가됨.
+  // Properties에서 fidelity 변경 → 노드의 type을 fidelityKeys[fidelity]로 in-place 교체.
+  // ═══════════════════════════════════════════════════════════════════
+  __meta_compressor: {
+    isMeta: true,
+    typeNo: 102,  // default fidelity (Off)의 typeNo
+    name: 'Compressor',
+    category: 'refrigerant',
+    color: '#dc2626',
+    icon: Gauge,
+    image: './images/compressor.png',
+    desc: 'Compressor — Off/Semi/On 통합 (properties에서 fidelity 선택)',
+    fidelityKeys: { 'Off': 'compressor_ahri', 'Semi': 'compressor_winandy', 'On': 'compressor_pdsim_rom' },
+    defaultFidelity: 'Off',
+    commonParamKeys: ['fluid'],  // fidelity 변경 시 유지할 param key
+  },
+  __meta_evaporator: {
+    isMeta: true,
+    typeNo: 120,
+    name: 'Evaporator',
+    category: 'refrigerant',
+    color: '#2563eb',
+    icon: Droplet,
+    image: './images/evaporator.png',
+    desc: 'Evaporator — Off/Semi/On 통합',
+    fidelityKeys: { 'Off': 'evaporator_off_design', 'Semi': 'evaporator_moving_boundary', 'On': 'evaporator_on_design' },
+    defaultFidelity: 'Off',
+    commonParamKeys: ['fluid', 'mode'],
+  },
+  __meta_condenser: {
+    isMeta: true,
+    typeNo: 220,
+    name: 'Condenser',
+    category: 'refrigerant',
+    color: '#ea580c',
+    icon: Box,
+    image: './images/condenser.png',
+    desc: 'Condenser — Off/Semi/On 통합',
+    fidelityKeys: { 'Off': 'condenser_off_design', 'Semi': 'condenser_moving_boundary', 'On': 'condenser_on_design' },
+    defaultFidelity: 'Off',
+    commonParamKeys: ['fluid', 'mode'],
+  },
+  __meta_eev: {
+    isMeta: true,
+    typeNo: 130,
+    name: 'EEV',
+    category: 'refrigerant',
+    color: '#d97706',
+    icon: Zap,
+    image: './images/eev.png',
+    desc: 'EEV — Off/Semi/On 통합',
+    fidelityKeys: { 'Off': 'eev_off_design', 'Semi': 'eev_moving_boundary', 'On': 'eev_on_design' },
+    defaultFidelity: 'Off',
+    commonParamKeys: ['fluid', 'mode'],
+  },
+
   fan: {
     typeNo: 200, name: 'Fan', category: 'air', color: '#0891b2', icon: Wind, image: './images/fan.png',
     desc: '송풍기 (시로코/축류)',
@@ -436,6 +495,7 @@ const TYPES = {
   compressor_winandy: {
     typeNo: 101, name: 'Compressor (Semi)', category: 'refrigerant', color: '#dc2626', icon: Gauge, image: './images/compressor.png',
     desc: 'Winandy/Lebrun 정형 — 흡입가열 + 등엔트로피 + over/under-comp + 외부 열손실',
+    isHiddenFromLibrary: true,  // 통합 메타 컴포넌트로 대체
     backend: 'python',
     pythonComponent: 'compressor_winandy',
     parameters: [
@@ -490,6 +550,7 @@ const TYPES = {
   compressor_ahri: {
     typeNo: 102, name: 'Compressor (Off)', category: 'refrigerant', color: '#dc2626', icon: Gauge, image: './images/compressor.png',
     desc: 'AHRI 540 10-coef polynomial — 시험 데이터 기반 off-design 모델',
+    isHiddenFromLibrary: true,  // 통합 메타 컴포넌트로 대체
     backend: 'python',
     pythonComponent: 'compressor_ahri',
     parameters: [
@@ -535,6 +596,7 @@ const TYPES = {
   compressor_pdsim_rom: {
     typeNo: 103, name: 'Compressor (On)', category: 'refrigerant', color: '#dc2626', icon: Gauge, image: './images/compressor.png',
     desc: 'Bell ROM — chamber-resolved on-design model with leakage, valve, friction breakdown',
+    isHiddenFromLibrary: true,  // 통합 메타 컴포넌트로 대체
     backend: 'python',
     pythonComponent: 'compressor_pdsim_rom',
     parameters: [
@@ -601,6 +663,7 @@ const TYPES = {
   evaporator_off_design: {
     typeNo: 120, name: 'Evaporator (Off)', category: 'refrigerant', color: '#0891b2', icon: Droplet, image: './images/evaporator.png',
     desc: '2-zone ε-NTU — UA 또는 ε 직접 입력. 설계 변수 없음.',
+    isHiddenFromLibrary: true,  // 통합 메타 컴포넌트로 대체
     backend: 'python',
     pythonComponent: 'evaporator_off_design',
     parameters: [
@@ -663,6 +726,7 @@ const TYPES = {
     typeNo: 121, name: 'Evaporator (Semi)', category: 'refrigerant',
     color: '#0891b2', icon: Droplet, image: './images/evaporator.png',
     desc: 'Moving Boundary — geometry 기반 + 4 correlation dropdown',
+    isHiddenFromLibrary: true,  // 통합 메타 컴포넌트로 대체
     backend: 'python',
     pythonComponent: 'evaporator_moving_boundary',
     parameters: [
@@ -765,6 +829,7 @@ const TYPES = {
     typeNo: 122, name: 'Evaporator (On)', category: 'refrigerant',
     color: '#0e7490', icon: Droplet, image: './images/evaporator.png',
     desc: 'HX-Sim Tube-Segment — Nr×Nt×N_seg, 30+ correlation, 학계 정통',
+    isHiddenFromLibrary: true,  // 통합 메타 컴포넌트로 대체
     backend: 'python',
     pythonComponent: 'evaporator_on_design',
     parameters: [
@@ -894,6 +959,7 @@ const TYPES = {
     typeNo: 220, name: 'Condenser (Off)', category: 'refrigerant',
     color: '#d97706', icon: Droplet, image: './images/condenser.png',
     desc: '3-zone cascade ε-NTU — De-SH/2상/SC. UA 또는 ε 직접 입력. 설계 변수 없음.',
+    isHiddenFromLibrary: true,  // 통합 메타 컴포넌트로 대체
     backend: 'python',
     pythonComponent: 'condenser_off_design',
     parameters: [
@@ -959,6 +1025,7 @@ const TYPES = {
     typeNo: 221, name: 'Condenser (Semi)', category: 'refrigerant',
     color: '#d97706', icon: Droplet, image: './images/condenser.png',
     desc: 'Cascade 3-zone + Schmidt fin + condensation correlation (Shah/Cavallini 등)',
+    isHiddenFromLibrary: true,  // 통합 메타 컴포넌트로 대체
     backend: 'python',
     pythonComponent: 'condenser_moving_boundary',
     parameters: [
@@ -1051,6 +1118,7 @@ const TYPES = {
     typeNo: 222, name: 'Condenser (On)', category: 'refrigerant',
     color: '#b45309', icon: Droplet, image: './images/condenser.png',
     desc: 'HX-Sim Tube-Segment (mode=cond) — Nr×Nt×N_seg, 30+ correlation',
+    isHiddenFromLibrary: true,  // 통합 메타 컴포넌트로 대체
     backend: 'python',
     pythonComponent: 'condenser_on_design',
     parameters: [
@@ -1158,6 +1226,7 @@ const TYPES = {
     typeNo: 130, name: 'EEV (Off)', category: 'refrigerant',
     color: '#16a34a', icon: Zap, image: './images/eev.png',
     desc: 'ARI flow coefficient curve — 제조사 카탈로그 직접 사용',
+    isHiddenFromLibrary: true,  // 통합 메타 컴포넌트로 대체
     backend: 'python',
     pythonComponent: 'eev_off_design',
     parameters: [
@@ -1206,6 +1275,7 @@ const TYPES = {
     typeNo: 131, name: 'EEV (Semi)', category: 'refrigerant',
     color: '#15803d', icon: Zap, image: './images/eev.png',
     desc: 'Sami-Schnotale: 2-phase choke + subcooling/Re correction',
+    isHiddenFromLibrary: true,  // 통합 메타 컴포넌트로 대체
     backend: 'python',
     pythonComponent: 'eev_moving_boundary',
     parameters: [
@@ -1262,6 +1332,7 @@ const TYPES = {
     typeNo: 132, name: 'EEV (On)', category: 'refrigerant',
     color: '#14532d', icon: Zap, image: './images/eev.png',
     desc: 'Needle cone geometry + 2-phase choke + Re-based Cd — L3 정밀 모델',
+    isHiddenFromLibrary: true,  // 통합 메타 컴포넌트로 대체
     backend: 'python',
     pythonComponent: 'eev_on_design',
     parameters: [
@@ -1891,15 +1962,63 @@ function HPWDStudio() {
   const rafRef = useRef(null);      // requestAnimationFrame id
   const [expandedCats, setExpandedCats] = useState({ source: true, math: true, refrigerant: true, air: true, output: true });
 
-  const handleLibraryDragStart = (e, typeKey) => {
+  // ─── 사이드바 카드 사용자 정의 순서 (drag-reorder) ───
+  // localStorage 'hpwd_library_order' → { categoryName: [typeKey, ...] }
+  const [libraryOrder, setLibraryOrder] = useState(() => {
+    try {
+      const raw = localStorage.getItem('hpwd_library_order');
+      return raw ? JSON.parse(raw) : {};
+    } catch (e) { return {}; }
+  });
+  const saveLibraryOrder = (newOrder) => {
+    setLibraryOrder(newOrder);
+    try { localStorage.setItem('hpwd_library_order', JSON.stringify(newOrder)); } catch (e) {}
+  };
+  // 사이드바 reorder drag 상태: { fromCategory, fromKey }
+  const [libDragOver, setLibDragOver] = useState(null);  // { cat, key } — 드롭 인디케이터용
+
+  const handleLibraryDragStart = (e, typeKey, cat) => {
     e.dataTransfer.setData('typeKey', typeKey);
-    e.dataTransfer.effectAllowed = 'copy';
+    e.dataTransfer.setData('libCategory', cat || '');
+    e.dataTransfer.effectAllowed = 'copyMove';
+  };
+  // 사이드바 내 drop 시 reorder
+  const handleLibraryReorderDrop = (e, targetKey, cat) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const sourceKey = e.dataTransfer.getData('typeKey');
+    const sourceCat = e.dataTransfer.getData('libCategory');
+    setLibDragOver(null);
+    if (!sourceKey || sourceKey === targetKey || sourceCat !== cat) return;
+    // 현재 카테고리 내 순서 가져오기
+    const allInCat = Object.entries(TYPES)
+      .filter(([k, v]) => v.category === cat && !v.isHiddenFromLibrary)
+      .map(([k]) => k);
+    const currentOrder = libraryOrder[cat] && libraryOrder[cat].length > 0
+      ? libraryOrder[cat].filter(k => allInCat.includes(k))
+        .concat(allInCat.filter(k => !libraryOrder[cat].includes(k)))
+      : allInCat;
+    // source를 빼고 target 앞에 삽입
+    const filtered = currentOrder.filter(k => k !== sourceKey);
+    const targetIdx = filtered.indexOf(targetKey);
+    if (targetIdx < 0) return;
+    filtered.splice(targetIdx, 0, sourceKey);
+    saveLibraryOrder({ ...libraryOrder, [cat]: filtered });
   };
   const handleCanvasDragOver = (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; };
   const handleCanvasDrop = (e) => {
     e.preventDefault();
-    const typeKey = e.dataTransfer.getData('typeKey');
+    let typeKey = e.dataTransfer.getData('typeKey');
     if (!typeKey || !TYPES[typeKey]) return;
+    // ─── 메타 컴포넌트 → defaultFidelity의 실제 typeKey로 변환 ───
+    // 진영님 통합 컴포넌트: __meta_compressor 등을 드롭하면 default fidelity로 추가
+    const def = TYPES[typeKey];
+    if (def.isMeta && def.fidelityKeys && def.defaultFidelity) {
+      const realKey = def.fidelityKeys[def.defaultFidelity];
+      if (realKey && TYPES[realKey]) {
+        typeKey = realKey;
+      }
+    }
     const rect = canvasRef.current.getBoundingClientRect();
     addBlock(
       typeKey,
@@ -3225,7 +3344,9 @@ function HPWDStudio() {
             Type Library
           </div>
           {Object.entries(
-            Object.entries(TYPES).reduce((acc, [k, v]) => { (acc[v.category] ||= []).push([k, v]); return acc; }, {})
+            Object.entries(TYPES)
+              .filter(([k, v]) => !v.isHiddenFromLibrary)  // fidelity 노드는 숨김 (통합 메타로 대체)
+              .reduce((acc, [k, v]) => { (acc[v.category] ||= []).push([k, v]); return acc; }, {})
           ).map(([cat, items]) => {
             const catStyle = CATEGORY_STYLES[cat];
             return (
@@ -3240,28 +3361,48 @@ function HPWDStudio() {
                   </span>
                   <span className="text-slate-700">{cat}</span>
                 </button>
-                {expandedCats[cat] && items.map(([key, def]) => {
-                  const Icon = def.icon;
-                  return (
-                    <div
-                      key={key}
-                      draggable
-                      onDragStart={(e) => handleLibraryDragStart(e, key)}
-                      className="flex items-center gap-2 px-3 py-1.5 mx-1.5 my-0.5 rounded cursor-grab hover:bg-slate-50 border border-transparent hover:border-slate-200 active:cursor-grabbing transition-colors"
-                      title={def.desc}
-                    >
-                      <div className="w-7 h-7 rounded flex items-center justify-center overflow-hidden shrink-0" style={{ background: def.image ? '#fff' : def.color + '15', border: def.image ? '1px solid #e2e8f0' : 'none' }}>
-                        {def.image
-                          ? <img src={def.image} alt={def.name} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-                          : <Icon size={12} style={{ color: def.color }} />}
+                {expandedCats[cat] && (() => {
+                  // 사용자 정의 순서 적용 (libraryOrder[cat]에 있으면 우선)
+                  const userOrder = libraryOrder[cat] || [];
+                  const keysInItems = items.map(([k]) => k);
+                  const orderedKeys = userOrder.filter(k => keysInItems.includes(k))
+                    .concat(keysInItems.filter(k => !userOrder.includes(k)));
+                  return orderedKeys.map(key => {
+                    const def = TYPES[key];
+                    if (!def) return null;
+                    const Icon = def.icon;
+                    const isDragOver = libDragOver && libDragOver.cat === cat && libDragOver.key === key;
+                    return (
+                      <div
+                        key={key}
+                        draggable
+                        onDragStart={(e) => handleLibraryDragStart(e, key, cat)}
+                        onDragOver={(e) => {
+                          // 같은 카테고리 내 카드 위에 hover 시 reorder 인디케이터
+                          e.preventDefault();
+                          e.dataTransfer.dropEffect = 'move';
+                          setLibDragOver({ cat, key });
+                        }}
+                        onDragLeave={() => setLibDragOver(null)}
+                        onDrop={(e) => handleLibraryReorderDrop(e, key, cat)}
+                        className={`flex items-center gap-2 px-3 py-1.5 mx-1.5 my-0.5 rounded cursor-grab hover:bg-slate-50 border ${
+                          isDragOver ? 'border-cyan-500 border-2 bg-cyan-50' : 'border-transparent hover:border-slate-200'
+                        } active:cursor-grabbing transition-colors`}
+                        title={def.desc}
+                      >
+                        <div className="w-7 h-7 rounded flex items-center justify-center overflow-hidden shrink-0" style={{ background: def.image ? '#fff' : def.color + '15', border: def.image ? '1px solid #e2e8f0' : 'none' }}>
+                          {def.image
+                            ? <img src={def.image} alt={def.name} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                            : <Icon size={12} style={{ color: def.color }} />}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-[11px] text-slate-800 truncate">{def.name}</div>
+                          <div className="text-[9px] text-slate-400 font-mono">Type {def.typeNo}</div>
+                        </div>
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-[11px] text-slate-800 truncate">{def.name}</div>
-                        <div className="text-[9px] text-slate-400 font-mono">Type {def.typeNo}</div>
-                      </div>
-                    </div>
-                  );
-                })}
+                    );
+                  });
+                })()}
               </div>
             );
           })}
@@ -4596,6 +4737,60 @@ function HPWDStudio() {
                 <span className="text-[10px] text-slate-500">· {selectedDef.name}</span>
               </div>
               <div className="text-[10px] text-slate-500 italic leading-relaxed">{selectedDef.desc}</div>
+
+              {/* ─── Fidelity Selector (통합 컴포넌트의 fidelity 변경) ─── */}
+              {(() => {
+                // 현재 노드가 어떤 메타 컴포넌트의 fidelity 변종인지 찾기
+                const metaEntry = Object.entries(TYPES).find(([k, v]) =>
+                  v.isMeta && v.fidelityKeys && Object.values(v.fidelityKeys).includes(selectedBlock.type)
+                );
+                if (!metaEntry) return null;
+                const [metaKey, metaDef] = metaEntry;
+                // 현재 fidelity (Off/Semi/On) 찾기
+                const currentFidelity = Object.entries(metaDef.fidelityKeys)
+                  .find(([f, k]) => k === selectedBlock.type)?.[0];
+                const changeFidelity = (newFidelity) => {
+                  if (newFidelity === currentFidelity) return;
+                  const newTypeKey = metaDef.fidelityKeys[newFidelity];
+                  if (!newTypeKey || !TYPES[newTypeKey]) return;
+                  const newDef = TYPES[newTypeKey];
+                  // 공통 param 유지, 신규 fidelity의 모든 param은 default
+                  const commonKeys = metaDef.commonParamKeys || [];
+                  const oldParams = selectedBlock.params || {};
+                  const newParams = Object.fromEntries(newDef.parameters.map(p => [p.key, p.value]));
+                  // 공통 키 덮어쓰기 (oldParams 값 우선)
+                  commonKeys.forEach(k => {
+                    if (k in oldParams && k in newParams) newParams[k] = oldParams[k];
+                  });
+                  pushHistory(blocks, connections);
+                  setBlocks(bs => bs.map(b => b.id === selectedBlock.id
+                    ? { ...b, type: newTypeKey, params: newParams }
+                    : b));
+                };
+                return (
+                  <div className="bg-cyan-50 border border-cyan-200 rounded p-2 space-y-1.5">
+                    <div className="text-[10px] text-cyan-700 font-semibold uppercase tracking-wider">Fidelity</div>
+                    <div className="flex gap-1">
+                      {Object.keys(metaDef.fidelityKeys).map(fid => (
+                        <button
+                          key={fid}
+                          onClick={() => changeFidelity(fid)}
+                          className={`flex-1 px-2 py-1 rounded text-[11px] font-medium transition-colors ${
+                            currentFidelity === fid
+                              ? 'bg-cyan-600 text-white'
+                              : 'bg-white text-cyan-700 border border-cyan-300 hover:bg-cyan-100'
+                          }`}
+                        >
+                          {fid}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="text-[9px] text-cyan-700 leading-tight">
+                      변경 시 fluid 등 공통값은 유지, 나머지 params는 default로 리셋
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Plotter 전용: 이 플로터의 신호만 CSV 내보내기 */}
               {selectedBlock.type === 'plotter' && (
