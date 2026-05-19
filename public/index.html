@@ -596,7 +596,7 @@ const TYPES = {
   // 학계 표준 semi-empirical. R290 가변속 reciprocating/scroll.
   // 입력 4 (P_suc, T_suc, P_dis, N), 파라미터 11 (Winandy 9 + fluid + T_amb), 출력 10.
   compressor_winandy: {
-    typeNo: 101, name: 'Compressor (Winandy)', category: 'refrigerant', color: '#dc2626', icon: Gauge, image: './images/compressor.png',
+    typeNo: 101, name: 'Compressor (Semi)', category: 'refrigerant', color: '#dc2626', icon: Gauge, image: './images/compressor.png',
     desc: 'Winandy/Lebrun 정형 — 흡입가열 + 등엔트로피 + over/under-comp + 외부 열손실',
     backend: 'python',
     pythonComponent: 'compressor_winandy',
@@ -650,7 +650,7 @@ const TYPES = {
   // 사내 시험 데이터 (10-coef set) 받으면 Properties에서 교체.
   // Default 계수는 Winandy 결과를 회귀 fitting한 값 (RMSE: ṁ 0.06%, W 5.1%).
   compressor_ahri: {
-    typeNo: 102, name: 'Compressor (AHRI)', category: 'refrigerant', color: '#dc2626', icon: Gauge, image: './images/compressor.png',
+    typeNo: 102, name: 'Compressor (Off)', category: 'refrigerant', color: '#dc2626', icon: Gauge, image: './images/compressor.png',
     desc: 'AHRI 540 10-coef polynomial — 시험 데이터 기반 off-design 모델',
     backend: 'python',
     pythonComponent: 'compressor_ahri',
@@ -695,7 +695,7 @@ const TYPES = {
   // Bell ROM 변형 — chamber-resolved reciprocating, 1-cycle 평균.
   // L1/L2 대비 차별: 누설 / 밸브 손실 / 마찰 별도 출력 (개별 chamber 거동).
   compressor_pdsim_rom: {
-    typeNo: 103, name: 'Compressor (PDSim ROM)', category: 'refrigerant', color: '#dc2626', icon: Gauge, image: './images/compressor.png',
+    typeNo: 103, name: 'Compressor (On)', category: 'refrigerant', color: '#dc2626', icon: Gauge, image: './images/compressor.png',
     desc: 'Bell ROM — chamber-resolved on-design model with leakage, valve, friction breakdown',
     backend: 'python',
     pythonComponent: 'compressor_pdsim_rom',
@@ -761,7 +761,7 @@ const TYPES = {
   // 2-zone ε-NTU. 설계 변수 0개 — UA 또는 ε 직접 입력.
   // HPWD에선 dehumidifier 역할 → Q_latent / condensate_rate 핵심 출력.
   evaporator_off_design: {
-    typeNo: 120, name: 'Evaporator (Off-design)', category: 'refrigerant', color: '#0891b2', icon: Droplet, image: './images/evaporator.png',
+    typeNo: 120, name: 'Evaporator (Off)', category: 'refrigerant', color: '#0891b2', icon: Droplet, image: './images/evaporator.png',
     desc: '2-zone ε-NTU — UA 또는 ε 직접 입력. 설계 변수 없음.',
     backend: 'python',
     pythonComponent: 'evaporator_off_design',
@@ -822,7 +822,7 @@ const TYPES = {
   // 학계 정통 Moving Boundary — geometry 10개 + 4 correlation dropdown.
   // ζ를 Newton iteration으로 풂. Bypass factor wet-coil. Schmidt fin 효율.
   evaporator_moving_boundary: {
-    typeNo: 121, name: 'Evaporator (Moving Boundary)', category: 'refrigerant',
+    typeNo: 121, name: 'Evaporator (Semi)', category: 'refrigerant',
     color: '#0891b2', icon: Droplet, image: './images/evaporator.png',
     desc: 'Moving Boundary — geometry 기반 + 4 correlation dropdown',
     backend: 'python',
@@ -924,7 +924,7 @@ const TYPES = {
   // 30+ correlation 학계 정통 (Wang/Chen/Shah/Friedel/Kim-Mudawar).
   // 한계 #1~#10 + 하드코딩 audit + correlation 검증범위 모두 처리.
   evaporator_on_design: {
-    typeNo: 122, name: 'Evaporator (On-Design)', category: 'refrigerant',
+    typeNo: 122, name: 'Evaporator (On)', category: 'refrigerant',
     color: '#0e7490', icon: Droplet, image: './images/evaporator.png',
     desc: 'HX-Sim Tube-Segment — Nr×Nt×N_seg, 30+ correlation, 학계 정통',
     backend: 'python',
@@ -1053,7 +1053,7 @@ const TYPES = {
   // 3-zone cascade ε-NTU — De-SH / 2-phase / SC. UA 또는 ε 직접 입력.
   // Evaporator L1과 같은 수준이지만 응축기는 3-zone (입구 SH vapor → 출구 SC liquid).
   condenser_off_design: {
-    typeNo: 220, name: 'Condenser (Off-design)', category: 'refrigerant',
+    typeNo: 220, name: 'Condenser (Off)', category: 'refrigerant',
     color: '#d97706', icon: Droplet, image: './images/condenser.png',
     desc: '3-zone cascade ε-NTU — De-SH/2상/SC. UA 또는 ε 직접 입력. 설계 변수 없음.',
     backend: 'python',
@@ -1118,7 +1118,7 @@ const TYPES = {
   // Schmidt fin + condensation correlation registry (Shah/Cavallini/Dobson-Chato).
   // Cascade 3-zone (B 옵션) — UA 자동 계산, Newton iteration 없음.
   condenser_moving_boundary: {
-    typeNo: 221, name: 'Condenser (Moving Boundary)', category: 'refrigerant',
+    typeNo: 221, name: 'Condenser (Semi)', category: 'refrigerant',
     color: '#d97706', icon: Droplet, image: './images/condenser.png',
     desc: 'Cascade 3-zone + Schmidt fin + condensation correlation (Shah/Cavallini 등)',
     backend: 'python',
@@ -1210,7 +1210,7 @@ const TYPES = {
   // HX-Sim Tube-Segment Model (mode='cond'). Evaporator L3와 같은 모델, mode만 'cond'.
   // 30+ correlation, Nr × Nt × N_seg 세그먼트별 독립 계산, 학계 정통.
   condenser_on_design: {
-    typeNo: 222, name: 'Condenser (On-Design)', category: 'refrigerant',
+    typeNo: 222, name: 'Condenser (On)', category: 'refrigerant',
     color: '#b45309', icon: Droplet, image: './images/condenser.png',
     desc: 'HX-Sim Tube-Segment (mode=cond) — Nr×Nt×N_seg, 30+ correlation',
     backend: 'python',
@@ -1317,9 +1317,9 @@ const TYPES = {
   // mode='control': opening % → m_dot 계산
   // mode='measure': m_dot 측정 → opening 역산 (calibration 용)
   eev_off_design: {
-    typeNo: 130, name: 'EEV (Off-design)', category: 'refrigerant',
+    typeNo: 130, name: 'EEV (Off)', category: 'refrigerant',
     color: '#16a34a', icon: Zap, image: './images/eev.png',
-    desc: 'ARI flow coefficient curve — 제조사 카탈로그 직접 사용 (L1)',
+    desc: 'ARI flow coefficient curve — 제조사 카탈로그 직접 사용',
     backend: 'python',
     pythonComponent: 'eev_off_design',
     parameters: [
@@ -1365,9 +1365,9 @@ const TYPES = {
   // 2-phase choked flow + subcooling correction + Re correction.
   // 7 fitting params (Cd_0, Re_c, k_sub, k_op, Y_crit, cf_A) for calibration.
   eev_moving_boundary: {
-    typeNo: 131, name: 'EEV (Semi-Empirical)', category: 'refrigerant',
+    typeNo: 131, name: 'EEV (Semi)', category: 'refrigerant',
     color: '#15803d', icon: Zap, image: './images/eev.png',
-    desc: 'Sami-Schnotale: 2-phase choke + subcooling/Re correction (L2)',
+    desc: 'Sami-Schnotale: 2-phase choke + subcooling/Re correction',
     backend: 'python',
     pythonComponent: 'eev_moving_boundary',
     parameters: [
@@ -1421,7 +1421,7 @@ const TYPES = {
   // Needle cone profile + 2-phase choke + Re-based Cd correction.
   // L3 — On-design Studio 메인 모델, 실제 부품 도면 기반.
   eev_on_design: {
-    typeNo: 132, name: 'EEV (On-Design)', category: 'refrigerant',
+    typeNo: 132, name: 'EEV (On)', category: 'refrigerant',
     color: '#14532d', icon: Zap, image: './images/eev.png',
     desc: 'Needle cone geometry + 2-phase choke + Re-based Cd — L3 정밀 모델',
     backend: 'python',
