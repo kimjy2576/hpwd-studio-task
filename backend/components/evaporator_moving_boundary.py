@@ -241,6 +241,28 @@ def _W_sat(T_C, P_atm=101325.0):
         return 0.622 * Psat / (P_atm - Psat)
 
 
+def _h_air_sat(T_C, P_atm=101325.0):
+    """포화 공기 비엔탈피 (J/kg dry air) at temperature T_C.
+    학계 표준 wet coil 모델에서 'apparatus dew point' 가정용.
+    """
+    try:
+        return CP.HAPropsSI('H', 'T', T_C + 273.15, 'P', P_atm, 'R', 0.999)
+    except Exception:
+        W_sat = _W_sat(T_C, P_atm)
+        return 1006.0 * T_C + W_sat * (2501e3 + 1860.0 * T_C)
+
+
+def _b_slope(T1_C, T2_C, P_atm=101325.0):
+    """포화 공기 엔탈피의 평균 기울기: b = (h_sat(T2) - h_sat(T1)) / (T2 - T1).
+    Mirth-Ramadhyani의 m_w* (= b / cp_air) 계산에 사용.
+    """
+    if abs(T2_C - T1_C) < 0.1:
+        # 작은 ΔT — 미분으로 근사
+        dT = 0.5
+        return (_h_air_sat(T1_C + dT, P_atm) - _h_air_sat(T1_C - dT, P_atm)) / (2.0 * dT)
+    return (_h_air_sat(T2_C, P_atm) - _h_air_sat(T1_C, P_atm)) / (T2_C - T1_C)
+
+
 # ════════ ε-NTU ════════
 def _eps_counterflow(NTU, Cr):
     if NTU <= 0: return 0.0
@@ -479,37 +501,138 @@ def step(input, params, state, dt):
         h_ref_out_J = h_v + Q_SH / m_dot_ref
         T_air_out_C = T_air_after_2ph_C - Q_SH / C_air if C_air > 0 else T_air_after_2ph_C
 
-    # ── 11. Wet-coil with bypass factor ──
-    # 단순 bypass model:
-    #   BF = exp(-NTU_air_total) where NTU = UA_air × η_overall / C_air
-    # Air leaves at: T_air_out × (1 - BF) + T_air_in × BF (sensible only, dry coil)
-    # For wet: ω_out = ω_in × BF + ω_apparatus × (1 - BF)
-    #   ω_apparatus = ω_sat(T_evap)  (apparatus dew point ≈ T_evap for wet)
+    # ── 11. Wet-coil with Enthalpy Potential Method ──
+    # ═══════════════════════════════════════════════════════════════════════
+    # Reference: 
+    #   Mirth & Ramadhyani (1993) IJHMT — "Prediction of cooling-coil 
+    #     performance under condensing conditions"
+    #   ASHRAE Handbook of Fundamentals Ch.6
+    #   Threlkeld (1970) "Thermal Environmental Engineering"
+    #
+    # 학계 표준 wet coil 모델:
+    #   Q_total = m_dot_air × (h_air_in - h_air_out)
+    #   ε_h = 1 - exp(-NTU_h × ξ)
+    #   NTU_h = UA_o × η_o / (m_dot_air × cp_air)
+    #   ξ = m_w* = b / cp_air  (saturation enthalpy slope correction)
+    #   h_air_out = h_air_in - ε_h × (h_air_in - h_apparatus)
+    #   h_apparatus = h_sat(T_evap)  ← refrigerant 측 saturation temp의 포화공기
+    #
+    # 이전 코드 버그:
+    #   sensible Q와 latent Q를 따로 풀어서 더함 → double counting
+    #   ref-side capacity 무시 → enthalpy 발산
+    # ═══════════════════════════════════════════════════════════════════════
     
     is_wet = (wet_mode == 'auto') and (T_dp_in_C > T_evap_C)
     
     if is_wet:
-        # NTU_air_o = UA_o,total / C_air (모든 zone 합친 외부 NTU)
-        UA_o_total_eff = alpha_air * A_o * eta_overall
-        NTU_air_o = UA_o_total_eff / C_air if C_air > 0 else 0
-        BF = math.exp(-NTU_air_o) if NTU_air_o < 50 else 0.0
+        # ── air-side enthalpy potential ε-NTU ──
+        h_apparatus = _h_air_sat(T_evap_C)  # apparatus dew point = T_evap
         
+        # Saturation enthalpy slope b (J/kg-dry-air per K)
+        # 평균 슬로프 사용: T_evap ~ T_air_in 사이
+        b_sat = _b_slope(T_evap_C, T_air_in_C)
+        # m_w* = b / cp_air (Threlkeld saturation enthalpy slope correction)
+        m_w_star = b_sat / cp_air if cp_air > 0 else 1.0
+        
+        # NTU_h: air-side enthalpy NTU
+        # UA_o_eff: 외부 effective UA = α_air × A_o × η_overall (전체 coil)
+        UA_o_eff = alpha_air * A_o * eta_overall
+        NTU_h_air = UA_o_eff / (m_dot_air * cp_air) if (m_dot_air * cp_air) > 0 else 0
+        
+        # ref-side enthalpy NTU (2-phase: α_r × A_i / m_w*)
+        # 2-phase: ref-side T 거의 일정 (T_evap) → Cr_h → 0 (single stream limit)
+        # 이 경우 ε_h = 1 - exp(-NTU_h_overall)
+        # NTU_h_overall = 1 / (1/NTU_h_air + m_w*/NTU_h_ref)
+        UA_i_eff_2ph = alpha_2ph * A_i  # 2-phase 측 UA (전체 zone 가정 — 보수적)
+        # SH zone도 있으면 가중평균
+        if ref_fully_evap and UA_SH_actual > 0:
+            UA_i_eff = (alpha_2ph * A_i * zeta + alpha_SH * A_i * (1 - zeta))
+        else:
+            UA_i_eff = alpha_2ph * A_i
+        
+        NTU_h_ref = UA_i_eff / (m_dot_ref * 1.0) if m_dot_ref > 0 else 0  # m_w_star 단위 맞춤
+        # ε_h: combined NTU (overall)
+        # 1/UA_overall_h = 1/UA_o_eff + m_w*/UA_i_eff
+        if UA_i_eff > 0 and m_w_star > 0:
+            inv_UA_h = 1.0 / UA_o_eff + m_w_star / UA_i_eff
+            UA_h_overall = 1.0 / inv_UA_h if inv_UA_h > 0 else 0
+        else:
+            UA_h_overall = UA_o_eff  # 2-phase ref limit
+        NTU_h_overall = UA_h_overall / (m_dot_air * cp_air) if (m_dot_air * cp_air) > 0 else 0
+        
+        # ε_h: single-stream (ref-side T const → Cr ~ 0 가정)
+        eps_h = 1.0 - math.exp(-NTU_h_overall) if NTU_h_overall < 50 else 1.0
+        
+        # ── air outlet enthalpy ──
+        h_air_out = h_air_in - eps_h * (h_air_in - h_apparatus)
+        
+        # ── Q_total (air-side enthalpy balance) ──
+        Q_total = m_dot_air * (h_air_in - h_air_out)
+        
+        # ── Outlet air state (T_out, W_out, RH_out) ──
+        # 포화 공기 line상 점 — 보수적 가정:
+        # ADP (apparatus dew point): T_air_apparatus = T_evap, fully saturated
+        # 실제 outlet은 ADP와 inlet 사이의 직선 위 (Threlkeld 가정)
+        # Bypass factor BF (enthalpy-based) = (h_out - h_apparatus) / (h_in - h_apparatus)
+        BF = (h_air_out - h_apparatus) / max(h_air_in - h_apparatus, 1e-6)
+        BF = max(0.0, min(1.0, BF))
+        
+        # Outlet humidity: ω_out = BF × ω_in + (1-BF) × ω_sat(T_apparatus)
         W_apparatus = _W_sat(T_evap_C)
-        W_air_out = W_in * BF + W_apparatus * (1 - BF)
-        W_air_out = max(W_air_out, W_apparatus)  # 응축은 한도 내
-        W_air_out = min(W_air_out, W_in)  # 늘어날 순 없음
+        W_air_out = BF * W_in + (1.0 - BF) * W_apparatus
+        # Bounds
+        W_air_out = min(W_in, max(W_apparatus, W_air_out))
         
+        # condensate, Q_latent
         condensate_rate = m_dot_air * (W_in - W_air_out)
         h_fg_water = 2501e3 - 2.4 * T_evap_C
         Q_latent = condensate_rate * h_fg_water
+        Q_latent = max(0, Q_latent)
+        
+        # Q_sensible = Q_total - Q_latent (결과로서 분해)
+        Q_sensible_total = max(0, Q_total - Q_latent)
+        
+        # T_air_out from enthalpy + humidity
+        try:
+            T_air_out_K = CP.HAPropsSI('T', 'H', h_air_out, 'P', 101325.0, 'W', W_air_out)
+            T_air_out_C = T_air_out_K - 273.15
+        except Exception:
+            # fallback: enthalpy linearize
+            T_air_out_C = T_air_in_C - Q_sensible_total / C_air if C_air > 0 else T_air_in_C
+        
+        # ── ref-side cap (안전 안전책) ──
+        # ref가 흡수 가능한 max enthalpy: vapor + 충분한 SH 한도
+        # 만약 Q_total이 ref capacity 넘으면 cap (실제로 enthalpy potential method가 이미 처리하지만 보수적)
+        try:
+            cp_vapor = CP.PropsSI('C', 'P', P_evap_Pa, 'Q', 1, fluid)
+        except Exception:
+            cp_vapor = 1700
+        # ref 최대 흡수: vapor 도달 + SH 50K
+        h_ref_max = h_v + cp_vapor * 50.0
+        Q_ref_max = m_dot_ref * (h_ref_max - h_in_J)
+        if Q_total > Q_ref_max and Q_ref_max > 0:
+            # ref 한도로 cap + air-side 재조정
+            scale = Q_ref_max / Q_total
+            Q_total = Q_ref_max
+            Q_sensible_total *= scale
+            Q_latent *= scale
+            condensate_rate *= scale
+            W_air_out = W_in - condensate_rate / m_dot_air
+            h_air_out = h_air_in - Q_total / m_dot_air
+            try:
+                T_air_out_K = CP.HAPropsSI('T', 'H', h_air_out, 'P', 101325.0, 'W', W_air_out)
+                T_air_out_C = T_air_out_K - 273.15
+            except Exception:
+                T_air_out_C = T_air_in_C - Q_sensible_total / C_air if C_air > 0 else T_air_in_C
     else:
-        BF = 1.0  # all bypass = no condensation
+        # Dry coil — 기존 sensible-only 결과 유지
+        BF = 1.0
         W_air_out = W_in
         condensate_rate = 0.0
         Q_latent = 0.0
-
-    Q_sensible_total = Q_sensible_2ph + Q_SH
-    Q_total = Q_sensible_total + Q_latent
+        Q_sensible_total = Q_sensible_2ph + Q_SH
+        Q_total = Q_sensible_total
+        # T_air_out_C 는 위에서 이미 계산됨
 
     # ── 12. 압력 강하 계산 (마찰 + 가속) ──
     # zone별 길이 = ζ × L_total / N_tubes (1 회로 길이 가정)
