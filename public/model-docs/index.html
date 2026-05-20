@@ -677,6 +677,8 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
       <div class="sidebar-item" data-model="eev-off"><span class="fidelity-badge badge-off">OFF</span> ARI Curve</div>
       <div class="sidebar-item" data-model="eev-semi"><span class="fidelity-badge badge-semi">SEMI</span> Sami-Schnotale</div>
       <div class="sidebar-item" data-model="eev-on"><span class="fidelity-badge badge-on">ON</span> Needle Cone</div>
+      <div class="sidebar-item" data-model="eev-cfd"><span class="fidelity-badge badge-future">FUTURE</span> CFD 2-Phase</div>
+      <div class="sidebar-item" data-model="eev-acoustic"><span class="fidelity-badge badge-future">FUTURE</span> Acoustic / Noise</div>
     </div>
   </aside>
 
@@ -1911,6 +1913,286 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
       <div class="val-card"><div class="val-label">vs Semi</div><div class="val-value">+3~6%<span class="val-unit">ṁ</span></div></div>
       <div class="val-card"><div class="val-label">vs Off</div><div class="val-value">~±16%<span class="val-unit">opening별</span></div></div>
     </div>
+  </div>
+</template>
+
+<!-- ════════ EEV CFD 2-Phase (FUTURE) ════════ -->
+<template id="tpl-eev-cfd">
+  <div class="doc-header">
+    <div class="doc-eyebrow">EEV / High-Fidelity (Future)</div>
+    <h1 class="doc-title">
+      CFD-Based 2-Phase EEV
+      <span class="doc-title-badge badge-future">FUTURE</span>
+    </h1>
+    <div class="doc-subtitle">축대칭 CFD로 vena contracta 직접 해석 + 비평형 flashing — 구현 spec sheet</div>
+  </div>
+
+  <div class="doc-section">
+    <h2>개요</h2>
+    <div class="ref-card" style="border-left-color: #7C3AED;">
+      <div class="ref-title" style="color: #7C3AED;">Status — 미구현 (설계 문서)</div>
+      <div class="ref-body">
+        현재 On (Needle Cone)이 <b>$C_d$로 간접 보정</b>하던 vena contracta·flashing을, 축대칭 CFD로 <b>직접 공간 해석</b>. 유선 수축 위치·$C_c$·void fraction 분포를 격자에서 산출. On 모델의 $C_d$·$C_c$ calibration 데이터 생성이 주 목적.
+      </div>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>학계 참고문헌</h2>
+    <div class="ref-card">
+      <div class="ref-title">Non-Equilibrium 2-Phase</div>
+      <div class="ref-body">
+        <b>Bilicki Z., Kestin J. (1990)</b>: "Physical aspects of the relaxation model in two-phase flow", <i>Proc. R. Soc. Lond. A</i>. — HRM (Homogeneous Relaxation Model) 정립.
+      </div>
+    </div>
+    <div class="ref-card">
+      <div class="ref-title">Relaxation Time Correlation</div>
+      <div class="ref-body">
+        <b>Downar-Zapolski P. et al. (1996)</b>: "The non-equilibrium relaxation model for one-dimensional flashing liquid flow", <i>Int. J. Multiphase Flow</i>. — relaxation time θ 상관식.
+      </div>
+    </div>
+    <div class="ref-card">
+      <div class="ref-title">Flashing / Vena Contracta</div>
+      <div class="ref-body">
+        <b>Henry-Fauske (1971)</b> 비평형 임계유동의 CFD 확장. 오리피스/노즐 2-phase 수축류 검증.
+      </div>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>1. 지배방정식 (축대칭 RANS)</h2>
+    <p>밸브 목 주변을 축대칭 (r, z) 격자로. 질량·운동량·에너지 보존:</p>
+    <div class="eq-block">
+      <div class="eq-label">Mass</div>
+      $$\frac{\partial \rho_m}{\partial t} + \nabla\cdot(\rho_m \mathbf{u}) = 0$$
+    </div>
+    <div class="eq-block">
+      <div class="eq-label">Momentum</div>
+      $$\frac{\partial(\rho_m \mathbf{u})}{\partial t} + \nabla\cdot(\rho_m \mathbf{u}\mathbf{u}) = -\nabla P + \nabla\cdot\boldsymbol{\tau}_{eff}$$
+    </div>
+    <p>혼합물 밀도 $\rho_m = \alpha\rho_g + (1-\alpha)\rho_l$ (void fraction $\alpha$).</p>
+  </div>
+
+  <div class="doc-section">
+    <h2>2. 비평형 Flashing (HRM)</h2>
+    <p>평형(HEM) 대신, quality $x$가 평형값 $x_{eq}$로 <b>유한 시간에 완화</b>:</p>
+    <div class="eq-block">
+      $$\frac{Dx}{Dt} = \frac{x_{eq} - x}{\theta}$$
+    </div>
+    <p>relaxation time $\theta$ (Downar-Zapolski 상관식):</p>
+    <div class="eq-block">
+      $$\theta = \theta_0\, \alpha^{-a}\, \psi^{-b}, \quad \psi = \frac{P_{sat}(T) - P}{P_{crit} - P_{sat}(T)}$$
+    </div>
+    <p>$\theta \to 0$이면 HEM(평형)으로 환원, $\theta$ 유한이면 metastable(과포화 지연 증발) 포착.</p>
+  </div>
+
+  <div class="doc-section">
+    <h2>3. Vena Contracta 직접 포착</h2>
+    <p>1D 모델은 $C_d = C_c \times C_v$로 간접 처리했으나, CFD는 격자에서 직접:</p>
+    <ul style="color: var(--ink-soft); font-size: 13px; line-height: 1.8;">
+      <li><b>수축 위치</b> — 유선이 최대로 모이는 z 좌표 (목 하류 어디인지)</li>
+      <li><b>$C_c$ 측정</b> — 최소 유동 단면 / 기하 면적을 후처리로 산출</li>
+      <li><b>국소 음속·Mach</b> — 어느 격자에서 2-phase 음속 도달 → choke 위치 확정</li>
+    </ul>
+  </div>
+
+  <div class="doc-section">
+    <h2>4. Turbulence + 수치</h2>
+    <table class="params">
+      <thead><tr><th>항목</th><th>권장</th><th>비고</th></tr></thead>
+      <tbody>
+        <tr><td>난류 모델</td><td class="mono">k-ω SST</td><td>벽면 + 박리 균형</td></tr>
+        <tr><td>2-phase</td><td class="mono">HRM (mixture)</td><td>비평형 flashing</td></tr>
+        <tr><td>격자</td><td class="mono">축대칭 (r,z)</td><td>목 주변 refine</td></tr>
+        <tr><td>물성</td><td class="mono">CoolProp / REFPROP</td><td>R290 실제 물성</td></tr>
+        <tr><td>solver</td><td class="mono">OpenFOAM / Fluent</td><td>density-based 권장</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="doc-section">
+    <h2>Nomenclature</h2>
+    <div class="nomenclature">
+      <div class="nomen-group">
+        <div class="nomen-group-title">Latin Symbols</div>
+        <div class="nomen-row"><span class="nomen-sym">$a, b$</span><span class="nomen-desc">Relaxation 상관식 지수</span><span class="nomen-unit">—</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$C_c$</span><span class="nomen-desc">Contraction coefficient</span><span class="nomen-unit">—</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$C_d, C_v$</span><span class="nomen-desc">Discharge / velocity coeff.</span><span class="nomen-unit">—</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$P$</span><span class="nomen-desc">압력 (local / sat / crit)</span><span class="nomen-unit">Pa</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\mathbf{u}$</span><span class="nomen-desc">속도 벡터 (축대칭)</span><span class="nomen-unit">m/s</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$x$</span><span class="nomen-desc">Quality (실제 / eq 평형)</span><span class="nomen-unit">—</span></div>
+      </div>
+      <div class="nomen-group">
+        <div class="nomen-group-title">Greek Symbols</div>
+        <div class="nomen-row"><span class="nomen-sym">$\alpha$</span><span class="nomen-desc">Void fraction (기상 체적비)</span><span class="nomen-unit">—</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\theta$</span><span class="nomen-desc">Relaxation time</span><span class="nomen-unit">s</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\rho_m$</span><span class="nomen-desc">혼합물 밀도</span><span class="nomen-unit">kg/m³</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\boldsymbol{\tau}_{eff}$</span><span class="nomen-desc">유효 응력 (점성+난류)</span><span class="nomen-unit">Pa</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\psi$</span><span class="nomen-desc">무차원 과포화도</span><span class="nomen-unit">—</span></div>
+      </div>
+      <div class="nomen-group">
+        <div class="nomen-group-title">Subscripts</div>
+        <div class="nomen-row"><span class="nomen-sym">crit</span><span class="nomen-desc">Critical point (임계점)</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">eq</span><span class="nomen-desc">Equilibrium (평형)</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">g / l</span><span class="nomen-desc">Gas / liquid 상</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">m</span><span class="nomen-desc">Mixture (혼합물)</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">sat</span><span class="nomen-desc">Saturation (포화)</span><span class="nomen-unit"></span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>구현 로드맵 (제안)</h2>
+    <table class="params">
+      <thead><tr><th>단계</th><th>내용</th><th>난이도</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">M1</td><td>축대칭 mesh + single-phase 검증 (Cd, 압력장)</td><td>중</td></tr>
+        <tr><td class="mono">M2</td><td>HEM (평형 2-phase) flashing 추가</td><td>상</td></tr>
+        <tr><td class="mono">M3</td><td>HRM (비평형) relaxation 모델 + θ 상관식</td><td>상</td></tr>
+        <tr><td class="mono">M4</td><td>vena contracta 후처리 (Cc 측정, choke 위치)</td><td>중</td></tr>
+        <tr><td class="mono">M5</td><td>opening sweep → On 모델 Cd/Cc calibration map</td><td>중</td></tr>
+      </tbody>
+    </table>
+    <p style="font-size: 12px; margin-top: 10px;">검증 기준: CFD 평균 유량이 On (Needle Cone)과 ±5%. $C_c$·$C_d$를 On 모델에 역주입하여 1D 정확도 향상.</p>
+  </div>
+
+  <div class="doc-section">
+    <h2>현재 모델과의 관계</h2>
+    <p style="font-size: 13px;">On (typeNo 132)이 <b>$C_d$로 간접 처리</b> → CFD (typeNo 133 예정)가 <b>vena contracta·flashing 직접 해석</b>. CFD는 런타임 사이클 시뮬엔 너무 느려서, <b>오프라인 calibration 데이터 생성기</b>로 사용 (On 모델의 Cd/Cc map fit). Compressor의 θ-PDSim ↔ 1-cycle 관계와 동일 패턴.</p>
+  </div>
+</template>
+
+<!-- ════════ EEV Acoustic / Noise (FUTURE) ════════ -->
+<template id="tpl-eev-acoustic">
+  <div class="doc-header">
+    <div class="doc-eyebrow">EEV / Acoustic (Future)</div>
+    <h1 class="doc-title">
+      Acoustic / Noise Model
+      <span class="doc-title-badge badge-future">FUTURE</span>
+    </h1>
+    <div class="doc-subtitle">Unsteady 2-phase + 음향 해석 — flashing 소음·tonal noise 예측 (소음 KPI)</div>
+  </div>
+
+  <div class="doc-section">
+    <h2>개요</h2>
+    <div class="ref-card" style="border-left-color: #7C3AED;">
+      <div class="ref-title" style="color: #7C3AED;">Status — 미구현 (설계 문서)</div>
+      <div class="ref-body">
+        성능(유량) 모델들과 <b>축이 다른 NVH 트랙</b>. EEV의 flashing·choke가 만드는 소음을 예측. 가전 HPWD에서 소음은 핵심 KPI라 별도 모듈로 정리. 정상상태 유량 모델로는 잡을 수 없는 <b>시간 변동·음향 방사</b>를 다룸.
+      </div>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>학계 참고문헌</h2>
+    <div class="ref-card">
+      <div class="ref-title">Aeroacoustic Analogy</div>
+      <div class="ref-body">
+        <b>Lighthill M.J. (1952)</b>: "On sound generated aerodynamically", <i>Proc. R. Soc. A</i>. <b>Ffowcs Williams & Hawkings (1969)</b>: 유동 경계 소음 방사 (FW-H).
+      </div>
+    </div>
+    <div class="ref-card">
+      <div class="ref-title">Bubble Dynamics</div>
+      <div class="ref-body">
+        <b>Plesset & Prosperetti (1977)</b>: "Bubble dynamics and cavitation", <i>Ann. Rev. Fluid Mech.</i>. — flashing 기포 맥동 음원.
+      </div>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>1. 소음 메커니즘 (3종)</h2>
+    <ul style="color: var(--ink-soft); font-size: 13px; line-height: 1.8;">
+      <li><b>Broadband (hissing)</b> — flashing + choked 2-phase 난류. 1~8 kHz 대역</li>
+      <li><b>Gurgling</b> — 간헐 기액 슬러그가 밸브·배관 통과</li>
+      <li><b>Tonal (whistling)</b> — 특정 개도에서 목 형상·유동이 배관 음향 모드와 공진</li>
+    </ul>
+  </div>
+
+  <div class="doc-section">
+    <h2>2. 음원 — Lighthill Stress + 기포 맥동</h2>
+    <p>유동 소음은 Lighthill 응력 텐서로:</p>
+    <div class="eq-block">
+      $$\frac{\partial^2 \rho'}{\partial t^2} - c_0^2 \nabla^2 \rho' = \frac{\partial^2 T_{ij}}{\partial x_i \partial x_j}, \quad T_{ij} = \rho u_i u_j + (p' - c_0^2\rho')\delta_{ij} - \tau_{ij}$$
+    </div>
+    <p>flashing 기포의 체적 맥동 (단극 음원, Rayleigh-Plesset):</p>
+    <div class="eq-block">
+      $$R\ddot{R} + \frac{3}{2}\dot{R}^2 = \frac{1}{\rho_l}\left(P_B - P_\infty\right)$$
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>3. 음향 방사 + 배관 모드</h2>
+    <p>원거리 소음은 FW-H 적분으로. 배관 내 음향 모드는 Helmholtz:</p>
+    <div class="eq-block">
+      $$\nabla^2 \hat{p} + k^2 \hat{p} = 0, \quad k = \frac{\omega}{c_m}$$
+    </div>
+    <p>2-phase 음속 $c_m$이 낮아(~20 m/s) 음향 파장이 짧음 → 짧은 배관도 공진 가능. tonal noise의 근원.</p>
+  </div>
+
+  <div class="doc-section">
+    <h2>4. 출력 지표</h2>
+    <table class="params">
+      <thead><tr><th>지표</th><th>설명</th><th>단위</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">SPL spectrum</td><td>주파수별 음압 레벨</td><td>dB</td></tr>
+        <tr><td class="mono">OASPL</td><td>Overall SPL (A-weighted)</td><td>dB(A)</td></tr>
+        <tr><td class="mono">tonal vs broadband</td><td>tonal 성분 분리</td><td>—</td></tr>
+        <tr><td class="mono">noise map</td><td>개도 × 운전점 → dB(A)</td><td>—</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="doc-section">
+    <h2>Nomenclature</h2>
+    <div class="nomenclature">
+      <div class="nomen-group">
+        <div class="nomen-group-title">Latin Symbols</div>
+        <div class="nomen-row"><span class="nomen-sym">$c_0, c_m$</span><span class="nomen-desc">기준 / 혼합물 음속</span><span class="nomen-unit">m/s</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$k$</span><span class="nomen-desc">파수 (= ω/c)</span><span class="nomen-unit">1/m</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$p', \hat{p}$</span><span class="nomen-desc">음압 변동 / 복소 진폭</span><span class="nomen-unit">Pa</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$P_B, P_\infty$</span><span class="nomen-desc">기포 내압 / 원방 압력</span><span class="nomen-unit">Pa</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$R$</span><span class="nomen-desc">기포 반경</span><span class="nomen-unit">m</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$T_{ij}$</span><span class="nomen-desc">Lighthill 응력 텐서</span><span class="nomen-unit">Pa</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$u_i$</span><span class="nomen-desc">속도 성분</span><span class="nomen-unit">m/s</span></div>
+      </div>
+      <div class="nomen-group">
+        <div class="nomen-group-title">Greek Symbols</div>
+        <div class="nomen-row"><span class="nomen-sym">$\rho', \rho_l$</span><span class="nomen-desc">밀도 변동 / 액상 밀도</span><span class="nomen-unit">kg/m³</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\tau_{ij}$</span><span class="nomen-desc">점성 응력 텐서</span><span class="nomen-unit">Pa</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\omega$</span><span class="nomen-desc">각주파수</span><span class="nomen-unit">rad/s</span></div>
+      </div>
+      <div class="nomen-group">
+        <div class="nomen-group-title">Acronyms</div>
+        <div class="nomen-row"><span class="nomen-sym">SPL</span><span class="nomen-desc">Sound Pressure Level</span><span class="nomen-unit">dB</span></div>
+        <div class="nomen-row"><span class="nomen-sym">OASPL</span><span class="nomen-desc">Overall A-weighted SPL</span><span class="nomen-unit">dB(A)</span></div>
+        <div class="nomen-row"><span class="nomen-sym">FW-H</span><span class="nomen-desc">Ffowcs Williams-Hawkings</span><span class="nomen-unit">—</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>구현 로드맵 (제안)</h2>
+    <table class="params">
+      <thead><tr><th>단계</th><th>내용</th><th>접근</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">경로 A</td><td>실험 기반 소음 맵 (개도×운전점 → dB(A))</td><td>측정 우선</td></tr>
+        <tr><td class="mono">경로 B</td><td>Unsteady 2-phase LES/URANS + FW-H</td><td>해석 우선</td></tr>
+        <tr><td class="mono">M1</td><td>flashing 기포 음원 모델 (Rayleigh-Plesset)</td><td>B</td></tr>
+        <tr><td class="mono">M2</td><td>배관 음향 모드 (Helmholtz) — 공진 주파수</td><td>B</td></tr>
+        <tr><td class="mono">M3</td><td>FW-H 원거리 음압 + SPL 스펙트럼</td><td>B</td></tr>
+        <tr><td class="mono">M4</td><td>개도별 noise map → 저소음 제어/배관 설계</td><td>A+B</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="doc-section">
+    <h2>설계 활용 — 저소음 EEV</h2>
+    <ul style="color: var(--ink-soft); font-size: 13px; line-height: 1.8;">
+      <li><b>Subcooling 확보</b> — 밸브 입구를 확실히 액으로 → flashing을 밸브 내부로 한정</li>
+      <li><b>하류 distributor / 배관 길이</b> — 음향 모드 회피, 소음 흡수</li>
+      <li><b>개도 제어</b> — choke 경계 hunting 방지 (tonal noise 회피)</li>
+      <li><b>R290 제약</b> — 가연성으로 충전량 제한 → 작은 시스템 = 고유속 = 소음 불리, 설계 보상 필요</li>
+    </ul>
   </div>
 </template>
 <template id="tpl-todo">
