@@ -1,0 +1,1000 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HPWD Studio · Model Docs</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"
+        onload="renderMathInElement(document.body, {
+          delimiters: [
+            {left: '$$', right: '$$', display: true},
+            {left: '$', right: '$', display: false},
+            {left: '\\\\(', right: '\\\\)', display: false},
+            {left: '\\\\[', right: '\\\\]', display: true}
+          ],
+          throwOnError: false
+        });"></script>
+<link href="https://fonts.googleapis.com/css2?family=Pretendard:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #FAFAF7;
+  --paper: #FFFFFF;
+  --ink: #1A1A2E;
+  --ink-soft: #475569;
+  --muted: #94A3B8;
+  --line: #E2E8F0;
+  --line-soft: #F1F5F9;
+  --accent: #2563EB;
+  --accent-soft: #DBEAFE;
+  --green: #059669;
+  --amber: #D97706;
+  --red: #DC2626;
+  --code-bg: #F8FAFC;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  font-family: 'Pretendard', system-ui, sans-serif;
+  color: var(--ink);
+  background: var(--bg);
+  font-size: 14px;
+  line-height: 1.6;
+  height: 100%;
+}
+body { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+code, .mono { font-family: 'JetBrains Mono', monospace; }
+
+/* ════════ Top Bar ════════ */
+.topbar {
+  height: 44px;
+  background: var(--paper);
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  gap: 16px;
+  flex-shrink: 0;
+}
+.app-switcher {
+  position: relative;
+}
+.app-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-family: inherit;
+}
+.app-btn:hover { background: var(--line-soft); }
+.app-dot { width: 8px; height: 8px; border-radius: 2px; background: var(--accent); }
+.app-name { font-size: 12px; font-weight: 700; letter-spacing: 0.5px; color: var(--ink); }
+.app-arrow { font-size: 9px; color: var(--muted); }
+
+.app-menu {
+  position: absolute;
+  top: 100%; left: 0;
+  margin-top: 4px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.08);
+  min-width: 220px;
+  padding: 4px;
+  display: none;
+  z-index: 100;
+}
+.app-menu.open { display: block; }
+.app-item {
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.app-item:hover { background: var(--line-soft); }
+.app-item.active { background: var(--accent-soft); cursor: default; }
+.app-item-marker {
+  width: 12px; text-align: center;
+  font-size: 10px; color: var(--muted); margin-top: 2px;
+}
+.app-item.active .app-item-marker { color: var(--accent); }
+.app-item-label { font-size: 12px; font-weight: 700; color: var(--ink); }
+.app-item-desc { font-size: 10px; color: var(--muted); margin-top: 1px; }
+
+.page-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+  letter-spacing: -0.01em;
+}
+.page-subtitle {
+  font-size: 10px;
+  color: var(--muted);
+  font-family: 'JetBrains Mono', monospace;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  margin-left: auto;
+}
+
+/* ════════ Main Layout ════════ */
+.main { flex: 1; display: flex; min-height: 0; }
+
+/* ════════ Sidebar (좌) ════════ */
+.sidebar {
+  width: 260px;
+  background: var(--paper);
+  border-right: 1px solid var(--line);
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+.sidebar-section {
+  padding: 16px 12px 8px;
+  font-size: 10px;
+  font-weight: 800;
+  color: var(--muted);
+  font-family: 'JetBrains Mono', monospace;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+}
+.sidebar-group {
+  margin-bottom: 4px;
+}
+.sidebar-group-header {
+  padding: 6px 12px 4px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.sidebar-group-icon {
+  width: 14px; height: 14px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-radius: 3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 700;
+}
+.sidebar-item {
+  padding: 6px 12px 6px 32px;
+  font-size: 12px;
+  color: var(--ink-soft);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  position: relative;
+}
+.sidebar-item:hover { background: var(--line-soft); }
+.sidebar-item.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+.sidebar-item.active::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 4px; bottom: 4px;
+  width: 3px;
+  background: var(--accent);
+  border-radius: 0 2px 2px 0;
+}
+.fidelity-badge {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 3px;
+  letter-spacing: 0.5px;
+}
+.badge-off { background: #FEF3C7; color: #92400E; }
+.badge-semi { background: #DBEAFE; color: #1E40AF; }
+.badge-on { background: #D1FAE5; color: #065F46; }
+
+/* ════════ Content (우) ════════ */
+.content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 32px 48px;
+  max-width: 880px;
+}
+
+.doc-header { margin-bottom: 28px; padding-bottom: 16px; border-bottom: 2px solid var(--ink); }
+.doc-eyebrow {
+  font-size: 10px;
+  font-weight: 800;
+  color: var(--accent);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  font-family: 'JetBrains Mono', monospace;
+  margin-bottom: 6px;
+}
+.doc-title {
+  font-size: 26px;
+  font-weight: 900;
+  color: var(--ink);
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.doc-title-badge {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 5px;
+  letter-spacing: 1px;
+}
+.doc-subtitle {
+  font-size: 13px;
+  color: var(--ink-soft);
+  margin-top: 6px;
+  font-weight: 500;
+}
+
+/* Sections */
+.doc-section {
+  margin: 28px 0;
+}
+.doc-section h2 {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--ink);
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.doc-section h2::before {
+  content: '';
+  width: 4px; height: 18px;
+  background: var(--accent);
+  border-radius: 2px;
+}
+.doc-section h3 {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink);
+  margin: 18px 0 8px;
+}
+.doc-section p { color: var(--ink-soft); margin-bottom: 10px; }
+.doc-section p b { color: var(--ink); font-weight: 700; }
+
+/* Reference cards */
+.ref-card {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: 6px;
+  padding: 12px 16px;
+  margin: 8px 0;
+}
+.ref-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  font-family: 'JetBrains Mono', monospace;
+  margin-bottom: 4px;
+}
+.ref-body {
+  font-size: 13px;
+  color: var(--ink-soft);
+  font-style: italic;
+}
+.ref-body b { color: var(--ink); font-style: normal; }
+
+/* Equation block */
+.eq-block {
+  background: var(--code-bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 16px 20px;
+  margin: 12px 0;
+  overflow-x: auto;
+}
+.eq-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--muted);
+  font-family: 'JetBrains Mono', monospace;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+
+/* Code mapping */
+.code-map {
+  background: #1E293B;
+  color: #E2E8F0;
+  border-radius: 8px;
+  padding: 14px 18px;
+  margin: 10px 0;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  line-height: 1.7;
+}
+.code-map .file {
+  color: #93C5FD;
+  font-weight: 700;
+}
+.code-map .func { color: #FCD34D; }
+.code-map .desc { color: #94A3B8; }
+
+/* Tables */
+table.params {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 10px 0;
+  font-size: 13px;
+}
+table.params th {
+  background: var(--code-bg);
+  text-align: left;
+  padding: 8px 10px;
+  font-weight: 700;
+  font-size: 11px;
+  color: var(--ink);
+  border-bottom: 2px solid var(--ink);
+  letter-spacing: 0.5px;
+}
+table.params td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink-soft);
+}
+table.params td.mono { font-family: 'JetBrains Mono', monospace; color: var(--ink); }
+table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospace; }
+
+/* Validation badge */
+.val-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  margin: 12px 0;
+}
+.val-card {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+.val-card .val-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--muted);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  font-family: 'JetBrains Mono', monospace;
+  margin-bottom: 4px;
+}
+.val-card .val-value {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--ink);
+  font-family: 'JetBrains Mono', monospace;
+}
+.val-card .val-unit {
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 500;
+  margin-left: 4px;
+}
+.val-card.good { border-left: 3px solid var(--green); }
+.val-card.good .val-value { color: var(--green); }
+
+/* Welcome screen */
+.welcome {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  height: 100%;
+  padding: 40px;
+}
+.welcome-icon {
+  font-size: 56px;
+  margin-bottom: 16px;
+}
+.welcome-title {
+  font-size: 24px;
+  font-weight: 900;
+  color: var(--ink);
+  margin-bottom: 8px;
+}
+.welcome-text {
+  font-size: 14px;
+  color: var(--ink-soft);
+  max-width: 480px;
+  line-height: 1.7;
+}
+
+/* TODO placeholder */
+.todo-section {
+  background: #FFFBEB;
+  border: 1px dashed #F59E0B;
+  border-radius: 8px;
+  padding: 20px 24px;
+  text-align: center;
+  color: #92400E;
+  font-size: 13px;
+  margin: 16px 0;
+}
+.todo-section .todo-icon { font-size: 24px; margin-bottom: 8px; display: block; }
+.todo-section b { color: #78350F; }
+</style>
+</head>
+<body>
+
+<!-- ════════ Top Bar ════════ -->
+<div class="topbar">
+  <div class="app-switcher">
+    <button class="app-btn" id="appBtn">
+      <span class="app-dot"></span>
+      <span class="app-name">Model Docs</span>
+      <span class="app-arrow">▾</span>
+    </button>
+    <div class="app-menu" id="appMenu">
+      <div class="app-item" onclick="location.href='/'">
+        <span class="app-item-marker">○</span>
+        <div>
+          <div class="app-item-label">HPWD Studio</div>
+          <div class="app-item-desc">시뮬 캔버스</div>
+        </div>
+      </div>
+      <div class="app-item" onclick="location.href='/component-studio/'">
+        <span class="app-item-marker">○</span>
+        <div>
+          <div class="app-item-label">Component Studio</div>
+          <div class="app-item-desc">컴포넌트 작성</div>
+        </div>
+      </div>
+      <div class="app-item" onclick="location.href='/calibration-studio/'">
+        <span class="app-item-marker">○</span>
+        <div>
+          <div class="app-item-label">Calibration Studio</div>
+          <div class="app-item-desc">Calibration & Validation</div>
+        </div>
+      </div>
+      <div class="app-item" onclick="location.href='/on-design-studio/'">
+        <span class="app-item-marker">○</span>
+        <div>
+          <div class="app-item-label">On-Design Studio</div>
+          <div class="app-item-desc">On-design 모델 설계</div>
+        </div>
+      </div>
+      <div class="app-item active">
+        <span class="app-item-marker">●</span>
+        <div>
+          <div class="app-item-label">Model Docs</div>
+          <div class="app-item-desc">수학적 모델링 문서</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <span class="page-title">Mathematical Model Documentation</span>
+  <span class="page-subtitle">HPWD Studio · v1.0</span>
+</div>
+
+<!-- ════════ Main ════════ -->
+<div class="main">
+
+  <!-- ════════ Sidebar ════════ -->
+  <aside class="sidebar">
+    <div class="sidebar-section">Components × Fidelity</div>
+
+    <div class="sidebar-group">
+      <div class="sidebar-group-header"><span class="sidebar-group-icon">C</span> Compressor</div>
+      <div class="sidebar-item" data-model="compressor-off"><span class="fidelity-badge badge-off">OFF</span> AHRI 540</div>
+      <div class="sidebar-item" data-model="compressor-semi"><span class="fidelity-badge badge-semi">SEMI</span> Winandy 1999</div>
+      <div class="sidebar-item" data-model="compressor-on"><span class="fidelity-badge badge-on">ON</span> PDSim ROM</div>
+    </div>
+
+    <div class="sidebar-group">
+      <div class="sidebar-group-header"><span class="sidebar-group-icon">E</span> Evaporator</div>
+      <div class="sidebar-item" data-model="evaporator-off"><span class="fidelity-badge badge-off">OFF</span> ε-NTU 2-zone</div>
+      <div class="sidebar-item" data-model="evaporator-semi"><span class="fidelity-badge badge-semi">SEMI</span> Moving Boundary</div>
+      <div class="sidebar-item" data-model="evaporator-on"><span class="fidelity-badge badge-on">ON</span> Segmented</div>
+    </div>
+
+    <div class="sidebar-group">
+      <div class="sidebar-group-header"><span class="sidebar-group-icon">D</span> Condenser</div>
+      <div class="sidebar-item" data-model="condenser-off"><span class="fidelity-badge badge-off">OFF</span> ε-NTU 3-zone</div>
+      <div class="sidebar-item" data-model="condenser-semi"><span class="fidelity-badge badge-semi">SEMI</span> Moving Boundary</div>
+      <div class="sidebar-item" data-model="condenser-on"><span class="fidelity-badge badge-on">ON</span> Segmented</div>
+    </div>
+
+    <div class="sidebar-group">
+      <div class="sidebar-group-header"><span class="sidebar-group-icon">V</span> EEV</div>
+      <div class="sidebar-item" data-model="eev-off"><span class="fidelity-badge badge-off">OFF</span> ARI Curve</div>
+      <div class="sidebar-item" data-model="eev-semi"><span class="fidelity-badge badge-semi">SEMI</span> Sami-Schnotale</div>
+      <div class="sidebar-item" data-model="eev-on"><span class="fidelity-badge badge-on">ON</span> Needle Cone</div>
+    </div>
+  </aside>
+
+  <!-- ════════ Content ════════ -->
+  <main class="content" id="content">
+    <!-- 초기 welcome 화면 -->
+    <div class="welcome" id="welcome">
+      <div class="welcome-icon">📐</div>
+      <div class="welcome-title">HPWD Studio Model Docs</div>
+      <div class="welcome-text">
+        4개 컴포넌트 × 3 fidelity = <b>12개 모델</b>의 수학적 정의·학계 참고문헌·코드 매핑·검증 결과를 정리한 문서.<br><br>
+        왼쪽에서 모델을 선택하세요.
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- ════════ Templates (모델 콘텐츠) ════════ -->
+<template id="tpl-compressor-off">
+  <div class="doc-header">
+    <div class="doc-eyebrow">Compressor / Off-Design</div>
+    <h1 class="doc-title">
+      AHRI 540 10-Coefficient Polynomial
+      <span class="doc-title-badge badge-off">OFF</span>
+    </h1>
+    <div class="doc-subtitle">단순 다항식 fit — 산업 표준 압축기 성능 맵 모델</div>
+  </div>
+
+  <div class="doc-section">
+    <h2>학계 참고문헌</h2>
+    <div class="ref-card">
+      <div class="ref-title">Reference</div>
+      <div class="ref-body">
+        <b>AHRI Standard 540-2020</b>: "Performance Rating of Positive Displacement Refrigerant Compressors". 
+        Air-Conditioning, Heating, and Refrigeration Institute, Arlington VA.
+      </div>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>수학적 정의</h2>
+    <p>압축기 mass flow rate $\dot{m}$ 와 전력 $\dot{W}$를 흡입온도 $T_{suc}$ 와 응축온도 $T_{cond}$ 의 <b>2변수 10-계수 다항식</b>으로 fit합니다:</p>
+
+    <div class="eq-block">
+      <div class="eq-label">Mass flow rate</div>
+      $$\dot{m} = C_1 + C_2 T_{suc} + C_3 T_{cond} + C_4 T_{suc}^2 + C_5 T_{suc} T_{cond} + C_6 T_{cond}^2$$
+    </div>
+
+    <div class="eq-block">
+      <div class="eq-label">Electrical power</div>
+      $$\dot{W} = D_1 + D_2 T_{suc} + D_3 T_{cond} + D_4 T_{suc}^2 + D_5 T_{suc} T_{cond} + D_6 T_{cond}^2$$
+    </div>
+
+    <p>토출온도 $T_{dis}$는 isentropic 가정에 효율 $\eta_{is}$ 보정:</p>
+    <div class="eq-block">
+      $$T_{dis} = T_{suc} + \frac{T_{2s} - T_{suc}}{\eta_{is}}, \quad T_{2s} = T_{suc} \left( \frac{P_{dis}}{P_{suc}} \right)^{(\gamma-1)/\gamma}$$
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>Fitting Parameters</h2>
+    <table class="params">
+      <thead>
+        <tr><th>Symbol</th><th>Description</th><th>Unit</th><th>Typical Range</th></tr>
+      </thead>
+      <tbody>
+        <tr><td class="mono">C₁ ~ C₆</td><td>Mass flow 다항식 6 계수</td><td>—</td><td>fit 대상</td></tr>
+        <tr><td class="mono">D₁ ~ D₆</td><td>Power 다항식 6 계수</td><td>—</td><td>fit 대상</td></tr>
+        <tr><td class="mono">η_is_est</td><td>Isentropic 효율 추정값</td><td>—</td><td>0.6 ~ 0.8</td></tr>
+      </tbody>
+    </table>
+    <p>총 <b>12개 fitting parameters</b>. AHRI 매트릭스 시험 데이터로 회귀 분석.</p>
+  </div>
+
+  <div class="doc-section">
+    <h2>Code Mapping</h2>
+    <div class="code-map">
+<span class="file">backend/components/compressor_ahri.py</span><br>
+├─ <span class="func">step()</span>           <span class="desc">— mass flow, power 다항식 계산</span><br>
+├─ <span class="func">_T_dis_isentropic()</span>  <span class="desc">— 토출온도 isentropic 보정</span><br>
+└─ typeNo: <span class="func">102</span>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>적용 범위 + 한계</h2>
+    <p><b>✅ 적용 가능</b>: 일반 R290/R134a/R410A reciprocating·scroll 압축기, 정속 운전, 운전 매트릭스 시험 데이터 보유 시.</p>
+    <p><b>⚠️ 한계</b>:</p>
+    <ul style="margin-left: 20px; color: var(--ink-soft); font-size: 13px; line-height: 1.8;">
+      <li>가변속 (VFD) 압축기는 <b>RPM당 별도 fit 필요</b> (예: 1500, 3000, 4500 rpm 각각)</li>
+      <li>외삽 (extrapolation) 정확도 낮음 — 시험 매트릭스 범위 내에서만 신뢰</li>
+      <li>물리적 의미 없음 — 단지 데이터 fit</li>
+    </ul>
+  </div>
+
+  <div class="doc-section">
+    <h2>검증 결과</h2>
+    <div class="val-grid">
+      <div class="val-card good">
+        <div class="val-label">R² (ṁ)</div>
+        <div class="val-value">≥ 0.99<span class="val-unit">typical</span></div>
+      </div>
+      <div class="val-card good">
+        <div class="val-label">R² (W)</div>
+        <div class="val-value">≥ 0.99<span class="val-unit">typical</span></div>
+      </div>
+      <div class="val-card">
+        <div class="val-label">vs On★ (HPWD)</div>
+        <div class="val-value">-13%<span class="val-unit">ṁ 편차</span></div>
+      </div>
+      <div class="val-card">
+        <div class="val-label">vs Semi (Winandy)</div>
+        <div class="val-value">±1%<span class="val-unit">ṁ, W 모두</span></div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<template id="tpl-compressor-semi">
+  <div class="doc-header">
+    <div class="doc-eyebrow">Compressor / Semi-Empirical</div>
+    <h1 class="doc-title">
+      Winandy 1999 Reciprocating/Scroll Model
+      <span class="doc-title-badge badge-semi">SEMI</span>
+    </h1>
+    <div class="doc-subtitle">물리 기반 6-step semi-empirical — 학계 표준 압축기 모델</div>
+  </div>
+
+  <div class="doc-section">
+    <h2>학계 참고문헌</h2>
+    <div class="ref-card">
+      <div class="ref-title">Primary Reference</div>
+      <div class="ref-body">
+        <b>Winandy E., Saavedra C., Lebrun J. (2002)</b>: 
+        "Simplified modelling of an open-type reciprocating compressor", 
+        <i>Int. J. Thermal Sciences</i>, 41(2), pp. 183-192.
+      </div>
+    </div>
+    <div class="ref-card">
+      <div class="ref-title">Supporting</div>
+      <div class="ref-body">
+        <b>Lebrun J., Bourdouxhe J.P. (1998)</b>: ASHRAE HVAC1 Toolkit. 
+        Reciprocating · scroll · screw 압축기의 통합 semi-empirical framework.
+      </div>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>수학적 정의 (6-step thermodynamic process)</h2>
+    <p>흡입에서 토출까지 6개의 internal sub-process를 물리 기반으로 모델링합니다:</p>
+
+    <h3>Step 1: Suction heating-up</h3>
+    <p>흡입가스가 압축기 외벽에서 열을 받음 (envelope 열교환):</p>
+    <div class="eq-block">
+      $$\dot{Q}_{su} = \varepsilon_{su} \dot{m} c_p (T_w - T_{su,1}), \quad \varepsilon_{su} = 1 - \exp\left(-\frac{AU_{su}}{\dot{m} c_p}\right)$$
+    </div>
+
+    <h3>Step 2: Suction pressure drop</h3>
+    <div class="eq-block">
+      $$P_{su,2} = P_{su,1} - \Delta P_{su}$$
+    </div>
+
+    <h3>Step 3: Isentropic compression to internal pressure</h3>
+    <p>built-in volume ratio $r_v$ 가 결정하는 internal pressure까지 isentropic 압축:</p>
+    <div class="eq-block">
+      $$P_{int} = P_{su,2} \cdot r_v^{\gamma}, \quad h_{int,s} = h(P_{int}, s_{su,2})$$
+    </div>
+
+    <h3>Step 4: Constant volume process to P_dis</h3>
+    <p>$P_{int} \to P_{dis}$ 변환 (under/over-compression loss):</p>
+    <div class="eq-block">
+      $$w_{12} = (h_{int,s} - h_{su,2}) + \frac{1}{\rho_{int}}(P_{dis} - P_{int})$$
+    </div>
+
+    <h3>Step 5: Mass flow rate (volumetric efficiency)</h3>
+    <div class="eq-block">
+      $$\dot{m} = \rho_{su,2} \cdot V_{disp} \cdot N \cdot \eta_{vol}, \quad \eta_{vol} = 1 - c \left[\left(\frac{P_{dis}}{P_{su,2}}\right)^{1/\gamma} - 1\right]$$
+    </div>
+
+    <h3>Step 6: Electrical power balance</h3>
+    <div class="eq-block">
+      $$\dot{W}_{elec} = \frac{\dot{W}_{shaft} + \dot{W}_{loss}}{\eta_{motor}}, \quad \dot{W}_{loss} = W_{loss,0} + \alpha \dot{W}_{shaft}$$
+    </div>
+
+    <h3>Heat loss to ambient</h3>
+    <p>케이스 외벽 $T_w$가 ambient $T_{amb}$에 손실하는 열량으로 wall temperature 닫힘:</p>
+    <div class="eq-block">
+      $$\dot{Q}_{loss} = AU_{amb} (T_w - T_{amb}), \quad \dot{Q}_{loss} = \dot{Q}_{su} + \dot{W}_{loss}$$
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>Fitting Parameters</h2>
+    <table class="params">
+      <thead>
+        <tr><th>Symbol</th><th>Description</th><th>Unit</th><th>Typical</th></tr>
+      </thead>
+      <tbody>
+        <tr><td class="mono">V_disp</td><td>Displacement volume</td><td>cm³</td><td>5 ~ 30</td></tr>
+        <tr><td class="mono">r_v</td><td>Built-in volume ratio</td><td>—</td><td>2.0 ~ 3.5</td></tr>
+        <tr><td class="mono">η_motor</td><td>Motor efficiency</td><td>—</td><td>0.85 ~ 0.95</td></tr>
+        <tr><td class="mono">AU_su</td><td>Suction heat transfer coeff.</td><td>W/K</td><td>1 ~ 10</td></tr>
+        <tr><td class="mono">AU_amb</td><td>Ambient heat loss coeff.</td><td>W/K</td><td>2 ~ 20</td></tr>
+        <tr><td class="mono">ΔP_su</td><td>Suction pressure drop</td><td>bar</td><td>0.01 ~ 0.1</td></tr>
+        <tr><td class="mono">c (clearance)</td><td>Volumetric clearance factor</td><td>—</td><td>0.03 ~ 0.10</td></tr>
+        <tr><td class="mono">W_loss_0, α</td><td>Constant + proportional loss</td><td>W, —</td><td>20 ~ 50, 0.05 ~ 0.15</td></tr>
+      </tbody>
+    </table>
+    <p>총 <b>9~10개 fitting parameters</b>. 운전 매트릭스 시험 데이터 (T_evap × T_cond × N)로 회귀.</p>
+  </div>
+
+  <div class="doc-section">
+    <h2>Code Mapping</h2>
+    <div class="code-map">
+<span class="file">backend/components/compressor_winandy.py</span><br>
+├─ <span class="func">step()</span>            <span class="desc">— 6-step process orchestration</span><br>
+├─ <span class="func">_suction_heating()</span>   <span class="desc">— Step 1: ε-NTU on suction</span><br>
+├─ <span class="func">_isentropic_compression()</span>  <span class="desc">— Step 3-4</span><br>
+├─ <span class="func">_volumetric_efficiency()</span>   <span class="desc">— Step 5</span><br>
+├─ <span class="func">_solve_wall_temp()</span>   <span class="desc">— Newton iteration on T_w</span><br>
+└─ typeNo: <span class="func">101</span>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>검증 결과</h2>
+    <div class="val-grid">
+      <div class="val-card good">
+        <div class="val-label">R² (ṁ)</div>
+        <div class="val-value">0.9999<span class="val-unit">R290 검증</span></div>
+      </div>
+      <div class="val-card good">
+        <div class="val-label">R² (W)</div>
+        <div class="val-value">0.9999<span class="val-unit">R290 검증</span></div>
+      </div>
+      <div class="val-card">
+        <div class="val-label">Data points</div>
+        <div class="val-value">48<span class="val-unit">매트릭스 시험</span></div>
+      </div>
+      <div class="val-card">
+        <div class="val-label">vs Off (AHRI)</div>
+        <div class="val-value">±1%<span class="val-unit">거의 동일</span></div>
+      </div>
+    </div>
+    <p style="font-size: 12px; margin-top: 12px;">
+      Validation 데이터: <code>data/validation/winandy_validation_data.csv</code> (48 points, R290, T_e/T_c sweep)
+    </p>
+  </div>
+
+  <div class="doc-section">
+    <h2>적용 범위 + 한계</h2>
+    <p><b>✅ 적용 가능</b>: Reciprocating, scroll, screw 압축기 모두. 정속 + 가변속 (RPM 변수 직접 모델링). 물리 기반이라 외삽 가능.</p>
+    <p><b>⚠️ 한계</b>: Liquid slugging, oil dynamics, valve dynamics 등 detailed phenomena는 모델링 안 됨. 그런 경우 PDSim ROM (On)으로.</p>
+  </div>
+</template>
+
+<template id="tpl-compressor-on">
+  <div class="doc-header">
+    <div class="doc-eyebrow">Compressor / On-Design</div>
+    <h1 class="doc-title">
+      PDSim ROM (Reduced-Order Model)
+      <span class="doc-title-badge badge-on">ON</span>
+    </h1>
+    <div class="doc-subtitle">PDSim 전산 해석 결과를 ROM으로 축약 — Ground Truth 기준</div>
+  </div>
+
+  <div class="doc-section">
+    <h2>학계 참고문헌</h2>
+    <div class="ref-card">
+      <div class="ref-title">Primary Reference</div>
+      <div class="ref-body">
+        <b>Bell I. (PDSim) — Purdue University</b>: 
+        "Open-source positive displacement compressor simulator". 
+        압축기 chamber pressure-volume cycle을 detailed CFD-like 해석으로 시뮬레이션.
+      </div>
+    </div>
+    <div class="ref-card">
+      <div class="ref-title">ROM Methodology</div>
+      <div class="ref-body">
+        <b>Reduced-Order Modeling</b>: PDSim 전산 해석 결과(시험 매트릭스 100+)를 
+        <b>polynomial regression / kriging / neural network</b>으로 축약. 
+        Detailed 해석 정확도 + 빠른 evaluation 동시 달성.
+      </div>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>수학적 정의</h2>
+
+    <h3>PDSim 기본 원리 (간략)</h3>
+    <p>chamber 내 작동유체의 1D unsteady mass/energy balance를 chamber 회전각 $\theta$ 따라 적분:</p>
+    <div class="eq-block">
+      $$\frac{d(\rho V)}{d\theta} = \dot{m}_{in} - \dot{m}_{out}$$
+      $$\frac{d(\rho u V)}{d\theta} = \dot{m}_{in} h_{in} - \dot{m}_{out} h_{out} + \dot{Q}_{wall} - P \frac{dV}{d\theta}$$
+    </div>
+
+    <h3>ROM 함수</h3>
+    <p>PDSim 결과를 운전점 (T_evap, T_cond, N) 함수로 fit:</p>
+    <div class="eq-block">
+      $$\dot{m} = f_{\dot{m}}(T_{evap}, T_{cond}, N; \mathbf{\theta}_m)$$
+      $$T_{dis} = f_T(T_{evap}, T_{cond}, N; \mathbf{\theta}_T)$$
+      $$\dot{W} = f_W(T_{evap}, T_{cond}, N; \mathbf{\theta}_W)$$
+    </div>
+    <p>$\mathbf{\theta}$는 ROM 학습 시 결정되는 hyperparameters. 보통 <b>polynomial degree 3~5</b> 또는 <b>Gaussian Process kernel</b> 사용.</p>
+  </div>
+
+  <div class="doc-section">
+    <h2>Fitting Parameters</h2>
+    <p>PDSim ROM은 사전 학습된 모델이므로 사용자 직접 fitting parameters 적음 (ROM 학습 시 결정):</p>
+    <table class="params">
+      <thead>
+        <tr><th>Parameter</th><th>Description</th><th>Default</th></tr>
+      </thead>
+      <tbody>
+        <tr><td class="mono">rom_type</td><td>ROM 종류 (polynomial / kriging / NN)</td><td>polynomial</td></tr>
+        <tr><td class="mono">poly_degree</td><td>다항식 차수 (polynomial일 때)</td><td>3</td></tr>
+        <tr><td class="mono">fluid</td><td>작동유체</td><td>R290</td></tr>
+        <tr><td class="mono">comp_geometry</td><td>압축기 형상 데이터 (사전 입력)</td><td>fixed</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="doc-section">
+    <h2>Code Mapping</h2>
+    <div class="code-map">
+<span class="file">backend/components/compressor_pdsim_rom.py</span><br>
+├─ <span class="func">step()</span>           <span class="desc">— ROM 평가 (운전점 입력 → ṁ, T_dis, W)</span><br>
+├─ <span class="func">_load_rom_weights()</span>  <span class="desc">— 사전 학습된 ROM 파라미터 로드</span><br>
+└─ typeNo: <span class="func">103</span>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>검증 결과</h2>
+    <div class="val-grid">
+      <div class="val-card good">
+        <div class="val-label">Source 정확도</div>
+        <div class="val-value">PDSim<span class="val-unit">CFD-like</span></div>
+      </div>
+      <div class="val-card good">
+        <div class="val-label">평가 속도</div>
+        <div class="val-value">< 1ms<span class="val-unit">per call</span></div>
+      </div>
+      <div class="val-card">
+        <div class="val-label">vs Semi (Winandy)</div>
+        <div class="val-value">+14%<span class="val-unit">ṁ 편차</span></div>
+      </div>
+      <div class="val-card">
+        <div class="val-label">vs Off (AHRI)</div>
+        <div class="val-value">+14%<span class="val-unit">ṁ 편차</span></div>
+      </div>
+    </div>
+    <p style="font-size: 12px; margin-top: 12px;">
+      편차는 default parameters 차이 (PDSim ROM이 가정하는 부품 vs Off/Semi default 부품 다름). 
+      Calibration으로 일치 가능.
+    </p>
+  </div>
+
+  <div class="doc-section">
+    <h2>적용 범위 + 한계</h2>
+    <p><b>✅ 적용 가능</b>: ROM 학습된 운전점 매트릭스 내 모든 점. CFD 정확도 + 1ms 평가 속도 → 시스템 시뮬에 ground truth로 활용.</p>
+    <p><b>⚠️ 한계</b>:</p>
+    <ul style="margin-left: 20px; color: var(--ink-soft); font-size: 13px; line-height: 1.8;">
+      <li>ROM 학습 매트릭스 범위 밖에서는 외삽 — 정확도 떨어짐</li>
+      <li>새 부품 (geometry 다름) 사용 시 <b>PDSim 재실행 + ROM 재학습 필요</b></li>
+      <li>가변속 운전 시 RPM도 학습 매트릭스에 포함되어 있어야 함</li>
+    </ul>
+  </div>
+</template>
+
+<!-- ════════ TODO templates (나머지 9개 모델) ════════ -->
+<template id="tpl-todo">
+  <div class="doc-header">
+    <div class="doc-eyebrow" id="todo-eyebrow"></div>
+    <h1 class="doc-title" id="todo-title"></h1>
+  </div>
+  <div class="todo-section">
+    <span class="todo-icon">📝</span>
+    <b>이 모델 문서는 Phase 2에서 추가됩니다.</b><br><br>
+    Phase 1에서는 Compressor 3 fidelity (AHRI / Winandy / PDSim ROM)로 패턴을 확립.<br>
+    Phase 2에서 Evap × 3, Cond × 3, EEV × 3 (9개 추가).
+  </div>
+  <div class="doc-section">
+    <h2>참고 — 현재 코드 상태</h2>
+    <div class="code-map" id="todo-code"></div>
+  </div>
+</template>
+
+<script>
+// ──────────────────────────────────────────────────────
+// App switcher dropdown
+// ──────────────────────────────────────────────────────
+const appBtn = document.getElementById('appBtn');
+const appMenu = document.getElementById('appMenu');
+appBtn.addEventListener('click', e => {
+  e.stopPropagation();
+  appMenu.classList.toggle('open');
+});
+document.addEventListener('click', e => {
+  if (!appMenu.contains(e.target) && !appBtn.contains(e.target)) {
+    appMenu.classList.remove('open');
+  }
+});
+
+// ──────────────────────────────────────────────────────
+// Model navigation
+// ──────────────────────────────────────────────────────
+const todoMeta = {
+  'evaporator-off':  { eyebrow: 'Evaporator / Off-Design',  title: 'ε-NTU 2-zone',           code: 'backend/components/evaporator_off_design.py · typeNo 120' },
+  'evaporator-semi': { eyebrow: 'Evaporator / Semi-Empirical', title: 'Moving Boundary',     code: 'backend/components/evaporator_moving_boundary.py · typeNo 121 · Mirth-Ramadhyani 1993 wet coil' },
+  'evaporator-on':   { eyebrow: 'Evaporator / On-Design',   title: 'Segmented Tube-by-Tube', code: 'backend/components/evaporator_on_design.py · typeNo 122' },
+  'condenser-off':   { eyebrow: 'Condenser / Off-Design',   title: 'ε-NTU 3-zone',           code: 'backend/components/condenser_off_design.py · typeNo 220' },
+  'condenser-semi':  { eyebrow: 'Condenser / Semi-Empirical', title: 'Moving Boundary',     code: 'backend/components/condenser_moving_boundary.py · typeNo 221' },
+  'condenser-on':    { eyebrow: 'Condenser / On-Design',    title: 'Segmented Tube-by-Tube', code: 'backend/components/condenser_on_design.py · typeNo 222' },
+  'eev-off':         { eyebrow: 'EEV / Off-Design',          title: 'ARI Flow Coefficient Curve', code: 'backend/components/eev_off_design.py · typeNo 130 · ARI Std 750-94, Park-Cho-Kim 2007' },
+  'eev-semi':        { eyebrow: 'EEV / Semi-Empirical',      title: 'Sami-Schnotale Choke Model', code: 'backend/components/eev_moving_boundary.py · typeNo 131 · Sami-Schnotale 1995' },
+  'eev-on':          { eyebrow: 'EEV / On-Design',           title: 'Needle Cone Geometry',   code: 'backend/components/eev_on_design.py · typeNo 132' },
+};
+
+function loadModel(modelId) {
+  // sidebar active
+  document.querySelectorAll('.sidebar-item').forEach(el => el.classList.remove('active'));
+  const sidebarEl = document.querySelector(`.sidebar-item[data-model="${modelId}"]`);
+  if (sidebarEl) sidebarEl.classList.add('active');
+
+  // welcome 숨김
+  const welcome = document.getElementById('welcome');
+  if (welcome) welcome.style.display = 'none';
+
+  // content 로드
+  const content = document.getElementById('content');
+  const tpl = document.getElementById(`tpl-${modelId}`);
+
+  if (tpl) {
+    content.innerHTML = '';
+    content.appendChild(tpl.content.cloneNode(true));
+  } else {
+    // TODO template
+    const todoTpl = document.getElementById('tpl-todo');
+    content.innerHTML = '';
+    const clone = todoTpl.content.cloneNode(true);
+    const meta = todoMeta[modelId] || { eyebrow: modelId, title: 'TBD', code: 'TBD' };
+    clone.getElementById('todo-eyebrow').textContent = meta.eyebrow;
+    clone.getElementById('todo-title').textContent = meta.title;
+    clone.getElementById('todo-code').innerHTML = `<span class="file">${meta.code}</span>`;
+    content.appendChild(clone);
+  }
+
+  // KaTeX re-render
+  if (window.renderMathInElement) {
+    renderMathInElement(content, {
+      delimiters: [
+        {left: '$$', right: '$$', display: true},
+        {left: '$', right: '$', display: false},
+      ],
+      throwOnError: false
+    });
+  }
+
+  // URL hash 업데이트
+  history.replaceState(null, '', `#${modelId}`);
+}
+
+document.querySelectorAll('.sidebar-item').forEach(el => {
+  el.addEventListener('click', () => loadModel(el.dataset.model));
+});
+
+// URL hash로 진입 시
+const initialHash = location.hash.slice(1);
+if (initialHash) loadModel(initialHash);
+</script>
+
+</body>
+</html>
