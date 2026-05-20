@@ -393,6 +393,12 @@ table.params td {
   color: var(--ink-soft);
 }
 table.params td.mono { font-family: 'JetBrains Mono', monospace; color: var(--ink); }
+table.params td.mono sub {
+  font-size: 0.72em;
+  vertical-align: baseline;
+  position: relative;
+  bottom: -0.2em;
+}
 table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospace; }
 
 /* Validation badge */
@@ -762,8 +768,8 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
         <tr><th>Symbol</th><th>Description</th><th>Unit</th><th>Typical Range</th></tr>
       </thead>
       <tbody>
-        <tr><td class="mono">C₁ ~ C₆</td><td>Mass flow 다항식 6 계수</td><td>—</td><td>fit 대상</td></tr>
-        <tr><td class="mono">D₁ ~ D₆</td><td>Power 다항식 6 계수</td><td>—</td><td>fit 대상</td></tr>
+        <tr><td class="mono">C<sub>1</sub> ~ C<sub>6</sub></td><td>Mass flow 다항식 6 계수</td><td>—</td><td>fit 대상</td></tr>
+        <tr><td class="mono">D<sub>1</sub> ~ D<sub>6</sub></td><td>Power 다항식 6 계수</td><td>—</td><td>fit 대상</td></tr>
         <tr><td class="mono">η_is_est</td><td>Isentropic 효율 추정값</td><td>—</td><td>0.6 ~ 0.8</td></tr>
       </tbody>
     </table>
