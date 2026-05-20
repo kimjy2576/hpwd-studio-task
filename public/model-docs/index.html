@@ -1217,6 +1217,76 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
       <li>실제 PDSim의 θ-resolved PDE 적분 대비 정밀도 낮음 (단, 속도는 훨씬 빠름)</li>
     </ul>
   </div>
+
+  <div class="doc-section">
+    <h2>Fidelity Trade-off — 왜 1-Cycle 평균인가</h2>
+    <p>정통 PDSim은 회전각 θ를 따라 chamber ODE를 적분하는 <b>θ-resolved</b> 방식. 본 모델은 이를 <b>1-cycle 평균 quasi-steady</b>로 축약했습니다.</p>
+    <table class="params">
+      <thead>
+        <tr><th>방식</th><th>계산</th><th>시간/point</th><th>정밀도</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>정통 PDSim (θ-resolved)</td><td class="mono">∮ ODE dθ</td><td class="mono">~60 s</td><td>최고</td></tr>
+        <tr><td><b>본 모델 (1-cycle 평균)</b></td><td class="mono">algebraic</td><td class="mono">~50 ms</td><td>충분</td></tr>
+      </tbody>
+    </table>
+    <p style="margin-top:10px;"><b>약 1,200배 빠름.</b> 선택 이유:</p>
+    <ul style="color: var(--ink-soft); font-size: 13px; line-height: 1.8;">
+      <li><b>시스템 사이클 closure</b> — 압축기를 수십~수백 회 반복 호출. θ 적분이면 사이클당 수십 분~시간 → 비현실</li>
+      <li><b>레이아웃 최적화 (BO·RL)</b> — 수천~수만 평가 필요. quasi-steady라야 분 단위 완료</li>
+      <li>평균 성능 (ṁ, Ẇ, T_dis)은 quasi-steady로 충분히 정확 — instantaneous 거동이 필요한 경우만 θ-resolved 필요</li>
+    </ul>
+    <div class="ref-card" style="border-left-color: var(--green); margin-top:10px;">
+      <div class="ref-title" style="color: var(--green);">Quasi-steady 근거</div>
+      <div class="ref-body">
+        <b>Bell I.H. et al. (2020)</b>: "PDSim: A general <b>quasi-steady</b> model for positive displacement machines", IJR. — quasi-steady 가정의 학계 정당성.
+      </div>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>High-Fidelity 확장 가능성 (Future)</h2>
+    <p>향후 정밀도가 더 필요한 경우 <b>θ-resolved 버전</b>을 별도 fidelity로 추가할 수 있습니다. 현재 1-cycle 평균 모델과 같은 인터페이스(입력 P_suc·T_suc·P_dis·N → 출력 ṁ·T_dis·Ẇ)를 유지하되, 내부를 θ 적분으로 교체.</p>
+
+    <h3>θ-resolved 지배방정식 (구현 시)</h3>
+    <p>chamber 체적이 크랭크각 θ의 함수 $V(\theta)$이며, 매 step에서 mass/energy balance ODE를 적분:</p>
+    <div class="eq-block">
+      $$\frac{d(\rho V)}{d\theta} = \frac{1}{\omega}\left(\dot{m}_{in} - \dot{m}_{out} - \dot{m}_{leak}\right)$$
+      $$\frac{d(\rho u V)}{d\theta} = \frac{1}{\omega}\left(\dot{m}_{in} h_{in} - \dot{m}_{out} h_{out} + \dot{Q}_{wall}\right) - P \frac{dV}{d\theta}$$
+    </div>
+    <p>chamber 체적은 크랭크-슬라이더 기구학으로:</p>
+    <div class="eq-block">
+      $$V(\theta) = V_{clear} + \frac{A_{piston}\,L_{stroke}}{2}\left(1 - \cos\theta + \frac{L_{stroke}}{4L_{rod}}\sin^2\theta\right)$$
+    </div>
+    <p>valve 개폐는 압력차 기반 동적 조건:</p>
+    <div class="eq-block">
+      $$\dot{m}_{out}(\theta) = \begin{cases} C_d A_{out}\sqrt{2\rho(P_{cyl}-P_{dis})} & P_{cyl} > P_{dis} \\ 0 & \text{otherwise} \end{cases}$$
+    </div>
+
+    <h3>추가될 출력 (θ-resolved 고유)</h3>
+    <ul style="color: var(--ink-soft); font-size: 13px; line-height: 1.8;">
+      <li><b>P-V 선도</b> — indicated work를 면적으로 직접 적분, valve loss 시각화</li>
+      <li><b>Instantaneous mass flow</b> — 흡입/토출 맥동, valve flutter 분석</li>
+      <li><b>토크 변동</b> — 크랭크각별 부하 → 방진 설계 입력</li>
+    </ul>
+
+    <h3>구현 계획 (제안)</h3>
+    <table class="params">
+      <thead>
+        <tr><th>항목</th><th>1-cycle 평균 (현재)</th><th>θ-resolved (Future)</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>typeNo</td><td class="mono">103</td><td class="mono">104 (예정)</td></tr>
+        <tr><td>적분</td><td>없음 (algebraic)</td><td class="mono">RK4 / LSODA</td></tr>
+        <tr><td>θ step</td><td>—</td><td class="mono">~360~3600</td></tr>
+        <tr><td>solver</td><td>직접 계산</td><td class="mono">scipy.integrate</td></tr>
+        <tr><td>용도</td><td>사이클 시뮬·최적화</td><td>상세 검증·방진 설계</td></tr>
+      </tbody>
+    </table>
+    <p style="font-size: 12px; margin-top: 10px; color: var(--muted);">
+      ※ 현재 미구현. 두 모델을 같은 컴포넌트의 <b>fidelity 옵션</b>(1-cycle ↔ θ-resolved)으로 두면, 빠른 탐색 후 최종 검증만 θ-resolved로 전환하는 워크플로우 가능.
+    </p>
+  </div>
 </template>
 
 <!-- ════════ TODO templates (나머지 9개 모델) ════════ -->
