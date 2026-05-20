@@ -1515,6 +1515,404 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
 </template>
 
 <!-- ════════ TODO templates (나머지 9개 모델) ════════ -->
+
+<!-- ════════ EEV Off (ARI Curve) ════════ -->
+<template id="tpl-eev-off">
+  <div class="doc-header">
+    <div class="doc-eyebrow">EEV / Off-Design</div>
+    <h1 class="doc-title">
+      ARI Flow Coefficient Curve
+      <span class="doc-title-badge badge-off">OFF</span>
+    </h1>
+    <div class="doc-subtitle">제조사 카탈로그 normalized curve — 시스템 시뮬용 빠른 모델</div>
+  </div>
+
+  <div class="doc-section">
+    <h2>학계 참고문헌</h2>
+    <div class="ref-card">
+      <div class="ref-title">Primary</div>
+      <div class="ref-body">
+        <b>ARI Standard 750-94</b>: "Thermostatic Refrigerant Expansion Valves". Air-Conditioning & Refrigeration Institute.
+      </div>
+    </div>
+    <div class="ref-card">
+      <div class="ref-title">Empirical Correlation</div>
+      <div class="ref-body">
+        <b>Park C., Cho H., Kim Y. (2007)</b>: "Empirical correlations for electronic expansion valve". Saginomiya STF / Danfoss CCM 카탈로그로 Φ(op) curve 직접 fit 가능.
+      </div>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>수학적 정의</h2>
+    <p>유량을 <b>orifice 방정식 × normalized opening curve</b>로 표현:</p>
+    <div class="eq-block">
+      $$\dot{m} = C_{v,rated}\, A_{orifice}\, \Phi(op)\sqrt{2\rho_{in}\,\Delta P}$$
+    </div>
+    <p>opening curve Φ는 제조사 데이터로 fit한 3차 다항식 (0~1 normalized):</p>
+    <div class="eq-block">
+      $$\Phi(op) = c_0 + c_1 op + c_2 op^2 + c_3 op^3$$
+    </div>
+    <ul style="color: var(--ink-soft); font-size: 13px; line-height: 1.8;">
+      <li>$c_0 = 0$ — closed 시 $\dot{m} = 0$</li>
+      <li>$c_0 + c_1 + c_2 + c_3 \approx 1$ — fully open 시 $\Phi = 1$</li>
+    </ul>
+    <p>isenthalpic 팽창 ($h_{out} = h_{in}$) → 출구 quality $x_{out}$ 결정.</p>
+  </div>
+
+  <div class="doc-section">
+    <h2>Nomenclature</h2>
+    <div class="nomenclature">
+      <div class="nomen-group">
+        <div class="nomen-group-title">Latin Symbols</div>
+        <div class="nomen-row"><span class="nomen-sym">$A_{orifice}$</span><span class="nomen-desc">오리피스 기준 면적</span><span class="nomen-unit">m²</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$c_0 \sim c_3$</span><span class="nomen-desc">Opening curve 다항식 계수</span><span class="nomen-unit">—</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$C_{v,rated}$</span><span class="nomen-desc">정격 flow coefficient</span><span class="nomen-unit">—</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$h$</span><span class="nomen-desc">비엔탈피 (in = out, isenthalpic)</span><span class="nomen-unit">kJ/kg</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\dot{m}$</span><span class="nomen-desc">냉매 질량 유량</span><span class="nomen-unit">kg/s</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$op$</span><span class="nomen-desc">밸브 개도 (0~1 normalized)</span><span class="nomen-unit">—</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$P$</span><span class="nomen-desc">압력 (in / out)</span><span class="nomen-unit">bar</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$x_{out}$</span><span class="nomen-desc">출구 건도</span><span class="nomen-unit">—</span></div>
+      </div>
+      <div class="nomen-group">
+        <div class="nomen-group-title">Greek Symbols</div>
+        <div class="nomen-row"><span class="nomen-sym">$\Delta P$</span><span class="nomen-desc">압력 강하 (P_in − P_out)</span><span class="nomen-unit">Pa</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\rho_{in}$</span><span class="nomen-desc">입구 밀도</span><span class="nomen-unit">kg/m³</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\Phi(op)$</span><span class="nomen-desc">Normalized opening curve (0~1)</span><span class="nomen-unit">—</span></div>
+      </div>
+      <div class="nomen-group">
+        <div class="nomen-group-title">Subscripts</div>
+        <div class="nomen-row"><span class="nomen-sym">in / out</span><span class="nomen-desc">밸브 입구 / 출구</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">rated</span><span class="nomen-desc">정격 (fully open 기준)</span><span class="nomen-unit"></span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>Fitting Parameters</h2>
+    <table class="params">
+      <thead><tr><th>Symbol</th><th>Description</th><th>Unit</th><th>Default</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">A_orifice</td><td>오리피스 기준 면적</td><td>m²</td><td>3.14e-6</td></tr>
+        <tr><td class="mono">Cv_rated</td><td>정격 flow coefficient</td><td>—</td><td>fit</td></tr>
+        <tr><td class="mono">c0 ~ c3</td><td>Opening curve 4 계수</td><td>—</td><td>fit</td></tr>
+        <tr><td class="mono">opening_min</td><td>최소 개도</td><td>%</td><td>0.0</td></tr>
+      </tbody>
+    </table>
+    <p>총 <b>5개 fitting params</b> (Cv_rated, c0~c3). 제조사 카탈로그 또는 시험 데이터로 회귀.</p>
+  </div>
+
+  <div class="doc-section">
+    <h2>Code Mapping</h2>
+    <div class="code-map">
+<span class="file">backend/components/eev_off_design.py</span><br>
+\u251c\u2500 <span class="func">step()</span>  <span class="desc">\u2014 ARI orifice 방정식 + Φ(op) 다항식</span><br>
+\u251c\u2500 mode: <span class="func">control</span> (op\u2192ṁ) / <span class="func">measure</span> (ṁ\u2192op 역산)<br>
+\u2514\u2500 typeNo: <span class="func">130</span>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>적용 범위 + 한계</h2>
+    <p><b>✅ 적용 가능</b>: 시스템 레벨 시뮬, 빠른 평가. 제조사 카탈로그 데이터 있으면 즉시 fit.</p>
+    <p><b>⚠️ 한계</b>:</p>
+    <ul style="color: var(--ink-soft); font-size: 13px; line-height: 1.8;">
+      <li><b>2-phase choke 없음</b> — fully open + 큰 ΔP에서 유량 과대평가 (Semi/On 대비 +16%)</li>
+      <li>subcooling 효과 미반영</li>
+      <li>low opening 정확도 낮음 (단순 다항식)</li>
+    </ul>
+  </div>
+
+  <div class="doc-section">
+    <h2>검증 결과 (vs On★)</h2>
+    <div class="val-grid">
+      <div class="val-card good"><div class="val-label">75% opening</div><div class="val-value">-3%<span class="val-unit">ṁ</span></div></div>
+      <div class="val-card"><div class="val-label">100% opening</div><div class="val-value">+16%<span class="val-unit">choke 미반영</span></div></div>
+      <div class="val-card"><div class="val-label">25% opening</div><div class="val-value">-32%<span class="val-unit">ṁ</span></div></div>
+      <div class="val-card good"><div class="val-label">평가 속도</div><div class="val-value">&lt; 1ms</div></div>
+    </div>
+  </div>
+</template>
+
+<!-- ════════ EEV Semi (Sami-Schnotale) ════════ -->
+<template id="tpl-eev-semi">
+  <div class="doc-header">
+    <div class="doc-eyebrow">EEV / Semi-Empirical</div>
+    <h1 class="doc-title">
+      Sami-Schnotale 2-Phase Choke
+      <span class="doc-title-badge badge-semi">SEMI</span>
+    </h1>
+    <div class="doc-subtitle">2-phase choked flow + Re/subcooling 보정 — 학계 표준</div>
+  </div>
+
+  <div class="doc-section">
+    <h2>학계 참고문헌</h2>
+    <div class="ref-card">
+      <div class="ref-title">Primary</div>
+      <div class="ref-body">
+        <b>Sami S.M., Schnotale T. (1995)</b>: "Modeling EEV with two-phase choked flow", <i>Int. J. Refrigeration</i>, 18(5):310-318.
+      </div>
+    </div>
+    <div class="ref-card">
+      <div class="ref-title">Choked Flow Theory</div>
+      <div class="ref-body">
+        <b>Henry R.E., Fauske H.K. (1971)</b>: "The two-phase critical flow of one-component mixtures". <b>Buick et al. (1996)</b>: capillary tube refrigerant flow.
+      </div>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>수학적 정의</h2>
+    <h3>Normal flow</h3>
+    <div class="eq-block">
+      $$\dot{m}_{normal} = C_{d,eff}\, A_{eff}\sqrt{2\rho_{in}\,\Delta P_{eff}}$$
+    </div>
+
+    <h3>Choked flow ($P_{out}/P_{in} < Y_{crit}$)</h3>
+    <p>임계 압력비 아래에서는 유량이 choke됨 (Henry-Fauske 단순화):</p>
+    <div class="eq-block">
+      $$G_{crit} = \sqrt{\rho\, P_{in}\, Y_{crit}}, \quad \dot{m}_{choked} = G_{crit}\, A_{eff}$$
+      $$\Delta P_{eff} = P_{in}(1 - Y_{crit})$$
+    </div>
+    <div class="eq-block">
+      $$\dot{m} = \min(\dot{m}_{normal},\; \dot{m}_{choked})$$
+    </div>
+
+    <h3>Discharge coefficient 보정</h3>
+    <p>$C_{d,eff}$를 Reynolds·subcooling·opening 3개 인자로 보정:</p>
+    <div class="eq-block">
+      $$C_{d,eff} = C_{d,0}\, f_{Re}\, f_{sub}\, f_{op}$$
+      $$f_{Re} = 1 - e^{-Re/Re_c}, \quad f_{sub} = 1 + k_{sub}\frac{\Delta T_{sub}}{10}, \quad f_{op} = 1 - k_{op}(1 - op)$$
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>Nomenclature</h2>
+    <div class="nomenclature">
+      <div class="nomen-group">
+        <div class="nomen-group-title">Latin Symbols</div>
+        <div class="nomen-row"><span class="nomen-sym">$A_{eff}$</span><span class="nomen-desc">유효 유동 면적 (= cf_A·A·op)</span><span class="nomen-unit">m²</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$C_{d,0}$</span><span class="nomen-desc">기준 discharge coefficient</span><span class="nomen-unit">—</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$C_{d,eff}$</span><span class="nomen-desc">유효 Cd (보정 후)</span><span class="nomen-unit">—</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$cf_A$</span><span class="nomen-desc">면적 보정 multiplier</span><span class="nomen-unit">—</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$f_{Re}, f_{sub}, f_{op}$</span><span class="nomen-desc">Re·subcool·opening 보정 함수</span><span class="nomen-unit">—</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$G_{crit}$</span><span class="nomen-desc">임계 질량 유속 (choke)</span><span class="nomen-unit">kg/(m²·s)</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$k_{sub}, k_{op}$</span><span class="nomen-desc">Subcool·opening 보정 계수</span><span class="nomen-unit">—</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\dot{m}$</span><span class="nomen-desc">질량 유량 (normal/choked)</span><span class="nomen-unit">kg/s</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$P$</span><span class="nomen-desc">압력 (in / out)</span><span class="nomen-unit">bar</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$Re$</span><span class="nomen-desc">Reynolds number</span><span class="nomen-unit">—</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$Re_c$</span><span class="nomen-desc">Low-Re 임계값</span><span class="nomen-unit">—</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$Y_{crit}$</span><span class="nomen-desc">임계 압력비 (choke 판정)</span><span class="nomen-unit">—</span></div>
+      </div>
+      <div class="nomen-group">
+        <div class="nomen-group-title">Greek Symbols</div>
+        <div class="nomen-row"><span class="nomen-sym">$\Delta P_{eff}$</span><span class="nomen-desc">유효 압력 강하 (choke cap)</span><span class="nomen-unit">Pa</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\Delta T_{sub}$</span><span class="nomen-desc">Subcooling (과냉도)</span><span class="nomen-unit">K</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\rho_{in}$</span><span class="nomen-desc">입구 밀도</span><span class="nomen-unit">kg/m³</span></div>
+      </div>
+      <div class="nomen-group">
+        <div class="nomen-group-title">Subscripts</div>
+        <div class="nomen-row"><span class="nomen-sym">choked</span><span class="nomen-desc">Choked flow 상태</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">crit</span><span class="nomen-desc">Critical (임계)</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">eff</span><span class="nomen-desc">Effective (유효)</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">in / out</span><span class="nomen-desc">밸브 입구 / 출구</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">normal</span><span class="nomen-desc">Non-choked (정상) flow</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">sub</span><span class="nomen-desc">Subcooling 관련</span><span class="nomen-unit"></span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>Fitting Parameters</h2>
+    <table class="params">
+      <thead><tr><th>Symbol</th><th>Description</th><th>Unit</th><th>Default</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">Cd_0</td><td>기준 discharge coeff.</td><td>—</td><td>0.72</td></tr>
+        <tr><td class="mono">Re_c</td><td>Low-Re 임계값</td><td>—</td><td>5000</td></tr>
+        <tr><td class="mono">k_sub</td><td>Subcooling 보정 계수</td><td>—</td><td>0.05</td></tr>
+        <tr><td class="mono">k_op</td><td>Opening 보정 계수</td><td>—</td><td>0.15</td></tr>
+        <tr><td class="mono">Y_crit</td><td>임계 압력비 (choke)</td><td>—</td><td>0.55</td></tr>
+        <tr><td class="mono">cf_A</td><td>면적 보정 multiplier</td><td>—</td><td>1.0</td></tr>
+      </tbody>
+    </table>
+    <p>총 <b>6개 fitting params</b>. Off(5개)보다 많지만 물리 기반이라 외삽 가능.</p>
+  </div>
+
+  <div class="doc-section">
+    <h2>Code Mapping</h2>
+    <div class="code-map">
+<span class="file">backend/components/eev_moving_boundary.py</span><br>
+\u251c\u2500 <span class="func">step()</span>  <span class="desc">\u2014 normal/choked min + Cd 3-factor 보정</span><br>
+\u251c\u2500 choke: <span class="func">Y_crit</span> 판정 (Henry-Fauske)<br>
+\u2514\u2500 typeNo: <span class="func">131</span>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>적용 범위 + 한계</h2>
+    <p><b>✅ 적용 가능</b>: 2-phase choke가 중요한 운전점 (fully open + 큰 압축비). Off보다 정확. EEV On(needle cone geometry)에 -3~-6%로 매우 근접 → <b>사이클 closure 권장 모델</b>.</p>
+    <p><b>⚠️ 한계</b>: needle cone 정밀 geometry는 미반영 (선형 A_eff 가정). 부품 도면 기반 정밀 해석은 On(L3)으로.</p>
+  </div>
+
+  <div class="doc-section">
+    <h2>검증 결과 (vs On★)</h2>
+    <div class="val-grid">
+      <div class="val-card good"><div class="val-label">75% opening</div><div class="val-value">-6%<span class="val-unit">ṁ</span></div></div>
+      <div class="val-card good"><div class="val-label">100% opening</div><div class="val-value">-3%<span class="val-unit">choke 반영</span></div></div>
+      <div class="val-card"><div class="val-label">25% opening</div><div class="val-value">-13%<span class="val-unit">ṁ</span></div></div>
+      <div class="val-card good"><div class="val-label">choke 처리</div><div class="val-value" style="font-size:13px">✓<span class="val-unit">Henry-Fauske</span></div></div>
+    </div>
+  </div>
+</template>
+
+<!-- ════════ EEV On (Needle Cone) ════════ -->
+<template id="tpl-eev-on">
+  <div class="doc-header">
+    <div class="doc-eyebrow">EEV / On-Design</div>
+    <h1 class="doc-title">
+      Needle Cone Geometry
+      <span class="doc-title-badge badge-on">ON</span>
+    </h1>
+    <div class="doc-subtitle">Needle cone 단면적 + vena contracta choke — Ground Truth</div>
+  </div>
+
+  <div class="doc-section">
+    <h2>학계 참고문헌</h2>
+    <div class="ref-card">
+      <div class="ref-title">Choked Flow</div>
+      <div class="ref-body">
+        <b>Henry R.E., Fauske H.K. (1971)</b>: two-phase critical flow. Vena contracta에서 homogeneous 2-phase sonic velocity 기반 choke.
+      </div>
+    </div>
+    <div class="ref-card">
+      <div class="ref-title">Geometry Basis</div>
+      <div class="ref-body">
+        실제 EEV 부품 도면 (needle angle, seat diameter, stroke)으로부터 annular 유동 단면적 직접 계산. On-Design Studio = L3 (실제 부품 도면 기반).
+      </div>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>수학적 정의</h2>
+    <h3>1. Needle stroke (opening → 변위)</h3>
+    <div class="eq-block">
+      $$\text{stroke} = \text{stroke}_{max}\cdot\frac{op}{100}$$
+    </div>
+
+    <h3>2. Annular throat 면적 (cone needle + conical seat)</h3>
+    <p>needle 각도 $\alpha$, seat 직경 $D_{seat}$로부터 환형 유동 면적:</p>
+    <div class="eq-block">
+      $$A_{throat} = \pi\, D_{seat}\cdot \text{stroke}\cdot\sin\!\left(\frac{\alpha}{2}\right)$$
+    </div>
+    <p>최대 면적 $A_{max}$에서 saturate (clamp).</p>
+
+    <h3>3. Re 기반 Cd 보정 (vena contracta)</h3>
+    <div class="eq-block">
+      $$Re_{throat} = \frac{\dot{m}\, D_h}{\mu\, A_{throat}}, \quad C_{d,eff} = C_{d,base}\, f(Re)$$
+    </div>
+    <p>$f(Re) \to 1$ (high Re), $< 1$ (low Re, very low opening).</p>
+
+    <h3>4. 2-phase choke (homogeneous sonic)</h3>
+    <p>vena contracta에서 임계 유속 — 단순 $\sqrt{\rho\Delta P}$ 대신 2-phase sonic velocity:</p>
+    <div class="eq-block">
+      $$G_{crit} = \rho_{2ph}\, c_{2ph}, \quad c_{2ph} \approx \sqrt{\frac{K\,P}{\rho}}$$
+    </div>
+
+    <h3>5. 최종 유량</h3>
+    <div class="eq-block">
+      $$\dot{m} = C_{d,eff}\, A_{throat}\sqrt{2\rho_{in}\,\Delta P_{eff}}$$
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>Nomenclature</h2>
+    <div class="nomenclature">
+      <div class="nomen-group">
+        <div class="nomen-group-title">Latin Symbols</div>
+        <div class="nomen-row"><span class="nomen-sym">$A_{throat}$</span><span class="nomen-desc">Annular throat 면적 (cone)</span><span class="nomen-unit">m²</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$c_{2ph}$</span><span class="nomen-desc">2-phase sonic velocity</span><span class="nomen-unit">m/s</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$C_{d,base}$</span><span class="nomen-desc">기준 discharge coefficient</span><span class="nomen-unit">—</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$C_{d,eff}$</span><span class="nomen-desc">유효 Cd (Re 보정 후)</span><span class="nomen-unit">—</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$D_{seat}$</span><span class="nomen-desc">Seat 직경</span><span class="nomen-unit">m</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$D_h$</span><span class="nomen-desc">수력 직경</span><span class="nomen-unit">m</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$G_{crit}$</span><span class="nomen-desc">임계 질량 유속</span><span class="nomen-unit">kg/(m²·s)</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$K$</span><span class="nomen-desc">2-phase polytropic 계수</span><span class="nomen-unit">—</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\dot{m}$</span><span class="nomen-desc">냉매 질량 유량</span><span class="nomen-unit">kg/s</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$op$</span><span class="nomen-desc">밸브 개도</span><span class="nomen-unit">%</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$P$</span><span class="nomen-desc">압력 (in / out)</span><span class="nomen-unit">bar</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$Re_{throat}$</span><span class="nomen-desc">Throat Reynolds number</span><span class="nomen-unit">—</span></div>
+        <div class="nomen-row"><span class="nomen-sym">stroke</span><span class="nomen-desc">Needle 변위</span><span class="nomen-unit">m</span></div>
+        <div class="nomen-row"><span class="nomen-sym">stroke$_{max}$</span><span class="nomen-desc">최대 stroke (full open)</span><span class="nomen-unit">m</span></div>
+      </div>
+      <div class="nomen-group">
+        <div class="nomen-group-title">Greek Symbols</div>
+        <div class="nomen-row"><span class="nomen-sym">$\alpha$</span><span class="nomen-desc">Needle cone 각도</span><span class="nomen-unit">deg</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\Delta P_{eff}$</span><span class="nomen-desc">유효 압력 강하 (choke cap)</span><span class="nomen-unit">Pa</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\mu$</span><span class="nomen-desc">점성</span><span class="nomen-unit">Pa·s</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\rho$</span><span class="nomen-desc">밀도 (in / 2-phase)</span><span class="nomen-unit">kg/m³</span></div>
+      </div>
+      <div class="nomen-group">
+        <div class="nomen-group-title">Subscripts</div>
+        <div class="nomen-row"><span class="nomen-sym">2ph</span><span class="nomen-desc">Two-phase (이상 유동)</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">base</span><span class="nomen-desc">기준값 (Re 보정 전)</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">crit</span><span class="nomen-desc">Critical (임계, choke)</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">eff</span><span class="nomen-desc">Effective (유효)</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">in</span><span class="nomen-desc">밸브 입구</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">seat</span><span class="nomen-desc">Valve seat</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">throat</span><span class="nomen-desc">Throat (vena contracta)</span><span class="nomen-unit"></span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>Geometry / Fitting Parameters</h2>
+    <table class="params">
+      <thead><tr><th>Symbol</th><th>Description</th><th>Unit</th><th>Default</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">needle_angle</td><td>Needle cone 각도 α</td><td>deg</td><td>30.0</td></tr>
+        <tr><td class="mono">D_seat</td><td>Seat 직경</td><td>m</td><td>0.002</td></tr>
+        <tr><td class="mono">stroke_max</td><td>최대 stroke</td><td>m</td><td>0.001</td></tr>
+        <tr><td class="mono">choke_ratio</td><td>2-phase choke 임계비</td><td>—</td><td>0.5</td></tr>
+        <tr><td class="mono">Cd_base</td><td>기준 discharge coeff.</td><td>—</td><td>0.72</td></tr>
+        <tr><td class="mono">Re_transition</td><td>Re 보정 전이값</td><td>—</td><td>1000</td></tr>
+        <tr><td class="mono">cf_A</td><td>면적 보정 multiplier</td><td>—</td><td>1.0</td></tr>
+      </tbody>
+    </table>
+    <p>geometry는 <b>실제 부품 도면</b>에서 측정 → fitting params는 4개 (Cd_base, Re_transition, choke_ratio, cf_A)로 최소.</p>
+  </div>
+
+  <div class="doc-section">
+    <h2>Code Mapping</h2>
+    <div class="code-map">
+<span class="file">backend/components/eev_on_design.py</span><br>
+\u251c\u2500 <span class="func">step()</span>  <span class="desc">\u2014 needle stroke \u2192 A_throat \u2192 Cd(Re) \u2192 choke</span><br>
+\u251c\u2500 <span class="func">_A_throat_from_geometry()</span>  <span class="desc">\u2014 cone 단면적</span><br>
+\u251c\u2500 choke: vena contracta sonic (Henry-Fauske)<br>
+\u2514\u2500 typeNo: <span class="func">132</span>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>적용 범위 + 한계</h2>
+    <p><b>✅ 적용 가능 (Ground Truth)</b>: 실제 부품 도면 기반 정밀 해석. needle 각도·seat 직경·stroke 변경 영향 직접 평가. choke·Re 보정 모두 포함 → 가장 정확.</p>
+    <p><b>⚠️ 한계</b>:</p>
+    <ul style="color: var(--ink-soft); font-size: 13px; line-height: 1.8;">
+      <li>geometry 정의 필요 (도면 없으면 Off/Semi 사용)</li>
+      <li>annular 면적 모델은 cone needle 가정 (다른 needle profile은 식 교체 필요)</li>
+      <li>3D CFD 대비 vena contracta는 1D 근사</li>
+    </ul>
+  </div>
+
+  <div class="doc-section">
+    <h2>검증 결과 (Ground Truth 기준)</h2>
+    <div class="val-grid">
+      <div class="val-card good"><div class="val-label">geometry 기반</div><div class="val-value" style="font-size:13px">도면<span class="val-unit">직접</span></div></div>
+      <div class="val-card good"><div class="val-label">choke + Re</div><div class="val-value" style="font-size:13px">✓<span class="val-unit">모두 포함</span></div></div>
+      <div class="val-card"><div class="val-label">vs Semi</div><div class="val-value">+3~6%<span class="val-unit">ṁ</span></div></div>
+      <div class="val-card"><div class="val-label">vs Off</div><div class="val-value">~±16%<span class="val-unit">opening별</span></div></div>
+    </div>
+  </div>
+</template>
 <template id="tpl-todo">
   <div class="doc-header">
     <div class="doc-eyebrow" id="todo-eyebrow"></div>
@@ -1582,9 +1980,6 @@ const todoMeta = {
   'condenser-off':   { eyebrow: 'Condenser / Off-Design',   title: 'ε-NTU 3-zone',           code: 'backend/components/condenser_off_design.py · typeNo 220' },
   'condenser-semi':  { eyebrow: 'Condenser / Semi-Empirical', title: 'Moving Boundary',     code: 'backend/components/condenser_moving_boundary.py · typeNo 221' },
   'condenser-on':    { eyebrow: 'Condenser / On-Design',    title: 'Segmented Tube-by-Tube', code: 'backend/components/condenser_on_design.py · typeNo 222' },
-  'eev-off':         { eyebrow: 'EEV / Off-Design',          title: 'ARI Flow Coefficient Curve', code: 'backend/components/eev_off_design.py · typeNo 130 · ARI Std 750-94, Park-Cho-Kim 2007' },
-  'eev-semi':        { eyebrow: 'EEV / Semi-Empirical',      title: 'Sami-Schnotale Choke Model', code: 'backend/components/eev_moving_boundary.py · typeNo 131 · Sami-Schnotale 1995' },
-  'eev-on':          { eyebrow: 'EEV / On-Design',           title: 'Needle Cone Geometry',   code: 'backend/components/eev_on_design.py · typeNo 132' },
 };
 
 function loadModel(modelId) {
