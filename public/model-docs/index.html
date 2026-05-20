@@ -56,6 +56,41 @@ code, .mono { font-family: 'JetBrains Mono', monospace; }
   gap: 16px;
   flex-shrink: 0;
 }
+
+/* 햄버거 (모바일에서만 표시) */
+.menu-btn {
+  display: none;
+  background: transparent;
+  border: none;
+  width: 36px; height: 36px;
+  border-radius: 6px;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 0;
+}
+.menu-btn:active { background: var(--line-soft); }
+.menu-btn .bar {
+  display: block; width: 20px; height: 2px;
+  background: var(--ink); border-radius: 1px; position: relative;
+}
+.menu-btn .bar::before, .menu-btn .bar::after {
+  content: ''; position: absolute; left: 0;
+  width: 20px; height: 2px; background: var(--ink); border-radius: 1px;
+}
+.menu-btn .bar::before { top: -6px; }
+.menu-btn .bar::after  { top: 6px; }
+
+/* 모바일 sidebar overlay */
+.sidebar-overlay {
+  display: none;
+  position: fixed;
+  inset: 44px 0 0 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 40;
+}
+.sidebar-overlay.open { display: block; }
 .app-switcher {
   position: relative;
 }
@@ -367,6 +402,110 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
   gap: 10px;
   margin: 12px 0;
 }
+
+/* ════════ Nomenclature ════════ */
+.nomenclature {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin: 12px 0;
+  overflow: hidden;
+}
+.nomen-group {
+  border-bottom: 1px solid var(--line-soft);
+}
+.nomen-group:last-child { border-bottom: none; }
+.nomen-group-title {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--muted);
+  padding: 8px 14px 6px;
+  background: var(--code-bg);
+  border-bottom: 1px solid var(--line-soft);
+}
+.nomen-row {
+  display: grid;
+  grid-template-columns: 110px 1fr 90px;
+  gap: 12px;
+  padding: 7px 14px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--line-soft);
+  align-items: baseline;
+}
+.nomen-row:last-child { border-bottom: none; }
+.nomen-sym {
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 600;
+  color: var(--ink);
+  font-size: 13px;
+}
+.nomen-sym .katex { font-size: 1.02em; }
+.nomen-desc { color: var(--ink-soft); }
+.nomen-unit {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--muted);
+  text-align: right;
+}
+@media (max-width: 640px) {
+  .nomen-row {
+    grid-template-columns: 80px 1fr 70px;
+    gap: 8px;
+    font-size: 11.5px;
+    padding: 7px 12px;
+  }
+  .nomen-unit { font-size: 10px; }
+}
+
+/* ════════ Mobile responsive ════════ */
+.welcome-cta {
+  margin-top: 18px;
+  background: var(--accent);
+  color: white;
+  padding: 12px 20px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  border: none;
+  cursor: pointer;
+  display: none;
+  font-family: inherit;
+}
+.welcome-cta:active { background: #1d4ed8; }
+
+@media (max-width: 768px) {
+  .menu-btn { display: inline-flex; }
+  .welcome-cta { display: inline-block; }
+  .page-title { font-size: 12px; }
+  .page-subtitle { display: none; }
+
+  .sidebar {
+    position: fixed;
+    top: 44px; left: 0;
+    height: calc(100vh - 44px);
+    width: 280px;
+    transform: translateX(-100%);
+    transition: transform 0.25s ease;
+    z-index: 45;
+  }
+  .sidebar.open {
+    transform: translateX(0);
+    box-shadow: 4px 0 20px rgba(0,0,0,0.15);
+  }
+  .content { padding: 18px 16px; max-width: 100%; }
+  .doc-title { font-size: 20px; }
+  .doc-section h2 { font-size: 16px; }
+  .val-grid { grid-template-columns: 1fr 1fr; }
+  .eq-block .katex-display { font-size: 0.88em; }
+}
+@media (max-width: 380px) {
+  .val-grid { grid-template-columns: 1fr; }
+  .doc-title { font-size: 18px; }
+  .eq-block .katex-display { font-size: 0.78em; }
+}
 .val-card {
   background: var(--paper);
   border: 1px solid var(--line);
@@ -443,6 +582,9 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
 
 <!-- ════════ Top Bar ════════ -->
 <div class="topbar">
+  <button class="menu-btn" id="menuBtn" aria-label="메뉴 열기">
+    <span class="bar"></span>
+  </button>
   <div class="app-switcher">
     <button class="app-btn" id="appBtn">
       <span class="app-dot"></span>
@@ -494,8 +636,11 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
 <!-- ════════ Main ════════ -->
 <div class="main">
 
+  <!-- 모바일 overlay -->
+  <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
   <!-- ════════ Sidebar ════════ -->
-  <aside class="sidebar">
+  <aside class="sidebar" id="sidebar">
     <div class="sidebar-section">Components × Fidelity</div>
 
     <div class="sidebar-group">
@@ -529,7 +674,6 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
 
   <!-- ════════ Content ════════ -->
   <main class="content" id="content">
-    <!-- 초기 welcome 화면 -->
     <div class="welcome" id="welcome">
       <div class="welcome-icon">📐</div>
       <div class="welcome-title">HPWD Studio Model Docs</div>
@@ -537,6 +681,7 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
         4개 컴포넌트 × 3 fidelity = <b>12개 모델</b>의 수학적 정의·학계 참고문헌·코드 매핑·검증 결과를 정리한 문서.<br><br>
         왼쪽에서 모델을 선택하세요.
       </div>
+      <button class="welcome-cta" id="welcomeCta">📋 모델 목록 열기</button>
     </div>
   </main>
 </div>
@@ -580,6 +725,33 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
     <p>토출온도 $T_{dis}$는 isentropic 가정에 효율 $\eta_{is}$ 보정:</p>
     <div class="eq-block">
       $$T_{dis} = T_{suc} + \frac{T_{2s} - T_{suc}}{\eta_{is}}, \quad T_{2s} = T_{suc} \left( \frac{P_{dis}}{P_{suc}} \right)^{(\gamma-1)/\gamma}$$
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>Nomenclature</h2>
+    <div class="nomenclature">
+      <div class="nomen-group">
+        <div class="nomen-group-title">Latin Symbols</div>
+        <div class="nomen-row"><span class="nomen-sym">$C_1 \sim C_6$</span><span class="nomen-desc">Mass flow 다항식 6 계수</span><span class="nomen-unit">—</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$D_1 \sim D_6$</span><span class="nomen-desc">전력 다항식 6 계수</span><span class="nomen-unit">—</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\dot{m}$</span><span class="nomen-desc">냉매 질량 유량</span><span class="nomen-unit">kg/s</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$P$</span><span class="nomen-desc">압력</span><span class="nomen-unit">bar</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$T$</span><span class="nomen-desc">온도 (saturation 기준)</span><span class="nomen-unit">°C</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\dot{W}$</span><span class="nomen-desc">전기 동력 입력</span><span class="nomen-unit">W</span></div>
+      </div>
+      <div class="nomen-group">
+        <div class="nomen-group-title">Greek Symbols</div>
+        <div class="nomen-row"><span class="nomen-sym">$\gamma$</span><span class="nomen-desc">단열 지수 (cp/cv)</span><span class="nomen-unit">—</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\eta_{is}$</span><span class="nomen-desc">Isentropic 효율</span><span class="nomen-unit">—</span></div>
+      </div>
+      <div class="nomen-group">
+        <div class="nomen-group-title">Subscripts</div>
+        <div class="nomen-row"><span class="nomen-sym">cond</span><span class="nomen-desc">응축 (condenser saturation)</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">dis</span><span class="nomen-desc">압축기 토출 (discharge)</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">suc</span><span class="nomen-desc">압축기 흡입 (suction)</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">$2s$</span><span class="nomen-desc">Isentropic 압축 후 상태</span><span class="nomen-unit"></span></div>
+      </div>
     </div>
   </div>
 
@@ -716,6 +888,53 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
   </div>
 
   <div class="doc-section">
+    <h2>Nomenclature</h2>
+    <div class="nomenclature">
+      <div class="nomen-group">
+        <div class="nomen-group-title">Latin Symbols</div>
+        <div class="nomen-row"><span class="nomen-sym">$AU$</span><span class="nomen-desc">총 열교환 conductance (UA)</span><span class="nomen-unit">W/K</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$c$</span><span class="nomen-desc">Clearance volume factor</span><span class="nomen-unit">—</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$c_p$</span><span class="nomen-desc">정압 비열</span><span class="nomen-unit">J/(kg·K)</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$h$</span><span class="nomen-desc">비엔탈피</span><span class="nomen-unit">kJ/kg</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\dot{m}$</span><span class="nomen-desc">냉매 질량 유량</span><span class="nomen-unit">kg/s</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$N$</span><span class="nomen-desc">압축기 회전수</span><span class="nomen-unit">rpm</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$P$</span><span class="nomen-desc">압력</span><span class="nomen-unit">bar / Pa</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\dot{Q}$</span><span class="nomen-desc">열 유량</span><span class="nomen-unit">W</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$r_v$</span><span class="nomen-desc">Built-in volume ratio</span><span class="nomen-unit">—</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$s$</span><span class="nomen-desc">비엔트로피</span><span class="nomen-unit">J/(kg·K)</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$T$</span><span class="nomen-desc">온도</span><span class="nomen-unit">°C / K</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$V_{disp}$</span><span class="nomen-desc">Displacement volume</span><span class="nomen-unit">m³ / cm³</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$w_{12}$</span><span class="nomen-desc">압축 비일 (1→2 단계)</span><span class="nomen-unit">J/kg</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\dot{W}$</span><span class="nomen-desc">동력</span><span class="nomen-unit">W</span></div>
+      </div>
+      <div class="nomen-group">
+        <div class="nomen-group-title">Greek Symbols</div>
+        <div class="nomen-row"><span class="nomen-sym">$\alpha$</span><span class="nomen-desc">Loss proportionality factor</span><span class="nomen-unit">—</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\gamma$</span><span class="nomen-desc">단열 지수 (cp/cv)</span><span class="nomen-unit">—</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\Delta P$</span><span class="nomen-desc">압력 강하</span><span class="nomen-unit">bar</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\varepsilon$</span><span class="nomen-desc">ε-NTU effectiveness</span><span class="nomen-unit">—</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\eta_{vol}$</span><span class="nomen-desc">체적 효율</span><span class="nomen-unit">—</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\eta_{motor}$</span><span class="nomen-desc">모터 효율</span><span class="nomen-unit">—</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\rho$</span><span class="nomen-desc">밀도</span><span class="nomen-unit">kg/m³</span></div>
+      </div>
+      <div class="nomen-group">
+        <div class="nomen-group-title">Subscripts</div>
+        <div class="nomen-row"><span class="nomen-sym">amb</span><span class="nomen-desc">Ambient (주위)</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">dis</span><span class="nomen-desc">Discharge (토출)</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">elec</span><span class="nomen-desc">Electrical (전기)</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">int</span><span class="nomen-desc">Internal — built-in pressure</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">int,s</span><span class="nomen-desc">Internal at isentropic state</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">loss</span><span class="nomen-desc">Loss (손실)</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">shaft</span><span class="nomen-desc">Mechanical shaft (기계축)</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">su,1</span><span class="nomen-desc">Suction inlet (heating 전)</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">su,2</span><span class="nomen-desc">Suction after heating + ΔP</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">w</span><span class="nomen-desc">Wall (압축기 외벽)</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">0</span><span class="nomen-desc">Constant 부분 (W_loss,0)</span><span class="nomen-unit"></span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="doc-section">
     <h2>Fitting Parameters</h2>
     <table class="params">
       <thead>
@@ -831,6 +1050,44 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
   </div>
 
   <div class="doc-section">
+    <h2>Nomenclature</h2>
+    <div class="nomenclature">
+      <div class="nomen-group">
+        <div class="nomen-group-title">Latin Symbols (PDSim 1D 해석)</div>
+        <div class="nomen-row"><span class="nomen-sym">$h$</span><span class="nomen-desc">비엔탈피</span><span class="nomen-unit">J/kg</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\dot{m}$</span><span class="nomen-desc">질량 유량 (in/out)</span><span class="nomen-unit">kg/s</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$N$</span><span class="nomen-desc">압축기 회전수</span><span class="nomen-unit">rpm</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$P$</span><span class="nomen-desc">Chamber 압력</span><span class="nomen-unit">Pa</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\dot{Q}_{wall}$</span><span class="nomen-desc">Wall heat transfer rate</span><span class="nomen-unit">W</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$T$</span><span class="nomen-desc">Saturation 온도</span><span class="nomen-unit">°C</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$u$</span><span class="nomen-desc">비 내부 에너지</span><span class="nomen-unit">J/kg</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$V$</span><span class="nomen-desc">Chamber 체적 (회전각의 함수)</span><span class="nomen-unit">m³</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\dot{W}$</span><span class="nomen-desc">전기 동력 입력</span><span class="nomen-unit">W</span></div>
+      </div>
+      <div class="nomen-group">
+        <div class="nomen-group-title">Greek Symbols</div>
+        <div class="nomen-row"><span class="nomen-sym">$\theta$</span><span class="nomen-desc">크랭크 회전각</span><span class="nomen-unit">rad</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\rho$</span><span class="nomen-desc">밀도 (chamber 평균)</span><span class="nomen-unit">kg/m³</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\boldsymbol{\theta}_m, \boldsymbol{\theta}_T, \boldsymbol{\theta}_W$</span><span class="nomen-desc">ROM hyperparameters (회귀계수 벡터)</span><span class="nomen-unit">—</span></div>
+      </div>
+      <div class="nomen-group">
+        <div class="nomen-group-title">ROM Functions</div>
+        <div class="nomen-row"><span class="nomen-sym">$f_{\dot{m}}$</span><span class="nomen-desc">Mass flow ROM 함수</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">$f_T$</span><span class="nomen-desc">Discharge T ROM 함수</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">$f_W$</span><span class="nomen-desc">Power ROM 함수</span><span class="nomen-unit"></span></div>
+      </div>
+      <div class="nomen-group">
+        <div class="nomen-group-title">Subscripts</div>
+        <div class="nomen-row"><span class="nomen-sym">cond</span><span class="nomen-desc">Condensing (응축 saturation)</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">dis</span><span class="nomen-desc">Discharge (토출)</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">evap</span><span class="nomen-desc">Evaporating (증발 saturation)</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">in / out</span><span class="nomen-desc">Chamber 유입 / 유출</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">wall</span><span class="nomen-desc">Chamber 벽면</span><span class="nomen-unit"></span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="doc-section">
     <h2>Fitting Parameters</h2>
     <p>PDSim ROM은 사전 학습된 모델이므로 사용자 직접 fitting parameters 적음 (ROM 학습 시 결정):</p>
     <table class="params">
@@ -914,6 +1171,30 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
 
 <script>
 // ──────────────────────────────────────────────────────
+// Mobile sidebar (햄버거 메뉴)
+// ──────────────────────────────────────────────────────
+const menuBtn = document.getElementById('menuBtn');
+const sidebar = document.getElementById('sidebar');
+const overlay = document.getElementById('sidebarOverlay');
+const welcomeCta = document.getElementById('welcomeCta');
+
+function openSidebar() {
+  sidebar.classList.add('open');
+  overlay.classList.add('open');
+}
+function closeSidebar() {
+  sidebar.classList.remove('open');
+  overlay.classList.remove('open');
+}
+
+menuBtn.addEventListener('click', () => {
+  if (sidebar.classList.contains('open')) closeSidebar();
+  else openSidebar();
+});
+overlay.addEventListener('click', closeSidebar);
+if (welcomeCta) welcomeCta.addEventListener('click', openSidebar);
+
+// ──────────────────────────────────────────────────────
 // App switcher dropdown
 // ──────────────────────────────────────────────────────
 const appBtn = document.getElementById('appBtn');
@@ -985,6 +1266,11 @@ function loadModel(modelId) {
 
   // URL hash 업데이트
   history.replaceState(null, '', `#${modelId}`);
+  
+  // 모바일에서 sidebar 자동 닫기
+  if (window.innerWidth <= 768) closeSidebar();
+  window.scrollTo(0, 0);
+  content.scrollTop = 0;
 }
 
 document.querySelectorAll('.sidebar-item').forEach(el => {
