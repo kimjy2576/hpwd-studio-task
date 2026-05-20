@@ -235,6 +235,7 @@ code, .mono { font-family: 'JetBrains Mono', monospace; }
 .badge-off { background: #FEF3C7; color: #92400E; }
 .badge-semi { background: #DBEAFE; color: #1E40AF; }
 .badge-on { background: #D1FAE5; color: #065F46; }
+.badge-future { background: #EDE9FE; color: #6D28D9; }
 
 /* ════════ Content (우) ════════ */
 .content {
@@ -654,6 +655,7 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
       <div class="sidebar-item" data-model="compressor-off"><span class="fidelity-badge badge-off">OFF</span> AHRI 540</div>
       <div class="sidebar-item" data-model="compressor-semi"><span class="fidelity-badge badge-semi">SEMI</span> Winandy 1999</div>
       <div class="sidebar-item" data-model="compressor-on"><span class="fidelity-badge badge-on">ON</span> PDSim ROM</div>
+      <div class="sidebar-item" data-model="compressor-theta"><span class="fidelity-badge badge-future">FUTURE</span> θ-PDSim (full)</div>
     </div>
 
     <div class="sidebar-group">
@@ -1286,6 +1288,229 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
     <p style="font-size: 12px; margin-top: 10px; color: var(--muted);">
       ※ 현재 미구현. 두 모델을 같은 컴포넌트의 <b>fidelity 옵션</b>(1-cycle ↔ θ-resolved)으로 두면, 빠른 탐색 후 최종 검증만 θ-resolved로 전환하는 워크플로우 가능.
     </p>
+  </div>
+</template>
+
+<template id="tpl-compressor-theta">
+  <div class="doc-header">
+    <div class="doc-eyebrow">Compressor / High-Fidelity (Future)</div>
+    <h1 class="doc-title">
+      θ-Resolved PDSim (정통 모델)
+      <span class="doc-title-badge badge-future">FUTURE</span>
+    </h1>
+    <div class="doc-subtitle">크랭크각 θ 적분 기반 detailed chamber 해석 — 구현 spec sheet</div>
+  </div>
+
+  <div class="doc-section">
+    <h2>개요</h2>
+    <div class="ref-card" style="border-left-color: var(--accent2, #7C3AED);">
+      <div class="ref-title" style="color: #7C3AED;">Status — 미구현 (설계 문서)</div>
+      <div class="ref-body">
+        이 문서는 <b>나중에 구현하기 위한 spec sheet</b>. 현재 Compressor On (1-cycle 평균)과 같은 인터페이스를 유지하되, 내부를 <b>크랭크각 θ에 대한 ODE 적분</b>으로 교체하는 정통 PDSim 방식. 가장 높은 정밀도(P-V 선도, instantaneous 거동)를 제공하나 계산 비용 큼 (~60s/point).
+      </div>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>학계 참고문헌</h2>
+    <div class="ref-card">
+      <div class="ref-title">Primary</div>
+      <div class="ref-body">
+        <b>Bell I.H., Lemort V., Groll E.A., Braun J.E., King G.B., Horton W.T. (2020)</b>: "PDSim: A general quasi-steady model for positive displacement machines", <i>Int. J. Refrigeration</i>.
+      </div>
+    </div>
+    <div class="ref-card">
+      <div class="ref-title">Heat Transfer Correlation</div>
+      <div class="ref-body">
+        <b>Annand W.J.D. (1963)</b> / <b>Woschni G. (1967)</b>: 왕복동 기관 chamber 대류 열전달 상관식. PDSim의 $\dot{Q}_{wall}$ 계산에 사용.
+      </div>
+    </div>
+    <div class="ref-card">
+      <div class="ref-title">Valve Dynamics</div>
+      <div class="ref-body">
+        <b>Reed valve mass-spring-damper 모델</b> — Soedel (2007) "Sound and Vibration of Positive Displacement Compressors".
+      </div>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>1. Chamber 기구학 (크랭크-슬라이더)</h2>
+    <p>실린더 체적이 크랭크각 $\theta$의 함수. 커넥팅 로드 보정 포함:</p>
+    <div class="eq-block">
+      $$V(\theta) = V_{clear} + \frac{A_{pist}\, L_{str}}{2}\left(1 - \cos\theta + \frac{L_{str}}{4 L_{rod}}\sin^2\theta\right)$$
+    </div>
+    <p>체적 변화율 (일량·압력 계산에 필요):</p>
+    <div class="eq-block">
+      $$\frac{dV}{d\theta} = \frac{A_{pist}\, L_{str}}{2}\left(\sin\theta + \frac{L_{str}}{4 L_{rod}}\sin 2\theta\right)$$
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>2. 지배방정식 (chamber control volume)</h2>
+    <p>chamber를 open control volume로 보고 질량·에너지 보존을 θ에 대해 적분 ($\omega = $ 각속도):</p>
+    <div class="eq-block">
+      <div class="eq-label">Mass conservation</div>
+      $$\frac{dm}{d\theta} = \frac{1}{\omega}\left(\dot{m}_{su} - \dot{m}_{dis} - \dot{m}_{leak}\right)$$
+    </div>
+    <div class="eq-block">
+      <div class="eq-label">Energy conservation</div>
+      $$\frac{d(m u)}{d\theta} = \frac{1}{\omega}\left(\dot{m}_{su} h_{su} - \dot{m}_{dis} h_{dis} - \dot{m}_{leak} h_{cyl} + \dot{Q}_{wall}\right) - P\frac{dV}{d\theta}$$
+    </div>
+    <p>상태변수 $(m, T)$로 풀면, $\rho = m/V$, $P = P(\rho, T)$ (CoolProp)로 닫힘. 매 θ step에서 적분.</p>
+  </div>
+
+  <div class="doc-section">
+    <h2>3. Valve Dynamics</h2>
+    <p><b>Level 1 (static orifice)</b> — 압력차 기반 즉시 유동:</p>
+    <div class="eq-block">
+      $$\dot{m}_{valve} = C_d A_{eff}\sqrt{2\rho\,|\Delta P|}\cdot \text{sgn}(\Delta P)$$
+    </div>
+    <p><b>Level 2 (dynamic reed valve)</b> — valve lift $x$가 mass-spring-damper로 거동:</p>
+    <div class="eq-block">
+      $$m_v \ddot{x} + c_v \dot{x} + k_v x = (P_{cyl} - P_{plenum})\,A_v$$
+      $$A_{eff}(x) = \min(\pi D_v x,\; A_{port})$$
+    </div>
+    <p>valve flutter, 지연 개폐 등 instantaneous 현상은 Level 2에서만 포착.</p>
+  </div>
+
+  <div class="doc-section">
+    <h2>4. Leakage Model</h2>
+    <p>piston-cylinder gap + valve seat 누설. 압축성 gap flow:</p>
+    <div class="eq-block">
+      $$\dot{m}_{leak} = C_{d,leak}\, A_{gap}\sqrt{2\rho_{cyl}(P_{cyl} - P_{su})}$$
+    </div>
+    <p>$A_{gap}$은 piston 둘레 × 반경 clearance. θ-resolved에선 매 step의 instantaneous $P_{cyl}$로 계산 (1-cycle 평균은 사이클 평균 ΔP 사용).</p>
+  </div>
+
+  <div class="doc-section">
+    <h2>5. Heat Transfer (Annand / Woschni)</h2>
+    <p>chamber 가스 ↔ 실린더 벽 대류:</p>
+    <div class="eq-block">
+      $$\dot{Q}_{wall} = h_c(\theta)\, A_{wall}(\theta)\,(T_{wall} - T_{cyl})$$
+    </div>
+    <p>대류 계수 (Annand 형태):</p>
+    <div class="eq-block">
+      $$\mathrm{Nu} = a\,\mathrm{Re}^b, \quad h_c = \frac{\mathrm{Nu}\cdot k_{gas}}{D_{cyl}}, \quad \mathrm{Re} = \frac{\rho\, \bar{v}_{pist}\, D_{cyl}}{\mu}$$
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>6. P-V 선도 + Indicated Work</h2>
+    <p>한 사이클 (0 → 2π) 닫힌 적분으로 indicated work 직접 산출:</p>
+    <div class="eq-block">
+      $$W_{ind} = \oint P\, dV = \int_0^{2\pi} P(\theta)\frac{dV}{d\theta}\, d\theta$$
+    </div>
+    <p>이 면적이 P-V 선도. 1-cycle 평균 모델은 algebraic 근사로 대체하지만, θ-resolved는 실제 적분 → valve loss·열손실이 면적에 직접 반영.</p>
+  </div>
+
+  <div class="doc-section">
+    <h2>7. 수치 적분 전략</h2>
+    <table class="params">
+      <thead>
+        <tr><th>항목</th><th>권장</th><th>비고</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>적분기</td><td class="mono">RK4 (explicit)</td><td>non-stiff 구간</td></tr>
+        <tr><td></td><td class="mono">LSODA / BDF</td><td>valve 개폐 stiff 구간</td></tr>
+        <tr><td>θ step</td><td class="mono">360 ~ 3600</td><td>1° ~ 0.1° 해상도</td></tr>
+        <tr><td>수렴 판정</td><td class="mono">cycle-to-cycle</td><td>m, T 주기성 (< 0.1%)</td></tr>
+        <tr><td>초기화</td><td>1-cycle 평균 결과</td><td>warm-start로 수렴 가속</td></tr>
+        <tr><td>라이브러리</td><td class="mono">scipy.integrate</td><td>solve_ivp</td></tr>
+      </tbody>
+    </table>
+    <p style="font-size: 12px; color: var(--muted);">※ 보통 2~5 사이클 적분해야 주기 정상상태(periodic steady-state) 도달.</p>
+  </div>
+
+  <div class="doc-section">
+    <h2>Nomenclature</h2>
+    <div class="nomenclature">
+      <div class="nomen-group">
+        <div class="nomen-group-title">Latin Symbols</div>
+        <div class="nomen-row"><span class="nomen-sym">$A_{pist}$</span><span class="nomen-desc">피스톤 단면적</span><span class="nomen-unit">m²</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$A_{eff}, A_v$</span><span class="nomen-desc">밸브 유효/포트 면적</span><span class="nomen-unit">m²</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$A_{gap}$</span><span class="nomen-desc">누설 gap 면적</span><span class="nomen-unit">m²</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$c_v, k_v$</span><span class="nomen-desc">밸브 damping / 강성</span><span class="nomen-unit">N·s/m, N/m</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$C_d$</span><span class="nomen-desc">Discharge coefficient</span><span class="nomen-unit">—</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$h$</span><span class="nomen-desc">비엔탈피</span><span class="nomen-unit">J/kg</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$h_c$</span><span class="nomen-desc">대류 열전달 계수</span><span class="nomen-unit">W/(m²·K)</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$L_{str}, L_{rod}$</span><span class="nomen-desc">행정 / 커넥팅로드 길이</span><span class="nomen-unit">m</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$m$</span><span class="nomen-desc">Chamber 가스 질량</span><span class="nomen-unit">kg</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$m_v$</span><span class="nomen-desc">밸브 등가 질량</span><span class="nomen-unit">kg</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\dot{m}$</span><span class="nomen-desc">질량 유량 (su/dis/leak)</span><span class="nomen-unit">kg/s</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$P$</span><span class="nomen-desc">압력 (cyl/su/dis/plenum)</span><span class="nomen-unit">Pa</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\dot{Q}_{wall}$</span><span class="nomen-desc">벽면 열전달률</span><span class="nomen-unit">W</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$T$</span><span class="nomen-desc">온도 (cyl/wall)</span><span class="nomen-unit">K</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$u$</span><span class="nomen-desc">비 내부 에너지</span><span class="nomen-unit">J/kg</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$V$</span><span class="nomen-desc">Chamber 체적 (θ의 함수)</span><span class="nomen-unit">m³</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\bar{v}_{pist}$</span><span class="nomen-desc">평균 피스톤 속도</span><span class="nomen-unit">m/s</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$W_{ind}$</span><span class="nomen-desc">Indicated work (∮P dV)</span><span class="nomen-unit">J</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$x$</span><span class="nomen-desc">밸브 lift</span><span class="nomen-unit">m</span></div>
+      </div>
+      <div class="nomen-group">
+        <div class="nomen-group-title">Greek Symbols</div>
+        <div class="nomen-row"><span class="nomen-sym">$\theta$</span><span class="nomen-desc">크랭크각 (적분 변수)</span><span class="nomen-unit">rad</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\rho$</span><span class="nomen-desc">밀도 (= m/V)</span><span class="nomen-unit">kg/m³</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\mu$</span><span class="nomen-desc">점성</span><span class="nomen-unit">Pa·s</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\omega$</span><span class="nomen-desc">크랭크 각속도</span><span class="nomen-unit">rad/s</span></div>
+      </div>
+      <div class="nomen-group">
+        <div class="nomen-group-title">Dimensionless</div>
+        <div class="nomen-row"><span class="nomen-sym">Nu</span><span class="nomen-desc">Nusselt number</span><span class="nomen-unit">—</span></div>
+        <div class="nomen-row"><span class="nomen-sym">Re</span><span class="nomen-desc">Reynolds number</span><span class="nomen-unit">—</span></div>
+      </div>
+      <div class="nomen-group">
+        <div class="nomen-group-title">Subscripts</div>
+        <div class="nomen-row"><span class="nomen-sym">clear</span><span class="nomen-desc">Clearance (TDC 잔류)</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">cyl</span><span class="nomen-desc">Cylinder chamber 내부</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">dis</span><span class="nomen-desc">Discharge (토출)</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">gap</span><span class="nomen-desc">누설 간극</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">leak</span><span class="nomen-desc">Leakage</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">plenum</span><span class="nomen-desc">밸브 외측 plenum</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">su</span><span class="nomen-desc">Suction (흡입)</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">wall</span><span class="nomen-desc">실린더 벽면</span><span class="nomen-unit"></span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>구현 로드맵 (제안)</h2>
+    <table class="params">
+      <thead>
+        <tr><th>단계</th><th>내용</th><th>난이도</th></tr>
+      </thead>
+      <tbody>
+        <tr><td class="mono">M1</td><td>기구학 V(θ) + mass/energy ODE (static valve)</td><td>중</td></tr>
+        <tr><td class="mono">M2</td><td>scipy solve_ivp 적분 + periodic steady-state 수렴</td><td>중</td></tr>
+        <tr><td class="mono">M3</td><td>Leakage + heat transfer (Annand) 추가</td><td>중</td></tr>
+        <tr><td class="mono">M4</td><td>Dynamic reed valve (Level 2)</td><td>상</td></tr>
+        <tr><td class="mono">M5</td><td>P-V 선도 출력 + 1-cycle 평균 모델과 교차 검증</td><td>중</td></tr>
+        <tr><td class="mono">M6</td><td>typeNo 104 등록, fidelity 옵션 통합</td><td>하</td></tr>
+      </tbody>
+    </table>
+    <p style="font-size: 12px; margin-top: 10px;">검증 기준: θ-resolved 사이클 평균 ṁ·Ẇ·T_dis가 1-cycle 평균 모델과 ±5% 이내 (정상 운전점). instantaneous 거동(P-V, valve flutter)은 θ-resolved 고유 출력.</p>
+  </div>
+
+  <div class="doc-section">
+    <h2>현재 모델과의 관계</h2>
+    <div class="val-grid">
+      <div class="val-card">
+        <div class="val-label">현재 (typeNo 103)</div>
+        <div class="val-value" style="font-size:13px">1-cycle 평균<span class="val-unit">~50ms</span></div>
+      </div>
+      <div class="val-card">
+        <div class="val-label">θ-PDSim (typeNo 104)</div>
+        <div class="val-value" style="font-size:13px">θ 적분<span class="val-unit">~60s</span></div>
+      </div>
+      <div class="val-card good">
+        <div class="val-label">공유</div>
+        <div class="val-value" style="font-size:12px">인터페이스<span class="val-unit">동일 I/O</span></div>
+      </div>
+      <div class="val-card good">
+        <div class="val-label">전환</div>
+        <div class="val-value" style="font-size:12px">fidelity<span class="val-unit">옵션</span></div>
+      </div>
+    </div>
+    <p style="font-size: 13px; margin-top: 10px;">같은 입력(P_suc·T_suc·P_dis·N) → 같은 출력(ṁ·T_dis·Ẇ). 빠른 탐색은 1-cycle, 최종 상세 검증·방진 설계는 θ-PDSim. <b>fidelity 토글</b>로 전환.</p>
   </div>
 </template>
 
