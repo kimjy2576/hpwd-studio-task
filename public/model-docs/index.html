@@ -1009,102 +1009,164 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
   <div class="doc-header">
     <div class="doc-eyebrow">Compressor / On-Design</div>
     <h1 class="doc-title">
-      PDSim ROM (Reduced-Order Model)
+      Chamber-Resolved 1-Cycle Physics
       <span class="doc-title-badge badge-on">ON</span>
     </h1>
-    <div class="doc-subtitle">PDSim 전산 해석 결과를 ROM으로 축약 — Ground Truth 기준</div>
+    <div class="doc-subtitle">Bell PDSim 개념 기반 1-cycle 평균 물리 모델 — Ground Truth 기준</div>
+  </div>
+
+  <div class="doc-section">
+    <h2>모델 성격 (중요)</h2>
+    <div class="ref-card" style="border-left-color: var(--amber);">
+      <div class="ref-title" style="color: var(--amber);">Note — 명칭 주의</div>
+      <div class="ref-body">
+        컴포넌트 이름은 <b>"PDSim ROM"</b>이나, 실제 구현은 <b>회귀 ROM (Reduced-Order Model)이 아님</b>. Bell의 PDSim chamber 해석 개념(재팽창·누설·밸브 손실·polytropic 압축)을 차용하되, 회전각 θ 적분 대신 <b>1-cycle 평균으로 단순화한 algebraic 물리 모델</b>. 런타임에 실제 물리식을 직접 계산 (CoolProp 물성 사용).
+      </div>
+    </div>
   </div>
 
   <div class="doc-section">
     <h2>학계 참고문헌</h2>
     <div class="ref-card">
-      <div class="ref-title">Primary Reference</div>
+      <div class="ref-title">Concept Reference</div>
       <div class="ref-body">
-        <b>Bell I. (PDSim) — Purdue University</b>: 
-        "Open-source positive displacement compressor simulator". 
-        압축기 chamber pressure-volume cycle을 detailed CFD-like 해석으로 시뮬레이션.
+        <b>Bell I. et al. — PDSim (Purdue)</b>: open-source positive displacement compressor simulator. Chamber 해석, 누설, 밸브 동역학 개념을 차용.
       </div>
     </div>
     <div class="ref-card">
-      <div class="ref-title">ROM Methodology</div>
+      <div class="ref-title">Modeling Basis</div>
       <div class="ref-body">
-        <b>Reduced-Order Modeling</b>: PDSim 전산 해석 결과(시험 매트릭스 100+)를 
-        <b>polynomial regression / kriging / neural network</b>으로 축약. 
-        Detailed 해석 정확도 + 빠른 evaluation 동시 달성.
+        Polytropic 압축 + isentropic 기준 + 누설·밸브·마찰 손실 분해. 1-cycle 평균 거동을 algebraic하게 닫음 (θ 적분 없음).
       </div>
     </div>
   </div>
 
   <div class="doc-section">
-    <h2>수학적 정의</h2>
+    <h2>수학적 정의 (13-step chamber 물리)</h2>
+    <p>흡입에서 토출까지 chamber 거동을 <b>1 사이클 평균</b>으로 분해. 각 단계가 물리식으로 계산됩니다:</p>
 
-    <h3>PDSim 기본 원리 (간략)</h3>
-    <p>chamber 내 작동유체의 1D unsteady mass/energy balance를 chamber 회전각 $\theta$ 따라 적분:</p>
+    <h3>Step 1: Clearance 재팽창</h3>
+    <p>TDC clearance gas가 흡입 압력까지 재팽창 → 실효 흡입 체적 감소:</p>
     <div class="eq-block">
-      $$\frac{d(\rho V)}{d\theta} = \dot{m}_{in} - \dot{m}_{out}$$
-      $$\frac{d(\rho u V)}{d\theta} = \dot{m}_{in} h_{in} - \dot{m}_{out} h_{out} + \dot{Q}_{wall} - P \frac{dV}{d\theta}$$
+      $$V_{re} = V_{clear}\left(\frac{P_{dis}}{P_{suc}}\right)^{1/n}, \quad V_{eff} = V_{max} - V_{re}$$
     </div>
 
-    <h3>ROM 함수</h3>
-    <p>PDSim 결과를 운전점 (T_evap, T_cond, N) 함수로 fit:</p>
+    <h3>Step 2: 누설 (RPM 의존)</h3>
+    <p>chamber → 흡입측 누설. 저속일수록 사이클 시간 길어 누설 누적 증가:</p>
     <div class="eq-block">
-      $$\dot{m} = f_{\dot{m}}(T_{evap}, T_{cond}, N; \mathbf{\theta}_m)$$
-      $$T_{dis} = f_T(T_{evap}, T_{cond}, N; \mathbf{\theta}_T)$$
-      $$\dot{W} = f_W(T_{evap}, T_{cond}, N; \mathbf{\theta}_W)$$
+      $$\dot{m}_{leak} = C_{d,leak}\, A_{leak}\sqrt{2\rho_{avg}(P_{dis}-P_{suc})}\left(\frac{N}{N_{rated}}\right)^{-n_{leak}}$$
     </div>
-    <p>$\mathbf{\theta}$는 ROM 학습 시 결정되는 hyperparameters. 보통 <b>polynomial degree 3~5</b> 또는 <b>Gaussian Process kernel</b> 사용.</p>
+
+    <h3>Step 3-4: Swept + 실효 mass flow</h3>
+    <div class="eq-block">
+      $$\dot{m}_{swept} = V_{eff}\,\omega\,\rho_{su}, \quad \dot{m} = \dot{m}_{swept} - \dot{m}_{leak}$$
+    </div>
+
+    <h3>Step 5: 체적 효율</h3>
+    <div class="eq-block">
+      $$\eta_v = \frac{\dot{m}}{\dot{m}_{ideal}} = \frac{\dot{m}}{V_{max}\,\omega\,\rho_{su}}$$
+    </div>
+
+    <h3>Step 6: TDC 내부 압력 (polytropic)</h3>
+    <p>built-in volume ratio $r_v$가 결정하는 internal pressure:</p>
+    <div class="eq-block">
+      $$P_{int} = P_{suc}\, r_v^{\,n}$$
+    </div>
+
+    <h3>Step 7-8: 등엔트로피 + over/under-compression</h3>
+    <p>등엔트로피 일 $w_{is}$ 계산 후, $P_{int} \ne P_{dis}$ 차이에 의한 보정:</p>
+    <div class="eq-block">
+      $$w_{is} = h_{dis,s} - h_{su}$$
+      $$w_{ou} = \begin{cases} v_{int}(P_{dis}-P_{int}) & P_{int} < P_{dis} \;(\text{under}) \\ f_{oc}\, v_{int}(P_{int}-P_{dis}) & P_{int} > P_{dis} \;(\text{over}) \end{cases}$$
+    </div>
+
+    <h3>Step 9: 밸브 손실</h3>
+    <p>흡입·토출 밸브 압력 강하 (orifice 손실):</p>
+    <div class="eq-block">
+      $$\Delta P_{valve} = \zeta_v \frac{\dot{m}^2}{\rho A^2}, \quad \dot{W}_{valve} = \frac{\dot{m}\,\Delta P_{valve}}{\rho}$$
+    </div>
+
+    <h3>Step 10-11: Indicated work + 토출 상태</h3>
+    <div class="eq-block">
+      $$w_{chamber} = w_{is} + w_{ou}$$
+      $$\dot{W}_{ind} = \dot{m}\,w_{chamber} + \dot{W}_{valve,in} + \dot{W}_{valve,out}$$
+      $$h_{dis} = h_{su} + w_{chamber} + \frac{\dot{W}_{valve}}{\dot{m}}$$
+    </div>
+
+    <h3>Step 12-13: 효율 + 마찰 + 모터</h3>
+    <div class="eq-block">
+      $$\eta_{is} = \frac{w_{is}}{w_{chamber}}$$
+      $$\dot{W}_{friction} = W_{f,0} + \alpha_f N^2$$
+      $$\dot{W}_{elec} = \frac{\dot{W}_{ind} + \dot{W}_{friction}}{\eta_{motor}\,\eta_{inv}}$$
+    </div>
   </div>
 
   <div class="doc-section">
     <h2>Nomenclature</h2>
     <div class="nomenclature">
       <div class="nomen-group">
-        <div class="nomen-group-title">Latin Symbols (PDSim 1D 해석)</div>
+        <div class="nomen-group-title">Latin Symbols</div>
+        <div class="nomen-row"><span class="nomen-sym">$A_{leak}$</span><span class="nomen-desc">누설 유효 면적</span><span class="nomen-unit">m²</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$A$</span><span class="nomen-desc">밸브 유효 면적 (in/out)</span><span class="nomen-unit">m²</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$C_{d,leak}$</span><span class="nomen-desc">누설 discharge coefficient</span><span class="nomen-unit">—</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$f_{oc}$</span><span class="nomen-desc">Over-compression 손실 가중</span><span class="nomen-unit">—</span></div>
         <div class="nomen-row"><span class="nomen-sym">$h$</span><span class="nomen-desc">비엔탈피</span><span class="nomen-unit">J/kg</span></div>
-        <div class="nomen-row"><span class="nomen-sym">$\dot{m}$</span><span class="nomen-desc">질량 유량 (in/out)</span><span class="nomen-unit">kg/s</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\dot{m}$</span><span class="nomen-desc">질량 유량 (실효)</span><span class="nomen-unit">kg/s</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$n$</span><span class="nomen-desc">Polytropic 지수 (= cp/cv)</span><span class="nomen-unit">—</span></div>
         <div class="nomen-row"><span class="nomen-sym">$N$</span><span class="nomen-desc">압축기 회전수</span><span class="nomen-unit">rpm</span></div>
-        <div class="nomen-row"><span class="nomen-sym">$P$</span><span class="nomen-desc">Chamber 압력</span><span class="nomen-unit">Pa</span></div>
-        <div class="nomen-row"><span class="nomen-sym">$\dot{Q}_{wall}$</span><span class="nomen-desc">Wall heat transfer rate</span><span class="nomen-unit">W</span></div>
-        <div class="nomen-row"><span class="nomen-sym">$T$</span><span class="nomen-desc">Saturation 온도</span><span class="nomen-unit">°C</span></div>
-        <div class="nomen-row"><span class="nomen-sym">$u$</span><span class="nomen-desc">비 내부 에너지</span><span class="nomen-unit">J/kg</span></div>
-        <div class="nomen-row"><span class="nomen-sym">$V$</span><span class="nomen-desc">Chamber 체적 (회전각의 함수)</span><span class="nomen-unit">m³</span></div>
-        <div class="nomen-row"><span class="nomen-sym">$\dot{W}$</span><span class="nomen-desc">전기 동력 입력</span><span class="nomen-unit">W</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$P$</span><span class="nomen-desc">압력</span><span class="nomen-unit">bar / Pa</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$r_v$</span><span class="nomen-desc">Built-in volume ratio</span><span class="nomen-unit">—</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$v_{int}$</span><span class="nomen-desc">압축 종료 비체적</span><span class="nomen-unit">m³/kg</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$V$</span><span class="nomen-desc">실린더 체적 (max/clear/eff/re)</span><span class="nomen-unit">m³</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$w$</span><span class="nomen-desc">비일 (is / chamber / ou)</span><span class="nomen-unit">J/kg</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\dot{W}$</span><span class="nomen-desc">동력 (ind/valve/friction/elec)</span><span class="nomen-unit">W</span></div>
       </div>
       <div class="nomen-group">
         <div class="nomen-group-title">Greek Symbols</div>
-        <div class="nomen-row"><span class="nomen-sym">$\theta$</span><span class="nomen-desc">크랭크 회전각</span><span class="nomen-unit">rad</span></div>
-        <div class="nomen-row"><span class="nomen-sym">$\rho$</span><span class="nomen-desc">밀도 (chamber 평균)</span><span class="nomen-unit">kg/m³</span></div>
-        <div class="nomen-row"><span class="nomen-sym">$\boldsymbol{\theta}_m, \boldsymbol{\theta}_T, \boldsymbol{\theta}_W$</span><span class="nomen-desc">ROM hyperparameters (회귀계수 벡터)</span><span class="nomen-unit">—</span></div>
-      </div>
-      <div class="nomen-group">
-        <div class="nomen-group-title">ROM Functions</div>
-        <div class="nomen-row"><span class="nomen-sym">$f_{\dot{m}}$</span><span class="nomen-desc">Mass flow ROM 함수</span><span class="nomen-unit"></span></div>
-        <div class="nomen-row"><span class="nomen-sym">$f_T$</span><span class="nomen-desc">Discharge T ROM 함수</span><span class="nomen-unit"></span></div>
-        <div class="nomen-row"><span class="nomen-sym">$f_W$</span><span class="nomen-desc">Power ROM 함수</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\alpha_f$</span><span class="nomen-desc">마찰 RPM² 계수</span><span class="nomen-unit">W/rpm²</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\zeta_v$</span><span class="nomen-desc">밸브 손실 계수</span><span class="nomen-unit">—</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\eta_v$</span><span class="nomen-desc">체적 효율</span><span class="nomen-unit">—</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\eta_{is}$</span><span class="nomen-desc">등엔트로피 효율 (결과)</span><span class="nomen-unit">—</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\eta_{motor}, \eta_{inv}$</span><span class="nomen-desc">모터 / 인버터 효율</span><span class="nomen-unit">—</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\rho$</span><span class="nomen-desc">밀도 (su / avg / dis)</span><span class="nomen-unit">kg/m³</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\omega$</span><span class="nomen-desc">회전 주파수 (= N/60)</span><span class="nomen-unit">Hz</span></div>
       </div>
       <div class="nomen-group">
         <div class="nomen-group-title">Subscripts</div>
-        <div class="nomen-row"><span class="nomen-sym">cond</span><span class="nomen-desc">Condensing (응축 saturation)</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">clear</span><span class="nomen-desc">Clearance volume</span><span class="nomen-unit"></span></div>
         <div class="nomen-row"><span class="nomen-sym">dis</span><span class="nomen-desc">Discharge (토출)</span><span class="nomen-unit"></span></div>
-        <div class="nomen-row"><span class="nomen-sym">evap</span><span class="nomen-desc">Evaporating (증발 saturation)</span><span class="nomen-unit"></span></div>
-        <div class="nomen-row"><span class="nomen-sym">in / out</span><span class="nomen-desc">Chamber 유입 / 유출</span><span class="nomen-unit"></span></div>
-        <div class="nomen-row"><span class="nomen-sym">wall</span><span class="nomen-desc">Chamber 벽면</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">dis,s</span><span class="nomen-desc">Discharge at isentropic</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">eff</span><span class="nomen-desc">Effective (실효 흡입 체적)</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">ind</span><span class="nomen-desc">Indicated (chamber 일)</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">int</span><span class="nomen-desc">Internal (built-in, TDC)</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">leak</span><span class="nomen-desc">Leakage (누설)</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">ou</span><span class="nomen-desc">Over/under-compression</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">rated</span><span class="nomen-desc">정격 (누설 RPM 보정 기준)</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">re</span><span class="nomen-desc">Re-expansion (재팽창)</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">su / suc</span><span class="nomen-desc">Suction (흡입)</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">swept</span><span class="nomen-desc">Swept (행정 체적 기준)</span><span class="nomen-unit"></span></div>
       </div>
     </div>
   </div>
 
   <div class="doc-section">
-    <h2>Fitting Parameters</h2>
-    <p>PDSim ROM은 사전 학습된 모델이므로 사용자 직접 fitting parameters 적음 (ROM 학습 시 결정):</p>
+    <h2>Fitting / Geometry Parameters</h2>
     <table class="params">
       <thead>
-        <tr><th>Parameter</th><th>Description</th><th>Default</th></tr>
+        <tr><th>Symbol</th><th>Description</th><th>Unit</th><th>Default</th></tr>
       </thead>
       <tbody>
-        <tr><td class="mono">rom_type</td><td>ROM 종류 (polynomial / kriging / NN)</td><td>polynomial</td></tr>
-        <tr><td class="mono">poly_degree</td><td>다항식 차수 (polynomial일 때)</td><td>3</td></tr>
-        <tr><td class="mono">fluid</td><td>작동유체</td><td>R290</td></tr>
-        <tr><td class="mono">comp_geometry</td><td>압축기 형상 데이터 (사전 입력)</td><td>fixed</td></tr>
+        <tr><td class="mono">V_disp</td><td>Displacement volume</td><td>cm³</td><td>10.0</td></tr>
+        <tr><td class="mono">clearance_ratio</td><td>Clearance 체적 비</td><td>—</td><td>0.04</td></tr>
+        <tr><td class="mono">rv_in</td><td>Built-in volume ratio</td><td>—</td><td>2.5</td></tr>
+        <tr><td class="mono">A_valve_in/out</td><td>밸브 유효 면적</td><td>mm²</td><td>8.0 / 6.0</td></tr>
+        <tr><td class="mono">zeta_valve</td><td>밸브 손실 계수</td><td>—</td><td>1.5</td></tr>
+        <tr><td class="mono">A_leak</td><td>누설 면적</td><td>mm²</td><td>0.02</td></tr>
+        <tr><td class="mono">Cd_leak</td><td>누설 계수</td><td>—</td><td>0.6</td></tr>
+        <tr><td class="mono">n_leak_rpm</td><td>누설 RPM 지수</td><td>—</td><td>0.5</td></tr>
+        <tr><td class="mono">over_comp_factor</td><td>Over-comp 손실 가중</td><td>—</td><td>0.3</td></tr>
+        <tr><td class="mono">W_f_const, alpha_f</td><td>마찰 const + RPM²</td><td>W, —</td><td>20, 8e-6</td></tr>
+        <tr><td class="mono">eta_motor, eta_inv</td><td>모터 / 인버터 효율</td><td>—</td><td>0.92 / 0.95</td></tr>
       </tbody>
     </table>
   </div>
@@ -1113,8 +1175,9 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
     <h2>Code Mapping</h2>
     <div class="code-map">
 <span class="file">backend/components/compressor_pdsim_rom.py</span><br>
-├─ <span class="func">step()</span>           <span class="desc">— ROM 평가 (운전점 입력 → ṁ, T_dis, W)</span><br>
-├─ <span class="func">_load_rom_weights()</span>  <span class="desc">— 사전 학습된 ROM 파라미터 로드</span><br>
+├─ <span class="func">step()</span>  <span class="desc">— 13-step chamber 물리 (재팽창→누설→swept→polytropic→valve→friction)</span><br>
+├─ 누설: <span class="func">rpm_factor</span>  <span class="desc">— (N/N_rated)^(-n_leak)</span><br>
+├─ over/under-comp: <span class="func">w_overunder</span><br>
 └─ typeNo: <span class="func">103</span>
     </div>
   </div>
@@ -1123,36 +1186,35 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
     <h2>검증 결과</h2>
     <div class="val-grid">
       <div class="val-card good">
-        <div class="val-label">Source 정확도</div>
-        <div class="val-value">PDSim<span class="val-unit">CFD-like</span></div>
+        <div class="val-label">모델 타입</div>
+        <div class="val-value" style="font-size:13px">물리 기반<span class="val-unit">algebraic</span></div>
       </div>
       <div class="val-card good">
         <div class="val-label">평가 속도</div>
-        <div class="val-value">< 1ms<span class="val-unit">per call</span></div>
+        <div class="val-value">&lt; 1ms</div>
       </div>
       <div class="val-card">
-        <div class="val-label">vs Semi (Winandy)</div>
-        <div class="val-value">+14%<span class="val-unit">ṁ 편차</span></div>
+        <div class="val-label">vs Winandy</div>
+        <div class="val-value">+14%<span class="val-unit">ṁ</span></div>
       </div>
       <div class="val-card">
-        <div class="val-label">vs Off (AHRI)</div>
-        <div class="val-value">+14%<span class="val-unit">ṁ 편차</span></div>
+        <div class="val-label">vs AHRI</div>
+        <div class="val-value">+14%<span class="val-unit">ṁ</span></div>
       </div>
     </div>
-    <p style="font-size: 12px; margin-top: 12px;">
-      편차는 default parameters 차이 (PDSim ROM이 가정하는 부품 vs Off/Semi default 부품 다름). 
-      Calibration으로 일치 가능.
+    <p style="font-size: 11px; margin-top: 12px;">
+      편차는 default geometry 차이 (chamber 물리가 가정하는 부품 vs Off/Semi default). Calibration으로 일치 가능.
     </p>
   </div>
 
   <div class="doc-section">
     <h2>적용 범위 + 한계</h2>
-    <p><b>✅ 적용 가능</b>: ROM 학습된 운전점 매트릭스 내 모든 점. CFD 정확도 + 1ms 평가 속도 → 시스템 시뮬에 ground truth로 활용.</p>
+    <p><b>✅ 적용 가능</b>: Reciprocating 압축기. 물리 기반이라 누설·밸브·마찰 손실을 개별 분해 → 설계 변경(밸브 면적, clearance 등) 영향 직접 평가 가능. < 1ms 평가.</p>
     <p><b>⚠️ 한계</b>:</p>
-    <ul style="margin-left: 20px; color: var(--ink-soft); font-size: 13px; line-height: 1.8;">
-      <li>ROM 학습 매트릭스 범위 밖에서는 외삽 — 정확도 떨어짐</li>
-      <li>새 부품 (geometry 다름) 사용 시 <b>PDSim 재실행 + ROM 재학습 필요</b></li>
-      <li>가변속 운전 시 RPM도 학습 매트릭스에 포함되어 있어야 함</li>
+    <ul style="color: var(--ink-soft); font-size: 13px; line-height: 1.8;">
+      <li><b>1-cycle 평균</b> — 회전각 θ에 따른 instantaneous 거동은 안 봄 (valve flutter, 압력 맥동 등 미반영)</li>
+      <li>현재 <b>reciprocating만</b> (scroll/screw는 별도 chamber 모델 필요)</li>
+      <li>실제 PDSim의 θ-resolved PDE 적분 대비 정밀도 낮음 (단, 속도는 훨씬 빠름)</li>
     </ul>
   </div>
 </template>
