@@ -150,7 +150,7 @@ modelDescription = {
 
         # ═══════ Circuit ═══════
         {'name': 'circuit_mode', 'causality': 'parameter', 'type': 'String',
-         'group': 'Circuit', 'start': 'row_parallel', 'unit': '-',
+         'group': 'Circuit', 'start': 'single', 'unit': '-',
          'options': CIRCUIT_MODES,
          'description': 'Circuit 모드: row_parallel/serpentine_2/serpentine_4/single/custom'},
         # custom 모드용 — JSON string 형태로 [[ [r,c], ... ], ...] 전달
@@ -367,7 +367,7 @@ def step(input, params, state, dt):
     louver_angle = float(params.get('louver_angle', 27.0))
     
     # Circuit
-    circuit_mode = params.get('circuit_mode', 'row_parallel')
+    circuit_mode = params.get('circuit_mode', 'single')
     custom_circuits_json = params.get('custom_circuits', '')
     custom_circuits = _parse_custom_circuits(custom_circuits_json)
     

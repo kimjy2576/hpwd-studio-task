@@ -142,6 +142,62 @@ async function api(path, options = {}) {
   return res.json();
 }
 
+/* ───────── Circuit 헬퍼 (회로 수 = circuit_mode로 일원화) ───────── */
+// bends → 회로 리스트 (custom 모드). 백엔드 _parse_custom_circuits와 짝.
+function traceBends(bends, inlets, outlets, Nr, Nt) {
+  if (!bends || ((!bends.front || !bends.front.length) && (!bends.back || !bends.back.length))) return [];
+  const fm = {}, bm = {};
+  (bends.front || []).forEach(([r1, c1, r2, c2]) => { fm[`${r1},${c1}`] = [r2, c2]; fm[`${r2},${c2}`] = [r1, c1]; });
+  (bends.back || []).forEach(([r1, c1, r2, c2]) => { bm[`${r1},${c1}`] = [r2, c2]; bm[`${r2},${c2}`] = [r1, c1]; });
+  const visited = new Set(), circuits = [];
+  for (let c = 0; c < Nt; c++) for (let r = 0; r < Nr; r++) {
+    const k = `${r},${c}`;
+    if (visited.has(k)) continue;
+    const hasF = fm.hasOwnProperty(k), hasB = bm.hasOwnProperty(k);
+    if (hasF && hasB) continue;
+    if (!hasF && !hasB) { circuits.push([[r, c]]); visited.add(k); continue; }
+    const path = []; let cur = [r, c];
+    let lookFace = hasB ? 'back' : 'front';
+    path.push([...cur]); visited.add(`${cur[0]},${cur[1]}`);
+    while (true) {
+      const map = lookFace === 'front' ? fm : bm;
+      const ck = `${cur[0]},${cur[1]}`;
+      if (!map.hasOwnProperty(ck)) break;
+      const next = map[ck]; const nk = `${next[0]},${next[1]}`;
+      if (visited.has(nk)) break;
+      path.push([...next]); visited.add(nk);
+      cur = next; lookFace = lookFace === 'front' ? 'back' : 'front';
+    }
+    circuits.push(path);
+  }
+  const isMatch = (a, b) => a && b && a[0] === b[0] && a[1] === b[1];
+  const inSet = (arr, t) => arr.some(a => isMatch(a, t));
+  circuits.forEach(circ => {
+    if (circ.length < 2) return;
+    const first = circ[0], last = circ[circ.length - 1];
+    if (inSet(inlets, last)) circ.reverse();
+    else if (inSet(outlets, first)) circ.reverse();
+    else if (!inSet(inlets, first) && !inSet(outlets, last)) { if (first[0] < last[0]) circ.reverse(); }
+  });
+  return circuits;
+}
+
+// circuit_mode → 병렬 회로 수. 백엔드(solver.py / Semi _ncirc_from_mode)와 동일.
+//   Ncolumns = transverse tube 수 (per-row 컬럼 수)
+function deriveNcirc(mode, Ncolumns, Nrows, bends, inlets, outlets) {
+  const perRow = Math.max(1, Math.round(Ncolumns));
+  if (mode === 'single') return 1;
+  if (mode === 'custom') {
+    const c = traceBends(bends, inlets || [], outlets || [], Nrows, perRow);
+    return Math.max(1, c.length);
+  }
+  if (mode.startsWith('serpentine')) {
+    const grp = parseInt(mode.split('_')[1]) || 2;
+    return Math.max(1, Math.floor(perRow / grp));
+  }
+  return perRow; // row_parallel
+}
+
 /* ───────── App Switcher (4개 앱) ───────── */
 function AppSwitcher({ current }) {
   const [open, setOpen] = useState(false);
@@ -521,9 +577,8 @@ function FinTubeHXView({ mode = 'evap', onBack }) {
   };
   const [P_t, setPt] = useState(25.0);  // mm
   const [P_l, setPl] = useState(22.0);  // mm
-  const [N_circuits, setNcircuits] = useState(2);
   // Circuit mode (preset 4개 + custom)
-  const [circuit_mode, setCircuitMode] = useState('row_parallel');  // row_parallel/serpentine_2/serpentine_4/single/custom
+  const [circuit_mode, setCircuitMode] = useState('single');  // row_parallel/serpentine_2/serpentine_4/single/custom
   
   // HX-Sim의 bend 시스템 (front/back face × 인접 튜브 페어)
   // bends.front: [[r1,c1,r2,c2], ...] (front face의 bend 페어)
@@ -532,6 +587,13 @@ function FinTubeHXView({ mode = 'evap', onBack }) {
   const [bends, setBends] = useState({ front: [], back: [] });
   const [inlets, setInlets] = useState([]);
   const [outlets, setOutlets] = useState([]);
+
+  // 회로 수는 circuit_mode로 일원화 (별도 N_circuits 입력 제거).
+  //   백엔드 On(solver.py)·Semi(_ncirc_from_mode)와 동일 규칙으로 derive.
+  const N_circuits = useMemo(
+    () => deriveNcirc(circuit_mode, N_columns, N_rows, bends, inlets, outlets),
+    [circuit_mode, N_columns, N_rows, bends, inlets, outlets]
+  );
 
   // View toggle (2D plan view)
   const [view, setView] = useState('3D');
@@ -588,7 +650,6 @@ function FinTubeHXView({ mode = 'evap', onBack }) {
     if (p.N_rows !== undefined) setNrows(p.N_rows);
     if (p.P_t !== undefined) setPt(p.P_t);
     if (p.P_l !== undefined) setPl(p.P_l);
-    if (p.N_circuits !== undefined) setNcircuits(p.N_circuits);
     if (p.circuit_mode !== undefined) setCircuitMode(p.circuit_mode);
     if (p.bends !== undefined) setBends(p.bends);
     if (p.inlets !== undefined) setInlets(p.inlets);
@@ -626,52 +687,11 @@ function FinTubeHXView({ mode = 'evap', onBack }) {
   const buildBackendParams = () => {
     const N_tubes_per_row = N_rows > 0 ? Math.round(N_tubes / N_rows) : N_tubes;
     
-    // bends 시스템 → custom_circuits JSON (HX-Sim 알고리즘 이식)
+    // bends 시스템 → custom_circuits JSON (추출한 traceBends 재사용)
     let custom_circuits_json = '';
     if (circuit_mode === 'custom' &&
         ((bends.front && bends.front.length > 0) || (bends.back && bends.back.length > 0))) {
-      // traceBends 알고리즘 (CircuitDesigner와 동일)
-      const fm = {}, bm = {};
-      (bends.front || []).forEach(([r1, c1, r2, c2]) => {
-        fm[`${r1},${c1}`] = [r2, c2]; fm[`${r2},${c2}`] = [r1, c1];
-      });
-      (bends.back || []).forEach(([r1, c1, r2, c2]) => {
-        bm[`${r1},${c1}`] = [r2, c2]; bm[`${r2},${c2}`] = [r1, c1];
-      });
-      const visited = new Set(), circuits = [];
-      const Nr = N_rows, Nt = N_tubes_per_row;
-      for (let c = 0; c < Nt; c++) for (let r = 0; r < Nr; r++) {
-        const k = `${r},${c}`;
-        if (visited.has(k)) continue;
-        const hasF = fm.hasOwnProperty(k), hasB = bm.hasOwnProperty(k);
-        if (hasF && hasB) continue;
-        if (!hasF && !hasB) { circuits.push([[r, c]]); visited.add(k); continue; }
-        const path = []; let cur = [r, c];
-        let lookFace = hasB ? 'back' : 'front';
-        path.push([...cur]); visited.add(`${cur[0]},${cur[1]}`);
-        while (true) {
-          const map = lookFace === 'front' ? fm : bm;
-          const ck = `${cur[0]},${cur[1]}`;
-          if (!map.hasOwnProperty(ck)) break;
-          const next = map[ck]; const nk = `${next[0]},${next[1]}`;
-          if (visited.has(nk)) break;
-          path.push([...next]); visited.add(nk);
-          cur = next; lookFace = lookFace === 'front' ? 'back' : 'front';
-        }
-        circuits.push(path);
-      }
-      // Orient using inlets/outlets
-      const isMatch = (a, b) => a && b && a[0] === b[0] && a[1] === b[1];
-      const inSet = (arr, t) => arr.some(a => isMatch(a, t));
-      circuits.forEach(circ => {
-        if (circ.length < 2) return;
-        const first = circ[0], last = circ[circ.length - 1];
-        if (inSet(inlets, last)) circ.reverse();
-        else if (inSet(outlets, first)) circ.reverse();
-        else if (!inSet(inlets, first) && !inSet(outlets, last)) {
-          if (first[0] < last[0]) circ.reverse();
-        }
-      });
+      const circuits = traceBends(bends, inlets, outlets, N_rows, N_tubes_per_row);
       custom_circuits_json = JSON.stringify(circuits);
     }
     
@@ -806,9 +826,8 @@ function FinTubeHXView({ mode = 'evap', onBack }) {
     if (D_o > P_t) errs.push({ level: 'error', msg: 'D_o가 P_t보다 큼 — 튜브 충돌' });
     if (FPI < 4 || FPI > 30) errs.push({ level: 'warn', msg: `FPI=${FPI} 범위 확인 (일반 4~25)` });
     if (N_tubes % N_rows !== 0) errs.push({ level: 'warn', msg: `N_tubes(${N_tubes})가 N_rows(${N_rows})로 나눠지지 않음` });
-    if (N_tubes % N_circuits !== 0) errs.push({ level: 'warn', msg: `N_tubes(${N_tubes})가 N_circuits(${N_circuits})로 나눠지지 않음` });
     return errs;
-  }, [D_o, D_i, P_t, FPI, N_tubes, N_rows, N_circuits]);
+  }, [D_o, D_i, P_t, FPI, N_tubes, N_rows]);
 
   return (
     <div className="flex flex-col h-screen bg-slate-50">
@@ -1069,7 +1088,10 @@ function FinTubeHXView({ mode = 'evap', onBack }) {
                 </div>
               </div>
               
-              <Slider label="N_circuits (참고)" sublabel="병렬 회로" value={N_circuits} min={1} max={20} step={1} onChange={setNcircuits} color="purple" decimals={0} />
+              <div className="mt-2 flex items-center justify-between px-1 py-2 rounded-lg bg-purple-50 border border-purple-100">
+                <span className="text-[11px] text-slate-500 font-mono">회로 수 (circuit_mode 기준)</span>
+                <span className="text-[13px] font-bold text-purple-600 font-mono">{N_circuits} 회로</span>
+              </div>
               
               <div className="mt-1 text-[10px] text-slate-400 font-mono">
                 {circuit_mode === 'row_parallel' && '각 row의 모든 튜브가 병렬'}
