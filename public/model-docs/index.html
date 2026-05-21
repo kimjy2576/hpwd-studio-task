@@ -2448,12 +2448,16 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
       $$\alpha_{ref,seg} = \alpha_{Chen}(x_{seg}, G, q''_{seg}), \quad \alpha_{air,seg} = \alpha(Re_{seg}, \text{geometry})$$
     </div>
 
-    <h3>Step 4: 세그먼트 ε-NTU</h3>
-    <p>각 세그먼트에서 local UA로 열전달:</p>
+    <h3>Step 4: 세그먼트 ε-NTU + T_wall inner iteration</h3>
+    <p>각 세그먼트에서 HTC가 wall 온도에 의존 → <b>T_wall 내부 반복</b>. 추정 $T_w$로 HTC·UA 계산 후 wall energy balance로 갱신:</p>
     <div class="eq-block">
-      $$\frac{1}{UA_{seg}} = \frac{1}{\alpha_{ref}A_{i,seg}} + \frac{1}{\eta_{fin}\alpha_{air}A_{o,seg}}$$
-      $$Q_{seg} = \varepsilon_{seg}\, C_{min,seg}(T_{air,seg} - T_{ref,seg})$$
+      $$\frac{1}{UA_{seg}} = \frac{1}{\alpha_{ref}A_{i,seg}} + \frac{1}{\eta_{fin}\alpha_{air}A_{o,seg}}, \quad Q_{seg} = UA_{seg}(T_{air} - T_{ref,eff})$$
     </div>
+    <p>wall 온도 갱신 (under-relaxation $\alpha = 0.7$):</p>
+    <div class="eq-block">
+      $$T_w^{new} = T_{ref,eff} + Q_{seg}\, R_i, \quad T_w \leftarrow \alpha\, T_w^{new} + (1-\alpha)\, T_w$$
+    </div>
+    <p>$|\Delta T_w| < tol_T$ (0.05 K) <b>및</b> $|\Delta Q| < tol_Q$ (0.5 W) 까지 반복 (max 12회). wet 여부 ($T_w < T_{dp}$)도 매 반복 재판정.</p>
 
     <h3>Step 5: 세그먼트 march (forward Euler)</h3>
     <p>세그먼트 출구 = 다음 세그먼트 입구. P·h·x를 segment-by-segment 갱신:</p>
@@ -2467,8 +2471,12 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
       $$\Delta P_{total} = \sum_{seg}\Delta P_{fric,seg} + \sum_{bend} K_{bend}\frac{G^2}{2\rho} + \Delta P_{edge}$$
     </div>
 
-    <h3>Step 7: Wet-coil (세그먼트별) + outer iteration</h3>
-    <p>각 세그먼트에서 wet/dry 판정. 공기측 결합으로 outer iteration 수렴:</p>
+    <h3>Step 7: Outer iteration (공기 온도장 수렴)</h3>
+    <p>공기측은 모든 관·세그먼트에 결합돼 있어 한 번에 못 풂. 전체 공기 온도장 $T_{air}^{3D}$를 가정 → 모든 세그먼트 계산 → 갱신된 $T_{air}$로 재계산:</p>
+    <div class="eq-block">
+      $$T_{air}^{(k+1)} = \omega\, T_{air,calc} + (1-\omega)\, T_{air}^{(k)}$$
+    </div>
+    <p>상대 Q 변화 < 0.1% <b>및</b> $\Delta T_{air,out} < 0.1$ K 까지 반복 (max 30회, under-relaxation $\omega$ adaptive). 수렴 후:</p>
     <div class="eq-block">
       $$Q_{total} = \sum_{seg} Q_{seg}, \quad SHR = \frac{Q_{sensible}}{Q_{total}}$$
     </div>
@@ -2809,12 +2817,16 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
       $$\alpha_{ref,seg} = \alpha_{Shah}(x_{seg}, G, P_r), \quad \alpha_{air,seg} = \alpha(Re_{seg}, \text{geometry})$$
     </div>
 
-    <h3>Step 4: 세그먼트 ε-NTU</h3>
+    <h3>Step 4: 세그먼트 ε-NTU + T_wall inner iteration</h3>
+    <p>각 세그먼트에서 HTC가 wall 온도에 의존 → <b>T_wall 내부 반복</b>. 응축기는 냉매가 공기보다 뜨거움:</p>
     <div class="eq-block">
-      $$\frac{1}{UA_{seg}} = \frac{1}{\alpha_{ref}A_{i,seg}} + \frac{1}{\eta_{fin}\alpha_{air}A_{o,seg}}$$
-      $$Q_{seg} = \varepsilon_{seg}\, C_{min,seg}(T_{ref,seg} - T_{air,seg})$$
+      $$\frac{1}{UA_{seg}} = \frac{1}{\alpha_{ref}A_{i,seg}} + \frac{1}{\eta_{fin}\alpha_{air}A_{o,seg}}, \quad Q_{seg} = UA_{seg}(T_{ref,eff} - T_{air})$$
     </div>
-    <p>응축기는 냉매가 공기보다 뜨거움 → 부호가 Evap과 반대 ($T_{ref} - T_{air}$).</p>
+    <p>wall 온도 갱신 (under-relaxation $\alpha = 0.7$, 응축기 부호):</p>
+    <div class="eq-block">
+      $$T_w^{new} = T_{ref,eff} - Q_{seg}\, R_i, \quad T_w \leftarrow \alpha\, T_w^{new} + (1-\alpha)\, T_w$$
+    </div>
+    <p>$|\Delta T_w| < tol_T$ (0.05 K) <b>및</b> $|\Delta Q| < tol_Q$ (0.5 W) 까지 반복 (max 12회). 부호가 Evap과 반대 ($T_{ref} - T_{air}$).</p>
 
     <h3>Step 5: 세그먼트 march (forward Euler)</h3>
     <p>냉매가 열을 잃음 → 엔탈피 감소:</p>
@@ -2827,12 +2839,16 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
       $$\Delta P_{total} = \sum_{seg}\Delta P_{fric,seg} + \sum_{bend} K_{bend}\frac{G^2}{2\rho} + \Delta P_{edge}$$
     </div>
 
-    <h3>Step 7: 결합 + outer iteration</h3>
-    <p>응축기는 보통 dry (외기 노출). 공기측 결합으로 수렴:</p>
+    <h3>Step 7: Outer iteration (공기 온도장 수렴)</h3>
+    <p>공기측이 모든 세그먼트에 결합 → 전체 공기 온도장 $T_{air}^{3D}$ 가정 후 반복 수렴:</p>
+    <div class="eq-block">
+      $$T_{air}^{(k+1)} = \omega\, T_{air,calc} + (1-\omega)\, T_{air}^{(k)}$$
+    </div>
+    <p>상대 Q 변화 < 0.1% <b>및</b> $\Delta T_{air,out} < 0.1$ K 까지 반복 (max 30회). 수렴 후:</p>
     <div class="eq-block">
       $$Q_{total} = \sum_{seg} Q_{seg}, \quad SC_{out} = T_{cond} - T_{ref,out}$$
     </div>
-    <p>Re·x·P_r가 correlation 검증 범위 벗어나면 자동 warning. 고압(~1.6 MPa) 운전이라 검증 범위 주의.</p>
+    <p>응축기는 보통 dry (외기 노출). Re·x·P_r가 검증 범위 벗어나면 warning. 고압(~1.6 MPa) 운전이라 검증 범위 주의.</p>
 
     <h3>Evaporator와의 차이 (동일 solver, 다른 mode)</h3>
     <table class="params">
