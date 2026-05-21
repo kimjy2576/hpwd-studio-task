@@ -374,7 +374,7 @@ const COMPONENTS = [
   {
     id: 'compressor',
     label: 'Compressor',
-    type: 'PDSim ROM',
+    type: 'Chamber 1-Cycle',
     desc: 'V_disp · clearance · valves · 누설 · 마찰 — 9 fitting params',
     icon: '◆',
     color: 'purple',
@@ -3175,11 +3175,11 @@ function RollingPiston3D({ R_c_mm, R_p_mm, H_mm, t_vane_mm, theta_deg,
 }
 
 /* ═══════════════════════════════════════════════════════════════════
-   Compressor (PDSim ROM) Component View
-   typeNo 103 — backend/components/compressor_pdsim_rom.py wrapping
+   Compressor (Chamber 1-Cycle) Component View
+   typeNo 103 — backend/components/compressor_chamber.py wrapping
    ═══════════════════════════════════════════════════════════════════ */
 function CompressorView({ onBack }) {
-  // ─── PDSim ROM Fitting params (Bell ROM) ───
+  // ─── Chamber 1-Cycle Fitting params ───
   const [clearance_ratio, setClearance] = useState(0.04); // -
   const [rv_in, setRvin] = useState(2.5);               // -
   const [A_valve_in_mm2, setAvIn] = useState(8.0);      // mm²
@@ -3300,7 +3300,7 @@ function CompressorView({ onBack }) {
     component: 'compressor',
     // Rotary geometry (1차 입력)
     R_cyl, R_pis, H_cyl, t_vane,
-    // PDSim ROM fitting params
+    // Chamber 1-Cycle fitting params
     clearance_ratio, rv_in,
     A_valve_in_mm2, A_valve_out_mm2,
     N_rated, eta_motor, eta_inv,
@@ -3319,7 +3319,7 @@ function CompressorView({ onBack }) {
     if (p.R_pis !== undefined) setRpis(p.R_pis);
     if (p.H_cyl !== undefined) setHcyl(p.H_cyl);
     if (p.t_vane !== undefined) setTvane(p.t_vane);
-    // PDSim ROM
+    // Chamber 1-Cycle
     if (p.clearance_ratio !== undefined) setClearance(p.clearance_ratio);
     if (p.rv_in !== undefined) setRvin(p.rv_in);
     if (p.A_valve_in_mm2 !== undefined) setAvIn(p.A_valve_in_mm2);
@@ -3384,7 +3384,7 @@ function CompressorView({ onBack }) {
   const applyToHPWD = () => {
     const beParams = buildBackendParams();
     const payload = {
-      component: 'compressor_pdsim_rom',
+      component: 'compressor_chamber',
       typeNo: 103,
       params: beParams,
       sourceParams: currentParams(),
@@ -3403,7 +3403,7 @@ function CompressorView({ onBack }) {
   const applyToCalibration = () => {
     const beParams = buildBackendParams();
     const payload = {
-      component: 'compressor_pdsim_rom',
+      component: 'compressor_chamber',
       typeNo: 103,
       params: beParams,
       sourceParams: currentParams(),
@@ -3476,7 +3476,7 @@ function CompressorView({ onBack }) {
         <span className="text-slate-300">|</span>
         <span className="text-purple-600 text-base">◆</span>
         <span className="font-bold text-slate-900 text-[15px]">Compressor</span>
-        <span className="text-[11px] font-mono text-slate-400">PDSim ROM · On-design</span>
+        <span className="text-[11px] font-mono text-slate-400">Chamber 1-Cycle · On-design</span>
 
         <div className="flex-1"></div>
 
@@ -3620,7 +3620,7 @@ function CompressorView({ onBack }) {
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* Top hint */}
           <div className="bg-emerald-50 border-b border-emerald-200 px-6 py-2 text-[12px] text-emerald-800 shrink-0">
-            ✓ <b>On-design (PDSim ROM)</b> — sidebar 변경 시 도식 + Derived 실시간 반영
+            ✓ <b>On-design (Chamber 1-Cycle)</b> — sidebar 변경 시 도식 + Derived 실시간 반영
           </div>
 
           {/* View sub-tabs (3D / Front / Top / Side) */}
@@ -4078,7 +4078,7 @@ function CompressorView({ onBack }) {
               </div>
 
               <div className="mt-4 text-[11px] text-slate-500 leading-relaxed">
-                <div className="font-bold mb-1 text-slate-700">PDSim ROM (Bell):</div>
+                <div className="font-bold mb-1 text-slate-700">Chamber 1-Cycle (Bell 개념):</div>
                 <div>· 체적효율 η_v: clearance + rv_in 기반 polytropic 압축</div>
                 <div>· 누설: A_leak × Cd_leak × √(P_dis - P_suc), N에 따른 누설 보정</div>
                 <div>· 마찰: W_f = W_f_const + α × N²</div>
@@ -4099,7 +4099,7 @@ function CompressorView({ onBack }) {
             <span className="text-slate-300">·</span>
             <span>{N_rated} RPM</span>
             <span className="text-slate-300">·</span>
-            <span className="text-purple-600 font-semibold">On-design (PDSim ROM)</span>
+            <span className="text-purple-600 font-semibold">On-design (Chamber 1-Cycle)</span>
           </div>
         </div>
       </div>

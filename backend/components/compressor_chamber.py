@@ -1,9 +1,13 @@
 """
-Compressor (PDSim ROM) — On-design L3
+Compressor (Chamber 1-Cycle) — On-design L3
 ═══════════════════════════════════════════════════════════════════════
-Bell reduced-order model 변형 (Bell et al., Purdue, 2014). Reciprocating
-chamber-resolved 거동을 1 사이클 평균으로 표현. 학계 정통 PDSim의
-계산 부담(60s/point)을 ~50ms로 압축.
+Chamber-resolved 1-cycle 평균 물리 모델. Bell PDSim의 chamber 해석 개념
+(재팽창·누설·밸브 손실·polytropic 압축)을 차용하되, 회전각 θ 적분 대신
+1 사이클 평균으로 단순화한 algebraic 물리 모델. (회귀 ROM 아님 — 실제
+물리식을 직접 계산.) 학계 정통 PDSim의 계산 부담(60s/point)을 ~50ms로 압축.
+
+※ 구 명칭 'PDSim ROM'은 misnomer였음 (실제론 ROM=Reduced-Order Model이
+   아니라 1-cycle 평균 물리 모델). 2026 명칭 정리.
 
 Cycle 단계 (reciprocating):
   1. BDC (Bottom Dead Center) — 흡입 완료, V_max
@@ -29,7 +33,7 @@ Cycle 단계 (reciprocating):
 Reference:
   Bell I.H., Lemort V., Groll E.A., Braun J.E., King G.B., Horton W.T.,
   "Liquid flooded compression and expansion in scroll machines",
-  IJR, 2012. (ROM 정형의 기반)
+  IJR, 2012. (chamber 모델링 개념의 기반)
   
   PDSim implementation:
   Bell I.H., et al., "PDSim: A general quasi-steady model for
@@ -40,19 +44,19 @@ import math
 import CoolProp.CoolProp as CP
 
 FLUIDS = ['R290']
-COMPRESSOR_TYPES = ['reciprocating']  # ROM은 우선 reciprocating만
+COMPRESSOR_TYPES = ['reciprocating']  # 우선 reciprocating만
 
 # default parameters — R290 ~10cc 가전 reciprocating (Winandy/AHRI와 동일 압축기)
-# Winandy 회귀 결과를 ROM이 재현하도록 calibrated.
+# Winandy 회귀 결과를 chamber 모델이 재현하도록 calibrated.
 
 
 modelDescription = {
     'typeNo': 103,
-    'name': 'Compressor (PDSim ROM)',
+    'name': 'Compressor (Chamber 1-Cycle)',
     'category': 'refrigerant',
     'modelType': 'on-design',
     'fidelity': 1.0,
-    'description': 'Bell ROM — chamber-resolved reciprocating, 1-cycle 평균',
+    'description': 'Chamber-resolved 물리 모델 — reciprocating, 1-cycle 평균 (Bell PDSim 개념)',
     'backend': 'python',
     'variables': [
         # ═══════ Parameters ═══════
@@ -170,7 +174,7 @@ def init_state(params):
 
 
 def step(input, params, state, dt):
-    """Bell ROM — 1 사이클 평균 거동.
+    """Chamber 1-Cycle — 1 사이클 평균 거동.
     
     중간 변수 추적:
       V_max, V_clear (기하)

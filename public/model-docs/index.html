@@ -654,7 +654,7 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
       <div class="sidebar-group-header"><span class="sidebar-group-icon">C</span> Compressor</div>
       <div class="sidebar-item" data-model="compressor-off"><span class="fidelity-badge badge-off">OFF</span> AHRI 540</div>
       <div class="sidebar-item" data-model="compressor-semi"><span class="fidelity-badge badge-semi">SEMI</span> Winandy 1999</div>
-      <div class="sidebar-item" data-model="compressor-on"><span class="fidelity-badge badge-on">ON</span> PDSim ROM</div>
+      <div class="sidebar-item" data-model="compressor-on"><span class="fidelity-badge badge-on">ON</span> Chamber 1-Cycle</div>
       <div class="sidebar-item" data-model="compressor-theta"><span class="fidelity-badge badge-future">FUTURE</span> θ-PDSim (full)</div>
     </div>
 
@@ -1005,7 +1005,7 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
   <div class="doc-section">
     <h2>적용 범위 + 한계</h2>
     <p><b>✅ 적용 가능</b>: Reciprocating, scroll, screw 압축기 모두. 정속 + 가변속 (RPM 변수 직접 모델링). 물리 기반이라 외삽 가능.</p>
-    <p><b>⚠️ 한계</b>: Liquid slugging, oil dynamics, valve dynamics 등 detailed phenomena는 모델링 안 됨. 그런 경우 PDSim ROM (On)으로.</p>
+    <p><b>⚠️ 한계</b>: Liquid slugging, oil dynamics, valve dynamics 등 detailed phenomena는 모델링 안 됨. 그런 경우 Chamber 1-Cycle (On)으로.</p>
   </div>
 </template>
 
@@ -1024,7 +1024,7 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
     <div class="ref-card" style="border-left-color: var(--amber);">
       <div class="ref-title" style="color: var(--amber);">Note — 명칭 주의</div>
       <div class="ref-body">
-        컴포넌트 이름은 <b>"PDSim ROM"</b>이나, 실제 구현은 <b>회귀 ROM (Reduced-Order Model)이 아님</b>. Bell의 PDSim chamber 해석 개념(재팽창·누설·밸브 손실·polytropic 압축)을 차용하되, 회전각 θ 적분 대신 <b>1-cycle 평균으로 단순화한 algebraic 물리 모델</b>. 런타임에 실제 물리식을 직접 계산 (CoolProp 물성 사용).
+        구 명칭은 <b>"PDSim ROM"</b>이었으나, 실제 구현이 <b>회귀 ROM (Reduced-Order Model)이 아니라</b> 1-cycle 평균 물리 모델이라 <b>"Chamber 1-Cycle"</b>로 명칭 정리(2026). Bell의 PDSim chamber 해석 개념(재팽창·누설·밸브 손실·polytropic 압축)을 차용하되, 회전각 θ 적분 대신 <b>1-cycle 평균으로 단순화한 algebraic 물리 모델</b>. 런타임에 실제 물리식을 직접 계산 (CoolProp 물성 사용).
       </div>
     </div>
   </div>
@@ -1178,7 +1178,7 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
   <div class="doc-section">
     <h2>Code Mapping</h2>
     <div class="code-map">
-<span class="file">backend/components/compressor_pdsim_rom.py</span><br>
+<span class="file">backend/components/compressor_chamber.py</span><br>
 ├─ <span class="func">step()</span>  <span class="desc">— 13-step chamber 물리 (재팽창→누설→swept→polytropic→valve→friction)</span><br>
 ├─ 누설: <span class="func">rpm_factor</span>  <span class="desc">— (N/N_rated)^(-n_leak)</span><br>
 ├─ over/under-comp: <span class="func">w_overunder</span><br>
@@ -2203,7 +2203,7 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
   <div class="todo-section">
     <span class="todo-icon">📝</span>
     <b>이 모델 문서는 Phase 2에서 추가됩니다.</b><br><br>
-    Phase 1에서는 Compressor 3 fidelity (AHRI / Winandy / PDSim ROM)로 패턴을 확립.<br>
+    Phase 1에서는 Compressor 3 fidelity (AHRI / Winandy / Chamber 1-Cycle)로 패턴을 확립.<br>
     Phase 2에서 Evap × 3, Cond × 3, EEV × 3 (9개 추가).
   </div>
   <div class="doc-section">

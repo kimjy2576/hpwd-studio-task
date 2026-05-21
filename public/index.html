@@ -199,7 +199,7 @@ const TYPES = {
     icon: Gauge,
     image: './images/compressor.png',
     desc: 'Compressor — Off/Semi/On 통합 (properties에서 fidelity 선택)',
-    fidelityKeys: { 'Off': 'compressor_ahri', 'Semi': 'compressor_winandy', 'On': 'compressor_pdsim_rom' },
+    fidelityKeys: { 'Off': 'compressor_ahri', 'Semi': 'compressor_winandy', 'On': 'compressor_chamber' },
     defaultFidelity: 'Off',
     commonParamKeys: ['fluid'],  // fidelity 변경 시 유지할 param key
   },
@@ -590,15 +590,15 @@ const TYPES = {
                       eta_is: NaN, T_e: NaN, T_c: NaN, pi_ratio: NaN }),
   },
 
-  // ================ Compressor (PDSim ROM, On-design L3) ================
-  // Bell ROM 변형 — chamber-resolved reciprocating, 1-cycle 평균.
+  // ================ Compressor (Chamber 1-Cycle, On-design L3) ================
+  // Chamber-resolved reciprocating, 1-cycle 평균 (Bell PDSim 개념 차용, ROM 아님).
   // L1/L2 대비 차별: 누설 / 밸브 손실 / 마찰 별도 출력 (개별 chamber 거동).
-  compressor_pdsim_rom: {
+  compressor_chamber: {
     typeNo: 103, name: 'Compressor (On)', category: 'refrigerant', color: '#dc2626', icon: Gauge, image: './images/compressor.png',
-    desc: 'Bell ROM — chamber-resolved on-design model with leakage, valve, friction breakdown',
+    desc: 'Chamber-resolved 1-cycle 물리 모델 — leakage, valve, friction breakdown',
     isHiddenFromLibrary: true,  // 통합 메타 컴포넌트로 대체
     backend: 'python',
-    pythonComponent: 'compressor_pdsim_rom',
+    pythonComponent: 'compressor_chamber',
     parameters: [
       // ─── Material ───
       { key: 'fluid',     group: 'Material', label: 'Fluid',     value: 'R290', options: ['R290'], unit: '' , hidden: true },
