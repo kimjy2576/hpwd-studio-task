@@ -663,6 +663,7 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
       <div class="sidebar-item" data-model="evaporator-off"><span class="fidelity-badge badge-off">OFF</span> ε-NTU 2-zone</div>
       <div class="sidebar-item" data-model="evaporator-semi"><span class="fidelity-badge badge-semi">SEMI</span> Moving Boundary</div>
       <div class="sidebar-item" data-model="evaporator-on"><span class="fidelity-badge badge-on">ON</span> Segmented</div>
+      <div class="sidebar-item" data-model="evaporator-transient"><span class="fidelity-badge badge-future">FUTURE</span> Transient Frost/제습</div>
     </div>
 
     <div class="sidebar-group">
@@ -670,6 +671,7 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
       <div class="sidebar-item" data-model="condenser-off"><span class="fidelity-badge badge-off">OFF</span> ε-NTU 3-zone</div>
       <div class="sidebar-item" data-model="condenser-semi"><span class="fidelity-badge badge-semi">SEMI</span> Moving Boundary</div>
       <div class="sidebar-item" data-model="condenser-on"><span class="fidelity-badge badge-on">ON</span> Segmented</div>
+      <div class="sidebar-item" data-model="condenser-transient"><span class="fidelity-badge badge-future">FUTURE</span> Transient Dynamics</div>
     </div>
 
     <div class="sidebar-group">
@@ -2914,6 +2916,202 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
       <div class="val-card good"><div class="val-label">Evap 공유</div><div class="val-value" style="font-size:12px">✓<span class="val-unit">solver</span></div></div>
       <div class="val-card"><div class="val-label">correlation</div><div class="val-value">30+</div></div>
     </div>
+  </div>
+</template>
+
+<!-- ════════ Evaporator Transient (FUTURE — 착상/제습 동특성) ════════ -->
+<template id="tpl-evaporator-transient">
+  <div class="doc-header">
+    <div class="doc-eyebrow">Evaporator / Future</div>
+    <h1 class="doc-title">Transient Frost &amp; Dehumidification Dynamics <span class="doc-title-badge badge-future">FUTURE</span></h1>
+    <div class="doc-subtitle">시간 의존 동특성 — 제습·착상 누적·시동 과도 (현재 모든 모델에 없는 기능)</div>
+  </div>
+
+  <div class="doc-section">
+    <div class="ref-card" style="border-left-color:#6D28D9;background:#F5F3FF;">
+      <div class="ref-title" style="color:#6D28D9;">Status — 미구현 (설계 문서)</div>
+      <div class="ref-body">현재 Off/Semi/On 3개 모델은 모두 <b>steady-state</b> (시간 무관 정상상태). 이 future 모델은 <b>시간 차원</b>을 추가해 제습/착상 누적과 시동 과도를 다룸. 기존 On(Segmented)의 finite-volume 세그먼트 구조를 <b>그대로 확장</b>하되 각 control volume에 시간 미분 항을 추가.</div>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>왜 필요한가 (HPWD 특화)</h2>
+    <div class="eb-list" style="font-size:14px;line-height:1.6;color:var(--ink-soft)">
+      <p>• <b>시동 과도</b> — 압축기 기동 후 수 분간 압력·온도가 빠르게 변함. steady-state는 이 구간을 못 잡음.</p>
+      <p>• <b>제습 누적</b> — 건조기 드럼 공기가 순환하며 증발기에서 수분 제거. 시간이 지나며 드럼 습도·증발기 입구 조건이 계속 변함.</p>
+      <p>• <b>착상(frost)</b> — 저온 운전 시 표면에 서리 누적 → 열저항 증가 → 성능 저하 → defrost 필요. 순수 시간 의존 현상.</p>
+      <p>• <b>건조 사이클 전체 시뮬</b> — 건조 진행에 따른 부하 변화를 분 단위로 추적해야 실제 건조 시간·에너지 예측 가능.</p>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>학계 참고문헌</h2>
+    <div class="ref-card">
+      <div class="ref-title">착상 (Frost Growth)</div>
+      <div class="ref-body"><b>Hayashi et al. (1977)</b>: 표면온도 기반 frost density 상관식 + 3단계(crystal growth → frost layer growth → full growth). <b>Tao et al. (1993)</b> 초기 성장, <b>Kandula (2011)</b> review, <b>Padhmanabhan et al. (2011)</b> fin-tube 비균등 착상.</div>
+    </div>
+    <div class="ref-card">
+      <div class="ref-title">Transient HX</div>
+      <div class="ref-body"><b>Da Silva et al. (2011)</b>: fin-tube HX + 팬 과도 거동(냉방능력·착상 동시). <b>finite-volume transient</b> (Patankar SIMPLER). <b>Modelica</b> finite-volume HX with frost (lumped + distributed).</div>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>수학적 정의 (step별)</h2>
+    <p>On(Segmented)의 공간 이산화는 유지하고, 각 세그먼트에 <b>시간 미분</b>을 추가. 매 time step마다 공간 march + 수렴:</p>
+
+    <h3>Step 1: 냉매측 transient 보존식 (per segment)</h3>
+    <p>steady-state의 ∂/∂z만 있던 식에 <b>∂/∂t 추가</b>:</p>
+    <div class="eq-block">
+      $$\frac{\partial(\rho A)}{\partial t} + \frac{\partial \dot{m}}{\partial z} = 0 \quad \text{(질량)}$$
+      $$\frac{\partial(\rho A h)}{\partial t} + \frac{\partial(\dot{m} h)}{\partial z} = \frac{Q_{seg}}{L_{seg}} \quad \text{(에너지)}$$
+    </div>
+
+    <h3>Step 2: 벽 열질량 (thermal inertia)</h3>
+    <p>관·핀의 열용량으로 wall 온도가 시간 지연 응답:</p>
+    <div class="eq-block">
+      $$(m c_p)_{wall}\frac{dT_{wall}}{dt} = Q_{ref} - Q_{air} - Q_{latent}$$
+    </div>
+
+    <h3>Step 3: 착상 성장 (Hayashi)</h3>
+    <p>표면 desublimation으로 frost 두께·밀도 시간 누적:</p>
+    <div class="eq-block">
+      $$\frac{d\delta_{frost}}{dt} = \frac{\dot{m}_{frost}''}{\rho_{frost}(T_{surf})}, \quad \rho_{frost} = f_{Hayashi}(T_{surf})$$
+    </div>
+    <p>frost 열저항이 매 step 갱신 (성능 저하):</p>
+    <div class="eq-block">
+      $$R_{frost} = \frac{\delta_{frost}}{k_{frost}}, \quad UA_{eff} \leftarrow \frac{1}{1/UA + R_{frost}}$$
+    </div>
+
+    <h3>Step 4: 제습/착상 mass transfer</h3>
+    <p>공기 중 수분이 표면으로 (heat-mass analogy). $T_{surf}$가 어는점 위면 응축수, 아래면 착상:</p>
+    <div class="eq-block">
+      $$\dot{m}_{vapor} = h_m A (\omega_{air} - \omega_{sat}(T_{surf}))$$
+      $$T_{surf} > 0°C \Rightarrow \text{응축수}, \quad T_{surf} < 0°C \Rightarrow \text{착상}$$
+    </div>
+
+    <h3>Step 5: Time integration</h3>
+    <p>각 time step에서 공간 march(On과 동일) + inner/outer 수렴 → 상태 갱신:</p>
+    <div class="eq-block">
+      $$\mathbf{y}^{n+1} = \mathbf{y}^n + \Delta t\, \mathbf{f}(\mathbf{y}^n, \dots) \quad \text{(implicit/explicit)}$$
+    </div>
+    <p>입구 조건(드럼 공기 상태)이 time-varying boundary로 들어옴.</p>
+
+    <h3>Step 6: Defrost trigger (착상 누적 시)</h3>
+    <p>frost 두께/성능 저하가 임계 초과 → defrost 모드 (역사이클/전기히터):</p>
+    <div class="eq-block">
+      $$\delta_{frost} > \delta_{crit} \;\text{또는}\; \frac{Q}{Q_0} < \eta_{crit} \;\Rightarrow\; \text{defrost}$$
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>인터페이스 변화 (vs steady-state)</h2>
+    <table class="params">
+      <thead><tr><th>항목</th><th>현재 On (steady)</th><th>Transient (future)</th></tr></thead>
+      <tbody>
+        <tr><td>입력</td><td>단일 운전점</td><td>time-varying boundary (드럼 공기 이력)</td></tr>
+        <tr><td>출력</td><td>단일 Q, T_out</td><td>Q(t), T(t), δ_frost(t) 시계열</td></tr>
+        <tr><td>상태</td><td>없음 (stateless)</td><td>T_wall, δ_frost, 냉매 분포 (stateful)</td></tr>
+        <tr><td>solver</td><td>공간 march + 수렴</td><td>time stepping + 매 step 공간 march</td></tr>
+        <tr><td>추가 출력</td><td>—</td><td>condensate_rate(t), frost_thickness(t), defrost_flag</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="doc-section">
+    <h2>구현 로드맵</h2>
+    <table class="params">
+      <thead><tr><th>단계</th><th>내용</th></tr></thead>
+      <tbody>
+        <tr><td>M1-M2</td><td>On(Segmented)에 벽 열질량 dT_wall/dt 추가 → time stepping 골격</td></tr>
+        <tr><td>M3-M4</td><td>제습 mass transfer + 응축수 누적 (T_surf &gt; 0)</td></tr>
+        <tr><td>M5-M6</td><td>Hayashi 착상 모델 + frost 열저항 (T_surf &lt; 0)</td></tr>
+        <tr><td>M7-M8</td><td>time-varying boundary + 건조 사이클 연동, defrost trigger</td></tr>
+        <tr><td>M9</td><td>실험 transient 데이터 검증 (시동 과도, 제습 곡선)</td></tr>
+      </tbody>
+    </table>
+    <p style="font-size:13px;color:var(--muted);margin-top:8px">typeNo <b>123</b> 예약 (122 Segmented 다음). 같은 HX-Sim 인터페이스 유지 + 시간 차원 확장.</p>
+  </div>
+
+  <div class="doc-section">
+    <h2>응축기와의 관계</h2>
+    <p>동일 transient solver가 <b>응축기에도 적용</b> (Cond Transient, typeNo 223). 단 응축기는 dry(외기 노출) → <b>착상·제습 없이 열질량 동특성만</b>. 시동 과도·열관성은 동일하게 다룸. On 모델이 Evap-Cond wrapper인 것처럼, transient도 mode로 공유.</p>
+  </div>
+</template>
+
+<!-- ════════ Condenser Transient (FUTURE — 동특성) ════════ -->
+<template id="tpl-condenser-transient">
+  <div class="doc-header">
+    <div class="doc-eyebrow">Condenser / Future</div>
+    <h1 class="doc-title">Transient Dynamics <span class="doc-title-badge badge-future">FUTURE</span></h1>
+    <div class="doc-subtitle">시간 의존 동특성 — 시동 과도·열관성 (착상/제습 없음, dry)</div>
+  </div>
+
+  <div class="doc-section">
+    <div class="ref-card" style="border-left-color:#6D28D9;background:#F5F3FF;">
+      <div class="ref-title" style="color:#6D28D9;">Status — 미구현 (설계 문서)</div>
+      <div class="ref-body">Evaporator Transient(typeNo 123)와 <b>동일한 transient solver를 mode='cond'로 공유</b> (현재 On 모델이 Evap-Cond wrapper인 구조 그대로). 응축기는 dry(외기 노출)라 <b>착상·제습은 없고</b>, 시동 과도·열관성 동특성만 다룸.</div>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>왜 필요한가</h2>
+    <div class="eb-list" style="font-size:14px;line-height:1.6;color:var(--ink-soft)">
+      <p>• <b>시동 과도</b> — 압축기 기동 후 토출압이 빠르게 상승 (수 분). 고압측 응축기가 이 과도를 직접 받음.</p>
+      <p>• <b>열관성</b> — 관·핀 열질량으로 응축기 출구 온도가 시간 지연 응답. 시스템 제어 설계에 중요.</p>
+      <p>• <b>건조 사이클 연동</b> — Evap Transient와 짝을 이뤄 전체 사이클 동특성 시뮬.</p>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>학계 참고문헌</h2>
+    <div class="ref-card">
+      <div class="ref-title">Transient HX</div>
+      <div class="ref-body"><b>finite-volume transient</b> (Patankar). <b>Bendapudi &amp; Braun</b> dynamic HX. <b>Modelica</b> (TIL, AixLib) 동특성 라이브러리 — finite-volume 분포 파라미터.</div>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>수학적 정의 (step별)</h2>
+    <p>Evap Transient와 동일 프레임워크에서 <b>착상/제습 step만 제외</b> (dry):</p>
+
+    <h3>Step 1: 냉매측 transient 보존식 (per segment)</h3>
+    <div class="eq-block">
+      $$\frac{\partial(\rho A)}{\partial t} + \frac{\partial \dot{m}}{\partial z} = 0, \quad \frac{\partial(\rho A h)}{\partial t} + \frac{\partial(\dot{m} h)}{\partial z} = \frac{Q_{seg}}{L_{seg}}$$
+    </div>
+
+    <h3>Step 2: 벽 열질량 (thermal inertia)</h3>
+    <p>응축기는 latent 없음 → 현열만:</p>
+    <div class="eq-block">
+      $$(m c_p)_{wall}\frac{dT_{wall}}{dt} = Q_{ref} - Q_{air}$$
+    </div>
+
+    <h3>Step 3: Time integration</h3>
+    <p>매 time step에서 공간 march(Cond On과 동일, mode='cond') + inner/outer 수렴:</p>
+    <div class="eq-block">
+      $$\mathbf{y}^{n+1} = \mathbf{y}^n + \Delta t\, \mathbf{f}(\mathbf{y}^n, \dots)$$
+    </div>
+    <p>토출 측 시동 과도가 time-varying boundary로 들어옴.</p>
+  </div>
+
+  <div class="doc-section">
+    <h2>Evaporator Transient와의 차이</h2>
+    <table class="params">
+      <thead><tr><th>항목</th><th>Evap Transient (123)</th><th>Cond Transient (223)</th></tr></thead>
+      <tbody>
+        <tr><td>mode</td><td class="mono">evap</td><td class="mono">cond</td></tr>
+        <tr><td>착상 (frost)</td><td>있음 (Hayashi)</td><td>없음 (dry)</td></tr>
+        <tr><td>제습 (condensate)</td><td>있음</td><td>없음</td></tr>
+        <tr><td>defrost</td><td>있음</td><td>없음</td></tr>
+        <tr><td>열질량 동특성</td><td>있음</td><td>있음 (공유)</td></tr>
+        <tr><td>시동 과도</td><td>저압측</td><td>고압측</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="doc-section">
+    <h2>구현 로드맵</h2>
+    <p>Evap Transient(typeNo 123) 구현 후 mode='cond'로 자동 파생. 별도 개발 거의 없음 (착상/제습 step만 비활성). typeNo <b>223</b> 예약.</p>
   </div>
 </template>
 <template id="tpl-todo">
