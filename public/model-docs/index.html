@@ -2195,6 +2195,626 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
     </ul>
   </div>
 </template>
+
+<!-- ════════ Evaporator Off (ε-NTU 2-zone) ════════ -->
+<template id="tpl-evaporator-off">
+  <div class="doc-header">
+    <div class="doc-eyebrow">Evaporator / Off-Design</div>
+    <h1 class="doc-title">ε-NTU 2-Zone <span class="doc-title-badge badge-off">OFF</span></h1>
+    <div class="doc-subtitle">UA 직접 입력 — 2-phase + superheat 2존 ε-NTU 모델</div>
+  </div>
+
+  <div class="doc-section">
+    <h2>학계 참고문헌</h2>
+    <div class="ref-card">
+      <div class="ref-title">ε-NTU Method</div>
+      <div class="ref-body"><b>Kays W.M., London A.L. (1984)</b>: "Compact Heat Exchangers". ε-NTU 법의 표준. <b>Incropera</b> Fundamentals of Heat and Mass Transfer.</div>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>수학적 정의</h2>
+    <p>증발기를 <b>2개 zone</b>으로 분할 — 입구 2-phase → 출구 superheat:</p>
+    <div class="eq-block">
+      <div class="eq-label">2-Phase zone (C_ref → ∞)</div>
+      $$\varepsilon_{2ph} = 1 - e^{-NTU_{2ph}}, \quad Q_{2ph} = \varepsilon_{2ph}\, C_{air}(T_{air,in} - T_{evap})$$
+    </div>
+    <div class="eq-block">
+      <div class="eq-label">Superheat zone (counter-flow)</div>
+      $$\varepsilon_{SH} = \frac{1 - e^{-NTU(1-C_r)}}{1 - C_r e^{-NTU(1-C_r)}}, \quad C_r = \frac{C_{min}}{C_{max}}$$
+    </div>
+    <p>$NTU = UA / C_{min}$. 에너지 보존으로 두 zone 길이 자동 분배.</p>
+    <h3>Wet-coil (응축)</h3>
+    <p>코일 표면 $T_{coil} \approx T_{evap}$이 공기 이슬점보다 낮으면 응축. 포화 humidity ratio $\omega_{sat}(T_{coil})$로 latent 처리.</p>
+  </div>
+
+  <div class="doc-section">
+    <h2>Nomenclature</h2>
+    <div class="nomenclature">
+      <div class="nomen-group">
+        <div class="nomen-group-title">Latin Symbols</div>
+        <div class="nomen-row"><span class="nomen-sym">$C$</span><span class="nomen-desc">열용량 유량 (= ṁ·cp)</span><span class="nomen-unit">W/K</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$C_r$</span><span class="nomen-desc">열용량 비 (Cmin/Cmax)</span><span class="nomen-unit">—</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$h_{fg}$</span><span class="nomen-desc">증발 잠열</span><span class="nomen-unit">J/kg</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$NTU$</span><span class="nomen-desc">전달 단위수 (= UA/Cmin)</span><span class="nomen-unit">—</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$Q$</span><span class="nomen-desc">열전달률 (zone별)</span><span class="nomen-unit">W</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$T$</span><span class="nomen-desc">온도 (air / evap)</span><span class="nomen-unit">°C</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$UA$</span><span class="nomen-desc">총 열전달 conductance</span><span class="nomen-unit">W/K</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$x$</span><span class="nomen-desc">건도 (quality)</span><span class="nomen-unit">—</span></div>
+      </div>
+      <div class="nomen-group">
+        <div class="nomen-group-title">Greek Symbols</div>
+        <div class="nomen-row"><span class="nomen-sym">$\varepsilon$</span><span class="nomen-desc">Effectiveness (zone별)</span><span class="nomen-unit">—</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\omega_{sat}$</span><span class="nomen-desc">포화 humidity ratio</span><span class="nomen-unit">kg/kg</span></div>
+      </div>
+      <div class="nomen-group">
+        <div class="nomen-group-title">Subscripts</div>
+        <div class="nomen-row"><span class="nomen-sym">2ph</span><span class="nomen-desc">Two-phase zone</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">air</span><span class="nomen-desc">공기 측</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">evap</span><span class="nomen-desc">증발 (saturation)</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">SH</span><span class="nomen-desc">Superheat zone</span><span class="nomen-unit"></span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>Fitting Parameters</h2>
+    <table class="params">
+      <thead><tr><th>Symbol</th><th>Description</th><th>Unit</th><th>Default</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">UA_2ph</td><td>2-phase zone conductance</td><td>W/K</td><td>25</td></tr>
+        <tr><td class="mono">UA_SH</td><td>Superheat zone conductance</td><td>W/K</td><td>4</td></tr>
+        <tr><td class="mono">V_air_CMM</td><td>공기 체적 유량</td><td>m³/min</td><td>9</td></tr>
+      </tbody>
+    </table>
+    <p>UA 직접 입력 (설계 변수 0). HPWD R290 typical 부품 기준 default.</p>
+  </div>
+
+  <div class="doc-section">
+    <h2>Code Mapping</h2>
+    <div class="code-map">
+<span class="file">backend/components/evaporator_off_design.py</span><br>
+\u251c\u2500 <span class="func">step()</span>  <span class="desc">\u2014 2-zone cascade ε-NTU + wet coil</span><br>
+\u251c\u2500 <span class="func">_cmm_to_mass()</span>  <span class="desc">\u2014 CMM \u2192 kg/s</span><br>
+\u2514\u2500 typeNo: <span class="func">120</span>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>적용 범위 + 한계</h2>
+    <p><b>✅ 적용 가능</b>: 빠른 시스템 시뮬, UA 알고 있을 때. < 1ms.</p>
+    <p><b>⚠️ 한계</b>: UA가 운전 조건(유량·온도)에 따라 변하는데 고정값 사용 → 운전점 벗어나면 부정확. geometry·correlation 없음.</p>
+  </div>
+
+  <div class="doc-section">
+    <h2>검증 결과 (9 CMM)</h2>
+    <div class="val-grid">
+      <div class="val-card"><div class="val-label">Q (Off)</div><div class="val-value">1191<span class="val-unit">W</span></div></div>
+      <div class="val-card good"><div class="val-label">vs On★ 1021W</div><div class="val-value">+17%</div></div>
+      <div class="val-card good"><div class="val-label">평가 속도</div><div class="val-value">&lt; 1ms</div></div>
+      <div class="val-card"><div class="val-label">zones</div><div class="val-value">2</div></div>
+    </div>
+  </div>
+</template>
+
+<!-- ════════ Evaporator Semi (Moving Boundary) ════════ -->
+<template id="tpl-evaporator-semi">
+  <div class="doc-header">
+    <div class="doc-eyebrow">Evaporator / Semi-Empirical</div>
+    <h1 class="doc-title">Moving Boundary <span class="doc-title-badge badge-semi">SEMI</span></h1>
+    <div class="doc-subtitle">2-zone ε-NTU + 경계 추적 + Schmidt fin + Mirth-Ramadhyani wet coil</div>
+  </div>
+
+  <div class="doc-section">
+    <h2>학계 참고문헌</h2>
+    <div class="ref-card">
+      <div class="ref-title">Wet Coil (핵심)</div>
+      <div class="ref-body"><b>Mirth D.R., Ramadhyani S. (1993)</b>: "Comparison of methods for moist air cooling coils", <i>Int. J. Heat Mass Transfer</i>. — Enthalpy potential method. <b>Threlkeld (1970)</b>, ASHRAE Handbook Ch.6.</div>
+    </div>
+    <div class="ref-card">
+      <div class="ref-title">Correlations</div>
+      <div class="ref-body"><b>Shah (1979)</b> 2-phase boiling, <b>Wang-Chi-Chang</b> air-side, <b>Schmidt</b> fin efficiency, <b>Dittus-Boelter</b> single-phase.</div>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>수학적 정의</h2>
+    <h3>1. Moving Boundary — 경계 위치 ζ</h3>
+    <p>2-phase zone 길이 비율 $\zeta = L_{2ph}/L_{total}$을 에너지 보존으로 결정:</p>
+    <div class="eq-block">
+      $$Q_{2ph}(\zeta) + Q_{SH}(\zeta) = \dot{m}_{ref}\,\Delta h$$
+      $$Q_{2ph} = \varepsilon_{2ph}(NTU(\zeta))\, C_{min}(T_{air,in} - T_{evap})$$
+    </div>
+    <p>Newton iteration on $\zeta$ (보통 5~10회 수렴).</p>
+
+    <h3>2. Wet Coil — Enthalpy Potential Method (Mirth-Ramadhyani)</h3>
+    <p>현열·잠열을 따로 더하지 않고 <b>엔탈피 차</b>로 일괄 처리 (double counting 방지):</p>
+    <div class="eq-block">
+      $$Q_{total} = \dot{m}_{air}(h_{air,in} - h_{air,out}), \quad \varepsilon_h = 1 - e^{-NTU_h}$$
+    </div>
+    <p>유효 enthalpy conductance — 공기측·냉매측 직렬 합성:</p>
+    <div class="eq-block">
+      $$\frac{1}{UA_h} = \frac{1}{UA_{o,eff}} + \frac{\dot{m}_w^*}{UA_{i,eff}}, \quad \dot{m}_w^* = \frac{b_{sat}}{c_{p,air}}$$
+    </div>
+    <p>$b_{sat}$는 포화 enthalpy 곡선의 기울기 ($h_{sat}$ vs $T$). $Q_{sensible}/Q_{latent}$는 결과로 분해.</p>
+
+    <h3>3. Schmidt Fin Efficiency</h3>
+    <div class="eq-block">
+      $$\eta_{fin} = \frac{\tanh(m r_o \phi)}{m r_o \phi}, \quad m = \sqrt{\frac{2 h_c}{k_{fin} t_{fin}}}$$
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>Nomenclature</h2>
+    <div class="nomenclature">
+      <div class="nomen-group">
+        <div class="nomen-group-title">Latin Symbols</div>
+        <div class="nomen-row"><span class="nomen-sym">$b_{sat}$</span><span class="nomen-desc">포화 enthalpy 곡선 기울기</span><span class="nomen-unit">J/(kg·K)</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$c_{p,air}$</span><span class="nomen-desc">공기 정압 비열</span><span class="nomen-unit">J/(kg·K)</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$h$</span><span class="nomen-desc">비엔탈피 (air)</span><span class="nomen-unit">J/kg</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$h_c$</span><span class="nomen-desc">대류 열전달 계수</span><span class="nomen-unit">W/(m²·K)</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$k_{fin}, t_{fin}$</span><span class="nomen-desc">핀 열전도율 / 두께</span><span class="nomen-unit">W/(m·K), m</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$m$</span><span class="nomen-desc">핀 파라미터</span><span class="nomen-unit">1/m</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\dot{m}_w^*$</span><span class="nomen-desc">Wet coil 질량 유량 비</span><span class="nomen-unit">—</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$Q$</span><span class="nomen-desc">열전달률 (total/sens/latent)</span><span class="nomen-unit">W</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$r_o$</span><span class="nomen-desc">관 외경 반지름</span><span class="nomen-unit">m</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$UA_h$</span><span class="nomen-desc">Enthalpy conductance</span><span class="nomen-unit">kg/s</span></div>
+      </div>
+      <div class="nomen-group">
+        <div class="nomen-group-title">Greek Symbols</div>
+        <div class="nomen-row"><span class="nomen-sym">$\varepsilon_h$</span><span class="nomen-desc">Enthalpy effectiveness</span><span class="nomen-unit">—</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\zeta$</span><span class="nomen-desc">2-phase zone 길이 비율</span><span class="nomen-unit">—</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\eta_{fin}$</span><span class="nomen-desc">핀 효율 (Schmidt)</span><span class="nomen-unit">—</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\phi$</span><span class="nomen-desc">Schmidt 기하 보정 인자</span><span class="nomen-unit">—</span></div>
+      </div>
+      <div class="nomen-group">
+        <div class="nomen-group-title">Subscripts</div>
+        <div class="nomen-row"><span class="nomen-sym">i / o</span><span class="nomen-desc">내측(냉매) / 외측(공기)</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">eff</span><span class="nomen-desc">Effective (핀 효율 반영)</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">sat</span><span class="nomen-desc">Saturation (포화)</span><span class="nomen-unit"></span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>Geometry / Fitting Parameters</h2>
+    <table class="params">
+      <thead><tr><th>그룹</th><th>Params</th><th>개수</th></tr></thead>
+      <tbody>
+        <tr><td>Geometry</td><td class="mono">D_o, D_i, L_tube, t_fin, P_fin, k_fin, N_tubes, P_t, P_l, A_o/A_i</td><td>10</td></tr>
+        <tr><td>Correlation</td><td class="mono">2ph / SH / air_side / fin_efficiency</td><td>4 dropdown</td></tr>
+        <tr><td>Fitting</td><td class="mono">htc_corr_2ph, htc_corr_SH, htc_corr_air, dP_ref</td><td>4</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="doc-section">
+    <h2>Code Mapping</h2>
+    <div class="code-map">
+<span class="file">backend/components/evaporator_moving_boundary.py</span><br>
+\u251c\u2500 <span class="func">step()</span>  <span class="desc">\u2014 Newton on ζ + enthalpy potential wet coil</span><br>
+\u251c\u2500 <span class="func">_h_air_sat()</span>  <span class="desc">\u2014 apparatus dew point</span><br>
+\u251c\u2500 <span class="func">_b_slope()</span>  <span class="desc">\u2014 Mirth-Ramadhyani m_w*</span><br>
+\u2514\u2500 typeNo: <span class="func">121</span>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>적용 범위 + 한계</h2>
+    <p><b>✅ 적용 가능</b>: geometry 알고 correlation 신뢰 시. wet coil 정확 (Mirth-Ramadhyani enthalpy potential — 이전 단순 합산 버그 fix). On에 매우 근접.</p>
+    <p><b>⚠️ 한계</b>: 2-zone (segment 분해 안 함). circuit·refrigerant maldistribution 미반영 → 정밀 해석은 On.</p>
+  </div>
+
+  <div class="doc-section">
+    <h2>검증 결과 (9 CMM)</h2>
+    <div class="val-grid">
+      <div class="val-card"><div class="val-label">Q (Semi)</div><div class="val-value">1126<span class="val-unit">W</span></div></div>
+      <div class="val-card good"><div class="val-label">vs On★ 1021W</div><div class="val-value">+10%</div></div>
+      <div class="val-card good"><div class="val-label">wet coil</div><div class="val-value" style="font-size:12px">✓<span class="val-unit">M-R</span></div></div>
+      <div class="val-card"><div class="val-label">Newton iter</div><div class="val-value">5~10</div></div>
+    </div>
+  </div>
+</template>
+
+<!-- ════════ Evaporator On (Segmented) ════════ -->
+<template id="tpl-evaporator-on">
+  <div class="doc-header">
+    <div class="doc-eyebrow">Evaporator / On-Design</div>
+    <h1 class="doc-title">Segmented Tube-by-Tube <span class="doc-title-badge badge-on">ON</span></h1>
+    <div class="doc-subtitle">HX-Sim Nr×Nt×N_seg 세그먼트 모델 — Ground Truth</div>
+  </div>
+
+  <div class="doc-section">
+    <h2>학계 참고문헌</h2>
+    <div class="ref-card">
+      <div class="ref-title">Segmented HX Method</div>
+      <div class="ref-body"><b>HX-Sim</b> (backend/_vendor): tube-by-tube 세그먼트 모델. 각 세그먼트에 local ε-NTU + 30+ correlation (Chen/Shah/Kim-Mudawar 등).</div>
+    </div>
+    <div class="ref-card">
+      <div class="ref-title">Correlations (30+)</div>
+      <div class="ref-body"><b>Chen (1966)</b> flow boiling, <b>Kim-Mudawar</b> 2-phase, <b>Cooper</b> pool boiling, <b>Friedel</b> ΔP, <b>Wang</b> air-side.</div>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>수학적 정의</h2>
+    <p>열교환기를 <b>Nr행 × Nt열 × N_seg</b> 세그먼트로 분할. 각 세그먼트에서 local 상태로 ε-NTU:</p>
+    <div class="eq-block">
+      $$Q_{seg} = \varepsilon_{seg}\, C_{min,seg}(T_{air,seg} - T_{ref,seg})$$
+    </div>
+    <p>세그먼트별 local HTC (correlation):</p>
+    <div class="eq-block">
+      $$\alpha_{ref}(x, G, q'') \quad \text{(Chen, x-dependent)}, \quad \alpha_{air}(Re, geometry)$$
+    </div>
+    <p>세그먼트 출구 = 다음 세그먼트 입구. forward Euler로 P·h·x를 segment-by-segment 추적. 압력 강하 (Friedel + U-bend):</p>
+    <div class="eq-block">
+      $$\Delta P_{total} = \sum_{seg}\Delta P_{fric,seg} + \sum_{bend} K_{bend}\frac{G^2}{2\rho}$$
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>Nomenclature</h2>
+    <div class="nomenclature">
+      <div class="nomen-group">
+        <div class="nomen-group-title">Latin Symbols</div>
+        <div class="nomen-row"><span class="nomen-sym">$G$</span><span class="nomen-desc">질량 유속 (mass flux)</span><span class="nomen-unit">kg/(m²·s)</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$K_{bend}$</span><span class="nomen-desc">U-bend 손실 계수</span><span class="nomen-unit">—</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$N_{seg}$</span><span class="nomen-desc">세그먼트 분할 수</span><span class="nomen-unit">—</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$Nr, Nt$</span><span class="nomen-desc">관 행 / 열 수</span><span class="nomen-unit">—</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$q''$</span><span class="nomen-desc">열유속</span><span class="nomen-unit">W/m²</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$Q_{seg}$</span><span class="nomen-desc">세그먼트 열전달률</span><span class="nomen-unit">W</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$x$</span><span class="nomen-desc">건도 (local)</span><span class="nomen-unit">—</span></div>
+      </div>
+      <div class="nomen-group">
+        <div class="nomen-group-title">Greek Symbols</div>
+        <div class="nomen-row"><span class="nomen-sym">$\alpha$</span><span class="nomen-desc">대류 HTC (ref / air)</span><span class="nomen-unit">W/(m²·K)</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\varepsilon_{seg}$</span><span class="nomen-desc">세그먼트 effectiveness</span><span class="nomen-unit">—</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\rho$</span><span class="nomen-desc">밀도</span><span class="nomen-unit">kg/m³</span></div>
+      </div>
+      <div class="nomen-group">
+        <div class="nomen-group-title">Subscripts</div>
+        <div class="nomen-row"><span class="nomen-sym">seg</span><span class="nomen-desc">세그먼트 local</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">ref / air</span><span class="nomen-desc">냉매 / 공기 측</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">fric</span><span class="nomen-desc">마찰 (friction)</span><span class="nomen-unit"></span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>Geometry Parameters (HX-Sim)</h2>
+    <table class="params">
+      <thead><tr><th>그룹</th><th>내용</th></tr></thead>
+      <tbody>
+        <tr><td>Cabinet</td><td class="mono">W, H, depth, N_tube_rows, N_tubes_per_row</td></tr>
+        <tr><td>Fin</td><td class="mono">type (plain/wavy/louver/slit), pitch, thickness</td></tr>
+        <tr><td>Circuit</td><td class="mono">row_parallel / serpentine_2/4 / single / custom</td></tr>
+        <tr><td>Correlation</td><td class="mono">30+ (refrigerant 2ph/SH, air-side, ΔP)</td></tr>
+        <tr><td>Numerical</td><td class="mono">N_seg (default 10), edge type (Kc/Ke)</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="doc-section">
+    <h2>Code Mapping</h2>
+    <div class="code-map">
+<span class="file">backend/components/evaporator_on_design.py</span><br>
+\u251c\u2500 <span class="func">step()</span>  <span class="desc">\u2014 HX-Sim wrapping (mode='evap')</span><br>
+\u251c\u2500 <span class="file">backend/_vendor/hx_sim/solver.py</span>  <span class="desc">\u2014 세그먼트 solver</span><br>
+\u2514\u2500 typeNo: <span class="func">122</span>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>적용 범위 + 한계 (Ground Truth)</h2>
+    <p><b>✅ 적용 가능</b>: 실제 부품 도면 기반 정밀 해석. circuit·fin geometry·maldistribution 영향 직접 평가. 30+ correlation 선택. P_local segment 추적.</p>
+    <p><b>⚠️ 한계</b>: geometry 정의 필요, 계산 비용 큼 (세그먼트 수에 비례), 3D CFD 대비 1D 세그먼트 근사.</p>
+  </div>
+
+  <div class="doc-section">
+    <h2>검증 결과 (9 CMM)</h2>
+    <div class="val-grid">
+      <div class="val-card good"><div class="val-label">Q (On★)</div><div class="val-value">1021<span class="val-unit">W</span></div></div>
+      <div class="val-card good"><div class="val-label">기준</div><div class="val-value" style="font-size:13px">Ground<span class="val-unit">Truth</span></div></div>
+      <div class="val-card"><div class="val-label">correlation</div><div class="val-value">30+</div></div>
+      <div class="val-card good"><div class="val-label">P_local</div><div class="val-value" style="font-size:12px">✓<span class="val-unit">추적</span></div></div>
+    </div>
+  </div>
+</template>
+
+<!-- ════════ Condenser Off (ε-NTU 3-zone) ════════ -->
+<template id="tpl-condenser-off">
+  <div class="doc-header">
+    <div class="doc-eyebrow">Condenser / Off-Design</div>
+    <h1 class="doc-title">ε-NTU 3-Zone Cascade <span class="doc-title-badge badge-off">OFF</span></h1>
+    <div class="doc-subtitle">UA 직접 입력 — de-SH + 응축 + SC 3존 cascade</div>
+  </div>
+
+  <div class="doc-section">
+    <h2>학계 참고문헌</h2>
+    <div class="ref-card">
+      <div class="ref-title">ε-NTU Method</div>
+      <div class="ref-body"><b>Kays & London (1984)</b>, <b>Incropera</b>. 응축기는 증발기와 달리 <b>3-zone</b> (과열 제거 → 응축 → 과냉).</div>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>수학적 정의 (3-zone cascade)</h2>
+    <p>응축기는 입구 과열 증기 → 출구 과냉 액으로 <b>3개 zone</b> 순차:</p>
+    <div class="eq-block">
+      <div class="eq-label">Zone 1 — De-superheat (vapor cooling)</div>
+      $$Q_{deSH} = \varepsilon_{deSH}\, C_{min}(T_{ref,in} - T_{air,in}), \quad T_{ref,in} \to T_{sat}$$
+    </div>
+    <div class="eq-block">
+      <div class="eq-label">Zone 2 — Condensation (x: 1 → 0, C_ref → ∞)</div>
+      $$Q_{2ph} = \varepsilon_{2ph}\, C_{air}(T_{sat} - T_{air,z2}), \quad \varepsilon_{2ph} = 1 - e^{-NTU_{2ph}}$$
+    </div>
+    <div class="eq-block">
+      <div class="eq-label">Zone 3 — Subcooling (liquid)</div>
+      $$Q_{SC} = \varepsilon_{SC}\, C_{min}(T_{sat} - T_{air,z3})$$
+    </div>
+    <p>cascade: 각 zone 공기 출구가 다음 zone 입구 ($T_{air,z+1} = T_{air,out,z}$). 응축기는 보통 dry (외기 노출, wet 가정 무시).</p>
+  </div>
+
+  <div class="doc-section">
+    <h2>Nomenclature</h2>
+    <div class="nomenclature">
+      <div class="nomen-group">
+        <div class="nomen-group-title">Latin Symbols</div>
+        <div class="nomen-row"><span class="nomen-sym">$C$</span><span class="nomen-desc">열용량 유량</span><span class="nomen-unit">W/K</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$NTU$</span><span class="nomen-desc">전달 단위수</span><span class="nomen-unit">—</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$Q$</span><span class="nomen-desc">열전달률 (zone별)</span><span class="nomen-unit">W</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$T$</span><span class="nomen-desc">온도 (ref / air / sat)</span><span class="nomen-unit">°C</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$UA$</span><span class="nomen-desc">총 conductance (zone별)</span><span class="nomen-unit">W/K</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$x$</span><span class="nomen-desc">건도</span><span class="nomen-unit">—</span></div>
+      </div>
+      <div class="nomen-group">
+        <div class="nomen-group-title">Greek Symbols</div>
+        <div class="nomen-row"><span class="nomen-sym">$\varepsilon$</span><span class="nomen-desc">Effectiveness (zone별)</span><span class="nomen-unit">—</span></div>
+      </div>
+      <div class="nomen-group">
+        <div class="nomen-group-title">Subscripts</div>
+        <div class="nomen-row"><span class="nomen-sym">deSH</span><span class="nomen-desc">De-superheat zone (Zone 1)</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">2ph</span><span class="nomen-desc">Condensation zone (Zone 2)</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">SC</span><span class="nomen-desc">Subcooling zone (Zone 3)</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">sat</span><span class="nomen-desc">Saturation (응축 온도)</span><span class="nomen-unit"></span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>Fitting Parameters</h2>
+    <table class="params">
+      <thead><tr><th>Symbol</th><th>Description</th><th>Unit</th><th>Default</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">UA_deSH</td><td>De-SH zone conductance</td><td>W/K</td><td>8</td></tr>
+        <tr><td class="mono">UA_2ph</td><td>응축 zone conductance</td><td>W/K</td><td>50</td></tr>
+        <tr><td class="mono">UA_SC</td><td>SC zone conductance</td><td>W/K</td><td>5</td></tr>
+        <tr><td class="mono">V_air_CMM</td><td>공기 체적 유량</td><td>m³/min</td><td>9</td></tr>
+      </tbody>
+    </table>
+    <p>총 UA 63 W/K (HPWD R290 typical 부품 기준 조정값).</p>
+  </div>
+
+  <div class="doc-section">
+    <h2>Code Mapping</h2>
+    <div class="code-map">
+<span class="file">backend/components/condenser_off_design.py</span><br>
+\u251c\u2500 <span class="func">step()</span>  <span class="desc">\u2014 3-zone cascade ε-NTU</span><br>
+\u2514\u2500 typeNo: <span class="func">220</span>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>적용 범위 + 한계</h2>
+    <p><b>✅ 적용 가능</b>: 빠른 시스템 시뮬, UA 알 때. < 1ms.</p>
+    <p><b>⚠️ 한계</b>: UA 고정 (운전 조건 변화 미반영). geometry·correlation 없음.</p>
+  </div>
+
+  <div class="doc-section">
+    <h2>검증 결과 (9 CMM)</h2>
+    <div class="val-grid">
+      <div class="val-card"><div class="val-label">Q (Off)</div><div class="val-value">845<span class="val-unit">W</span></div></div>
+      <div class="val-card good"><div class="val-label">vs On★ 681W</div><div class="val-value">+24%</div></div>
+      <div class="val-card good"><div class="val-label">평가 속도</div><div class="val-value">&lt; 1ms</div></div>
+      <div class="val-card"><div class="val-label">zones</div><div class="val-value">3</div></div>
+    </div>
+  </div>
+</template>
+
+<!-- ════════ Condenser Semi (Cascade) ════════ -->
+<template id="tpl-condenser-semi">
+  <div class="doc-header">
+    <div class="doc-eyebrow">Condenser / Semi-Empirical</div>
+    <h1 class="doc-title">3-Zone Cascade + Correlation <span class="doc-title-badge badge-semi">SEMI</span></h1>
+    <div class="doc-subtitle">3-zone ε-NTU + Schmidt fin + condensation correlation registry</div>
+  </div>
+
+  <div class="doc-section">
+    <h2>학계 참고문헌</h2>
+    <div class="ref-card">
+      <div class="ref-title">Condensation HTC</div>
+      <div class="ref-body"><b>Shah (1979)</b>, <b>Cavallini-Smith</b>, <b>Dobson-Chato</b>, <b>Akers</b> — 관내 응축 HTC 상관식.</div>
+    </div>
+    <div class="ref-card">
+      <div class="ref-title">Single-Phase + Fin</div>
+      <div class="ref-body"><b>Dittus-Boelter / Gnielinski</b> (de-SH/SC), <b>Wang/Kim/McQuiston</b> air-side, <b>Schmidt</b> fin efficiency.</div>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>수학적 정의</h2>
+    <p>Off와 동일한 3-zone cascade이나, UA를 <b>correlation으로 자동 계산</b> (직접 입력 아님):</p>
+    <div class="eq-block">
+      <div class="eq-label">Zone별 UA (직렬 저항)</div>
+      $$\frac{1}{UA_{zone}} = \frac{1}{\alpha_{ref}A_i} + \frac{1}{\eta_{fin}\alpha_{air}A_o}$$
+    </div>
+    <div class="eq-block">
+      <div class="eq-label">응축 HTC (Zone 2, Shah)</div>
+      $$\alpha_{2ph} = \alpha_{LO}\left[(1-x)^{0.8} + \frac{3.8\,x^{0.76}(1-x)^{0.04}}{P_r^{0.38}}\right]$$
+    </div>
+    <p>$P_r$ = reduced pressure. 각 zone HTC가 운전 조건(x, G, P)에 따라 자동 변화 → Off 대비 정확.</p>
+  </div>
+
+  <div class="doc-section">
+    <h2>Nomenclature</h2>
+    <div class="nomenclature">
+      <div class="nomen-group">
+        <div class="nomen-group-title">Latin Symbols</div>
+        <div class="nomen-row"><span class="nomen-sym">$A_i, A_o$</span><span class="nomen-desc">내측 / 외측 전열 면적</span><span class="nomen-unit">m²</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$G$</span><span class="nomen-desc">질량 유속</span><span class="nomen-unit">kg/(m²·s)</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$P_r$</span><span class="nomen-desc">Reduced pressure (P/P_crit)</span><span class="nomen-unit">—</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$UA$</span><span class="nomen-desc">Zone conductance (계산값)</span><span class="nomen-unit">W/K</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$x$</span><span class="nomen-desc">건도</span><span class="nomen-unit">—</span></div>
+      </div>
+      <div class="nomen-group">
+        <div class="nomen-group-title">Greek Symbols</div>
+        <div class="nomen-row"><span class="nomen-sym">$\alpha_{ref}, \alpha_{air}$</span><span class="nomen-desc">냉매 / 공기 HTC</span><span class="nomen-unit">W/(m²·K)</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\alpha_{LO}$</span><span class="nomen-desc">Liquid-only HTC</span><span class="nomen-unit">W/(m²·K)</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\eta_{fin}$</span><span class="nomen-desc">핀 효율 (Schmidt)</span><span class="nomen-unit">—</span></div>
+      </div>
+      <div class="nomen-group">
+        <div class="nomen-group-title">Subscripts</div>
+        <div class="nomen-row"><span class="nomen-sym">deSH/2ph/SC</span><span class="nomen-desc">3 zone (과열제거/응축/과냉)</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">LO</span><span class="nomen-desc">Liquid-only (전액 가정)</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">ref / air</span><span class="nomen-desc">냉매 / 공기 측</span><span class="nomen-unit"></span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>Correlation Registry</h2>
+    <table class="params">
+      <thead><tr><th>구분</th><th>선택지</th></tr></thead>
+      <tbody>
+        <tr><td>응축 (2ph)</td><td class="mono">Shah / Cavallini-Smith / Dobson-Chato / Akers</td></tr>
+        <tr><td>단상 (deSH/SC)</td><td class="mono">Dittus-Boelter / Gnielinski</td></tr>
+        <tr><td>Air-side</td><td class="mono">Wang / Kim / McQuiston</td></tr>
+        <tr><td>Fin</td><td class="mono">Schmidt / Sector</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="doc-section">
+    <h2>Code Mapping</h2>
+    <div class="code-map">
+<span class="file">backend/components/condenser_moving_boundary.py</span><br>
+\u251c\u2500 <span class="func">step()</span>  <span class="desc">\u2014 3-zone cascade + correlation 자동 UA</span><br>
+\u251c\u2500 condensation registry: <span class="func">Shah/Cavallini/Dobson/Akers</span><br>
+\u2514\u2500 typeNo: <span class="func">221</span>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>적용 범위 + 한계</h2>
+    <p><b>✅ 적용 가능</b>: geometry 알고 correlation 신뢰 시. Evap Semi와 동등 수준. 응축 HTC가 운전 조건 따라 자동 변화.</p>
+    <p><b>⚠️ 한계</b>: 3-zone (segment 분해 안 함). circuit·maldistribution 미반영 → 정밀은 On.</p>
+  </div>
+
+  <div class="doc-section">
+    <h2>검증 결과 (9 CMM)</h2>
+    <div class="val-grid">
+      <div class="val-card"><div class="val-label">Q (Semi)</div><div class="val-value">776<span class="val-unit">W</span></div></div>
+      <div class="val-card good"><div class="val-label">vs On★ 681W</div><div class="val-value">+14%</div></div>
+      <div class="val-card good"><div class="val-label">correlation</div><div class="val-value" style="font-size:12px">✓<span class="val-unit">registry</span></div></div>
+      <div class="val-card"><div class="val-label">zones</div><div class="val-value">3</div></div>
+    </div>
+  </div>
+</template>
+
+<!-- ════════ Condenser On (Segmented) ════════ -->
+<template id="tpl-condenser-on">
+  <div class="doc-header">
+    <div class="doc-eyebrow">Condenser / On-Design</div>
+    <h1 class="doc-title">Segmented Tube-by-Tube <span class="doc-title-badge badge-on">ON</span></h1>
+    <div class="doc-subtitle">Evaporator On과 동일 HX-Sim (mode='cond') — Ground Truth</div>
+  </div>
+
+  <div class="doc-section">
+    <h2>모델 구조 (중요)</h2>
+    <div class="ref-card" style="border-left-color: var(--green);">
+      <div class="ref-title" style="color: var(--green);">코드 공유</div>
+      <div class="ref-body"><b>Evaporator On (typeNo 122)과 동일한 HX-Sim 모델</b>을 응축기 모드(mode='cond')로 호출하는 wrapper. step 로직 100% 공유 → HX-Sim correlation 개선이 양쪽 자동 적용 (code drift 방지).</div>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>학계 참고문헌</h2>
+    <div class="ref-card">
+      <div class="ref-title">Segmented + Condensation</div>
+      <div class="ref-body"><b>HX-Sim</b> tube-by-tube. <b>Shah (1979)</b> default 응축 correlation, <b>Cavallini</b>, <b>Friedel</b> ΔP. Evap과 30+ correlation 공유.</div>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>수학적 정의 (Evap On과 동일 + cond 차이)</h2>
+    <p>Nr×Nt×N_seg 세그먼트 ε-NTU는 Evap On과 동일. 응축기 고유 차이:</p>
+    <table class="params">
+      <thead><tr><th>항목</th><th>Evaporator</th><th>Condenser</th></tr></thead>
+      <tbody>
+        <tr><td>mode</td><td class="mono">evap</td><td class="mono">cond</td></tr>
+        <tr><td>ref correlation</td><td class="mono">chen1966</td><td class="mono">shah1979</td></tr>
+        <tr><td>운전 압력</td><td>저압 ~0.5 MPa</td><td>고압 ~1.6 MPa</td></tr>
+        <tr><td>SH/SC</td><td>Superheat</td><td>Subcool</td></tr>
+        <tr><td>Quality 추세</td><td>x_in→1 (증발)</td><td>1→0 (응축)</td></tr>
+        <tr><td>Wet 가정</td><td>wet coil</td><td>dry (외기)</td></tr>
+      </tbody>
+    </table>
+    <div class="eq-block">
+      $$Q_{seg} = \varepsilon_{seg}\, C_{min,seg}(T_{ref,seg} - T_{air,seg}), \quad \alpha_{2ph} = \alpha_{Shah}(x, G, P_r)$$
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>Nomenclature</h2>
+    <div class="nomenclature">
+      <div class="nomen-group">
+        <div class="nomen-group-title">Latin Symbols</div>
+        <div class="nomen-row"><span class="nomen-sym">$G$</span><span class="nomen-desc">질량 유속</span><span class="nomen-unit">kg/(m²·s)</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$N_{seg}$</span><span class="nomen-desc">세그먼트 분할 수</span><span class="nomen-unit">—</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$Nr, Nt$</span><span class="nomen-desc">관 행 / 열 수</span><span class="nomen-unit">—</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$P_r$</span><span class="nomen-desc">Reduced pressure</span><span class="nomen-unit">—</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$Q_{seg}$</span><span class="nomen-desc">세그먼트 열전달률</span><span class="nomen-unit">W</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$x$</span><span class="nomen-desc">건도 (1→0 응축)</span><span class="nomen-unit">—</span></div>
+      </div>
+      <div class="nomen-group">
+        <div class="nomen-group-title">Greek Symbols</div>
+        <div class="nomen-row"><span class="nomen-sym">$\alpha$</span><span class="nomen-desc">대류 HTC (ref / air)</span><span class="nomen-unit">W/(m²·K)</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\varepsilon_{seg}$</span><span class="nomen-desc">세그먼트 effectiveness</span><span class="nomen-unit">—</span></div>
+      </div>
+      <div class="nomen-group">
+        <div class="nomen-group-title">Subscripts</div>
+        <div class="nomen-row"><span class="nomen-sym">seg</span><span class="nomen-desc">세그먼트 local</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">ref / air</span><span class="nomen-desc">냉매 / 공기 측</span><span class="nomen-unit"></span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>Code Mapping</h2>
+    <div class="code-map">
+<span class="file">backend/components/condenser_on_design.py</span><br>
+\u251c\u2500 <span class="func">step()</span>  <span class="desc">\u2014 evaporator_on_design.step() 호출 (mode='cond')</span><br>
+\u251c\u2500 <span class="file">backend/_vendor/hx_sim/solver.py</span>  <span class="desc">\u2014 공유 solver</span><br>
+\u2514\u2500 typeNo: <span class="func">222</span>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>적용 범위 + 한계 (Ground Truth)</h2>
+    <p><b>✅ 적용 가능</b>: 실제 부품 도면 기반. Evap On과 검증된 동일 solver → 신뢰성 공유. circuit·fin·correlation 모두.</p>
+    <p><b>⚠️ 한계</b>: geometry 필요, 계산 비용 큼, 1D 세그먼트 근사.</p>
+  </div>
+
+  <div class="doc-section">
+    <h2>검증 결과 (9 CMM)</h2>
+    <div class="val-grid">
+      <div class="val-card good"><div class="val-label">Q (On★)</div><div class="val-value">681<span class="val-unit">W</span></div></div>
+      <div class="val-card good"><div class="val-label">기준</div><div class="val-value" style="font-size:13px">Ground<span class="val-unit">Truth</span></div></div>
+      <div class="val-card good"><div class="val-label">Evap 공유</div><div class="val-value" style="font-size:12px">✓<span class="val-unit">solver</span></div></div>
+      <div class="val-card"><div class="val-label">correlation</div><div class="val-value">30+</div></div>
+    </div>
+  </div>
+</template>
 <template id="tpl-todo">
   <div class="doc-header">
     <div class="doc-eyebrow" id="todo-eyebrow"></div>
@@ -2203,8 +2823,8 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
   <div class="todo-section">
     <span class="todo-icon">📝</span>
     <b>이 모델 문서는 Phase 2에서 추가됩니다.</b><br><br>
-    Phase 1에서는 Compressor 3 fidelity (AHRI / Winandy / Chamber 1-Cycle)로 패턴을 확립.<br>
-    Phase 2에서 Evap × 3, Cond × 3, EEV × 3 (9개 추가).
+    12개 모델 (Compressor·Evaporator·Condenser·EEV × 3 fidelity) 전부 작성 완료.<br>
+    추가로 future 모델 3개 (θ-PDSim, EEV CFD, EEV Acoustic) spec sheet 포함.
   </div>
   <div class="doc-section">
     <h2>참고 — 현재 코드 상태</h2>
@@ -2256,12 +2876,6 @@ document.addEventListener('click', e => {
 // Model navigation
 // ──────────────────────────────────────────────────────
 const todoMeta = {
-  'evaporator-off':  { eyebrow: 'Evaporator / Off-Design',  title: 'ε-NTU 2-zone',           code: 'backend/components/evaporator_off_design.py · typeNo 120' },
-  'evaporator-semi': { eyebrow: 'Evaporator / Semi-Empirical', title: 'Moving Boundary',     code: 'backend/components/evaporator_moving_boundary.py · typeNo 121 · Mirth-Ramadhyani 1993 wet coil' },
-  'evaporator-on':   { eyebrow: 'Evaporator / On-Design',   title: 'Segmented Tube-by-Tube', code: 'backend/components/evaporator_on_design.py · typeNo 122' },
-  'condenser-off':   { eyebrow: 'Condenser / Off-Design',   title: 'ε-NTU 3-zone',           code: 'backend/components/condenser_off_design.py · typeNo 220' },
-  'condenser-semi':  { eyebrow: 'Condenser / Semi-Empirical', title: 'Moving Boundary',     code: 'backend/components/condenser_moving_boundary.py · typeNo 221' },
-  'condenser-on':    { eyebrow: 'Condenser / On-Design',    title: 'Segmented Tube-by-Tube', code: 'backend/components/condenser_on_design.py · typeNo 222' },
 };
 
 function loadModel(modelId) {
