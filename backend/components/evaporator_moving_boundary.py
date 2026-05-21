@@ -34,6 +34,12 @@ import math
 import CoolProp.CoolProp as CP
 
 from .correlations import boiling, single_phase, air_side, fin_efficiency, pressure_drop
+# 2상 boiling은 On(segment march)과 동일 식 사용 — vendor 라이브러리 통일.
+# (correlation 라이브러리가 다르면 같은 운전점에서 α가 달라져 Off/On/Semi 정합 불가)
+from _vendor.hx_sim.correlations import h_with_transition as _vendor_h_tp
+from _vendor.hx_sim.correlations import compute_j_factor as _vendor_j_factor
+from _vendor.hx_sim.properties import RefrigerantProperties as _VendorRefProps
+from _vendor.hx_sim.properties import MoistAirProperties as _VendorAirProps
 
 FLUIDS = ['R290']
 
@@ -108,17 +114,17 @@ modelDescription = {
 
         # ═══════ Correlation 선택 (dropdown) ═══════
         {'name': 'corr_2ph', 'causality': 'parameter', 'type': 'String',
-         'group': 'Geometry', 'start': boiling.DEFAULT, 'unit': '-',
-         'options': CORR_2PH_OPTIONS,
-         'description': '2-phase boiling correlation'},
+         'group': 'Geometry', 'start': 'chen1966', 'unit': '-',
+         'options': ['chen1966', 'gungor_winterton1986', 'kandlikar1990'],
+         'description': '2-phase boiling correlation (On과 동일 vendor 식)'},
         {'name': 'corr_SH', 'causality': 'parameter', 'type': 'String',
          'group': 'Geometry', 'start': single_phase.DEFAULT, 'unit': '-',
          'options': CORR_SH_OPTIONS,
          'description': 'SH (single-phase gas) correlation'},
         {'name': 'corr_air', 'causality': 'parameter', 'type': 'String',
-         'group': 'Geometry', 'start': air_side.DEFAULT, 'unit': '-',
-         'options': CORR_AIR_OPTIONS,
-         'description': '공기측 correlation'},
+         'group': 'Geometry', 'start': 'wang2000_plain', 'unit': '-',
+         'options': ['wang2000_plain', 'gray_webb1986'],
+         'description': '공기측 j-factor correlation (On과 동일 vendor 식)'},
         {'name': 'corr_fin', 'causality': 'parameter', 'type': 'String',
          'group': 'Geometry', 'start': fin_efficiency.DEFAULT, 'unit': '-',
          'options': CORR_FIN_OPTIONS,
@@ -127,6 +133,10 @@ modelDescription = {
          'group': 'Geometry', 'start': pressure_drop.DEFAULT_2PH, 'unit': '-',
          'options': CORR_DP_OPTIONS,
          'description': '2-phase 압력강하 correlation (Acceleration은 항상 포함, Hydrostatic 제외)'},
+        {'name': 'void_model', 'causality': 'parameter', 'type': 'String',
+         'group': 'Geometry', 'start': 'Premoli', 'unit': '-',
+         'options': ['Homogeneous', 'Zivi', 'Rigot', 'Hughmark', 'Premoli', 'Rouhani-Axelsson'],
+         'description': 'Void fraction 모델 (charge holdup 계산용, default Premoli)'},
         {'name': 'eps_over_D', 'causality': 'parameter', 'type': 'Real',
          'group': 'Geometry', 'start': 0.0, 'unit': '-',
          'description': '튜브 내면 거칠기/직경 (0=smooth, 1.5e-6/D ~ 0.0002 일반 stainless)'},
@@ -178,6 +188,8 @@ modelDescription = {
         {'name': 'Q_total', 'causality': 'output', 'type': 'Real', 'unit': 'W', 'description': '총 열교환량'},
         {'name': 'Q_sensible', 'causality': 'output', 'type': 'Real', 'unit': 'W', 'description': '현열'},
         {'name': 'Q_latent', 'causality': 'output', 'type': 'Real', 'unit': 'W', 'description': '잠열'},
+        {'name': 'M_holdup', 'causality': 'output', 'type': 'Real', 'unit': 'kg',
+         'description': '내부 냉매 질량 (charge holdup, ζ zone 분할 + void fraction)'},
         {'name': 'condensate_rate', 'causality': 'output', 'type': 'Real', 'unit': 'kg/s', 'description': '응축수 (건조량)'},
         # Moving Boundary 특유 출력
         {'name': 'zeta_2ph', 'causality': 'output', 'type': 'Real', 'unit': '-',
@@ -369,9 +381,9 @@ def step(input, params, state, dt):
     A_o_face = float(params.get('A_o_face', 0.05))
     eps_over_D = float(params.get('eps_over_D', 0.0))
     # Correlations
-    corr_2ph = params.get('corr_2ph', boiling.DEFAULT)
+    corr_2ph = params.get('corr_2ph', 'chen1966')
     corr_SH = params.get('corr_SH', single_phase.DEFAULT)
-    corr_air = params.get('corr_air', air_side.DEFAULT)
+    corr_air = params.get('corr_air', 'wang2000_plain')
     corr_fin = params.get('corr_fin', fin_efficiency.DEFAULT)
     corr_dp_2ph = params.get('corr_dp_2ph', pressure_drop.DEFAULT_2PH)
     # Fitting
@@ -429,12 +441,22 @@ def step(input, params, state, dt):
     A_o = A_tube_outer + A_fin_total
     A_i = math.pi * D_i * L_tube_total
 
-    # ── 4. 공기측 α ──
+    # ── 4. 공기측 α — On(segment march)과 동일한 vendor j-factor 식 ──
+    #   h_o = j·G_air·cp/Pr^(2/3), j = compute_j_factor(Re_Dc, geometry)
+    #   G_air = ṁ_air/A_c (최소 자유면적), A_c = σ·A_fr, σ = (Pt−Dc)·gap/(Pt·Fp)
     T_air_avg_K = (T_air_in_C + 273.15 + T_evap_K) / 2.0
-    alpha_air = air_side.evaluate(corr_air,
-                                   m_dot_air=m_dot_air, T_air_avg_K=T_air_avg_K,
-                                   D_o=D_o, P_t=P_t, P_l=P_l, P_fin=P_fin,
-                                   t_fin=t_fin, N_row=int(N_rows), A_o_face=A_o_face)
+    _mu_a = _VendorAirProps.mu_air(T_air_avg_K, 101325.0)
+    _Pr_a = _VendorAirProps.Pr_air(T_air_avg_K, 101325.0)
+    _cp_a = _VendorAirProps.cp_air(T_air_avg_K, 0.0, 101325.0)
+    _Dc = D_o + 2.0 * t_fin                       # collar diameter
+    _gap = P_fin - t_fin
+    _sigma = max((P_t - _Dc) * _gap / (P_t * P_fin), 0.1)
+    _A_c = _sigma * A_o_face                       # 최소 자유면적
+    _G_air = m_dot_air / max(_A_c, 1e-9)
+    _Re_Dc = _G_air * _Dc / max(_mu_a, 1e-9)
+    _j_air = _vendor_j_factor(corr_air, Re_Dc=_Re_Dc, Nr=int(N_rows), Dc=_Dc,
+                              Pt=P_t, Pl=P_l, FPI=FPI, fin_thickness=t_fin)
+    alpha_air = _j_air * _G_air * _cp_a / _Pr_a ** (2.0 / 3.0)
     alpha_air *= htc_corr_air
 
     # ── 5. Fin 효율 ──
@@ -456,17 +478,21 @@ def step(input, params, state, dt):
     Q_2ph_demand = m_dot_ref * (h_v - h_in_J)
     q_flux_2ph_est = Q_2ph_demand / max(A_i, 1e-6)
 
-    alpha_2ph = boiling.evaluate(corr_2ph,
-                                  P_Pa=P_evap_Pa, x_avg=x_avg_2ph,
-                                  m_dot=m_dot_ref / max(N_tubes, 1),
-                                  D_i=D_i, q_flux=q_flux_2ph_est, fluid=fluid)
+    # 2상 boiling HTC — On(segment march)과 동일한 vendor 식 사용 (정합).
+    #   G = ṁ/n_circuits/A_cross (회로 기준 질량유속). vendor 시그니처로 변환.
+    _A_cross = math.pi * D_i ** 2 / 4.0
+    _G_2ph = (m_dot_ref / max(n_circuits, 1)) / max(_A_cross, 1e-12)
+    _ref_obj = _VendorRefProps(fluid)
+    alpha_2ph = _vendor_h_tp(x=x_avg_2ph, G=_G_2ph, Di=D_i, q_flux=q_flux_2ph_est,
+                             ref=_ref_obj, P=P_evap_Pa, mode='evap',
+                             hx_type='FT', evap_corr=corr_2ph)
     alpha_2ph *= htc_corr_2ph
 
     # SH zone — 평균 온도 추정 (T_evap + 일부 SH)
     T_SH_avg_K = T_evap_K + 10  # 첫 추정
     alpha_SH = single_phase.evaluate(corr_SH,
                                       P_Pa=P_evap_Pa, T_avg_K=T_SH_avg_K,
-                                      m_dot=m_dot_ref / max(N_tubes, 1),
+                                      m_dot=m_dot_ref / max(n_circuits, 1),
                                       D_i=D_i, fluid=fluid, heating=True)
     alpha_SH *= htc_corr_SH
 
@@ -476,71 +502,111 @@ def step(input, params, state, dt):
     UA_2ph_full = 1.0 / (1.0 / (alpha_2ph * A_i) + 1.0 / (alpha_air * A_o * eta_overall))
     UA_SH_full = 1.0 / (1.0 / (alpha_SH * A_i) + 1.0 / (alpha_air * A_o * eta_overall))
 
-    # ── 8. Newton iteration on ζ ──
-    # Q_2ph_demand: 냉매가 2-phase 영역에서 받아야 할 열 (x_in → x=1)
-    # Q_2ph_supply(ζ): 공기가 2-phase 영역에 줄 수 있는 열
-    # 균형: Q_2ph_supply(ζ*) = Q_2ph_demand → ζ* 결정
-    
-    zeta = state.get('zeta_prev', 0.7)
-    zeta = max(0.01, min(0.99, zeta))
-    
-    n_iter = 0
-    converged = False
-    for n_iter in range(1, 21):
-        # Q_2ph_supply(ζ) = ε_2ph × C_air × (T_air_in - T_evap)
-        UA_2ph = UA_2ph_full * zeta
-        NTU_2ph = UA_2ph / C_air if C_air > 0 else 0
-        eps_2ph = 1.0 - math.exp(-NTU_2ph) if NTU_2ph < 50 else 1.0
-        Q_2ph_supply = eps_2ph * C_air * (T_air_in_C - T_evap_C)
+    # ── 8. ζ 결정 + 2상 zone 열전달 (wet/dry 통합, enthalpy 기준) ──
+    # ═══════════════════════════════════════════════════════════════════════
+    # ζ = 2상 zone 길이 비율. 냉매 완전증발(x_in→1) 열을 공기가 공급하는 지점에서 결정.
+    # wet일 때 냉매가 받는 열 = 공기 enthalpy 감소 전체(현열+잠열): 표면 응축 잠열도
+    #   냉매로 전달되므로 ζ는 enthalpy 기준이어야 함 (기존 sensible 기준 → 결합 오류).
+    # 2상 zone만 wet (표면이 차가워 제습), SH zone은 dry (표면이 따뜻해 제습 없음).
+    # 표면온도는 (냉매측 저항)=(공기측 enthalpy potential) 양쪽 균형 → 보정계수 없음,
+    #   회로(G) 무관 robust (On segment march의 zone-평균 등가).
+    # ═══════════════════════════════════════════════════════════════════════
+    is_wet = (wet_mode == 'auto') and (T_dp_in_C > T_evap_C)
 
-        residual = Q_2ph_supply - Q_2ph_demand
-
-        if abs(residual) < 0.5:  # 0.5 W
-            converged = True
-            break
-
-        # Newton: dR/dζ = dQ_supply/dζ
-        # dε/dNTU = exp(-NTU), dNTU/dζ = UA_full / C_air
-        # dQ/dζ = exp(-NTU) × UA_full × ΔT
-        if NTU_2ph < 50:
-            dQ_dzeta = math.exp(-NTU_2ph) * UA_2ph_full * (T_air_in_C - T_evap_C)
+    def _compute_2ph(zeta_val):
+        """주어진 ζ에서 2상 zone 공급열 Q_sup[W], 표면온도 Ts[°C], eps, 포화엔탈피.
+        wet은 sub-zone march로 공기 점진 냉각 반영 (enthalpy potential 비선형 → On 정합)."""
+        UA_i_full = alpha_2ph * A_i * zeta_val  # 2상 zone 전체 냉매측 [W/K]
+        if is_wet:
+            # 공기측을 N_sub로 march: 각 sub-zone에서 공기 냉각 → 구동력 점감
+            N_sub = 12
+            UA_o_sub = alpha_air * A_o * zeta_val * eta_overall / N_sub
+            UA_i_sub = UA_i_full / N_sub
+            NTU_sub = UA_o_sub / C_air if C_air > 0 else 0
+            eps_sub = 1.0 - math.exp(-NTU_sub) if NTU_sub < 50 else 1.0
+            h_air_local = h_air_in
+            Q_sup = 0.0
+            Ts_sum = 0.0
+            Ts = 0.5 * (T_evap_C + T_air_in_C)  # warm start
+            for _s in range(N_sub):
+                # 표면온도 양쪽 균형 (이 sub-zone의 local 공기 엔탈피로)
+                for _ in range(20):
+                    Q_b = m_dot_air * eps_sub * (h_air_local - _h_air_sat(Ts))
+                    Ts_new = T_evap_C + Q_b / UA_i_sub if UA_i_sub > 0 else T_evap_C
+                    Ts_new = max(T_evap_C, min(Ts_new, T_air_in_C))
+                    if abs(Ts_new - Ts) < 0.02:
+                        Ts = Ts_new
+                        break
+                    Ts = 0.5 * (Ts_new + Ts)
+                Q_s = max(0.0, m_dot_air * eps_sub * (h_air_local - _h_air_sat(Ts)))
+                Q_sup += Q_s
+                h_air_local -= Q_s / m_dot_air
+                Ts_sum += Ts
+            Ts_avg = Ts_sum / N_sub
+            return Q_sup, Ts_avg, eps_sub, _h_air_sat(Ts_avg)
         else:
-            dQ_dzeta = 0.001  # saturated, very flat
+            UA_2ph = UA_2ph_full * zeta_val
+            NTU = UA_2ph / C_air if C_air > 0 else 0
+            eps = 1.0 - math.exp(-NTU) if NTU < 50 else 1.0
+            Q_sup = eps * C_air * (T_air_in_C - T_evap_C)  # sensible
+            return Q_sup, T_evap_C, eps, None
 
-        if abs(dQ_dzeta) > 1e-9:
-            zeta_new = zeta - residual / dQ_dzeta
-        else:
-            zeta_new = zeta
-
-        # Bound + relax
-        zeta_new = max(0.01, min(0.999, zeta_new))
-        zeta = zeta + 0.7 * (zeta_new - zeta)  # under-relaxation
-
-    # 최종 ζ
+    # ζ bisection — Q_2ph_supply(ζ)는 ζ에 단조증가, demand 고정
+    Q_at_full, _, _, _ = _compute_2ph(0.999)
+    if Q_at_full <= Q_2ph_demand:
+        # ζ=1이어도 완전증발 불가 → 출구 2상, SH zone 없음 (On에서 흔함)
+        zeta = 1.0
+        ref_fully_evap = False
+    else:
+        _lo, _hi = 0.01, 0.999
+        for _bi in range(50):
+            zeta = 0.5 * (_lo + _hi)
+            _Qs, _, _, _ = _compute_2ph(zeta)
+            if _Qs < Q_2ph_demand:
+                _lo = zeta
+            else:
+                _hi = zeta
+            if _hi - _lo < 1e-4:
+                break
+        zeta = 0.5 * (_lo + _hi)
+        ref_fully_evap = (zeta < 0.99)
     zeta = max(0.01, min(1.0, zeta))
+    n_iter = 50
+    converged = True
 
-    # ── 9. 실제 Q 계산 (수렴된 ζ로) ──
+    # ── 9. 최종 2상 zone (수렴된 ζ로) ──
+    Q_2ph_sup, T_surf_C, eps_2ph_w, h_app_2ph = _compute_2ph(zeta)
+    Q_2ph = Q_2ph_demand if ref_fully_evap else Q_2ph_sup
+    eps_h = eps_2ph_w  # 하위호환 (진단/BF 참조)
     UA_2ph_actual = UA_2ph_full * zeta
     UA_SH_actual = UA_SH_full * (1.0 - zeta) if zeta < 1.0 else 0
 
-    # ζ ≥ 0.99이면: 냉매가 2-phase 영역에서 다 증발 못함 → SH zone 0
-    ref_fully_evap = (zeta < 0.99) and (UA_SH_actual > 0)
+    # 2상 zone 공기 출구 상태 (enthalpy 감소 + 제습)
+    h_air_after_2ph = h_air_in - Q_2ph / m_dot_air
+    if is_wet:
+        BF = (h_air_after_2ph - h_app_2ph) / max(h_air_in - h_app_2ph, 1e-6)
+        BF = max(0.0, min(1.0, BF))
+        W_sat_surf = _W_sat(T_surf_C)
+        W_air_out = BF * W_in + (1.0 - BF) * W_sat_surf
+        W_air_out = min(W_in, max(W_sat_surf, W_air_out))
+        condensate_rate = m_dot_air * (W_in - W_air_out)
+        h_fg_water = 2501e3 - 2.4 * T_surf_C
+        Q_latent = max(0.0, condensate_rate * h_fg_water)
+    else:
+        BF = 1.0
+        W_air_out = W_in
+        condensate_rate = 0.0
+        Q_latent = 0.0
+    try:
+        T_air_after_2ph_C = CP.HAPropsSI('T', 'H', h_air_after_2ph, 'P', 101325.0, 'W', W_air_out) - 273.15
+    except Exception:
+        T_air_after_2ph_C = T_air_in_C - (Q_2ph - Q_latent) / C_air if C_air > 0 else T_air_in_C
 
-    # 2-phase actual Q (Q_2ph_demand로 cap)
-    NTU_2ph = UA_2ph_actual / C_air if C_air > 0 else 0
-    eps_2ph = 1.0 - math.exp(-NTU_2ph) if NTU_2ph < 50 else 1.0
-    Q_sensible_2ph = eps_2ph * C_air * (T_air_in_C - T_evap_C)
-    Q_sensible_2ph = min(Q_sensible_2ph, Q_2ph_demand)
-
-    # 공기 온도 after 2-phase
-    T_air_after_2ph_C = T_air_in_C - Q_sensible_2ph / C_air if C_air > 0 else T_air_in_C
-
-    # ── 10. SH zone (ζ < 1 일 때) ──
-    Q_SH = 0
-    h_ref_out_J = h_in_J + Q_sensible_2ph / m_dot_ref
+    # ── 10. SH zone (dry sensible, 공기 after-2상으로) ──
+    Q_SH = 0.0
+    h_ref_out_J = h_in_J + Q_2ph / m_dot_ref
     T_air_out_C = T_air_after_2ph_C
-
-    if ref_fully_evap:
+    if ref_fully_evap and UA_SH_actual > 0:
         try:
             cp_ref_SH = CP.PropsSI('C', 'P', P_evap_Pa, 'Q', 1, fluid)
         except Exception:
@@ -551,162 +617,15 @@ def step(input, params, state, dt):
         Cr = Cmin_SH / Cmax_SH if Cmax_SH > 0 else 0
         NTU_SH = UA_SH_actual / Cmin_SH if Cmin_SH > 0 else 0
         eps_SH = _eps_counterflow(NTU_SH, Cr)
-        Q_SH = eps_SH * Cmin_SH * (T_air_after_2ph_C - T_evap_C)
-        Q_SH = max(0, Q_SH)
+        Q_SH = max(0.0, eps_SH * Cmin_SH * (T_air_after_2ph_C - T_evap_C))
         h_ref_out_J = h_v + Q_SH / m_dot_ref
         T_air_out_C = T_air_after_2ph_C - Q_SH / C_air if C_air > 0 else T_air_after_2ph_C
 
-    # ── 11. Wet-coil with Enthalpy Potential Method ──
-    # ═══════════════════════════════════════════════════════════════════════
-    # Reference: 
-    #   Mirth & Ramadhyani (1993) IJHMT — "Prediction of cooling-coil 
-    #     performance under condensing conditions"
-    #   ASHRAE Handbook of Fundamentals Ch.6
-    #   Threlkeld (1970) "Thermal Environmental Engineering"
-    #
-    # 학계 표준 wet coil 모델:
-    #   Q_total = m_dot_air × (h_air_in - h_air_out)
-    #   ε_h = 1 - exp(-NTU_h × ξ)
-    #   NTU_h = UA_o × η_o / (m_dot_air × cp_air)
-    #   ξ = m_w* = b / cp_air  (saturation enthalpy slope correction)
-    #   h_air_out = h_air_in - ε_h × (h_air_in - h_apparatus)
-    #   h_apparatus = h_sat(T_evap)  ← refrigerant 측 saturation temp의 포화공기
-    #
-    # 이전 코드 버그:
-    #   sensible Q와 latent Q를 따로 풀어서 더함 → double counting
-    #   ref-side capacity 무시 → enthalpy 발산
-    # ═══════════════════════════════════════════════════════════════════════
-    
-    is_wet = (wet_mode == 'auto') and (T_dp_in_C > T_evap_C)
-    
-    if is_wet:
-        # ── air-side enthalpy potential ε-NTU ──
-        # Saturation enthalpy slope b (J/kg-dry-air per K)
-        # 평균 슬로프 사용: T_evap ~ T_air_in 사이
-        b_sat = _b_slope(T_evap_C, T_air_in_C)
-        # m_w* = b / cp_air (Threlkeld saturation enthalpy slope correction)
-        m_w_star = b_sat / cp_air if cp_air > 0 else 1.0
-        
-        # NTU_h: air-side enthalpy NTU
-        # UA_o_eff: 외부 effective UA = α_air × A_o × η_overall (전체 coil)
-        UA_o_eff = alpha_air * A_o * eta_overall
-        NTU_h_air = UA_o_eff / (m_dot_air * cp_air) if (m_dot_air * cp_air) > 0 else 0
-        
-        # ref-side enthalpy NTU (2-phase: α_r × A_i / m_w*)
-        UA_i_eff_2ph = alpha_2ph * A_i  # 2-phase 측 UA (전체 zone 가정 — 보수적)
-        # SH zone도 있으면 가중평균
-        if ref_fully_evap and UA_SH_actual > 0:
-            UA_i_eff = (alpha_2ph * A_i * zeta + alpha_SH * A_i * (1 - zeta))
-        else:
-            UA_i_eff = alpha_2ph * A_i
-        
-        NTU_h_ref = UA_i_eff / (m_dot_ref * 1.0) if m_dot_ref > 0 else 0  # m_w_star 단위 맞춤
-        # ε_h: combined NTU (overall)
-        # 1/UA_overall_h = 1/UA_o_eff + m_w*/UA_i_eff
-        if UA_i_eff > 0 and m_w_star > 0:
-            inv_UA_h = 1.0 / UA_o_eff + m_w_star / UA_i_eff
-            UA_h_overall = 1.0 / inv_UA_h if inv_UA_h > 0 else 0
-        else:
-            UA_h_overall = UA_o_eff  # 2-phase ref limit
-        NTU_h_overall = UA_h_overall / (m_dot_air * cp_air) if (m_dot_air * cp_air) > 0 else 0
-        
-        # ε_h: single-stream (ref-side T const → Cr ~ 0 가정)
-        eps_h = 1.0 - math.exp(-NTU_h_overall) if NTU_h_overall < 50 else 1.0
-        
-        # ── ADP 표면온도 보정 iteration ──
-        # ═══════════════════════════════════════════════════════════════════
-        # 기존: ADP(apparatus dew point) = T_evap (냉매 온도) 가정
-        #   → 냉매측 열저항 무시 → 표면을 냉매만큼 차갑게 봐서 제습 과대평가
-        #   (On enthalpy potential 대비 구동력 ~2.7배 → Q 과대)
-        # 수정: 표면온도 = T_evap + 냉매측 film ΔT = T_evap + Q/(α_2ph·A_i)
-        #   Threlkeld/ASHRAE 표준 — ADP는 표면온도(냉매측 저항 반영)지 냉매온도 아님.
-        #   Q↔ADP 상호의존 → 5회 iteration 수렴 (On L3 ground truth에 정합)
-        # ═══════════════════════════════════════════════════════════════════
-        UA_i_ref_film = alpha_2ph * A_i  # 2-phase 냉매측 conductance [W/K]
-        T_surf_C = T_evap_C
-        for _adp_it in range(5):
-            h_app_it = _h_air_sat(T_surf_C)
-            h_out_it = h_air_in - eps_h * (h_air_in - h_app_it)
-            Q_it = m_dot_air * (h_air_in - h_out_it)
-            dT_film = Q_it / UA_i_ref_film if UA_i_ref_film > 0 else 0.0
-            T_surf_new = T_evap_C + dT_film
-            if abs(T_surf_new - T_surf_C) < 0.05:
-                T_surf_C = T_surf_new
-                break
-            T_surf_C = 0.5 * T_surf_new + 0.5 * T_surf_C  # under-relax
-        
-        # ── 보정된 표면온도(ADP)로 최종 계산 ──
-        h_apparatus = _h_air_sat(T_surf_C)
-        h_air_out = h_air_in - eps_h * (h_air_in - h_apparatus)
-        
-        # ── Q_total (air-side enthalpy balance) ──
-        Q_total = m_dot_air * (h_air_in - h_air_out)
-        
-        # ── Outlet air state (T_out, W_out, RH_out) ──
-        # 포화 공기 line상 점 — 보수적 가정:
-        # ADP (apparatus dew point): T_air_apparatus = T_evap, fully saturated
-        # 실제 outlet은 ADP와 inlet 사이의 직선 위 (Threlkeld 가정)
-        # Bypass factor BF (enthalpy-based) = (h_out - h_apparatus) / (h_in - h_apparatus)
-        BF = (h_air_out - h_apparatus) / max(h_air_in - h_apparatus, 1e-6)
-        BF = max(0.0, min(1.0, BF))
-        
-        # Outlet humidity: ω_out = BF × ω_in + (1-BF) × ω_sat(T_surface)
-        # 보정된 표면온도 T_surf_C 기준 (냉매측 film ΔT 반영)
-        W_apparatus = _W_sat(T_surf_C)
-        W_air_out = BF * W_in + (1.0 - BF) * W_apparatus
-        # Bounds
-        W_air_out = min(W_in, max(W_apparatus, W_air_out))
-        
-        # condensate, Q_latent
-        condensate_rate = m_dot_air * (W_in - W_air_out)
-        h_fg_water = 2501e3 - 2.4 * T_surf_C
-        Q_latent = condensate_rate * h_fg_water
-        Q_latent = max(0, Q_latent)
-        
-        # Q_sensible = Q_total - Q_latent (결과로서 분해)
-        Q_sensible_total = max(0, Q_total - Q_latent)
-        
-        # T_air_out from enthalpy + humidity
-        try:
-            T_air_out_K = CP.HAPropsSI('T', 'H', h_air_out, 'P', 101325.0, 'W', W_air_out)
-            T_air_out_C = T_air_out_K - 273.15
-        except Exception:
-            # fallback: enthalpy linearize
-            T_air_out_C = T_air_in_C - Q_sensible_total / C_air if C_air > 0 else T_air_in_C
-        
-        # ── ref-side cap (안전 안전책) ──
-        # ref가 흡수 가능한 max enthalpy: vapor + 충분한 SH 한도
-        # 만약 Q_total이 ref capacity 넘으면 cap (실제로 enthalpy potential method가 이미 처리하지만 보수적)
-        try:
-            cp_vapor = CP.PropsSI('C', 'P', P_evap_Pa, 'Q', 1, fluid)
-        except Exception:
-            cp_vapor = 1700
-        # ref 최대 흡수: vapor 도달 + SH 50K
-        h_ref_max = h_v + cp_vapor * 50.0
-        Q_ref_max = m_dot_ref * (h_ref_max - h_in_J)
-        if Q_total > Q_ref_max and Q_ref_max > 0:
-            # ref 한도로 cap + air-side 재조정
-            scale = Q_ref_max / Q_total
-            Q_total = Q_ref_max
-            Q_sensible_total *= scale
-            Q_latent *= scale
-            condensate_rate *= scale
-            W_air_out = W_in - condensate_rate / m_dot_air
-            h_air_out = h_air_in - Q_total / m_dot_air
-            try:
-                T_air_out_K = CP.HAPropsSI('T', 'H', h_air_out, 'P', 101325.0, 'W', W_air_out)
-                T_air_out_C = T_air_out_K - 273.15
-            except Exception:
-                T_air_out_C = T_air_in_C - Q_sensible_total / C_air if C_air > 0 else T_air_in_C
-    else:
-        # Dry coil — 기존 sensible-only 결과 유지
-        BF = 1.0
-        W_air_out = W_in
-        condensate_rate = 0.0
-        Q_latent = 0.0
-        Q_sensible_total = Q_sensible_2ph + Q_SH
-        Q_total = Q_sensible_total
-        # T_air_out_C 는 위에서 이미 계산됨
+    # ── 11. Q_total 집계 ──
+    Q_total = Q_2ph + Q_SH
+    Q_sensible_total = max(0.0, Q_total - Q_latent)
+    Q_sensible_2ph = Q_2ph  # 하위호환 (2상 zone에서 냉매로 간 열 = 증발 잠열분)
+    h_air_out = h_air_in - Q_total / m_dot_air
 
     # ── 12. 압력 강하 계산 (마찰 + 가속) ──
     # zone별 길이 = ζ × L_total / N_tubes (1 회로 길이 가정)
@@ -796,6 +715,40 @@ def step(input, params, state, dt):
     # ── 새 state ──
     new_state = {'zeta_prev': zeta}
 
+    # ═══════ 냉매 charge holdup (ζ zone 분할) ═══════
+    # Semi는 moving boundary라 zone 길이 비율 ζ를 직접 계산 → 정확한 zone 분할.
+    #   2상 zone(길이 ζ): void fraction을 quality 구간 [x_in, 1] 적분 (비선형 반영)
+    #   SH zone(길이 1-ζ): 과열 증기, CoolProp(P, T_avg)
+    # x_avg 1점 근사는 void(x)의 비선형성을 놓쳐 액 holdup 과대 → 10점 적분으로 개선.
+    from components.correlations import void_fraction as _vf
+    void_model = params.get('void_model', _vf.DEFAULT)
+    A_cross = math.pi * D_i ** 2 / 4.0
+    V_internal = A_cross * L_tube_total
+    m_per_tube = m_dot_ref / max(n_circuits, 1)  # 회로 기준 G (alpha와 동일, On 정합)
+    # 입구 quality
+    x_in_2ph = max(0.0, min(1.0, (h_in_J - h_l) / max(h_fg, 1.0)))
+    # 2상 zone: quality [x_in, 1] 구간 10점 적분으로 평균밀도
+    _N_int = 10
+    _rho_sum = 0.0
+    for _i in range(_N_int):
+        _x = x_in_2ph + (1.0 - x_in_2ph) * (_i + 0.5) / _N_int  # midpoint
+        _a = _vf.evaluate(void_model, x=_x, P_Pa=P_evap_Pa,
+                          m_dot=m_per_tube, D_i=D_i, fluid=fluid)
+        _rho_sum += _vf.mean_density(_a, P_evap_Pa, fluid)
+    rho_2ph = _rho_sum / _N_int
+    M_2ph = rho_2ph * (zeta * V_internal)
+    # SH zone (과열 증기)
+    if zeta < 0.999:
+        T_SH_avg_K = 0.5 * (T_evap_K + T_ref_out_K)
+        try:
+            rho_SH = CP.PropsSI('D', 'P', P_evap_Pa, 'T', T_SH_avg_K, fluid)
+        except Exception:
+            rho_SH = CP.PropsSI('D', 'P', P_evap_Pa, 'Q', 1, fluid)
+        M_SH = rho_SH * ((1.0 - zeta) * V_internal)
+    else:
+        M_SH = 0.0
+    M_holdup = M_2ph + M_SH
+
     outputs = {
         'T_ref_out': T_ref_out_C,
         'h_ref_out': h_ref_out_final_J / 1000,
@@ -810,6 +763,7 @@ def step(input, params, state, dt):
         'Q_sensible': Q_sensible_total,
         'Q_latent': Q_latent,
         'condensate_rate': condensate_rate,
+        'M_holdup': M_holdup,
         'zeta_2ph': zeta,
         'alpha_r_2ph': alpha_2ph,
         'alpha_r_SH': alpha_SH,
