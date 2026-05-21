@@ -765,20 +765,6 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
     </div>
   </div>
 
-  <div class="doc-section">
-    <h2>Fitting Parameters</h2>
-    <table class="params">
-      <thead>
-        <tr><th>Symbol</th><th>Description</th><th>Unit</th><th>Typical Range</th></tr>
-      </thead>
-      <tbody>
-        <tr><td class="mono">C<sub>1</sub> ~ C<sub>6</sub></td><td>Mass flow 다항식 6 계수</td><td>—</td><td>fit 대상</td></tr>
-        <tr><td class="mono">D<sub>1</sub> ~ D<sub>6</sub></td><td>Power 다항식 6 계수</td><td>—</td><td>fit 대상</td></tr>
-        <tr><td class="mono">η_is_est</td><td>Isentropic 효율 추정값</td><td>—</td><td>0.6 ~ 0.8</td></tr>
-      </tbody>
-    </table>
-    <p>총 <b>12개 fitting parameters</b>. AHRI 매트릭스 시험 데이터로 회귀 분석.</p>
-  </div>
 
   <div class="doc-section">
     <h2>Code Mapping</h2>
@@ -944,25 +930,6 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
     </div>
   </div>
 
-  <div class="doc-section">
-    <h2>Fitting Parameters</h2>
-    <table class="params">
-      <thead>
-        <tr><th>Symbol</th><th>Description</th><th>Unit</th><th>Typical</th></tr>
-      </thead>
-      <tbody>
-        <tr><td class="mono">V_disp</td><td>Displacement volume</td><td>cm³</td><td>5 ~ 30</td></tr>
-        <tr><td class="mono">r_v</td><td>Built-in volume ratio</td><td>—</td><td>2.0 ~ 3.5</td></tr>
-        <tr><td class="mono">η_motor</td><td>Motor efficiency</td><td>—</td><td>0.85 ~ 0.95</td></tr>
-        <tr><td class="mono">AU_su</td><td>Suction heat transfer coeff.</td><td>W/K</td><td>1 ~ 10</td></tr>
-        <tr><td class="mono">AU_amb</td><td>Ambient heat loss coeff.</td><td>W/K</td><td>2 ~ 20</td></tr>
-        <tr><td class="mono">ΔP_su</td><td>Suction pressure drop</td><td>bar</td><td>0.01 ~ 0.1</td></tr>
-        <tr><td class="mono">c (clearance)</td><td>Volumetric clearance factor</td><td>—</td><td>0.03 ~ 0.10</td></tr>
-        <tr><td class="mono">W_loss_0, α</td><td>Constant + proportional loss</td><td>W, —</td><td>20 ~ 50, 0.05 ~ 0.15</td></tr>
-      </tbody>
-    </table>
-    <p>총 <b>9~10개 fitting parameters</b>. 운전 매트릭스 시험 데이터 (T_evap × T_cond × N)로 회귀.</p>
-  </div>
 
   <div class="doc-section">
     <h2>Code Mapping</h2>
@@ -1153,27 +1120,6 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
     </div>
   </div>
 
-  <div class="doc-section">
-    <h2>Fitting / Geometry Parameters</h2>
-    <table class="params">
-      <thead>
-        <tr><th>Symbol</th><th>Description</th><th>Unit</th><th>Default</th></tr>
-      </thead>
-      <tbody>
-        <tr><td class="mono">V_disp</td><td>Displacement volume</td><td>cm³</td><td>10.0</td></tr>
-        <tr><td class="mono">clearance_ratio</td><td>Clearance 체적 비</td><td>—</td><td>0.04</td></tr>
-        <tr><td class="mono">rv_in</td><td>Built-in volume ratio</td><td>—</td><td>2.5</td></tr>
-        <tr><td class="mono">A_valve_in/out</td><td>밸브 유효 면적</td><td>mm²</td><td>8.0 / 6.0</td></tr>
-        <tr><td class="mono">zeta_valve</td><td>밸브 손실 계수</td><td>—</td><td>1.5</td></tr>
-        <tr><td class="mono">A_leak</td><td>누설 면적</td><td>mm²</td><td>0.02</td></tr>
-        <tr><td class="mono">Cd_leak</td><td>누설 계수</td><td>—</td><td>0.6</td></tr>
-        <tr><td class="mono">n_leak_rpm</td><td>누설 RPM 지수</td><td>—</td><td>0.5</td></tr>
-        <tr><td class="mono">over_comp_factor</td><td>Over-comp 손실 가중</td><td>—</td><td>0.3</td></tr>
-        <tr><td class="mono">W_f_const, alpha_f</td><td>마찰 const + RPM²</td><td>W, —</td><td>20, 8e-6</td></tr>
-        <tr><td class="mono">eta_motor, eta_inv</td><td>모터 / 인버터 효율</td><td>—</td><td>0.92 / 0.95</td></tr>
-      </tbody>
-    </table>
-  </div>
 
   <div class="doc-section">
     <h2>Code Mapping</h2>
@@ -1590,19 +1536,6 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
     </div>
   </div>
 
-  <div class="doc-section">
-    <h2>Fitting Parameters</h2>
-    <table class="params">
-      <thead><tr><th>Symbol</th><th>Description</th><th>Unit</th><th>Default</th></tr></thead>
-      <tbody>
-        <tr><td class="mono">A_orifice</td><td>오리피스 기준 면적</td><td>m²</td><td>3.14e-6</td></tr>
-        <tr><td class="mono">Cv_rated</td><td>정격 flow coefficient</td><td>—</td><td>fit</td></tr>
-        <tr><td class="mono">c0 ~ c3</td><td>Opening curve 4 계수</td><td>—</td><td>fit</td></tr>
-        <tr><td class="mono">opening_min</td><td>최소 개도</td><td>%</td><td>0.0</td></tr>
-      </tbody>
-    </table>
-    <p>총 <b>5개 fitting params</b> (Cv_rated, c0~c3). 제조사 카탈로그 또는 시험 데이터로 회귀.</p>
-  </div>
 
   <div class="doc-section">
     <h2>Code Mapping</h2>
@@ -1724,21 +1657,6 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
     </div>
   </div>
 
-  <div class="doc-section">
-    <h2>Fitting Parameters</h2>
-    <table class="params">
-      <thead><tr><th>Symbol</th><th>Description</th><th>Unit</th><th>Default</th></tr></thead>
-      <tbody>
-        <tr><td class="mono">Cd_0</td><td>기준 discharge coeff.</td><td>—</td><td>0.72</td></tr>
-        <tr><td class="mono">Re_c</td><td>Low-Re 임계값</td><td>—</td><td>5000</td></tr>
-        <tr><td class="mono">k_sub</td><td>Subcooling 보정 계수</td><td>—</td><td>0.05</td></tr>
-        <tr><td class="mono">k_op</td><td>Opening 보정 계수</td><td>—</td><td>0.15</td></tr>
-        <tr><td class="mono">Y_crit</td><td>임계 압력비 (choke)</td><td>—</td><td>0.55</td></tr>
-        <tr><td class="mono">cf_A</td><td>면적 보정 multiplier</td><td>—</td><td>1.0</td></tr>
-      </tbody>
-    </table>
-    <p>총 <b>6개 fitting params</b>. Off(5개)보다 많지만 물리 기반이라 외삽 가능.</p>
-  </div>
 
   <div class="doc-section">
     <h2>Code Mapping</h2>
@@ -1866,22 +1784,6 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
     </div>
   </div>
 
-  <div class="doc-section">
-    <h2>Geometry / Fitting Parameters</h2>
-    <table class="params">
-      <thead><tr><th>Symbol</th><th>Description</th><th>Unit</th><th>Default</th></tr></thead>
-      <tbody>
-        <tr><td class="mono">needle_angle</td><td>Needle cone 각도 α</td><td>deg</td><td>30.0</td></tr>
-        <tr><td class="mono">D_seat</td><td>Seat 직경</td><td>m</td><td>0.002</td></tr>
-        <tr><td class="mono">stroke_max</td><td>최대 stroke</td><td>m</td><td>0.001</td></tr>
-        <tr><td class="mono">choke_ratio</td><td>2-phase choke 임계비</td><td>—</td><td>0.5</td></tr>
-        <tr><td class="mono">Cd_base</td><td>기준 discharge coeff.</td><td>—</td><td>0.72</td></tr>
-        <tr><td class="mono">Re_transition</td><td>Re 보정 전이값</td><td>—</td><td>1000</td></tr>
-        <tr><td class="mono">cf_A</td><td>면적 보정 multiplier</td><td>—</td><td>1.0</td></tr>
-      </tbody>
-    </table>
-    <p>geometry는 <b>실제 부품 도면</b>에서 측정 → fitting params는 4개 (Cd_base, Re_transition, choke_ratio, cf_A)로 최소.</p>
-  </div>
 
   <div class="doc-section">
     <h2>Code Mapping</h2>
@@ -2257,18 +2159,6 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
     </div>
   </div>
 
-  <div class="doc-section">
-    <h2>Fitting Parameters</h2>
-    <table class="params">
-      <thead><tr><th>Symbol</th><th>Description</th><th>Unit</th><th>Default</th></tr></thead>
-      <tbody>
-        <tr><td class="mono">UA_2ph</td><td>2-phase zone conductance</td><td>W/K</td><td>25</td></tr>
-        <tr><td class="mono">UA_SH</td><td>Superheat zone conductance</td><td>W/K</td><td>4</td></tr>
-        <tr><td class="mono">V_air_CMM</td><td>공기 체적 유량</td><td>m³/min</td><td>9</td></tr>
-      </tbody>
-    </table>
-    <p>UA 직접 입력 (설계 변수 0). HPWD R290 typical 부품 기준 default.</p>
-  </div>
 
   <div class="doc-section">
     <h2>Code Mapping</h2>
@@ -2376,17 +2266,6 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
     </div>
   </div>
 
-  <div class="doc-section">
-    <h2>Geometry / Fitting Parameters</h2>
-    <table class="params">
-      <thead><tr><th>그룹</th><th>Params</th><th>개수</th></tr></thead>
-      <tbody>
-        <tr><td>Geometry</td><td class="mono">D_o, D_i, L_tube, t_fin, P_fin, k_fin, N_tubes, P_t, P_l, A_o/A_i</td><td>10</td></tr>
-        <tr><td>Correlation</td><td class="mono">2ph / SH / air_side / fin_efficiency</td><td>4 dropdown</td></tr>
-        <tr><td>Fitting</td><td class="mono">htc_corr_2ph, htc_corr_SH, htc_corr_air, dP_ref</td><td>4</td></tr>
-      </tbody>
-    </table>
-  </div>
 
   <div class="doc-section">
     <h2>Code Mapping</h2>
@@ -2480,19 +2359,6 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
     </div>
   </div>
 
-  <div class="doc-section">
-    <h2>Geometry Parameters (HX-Sim)</h2>
-    <table class="params">
-      <thead><tr><th>그룹</th><th>내용</th></tr></thead>
-      <tbody>
-        <tr><td>Cabinet</td><td class="mono">W, H, depth, N_tube_rows, N_tubes_per_row</td></tr>
-        <tr><td>Fin</td><td class="mono">type (plain/wavy/louver/slit), pitch, thickness</td></tr>
-        <tr><td>Circuit</td><td class="mono">row_parallel / serpentine_2/4 / single / custom</td></tr>
-        <tr><td>Correlation</td><td class="mono">30+ (refrigerant 2ph/SH, air-side, ΔP)</td></tr>
-        <tr><td>Numerical</td><td class="mono">N_seg (default 10), edge type (Kc/Ke)</td></tr>
-      </tbody>
-    </table>
-  </div>
 
   <div class="doc-section">
     <h2>Code Mapping</h2>
@@ -2581,19 +2447,6 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
     </div>
   </div>
 
-  <div class="doc-section">
-    <h2>Fitting Parameters</h2>
-    <table class="params">
-      <thead><tr><th>Symbol</th><th>Description</th><th>Unit</th><th>Default</th></tr></thead>
-      <tbody>
-        <tr><td class="mono">UA_deSH</td><td>De-SH zone conductance</td><td>W/K</td><td>8</td></tr>
-        <tr><td class="mono">UA_2ph</td><td>응축 zone conductance</td><td>W/K</td><td>50</td></tr>
-        <tr><td class="mono">UA_SC</td><td>SC zone conductance</td><td>W/K</td><td>5</td></tr>
-        <tr><td class="mono">V_air_CMM</td><td>공기 체적 유량</td><td>m³/min</td><td>9</td></tr>
-      </tbody>
-    </table>
-    <p>총 UA 63 W/K (HPWD R290 typical 부품 기준 조정값).</p>
-  </div>
 
   <div class="doc-section">
     <h2>Code Mapping</h2>
@@ -2681,18 +2534,6 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
     </div>
   </div>
 
-  <div class="doc-section">
-    <h2>Correlation Registry</h2>
-    <table class="params">
-      <thead><tr><th>구분</th><th>선택지</th></tr></thead>
-      <tbody>
-        <tr><td>응축 (2ph)</td><td class="mono">Shah / Cavallini-Smith / Dobson-Chato / Akers</td></tr>
-        <tr><td>단상 (deSH/SC)</td><td class="mono">Dittus-Boelter / Gnielinski</td></tr>
-        <tr><td>Air-side</td><td class="mono">Wang / Kim / McQuiston</td></tr>
-        <tr><td>Fin</td><td class="mono">Schmidt / Sector</td></tr>
-      </tbody>
-    </table>
-  </div>
 
   <div class="doc-section">
     <h2>Code Mapping</h2>
@@ -2878,6 +2719,53 @@ document.addEventListener('click', e => {
 const todoMeta = {
 };
 
+// ──────────────────────────────────────────────────────
+// Model I/O data (backend modelDescription 자동 추출)
+// ──────────────────────────────────────────────────────
+const MODEL_IO = {"compressor-off": {"typeNo": 102, "inputs": [{"n": "P_suc", "u": "bar", "d": "흡입 압력 (abs)"}, {"n": "T_suc", "u": "°C", "d": "흡입 온도"}, {"n": "P_dis", "u": "bar", "d": "토출 압력 (abs)"}, {"n": "N", "u": "rpm", "d": "회전 속도"}], "outputs": [{"n": "m_dot", "u": "kg/s", "d": "냉매 질량 유량"}, {"n": "W_elec", "u": "W", "d": "전기 입력 (RPM 보정 후)"}, {"n": "W_shaft", "u": "W", "d": "축 일 (W_elec × η_motor)"}, {"n": "T_dis", "u": "°C", "d": "토출 온도"}, {"n": "h_dis", "u": "kJ/kg", "d": "토출 비엔탈피"}, {"n": "eta_is", "u": "-", "d": "추정 등엔트로피 효율 (정보용)"}, {"n": "T_e", "u": "°C", "d": "증발 포화 온도 (P_suc 기준)"}, {"n": "T_c", "u": "°C", "d": "응축 포화 온도 (P_dis 기준)"}, {"n": "pi_ratio", "u": "-", "d": "압력비 P_dis/P_suc"}], "parameters": [{"n": "fluid", "u": "-", "d": "냉매 종류", "def": "R290", "g": "Material"}, {"n": "N_rated", "u": "rpm", "d": "AHRI 시험 정격 회전수", "def": 3000.0, "g": "Geometry"}, {"n": "SH_ref", "u": "K", "d": "AHRI 시험 흡입 과열도 (정보용 — 보정 안 함)", "def": 5.0, "g": "Geometry"}, {"n": "SC_ref", "u": "K", "d": "AHRI 시험 과냉도 (정보용)", "def": 0.0, "g": "Geometry"}, {"n": "eta_motor", "u": "-", "d": "모터 효율 (W_shaft 추정 — AHRI W는 이미 포함)", "def": 0.92, "g": "Geometry"}, {"n": "m_coef", "u": "-", "d": "ṁ 10-coef (JSON list 또는 default). 단위: kg/h", "def": "default", "g": "Fitting"}, {"n": "w_coef", "u": "-", "d": "W_elec 10-coef (JSON list 또는 default). 단위: W", "def": "default", "g": "Fitting"}, {"n": "alpha_W_rpm", "u": "-", "d": "W_elec의 N 의존성 (W ∝ (N/N_rated)^α). 1.0=선형, 0.9~1.1 일반", "def": 1.0, "g": "Fitting"}]}, "compressor-semi": {"typeNo": 101, "inputs": [{"n": "P_suc", "u": "bar", "d": "흡입 압력 (abs)"}, {"n": "T_suc", "u": "°C", "d": "흡입 온도 (compressor shell 입구)"}, {"n": "P_dis", "u": "bar", "d": "토출 압력 (abs)"}, {"n": "N", "u": "rpm", "d": "회전 속도"}], "outputs": [{"n": "m_dot", "u": "kg/s", "d": "냉매 질량 유량"}, {"n": "T_dis", "u": "°C", "d": "토출 온도"}, {"n": "h_dis", "u": "kJ/kg", "d": "토출 비엔탈피"}, {"n": "W_elec", "u": "W", "d": "전기 입력 (모터 + 기계 손실 포함)"}, {"n": "W_shaft", "u": "W", "d": "축 일 (기계 손실 제외)"}, {"n": "Q_loss", "u": "W", "d": "외부 열손실 (cabinet → 주변)"}, {"n": "eta_is", "u": "-", "d": "등엔트로피 효율"}, {"n": "eta_v", "u": "-", "d": "체적 효율"}, {"n": "T_wall", "u": "°C", "d": "쉘 벽 온도 (수렴값)"}, {"n": "pi_ratio", "u": "-", "d": "압력비 P_dis/P_suc"}], "parameters": [{"n": "fluid", "u": "-", "d": "냉매 종류", "def": "R290", "g": "Material"}, {"n": "comp_type", "u": "-", "d": "압축기 형태 (정보용 — 알고리즘은 동일)", "def": "reciprocating", "g": "Material"}, {"n": "T_amb", "u": "°C", "d": "주변 공기 온도 (외부 열손실 기준)", "def": 25.0, "g": "Operating"}, {"n": "V_disp", "u": "cm³", "d": "행정 체적 (배제 용적)", "def": 10.0, "g": "Geometry"}, {"n": "rv_in", "u": "-", "d": "내부 체적비 (built-in volume ratio)", "def": 2.5, "g": "Geometry"}, {"n": "eta_motor", "u": "-", "d": "모터 효율 (정격, fitting 가능하지만 보통 데이터시트값)", "def": 0.92, "g": "Geometry"}, {"n": "AU_loss", "u": "W/K", "d": "외부 열손실 UA (cabinet → 주변 공기)", "def": 5.0, "g": "Fitting"}, {"n": "AU_su", "u": "W/K", "d": "흡입 가열 UA (T_wall → 흡입 가스). 소형 가전 ~3, 대형 ~30", "def": 3.0, "g": "Fitting"}, {"n": "dP_su", "u": "-", "d": "흡입 압력 손실 비율 (0=없음, 0.05=5%)", "def": 0.05, "g": "Fitting"}, {"n": "V_swept_eff", "u": "-", "d": "체적 효율 baseline (clearance 외 손실)", "def": 0.95, "g": "Fitting"}, {"n": "clearance_factor", "u": "-", "d": "η_v 식의 clearance 항 가중 (η_v = V_se - factor × (rp^(1/γ) - 1))", "def": 0.05, "g": "Fitting"}, {"n": "over_comp_factor", "u": "-", "d": "Over-comp 손실 가중 (P_int > P_dis 시). 시험으로 fitting", "def": 0.5, "g": "Fitting"}, {"n": "W_loss_const", "u": "W", "d": "정수 기계 손실", "def": 30.0, "g": "Fitting"}, {"n": "alpha_loss", "u": "-", "d": "비례 기계 손실 계수 (W_shaft에 곱)", "def": 0.1, "g": "Fitting"}]}, "compressor-on": {"typeNo": 103, "inputs": [{"n": "P_suc", "u": "bar", "d": "흡입 압력 (abs)"}, {"n": "T_suc", "u": "°C", "d": "흡입 온도"}, {"n": "P_dis", "u": "bar", "d": "토출 압력 (abs)"}, {"n": "N", "u": "rpm", "d": "회전 속도"}], "outputs": [{"n": "m_dot", "u": "kg/s", "d": "냉매 질량 유량 (실효, 누설 차감)"}, {"n": "m_leak", "u": "kg/s", "d": "누설 유량 (L3 차별)"}, {"n": "T_dis", "u": "°C", "d": "토출 온도"}, {"n": "h_dis", "u": "kJ/kg", "d": "토출 비엔탈피"}, {"n": "W_elec", "u": "W", "d": "전기 입력"}, {"n": "W_indicated", "u": "W", "d": "indicated work (chamber 일, 마찰 제외)"}, {"n": "W_friction", "u": "W", "d": "기계 마찰 손실 (L3 차별)"}, {"n": "W_valve_in", "u": "W", "d": "흡입 밸브 손실 (L3 차별)"}, {"n": "W_valve_out", "u": "W", "d": "토출 밸브 손실 (L3 차별)"}, {"n": "eta_v", "u": "-", "d": "체적 효율"}, {"n": "eta_is", "u": "-", "d": "등엔트로피 효율"}, {"n": "P_internal", "u": "bar", "d": "TDC 내부 압력 (over/under-comp 진단)"}, {"n": "pi_ratio", "u": "-", "d": "P_dis / P_suc"}], "parameters": [{"n": "fluid", "u": "-", "d": "냉매 종류", "def": "R290", "g": "Material"}, {"n": "comp_type", "u": "-", "d": "압축기 형태", "def": "reciprocating", "g": "Material"}, {"n": "T_amb", "u": "°C", "d": "주변 온도", "def": 25.0, "g": "Operating"}, {"n": "V_disp", "u": "cm³", "d": "행정 체적 (BDC - TDC 차이)", "def": 10.0, "g": "Geometry"}, {"n": "clearance_ratio", "u": "-", "d": "Clearance 체적 / V_disp (TDC 잔류 비율)", "def": 0.04, "g": "Geometry"}, {"n": "rv_in", "u": "-", "d": "내부 체적비 (built-in volume ratio)", "def": 2.5, "g": "Geometry"}, {"n": "A_valve_in_mm2", "u": "mm²", "d": "흡입 밸브 유효 면적", "def": 8.0, "g": "Geometry"}, {"n": "A_valve_out_mm2", "u": "mm²", "d": "토출 밸브 유효 면적", "def": 6.0, "g": "Geometry"}, {"n": "N_rated", "u": "rpm", "d": "정격 회전수 (누설 RPM 보정의 기준)", "def": 3000.0, "g": "Geometry"}, {"n": "eta_motor", "u": "-", "d": "모터 효율", "def": 0.92, "g": "Geometry"}, {"n": "eta_inv", "u": "-", "d": "인버터 효율", "def": 0.95, "g": "Geometry"}, {"n": "zeta_valve", "u": "-", "d": "밸브 손실 계수 (in/out 공통)", "def": 1.5, "g": "Fitting"}, {"n": "A_leak_mm2", "u": "mm²", "d": "누설 갭 등가 면적", "def": 0.02, "g": "Fitting"}, {"n": "Cd_leak", "u": "-", "d": "누설 discharge coefficient", "def": 0.6, "g": "Fitting"}, {"n": "n_leak_rpm", "u": "-", "d": "누설의 RPM 의존성 (저속에서 ↑)", "def": 0.5, "g": "Fitting"}, {"n": "over_comp_factor", "u": "-", "d": "Over-comp 손실 가중 (P_int > P_dis 시). 시험으로 fitting", "def": 0.3, "g": "Fitting"}, {"n": "n_poly_base", "u": "-", "d": "폴리트로픽 지수 fallback (CoolProp 실패 시. 정상은 cp/cv 사용)", "def": 1.13, "g": "Fitting"}, {"n": "W_f_const", "u": "W", "d": "정수 마찰 손실 (오일/베어링)", "def": 20.0, "g": "Fitting"}, {"n": "alpha_f_rpm", "u": "W/rpm²", "d": "RPM² 비례 마찰 (점성)", "def": 8e-06, "g": "Fitting"}, {"n": "AU_loss", "u": "W/K", "d": "외부 열손실 UA", "def": 5.0, "g": "Fitting"}]}, "evaporator-off": {"typeNo": 120, "inputs": [{"n": "P_evap", "u": "bar", "d": "증발 압력 (abs)"}, {"n": "h_in", "u": "kJ/kg", "d": "냉매 입구 비엔탈피 (팽창밸브 후, 보통 2-phase)"}, {"n": "m_dot_ref", "u": "kg/s", "d": "냉매 질량 유량"}, {"n": "T_air_in", "u": "°C", "d": "공기 입구 온도 (드럼 출구, HPWD에선 40~60°C)"}, {"n": "RH_air_in", "u": "%", "d": "공기 입구 상대습도 (HPWD에선 80~100%)"}, {"n": "V_air_CMM", "u": "CMM", "d": "공기 풍량 (m³/min, CMM) — 한국 HVAC 표준 단위"}], "outputs": [{"n": "T_ref_out", "u": "°C", "d": "냉매 출구 온도"}, {"n": "h_ref_out", "u": "kJ/kg", "d": "냉매 출구 비엔탈피"}, {"n": "P_ref_out", "u": "bar", "d": "냉매 출구 압력 (압력 손실 후)"}, {"n": "quality_out", "u": "-", "d": "냉매 출구 quality (>1이면 SH 영역)"}, {"n": "SH_out", "u": "K", "d": "출구 과열도 (0이면 2-phase로 종료)"}, {"n": "T_evap", "u": "°C", "d": "증발 포화 온도"}, {"n": "T_air_out", "u": "°C", "d": "공기 출구 온도"}, {"n": "RH_air_out", "u": "%", "d": "공기 출구 상대습도"}, {"n": "W_air_out", "u": "kg/kg", "d": "공기 출구 humidity ratio"}, {"n": "Q_total", "u": "W", "d": "총 열교환량 (sensible + latent)"}, {"n": "Q_sensible", "u": "W", "d": "현열 (공기 온도 강하)"}, {"n": "Q_latent", "u": "W", "d": "잠열 (응축 — 건조기에선 핵심)"}, {"n": "condensate_rate", "u": "kg/s", "d": "응축수 발생량 (단위 시간당 건조량)"}, {"n": "L_2ph_fraction", "u": "-", "d": "2-phase zone이 차지하는 길이 비율 (UA 분배 진단)"}, {"n": "is_wet", "u": "-", "d": "응축 발생 여부 (1=wet, 0=dry)"}], "parameters": [{"n": "fluid", "u": "-", "d": "냉매 종류", "def": "R290", "g": "Material"}, {"n": "wet_coil", "u": "-", "d": "Wet-coil 응축 처리: auto=threshold 자동, off=무시(dry-coil)", "def": "auto", "g": "Operating"}, {"n": "input_mode", "u": "-", "d": "UA 직접 입력 vs ε 직접 입력 (UA가 일반적)", "def": "UA", "g": "Fitting"}, {"n": "UA_2ph", "u": "W/K", "d": "2-phase 영역 UA (input_mode=UA 시 사용) — HPWD typical 25 W/K", "def": 25.0, "g": "Fitting"}, {"n": "UA_SH", "u": "W/K", "d": "Superheat 영역 UA (input_mode=UA 시 사용) — HPWD typical 4 W/K", "def": 4.0, "g": "Fitting"}, {"n": "eps_2ph", "u": "-", "d": "2-phase 영역 ε (input_mode=epsilon 시 사용)", "def": 0.85, "g": "Fitting"}, {"n": "eps_SH", "u": "-", "d": "Superheat 영역 ε (input_mode=epsilon 시 사용)", "def": 0.5, "g": "Fitting"}, {"n": "dP_ref", "u": "-", "d": "냉매 측 압력 손실 비율 (P_out = P_in × (1 - dP_ref))", "def": 0.02, "g": "Fitting"}]}, "evaporator-semi": {"typeNo": 121, "inputs": [{"n": "P_evap", "u": "bar", "d": "증발 압력 (abs)"}, {"n": "h_in", "u": "kJ/kg", "d": "냉매 입구 비엔탈피"}, {"n": "m_dot_ref", "u": "kg/s", "d": "냉매 질량 유량"}, {"n": "T_air_in", "u": "°C", "d": "공기 입구 온도"}, {"n": "RH_air_in", "u": "%", "d": "공기 입구 상대습도"}, {"n": "V_air_CMM", "u": "CMM", "d": "공기 풍량 (m³/min, CMM) — 한국 HVAC 표준 단위"}], "outputs": [{"n": "T_ref_out", "u": "°C", "d": "냉매 출구 온도"}, {"n": "h_ref_out", "u": "kJ/kg", "d": "냉매 출구 엔탈피"}, {"n": "P_ref_out", "u": "bar", "d": "냉매 출구 압력"}, {"n": "quality_out", "u": "-", "d": "출구 quality (>1 = SH)"}, {"n": "SH_out", "u": "K", "d": "출구 과열도"}, {"n": "T_evap", "u": "°C", "d": "증발 포화 온도"}, {"n": "T_air_out", "u": "°C", "d": "공기 출구 온도"}, {"n": "RH_air_out", "u": "%", "d": "공기 출구 RH"}, {"n": "W_air_out", "u": "kg/kg", "d": "공기 출구 humidity"}, {"n": "Q_total", "u": "W", "d": "총 열교환량"}, {"n": "Q_sensible", "u": "W", "d": "현열"}, {"n": "Q_latent", "u": "W", "d": "잠열"}, {"n": "condensate_rate", "u": "kg/s", "d": "응축수 (건조량)"}, {"n": "zeta_2ph", "u": "-", "d": "Moving Boundary: 2-phase zone 길이 비율 (수렴 결과)"}, {"n": "alpha_r_2ph", "u": "W/m²K", "d": "냉매측 2-phase α (correlation 결과)"}, {"n": "alpha_r_SH", "u": "W/m²K", "d": "냉매측 SH α (correlation 결과)"}, {"n": "alpha_air", "u": "W/m²K", "d": "공기측 α"}, {"n": "eta_fin_calc", "u": "-", "d": "Schmidt 핀 효율"}, {"n": "UA_2ph_calc", "u": "W/K", "d": "계산된 UA_2ph"}, {"n": "UA_SH_calc", "u": "W/K", "d": "계산된 UA_SH"}, {"n": "BF_air", "u": "-", "d": "Bypass factor (wet-coil)"}, {"n": "is_wet", "u": "-", "d": "응축 여부 (1=wet)"}, {"n": "newton_iter", "u": "-", "d": "Newton iteration 횟수 (진단)"}, {"n": "dP_friction_2ph", "u": "Pa", "d": "2-phase zone 마찰 압력강하"}, {"n": "dP_friction_SH", "u": "Pa", "d": "SH zone 마찰 압력강하"}, {"n": "dP_acceleration", "u": "Pa", "d": "가속 압력강하 (homogeneous)"}, {"n": "dP_total", "u": "Pa", "d": "총 압력강하 (마찰 + 가속, hydrostatic 제외)"}, {"n": "T_evap_avg", "u": "°C", "d": "2-phase zone 평균 T_sat (P_avg 기반)"}], "parameters": [{"n": "fluid", "u": "-", "d": "냉매 종류", "def": "R290", "g": "Material"}, {"n": "wet_coil_mode", "u": "-", "d": "Wet-coil 처리: auto=bypass factor, off=dry-coil", "def": "auto", "g": "Operating"}, {"n": "D_o", "u": "m", "d": "튜브 외경", "def": 0.007, "g": "Geometry"}, {"n": "D_i", "u": "m", "d": "튜브 내경", "def": 0.0065, "g": "Geometry"}, {"n": "L_tube_total", "u": "m", "d": "튜브 총 길이 (모든 튜브 합)", "def": 10.0, "g": "Geometry"}, {"n": "N_tubes", "u": "-", "d": "튜브 본수 (병렬 회로 기준 분포)", "def": 24.0, "g": "Geometry"}, {"n": "N_rows", "u": "-", "d": "공기 흐름 방향 row 수", "def": 2.0, "g": "Geometry"}, {"n": "P_t", "u": "m", "d": "튜브 transverse pitch (공기 방향 수직)", "def": 0.025, "g": "Geometry"}, {"n": "P_l", "u": "m", "d": "튜브 longitudinal pitch (공기 방향)", "def": 0.022, "g": "Geometry"}, {"n": "t_fin", "u": "m", "d": "핀 두께", "def": 0.00012, "g": "Geometry"}, {"n": "FPI", "u": "fins/inch", "d": "핀 밀도 (FPI=12 → P_fin ≈ 2.12mm)", "def": 12.0, "g": "Geometry"}, {"n": "k_fin", "u": "W/(m·K)", "d": "핀 열전도율 (Al~200, Cu~390)", "def": 200.0, "g": "Geometry"}, {"n": "A_o_face", "u": "m²", "d": "정면 (face) 면적 — V_max 계산용", "def": 0.05, "g": "Geometry"}, {"n": "corr_2ph", "u": "-", "d": "2-phase boiling correlation", "def": "Shah", "g": "Geometry"}, {"n": "corr_SH", "u": "-", "d": "SH (single-phase gas) correlation", "def": "Dittus-Boelter", "g": "Geometry"}, {"n": "corr_air", "u": "-", "d": "공기측 correlation", "def": "Wang-Chi-Chang", "g": "Geometry"}, {"n": "corr_fin", "u": "-", "d": "Fin 효율 correlation", "def": "Schmidt", "g": "Geometry"}, {"n": "corr_dp_2ph", "u": "-", "d": "2-phase 압력강하 correlation (Acceleration은 항상 포함, Hydrostatic 제외)", "def": "MSH", "g": "Geometry"}, {"n": "eps_over_D", "u": "-", "d": "튜브 내면 거칠기/직경 (0=smooth, 1.5e-6/D ~ 0.0002 일반 stainless)", "def": 0.0, "g": "Geometry"}, {"n": "htc_corr_2ph", "u": "-", "d": "2-phase α 보정 (실험 값 / correlation 값)", "def": 1.0, "g": "Fitting"}, {"n": "htc_corr_SH", "u": "-", "d": "SH α 보정", "def": 1.0, "g": "Fitting"}, {"n": "htc_corr_air", "u": "-", "d": "공기측 α 보정", "def": 1.0, "g": "Fitting"}, {"n": "dp_corr_2ph", "u": "-", "d": "2-phase 마찰 dP 보정", "def": 1.0, "g": "Fitting"}, {"n": "dp_corr_SH", "u": "-", "d": "SH 마찰 dP 보정", "def": 1.0, "g": "Fitting"}]}, "evaporator-on": {"typeNo": 122, "inputs": [{"n": "P_evap", "u": "bar", "d": "증발 압력 (abs)"}, {"n": "h_in", "u": "kJ/kg", "d": "냉매 입구 비엔탈피"}, {"n": "m_dot_ref", "u": "kg/s", "d": "냉매 질량 유량"}, {"n": "T_air_in", "u": "°C", "d": "공기 입구 온도"}, {"n": "RH_air_in", "u": "%", "d": "공기 입구 상대습도"}, {"n": "V_air_CMM", "u": "CMM", "d": "공기 풍량 (m³/min, CMM) — 한국 HVAC 표준 단위"}], "outputs": [{"n": "T_ref_out", "u": "°C", "d": "냉매 출구 온도"}, {"n": "h_ref_out", "u": "kJ/kg", "d": "냉매 출구 엔탈피"}, {"n": "P_ref_out", "u": "bar", "d": "냉매 출구 압력"}, {"n": "quality_out", "u": "-", "d": "출구 quality (>1 = SH)"}, {"n": "SH_out", "u": "K", "d": "출구 과열도 (evap mode)"}, {"n": "T_evap", "u": "°C", "d": "증발 포화 온도"}, {"n": "T_air_out", "u": "°C", "d": "공기 출구 온도"}, {"n": "RH_air_out", "u": "%", "d": "공기 출구 RH"}, {"n": "W_air_out", "u": "kg/kg", "d": "공기 출구 humidity ratio"}, {"n": "Q_total", "u": "W", "d": "총 열교환량"}, {"n": "Q_sensible", "u": "W", "d": "현열"}, {"n": "Q_latent", "u": "W", "d": "잠열 (응축)"}, {"n": "SHR", "u": "-", "d": "Sensible Heat Ratio = Q_sensible / Q_total"}, {"n": "dP_ref", "u": "Pa", "d": "냉매측 총 dP (마찰 + 가속 + bend)"}, {"n": "dP_bend", "u": "Pa", "d": "U-bend dP만 분리 (진단)"}, {"n": "dP_air", "u": "Pa", "d": "공기측 총 dP"}, {"n": "N_seg_used", "u": "-", "d": "실제 사용된 N_seg"}, {"n": "wet_fraction", "u": "-", "d": "Wet segment 비율"}, {"n": "is_wet", "u": "-", "d": "Wet coil 여부 (1 if wet_fraction > 0.05)"}, {"n": "wet_dp_factor", "u": "-", "d": "Wet coil dP boost factor"}, {"n": "outer_iter", "u": "-", "d": "Outer iteration count"}, {"n": "converged", "u": "-", "d": "1 if converged"}, {"n": "warnings_count", "u": "-", "d": "Correlation 검증 범위 외 warning 수"}, {"n": "warnings_text", "u": "-", "d": "검증 범위 warning 메시지 (다중 -> | 구분)"}, {"n": "evap_corr_used", "u": "-", "d": "실제 사용된 evap correlation"}, {"n": "air_j_corr_used", "u": "-", "d": "실제 사용된 air j-factor correlation"}, {"n": "dp_corr_used", "u": "-", "d": "실제 사용된 refrigerant dP correlation"}], "parameters": [{"n": "fluid", "u": "-", "d": "냉매 종류", "def": "R290", "g": "Material"}, {"n": "W", "u": "m", "d": "튜브 길이 방향 (코일 width)", "def": 0.4, "g": "Geometry"}, {"n": "H", "u": "m", "d": "공기 흐름 face 높이 (코일 height)", "def": 0.3, "g": "Geometry"}, {"n": "D", "u": "m", "d": "공기 흐름 방향 두께 (코일 depth)", "def": 0.044, "g": "Geometry"}, {"n": "D_o", "u": "m", "d": "튜브 외경", "def": 0.007, "g": "Tube"}, {"n": "D_i", "u": "m", "d": "튜브 내경", "def": 0.0065, "g": "Tube"}, {"n": "P_t", "u": "m", "d": "Transverse pitch (공기 방향 수직)", "def": 0.025, "g": "Tube"}, {"n": "P_l", "u": "m", "d": "Longitudinal pitch (공기 방향)", "def": 0.022, "g": "Tube"}, {"n": "N_rows", "u": "-", "d": "공기 흐름 row 수", "def": 2.0, "g": "Tube"}, {"n": "N_tubes_per_row", "u": "-", "d": "Row당 튜브 수 (총 튜브: Nr × Nt)", "def": 12.0, "g": "Tube"}, {"n": "layout", "u": "-", "d": "튜브 배열: staggered (일반) / inline", "def": "staggered", "g": "Tube"}, {"n": "FPI", "u": "fins/inch", "d": "핀 밀도 (FPI=12 → P_fin ≈ 2.12mm)", "def": 12.0, "g": "Fin"}, {"n": "t_fin", "u": "m", "d": "핀 두께", "def": 0.00012, "g": "Fin"}, {"n": "fin_type", "u": "-", "d": "Fin 타입 — plain/wavy/louver/slit", "def": "plain", "g": "Fin"}, {"n": "k_fin", "u": "W/(m·K)", "d": "핀 열전도율 (Al~200, Cu~390)", "def": 200.0, "g": "Fin"}, {"n": "edge_type", "u": "-", "d": "Kc/Ke edge type — sharp(보수적)/rounded(실코일)/chamfered(최소)", "def": "rounded", "g": "Fin"}, {"n": "wavy_amplitude", "u": "m", "d": "(wavy) 진폭 (peak-to-peak/2)", "def": 0.001, "g": "Fin"}, {"n": "wavy_wavelength", "u": "m", "d": "(wavy) 파장", "def": 0.01, "g": "Fin"}, {"n": "louver_pitch", "u": "m", "d": "(louver) Lp", "def": 0.0017, "g": "Fin"}, {"n": "louver_angle", "u": "deg", "d": "(louver) θ", "def": 27.0, "g": "Fin"}, {"n": "circuit_mode", "u": "-", "d": "Circuit 모드: row_parallel/serpentine_2/serpentine_4/single/custom", "def": "row_parallel", "g": "Circuit"}, {"n": "custom_circuits", "u": "-", "d": "(custom 모드만) JSON: [[[r,c], ...], ...]  비워두면 row_parallel", "def": "", "g": "Circuit"}, {"n": "N_seg", "u": "-", "d": "튜브당 segment 수 (8~15 권장, default 10)", "def": 10.0, "g": "Numerical"}, {"n": "N_seg_auto", "u": "-", "d": "N_seg 자동 추천 (G_ref 기반, 8~15)", "def": "off", "g": "Numerical"}, {"n": "evap_corr", "u": "-", "d": "Evaporation HTC correlation", "def": "chen1966", "g": "Correlations"}, {"n": "cond_corr", "u": "-", "d": "(condenser 모드) Condensation HTC correlation", "def": "shah1979", "g": "Correlations"}, {"n": "dp_corr", "u": "-", "d": "Refrigerant dP correlation", "def": "friedel1979", "g": "Correlations"}, {"n": "air_j_corr", "u": "-", "d": "Air-side j-factor (auto = fin_type 기반 자동 선택)", "def": "auto", "g": "Correlations"}, {"n": "mode", "u": "-", "d": "운전 모드: evap (증발기) / cond (응축기)", "def": "evap", "g": "Operating"}, {"n": "wet_dp_max", "u": "-", "d": "Wet coil dP factor max (학계 1.10~1.30, 1.0 = 비활성)", "def": 1.2, "g": "Tuning"}, {"n": "K_bend", "u": "-", "d": "U-bend loss coefficient (Idelchik 0.5~1.0)", "def": 0.75, "g": "Tuning"}, {"n": "cf_j", "u": "-", "d": "Air j-factor 보정 multiplier", "def": 1.0, "g": "Fitting"}, {"n": "cf_f", "u": "-", "d": "Air f-factor (friction) 보정", "def": 1.0, "g": "Fitting"}, {"n": "cf_hi", "u": "-", "d": "냉매측 HTC 보정", "def": 1.0, "g": "Fitting"}, {"n": "cf_dp_ref", "u": "-", "d": "냉매측 dP 보정", "def": 1.0, "g": "Fitting"}]}, "condenser-off": {"typeNo": 220, "inputs": [{"n": "P_cond", "u": "bar", "d": "응축 압력 (abs) — R290에서 보통 14~20bar"}, {"n": "h_in", "u": "kJ/kg", "d": "냉매 입구 비엔탈피 (compressor 출구, SH vapor 보통)"}, {"n": "m_dot_ref", "u": "kg/s", "d": "냉매 질량 유량"}, {"n": "T_air_in", "u": "°C", "d": "공기 입구 온도 (외기 혹은 dryer 후 25~40°C)"}, {"n": "RH_air_in", "u": "%", "d": "공기 입구 상대습도"}, {"n": "V_air_CMM", "u": "CMM", "d": "공기 풍량 (m³/min, CMM) — 한국 HVAC 표준 단위"}], "outputs": [{"n": "T_ref_out", "u": "°C", "d": "냉매 출구 온도"}, {"n": "h_ref_out", "u": "kJ/kg", "d": "냉매 출구 비엔탈피"}, {"n": "P_ref_out", "u": "bar", "d": "냉매 출구 압력"}, {"n": "quality_out", "u": "-", "d": "냉매 출구 quality (<0이면 SC 영역, evap의 \">1이면 SH\"의 반대)"}, {"n": "SC_out", "u": "K", "d": "출구 과냉도 (0이면 2상으로 종료)"}, {"n": "T_cond", "u": "°C", "d": "응축 포화 온도"}, {"n": "T_air_out", "u": "°C", "d": "공기 출구 온도 (응축기는 가열됨)"}, {"n": "RH_air_out", "u": "%", "d": "공기 출구 상대습도 (응축기는 가열되어 RH 감소)"}, {"n": "W_air_out", "u": "kg/kg", "d": "공기 출구 humidity ratio (변화 없음 — dry process)"}, {"n": "Q_total", "u": "W", "d": "총 열교환량 (응축기는 sensible only)"}, {"n": "Q_deSH", "u": "W", "d": "De-SH zone 열량"}, {"n": "Q_2ph", "u": "W", "d": "2-phase (응축) zone 열량"}, {"n": "Q_SC", "u": "W", "d": "SC zone 열량"}, {"n": "L_deSH_fraction", "u": "-", "d": "De-SH zone 길이 비율"}, {"n": "L_2ph_fraction", "u": "-", "d": "2-phase zone 길이 비율"}, {"n": "L_SC_fraction", "u": "-", "d": "SC zone 길이 비율"}], "parameters": [{"n": "fluid", "u": "-", "d": "냉매 종류", "def": "R290", "g": "Material"}, {"n": "input_mode", "u": "-", "d": "UA 직접 입력 vs ε 직접 입력", "def": "UA", "g": "Fitting"}, {"n": "UA_deSH", "u": "W/K", "d": "De-superheat 영역 UA (vapor cooling) — HPWD typical 8 W/K", "def": 8.0, "g": "Fitting"}, {"n": "UA_2ph", "u": "W/K", "d": "2-phase (응축) 영역 UA — 보통 가장 큼, HPWD typical 50 W/K", "def": 50.0, "g": "Fitting"}, {"n": "UA_SC", "u": "W/K", "d": "Subcool 영역 UA (liquid cooling) — HPWD typical 5 W/K", "def": 5.0, "g": "Fitting"}, {"n": "eps_deSH", "u": "-", "d": "De-superheat 영역 ε", "def": 0.4, "g": "Fitting"}, {"n": "eps_2ph", "u": "-", "d": "2-phase 영역 ε", "def": 0.85, "g": "Fitting"}, {"n": "eps_SC", "u": "-", "d": "Subcool 영역 ε", "def": 0.3, "g": "Fitting"}, {"n": "dP_ref", "u": "-", "d": "냉매 측 압력 손실 비율 (P_out = P_in × (1 - dP_ref))", "def": 0.03, "g": "Fitting"}]}, "condenser-semi": {"typeNo": 221, "inputs": [{"n": "P_cond", "u": "bar", "d": "응축 압력 (abs)"}, {"n": "h_in", "u": "kJ/kg", "d": "냉매 입구 비엔탈피 (compressor 출구, SH)"}, {"n": "m_dot_ref", "u": "kg/s", "d": "냉매 질량 유량"}, {"n": "T_air_in", "u": "°C", "d": "공기 입구 온도"}, {"n": "RH_air_in", "u": "%", "d": "공기 입구 RH"}, {"n": "V_air_CMM", "u": "CMM", "d": "공기 풍량 (m³/min, CMM) — 한국 HVAC 표준 단위"}], "outputs": [{"n": "T_ref_out", "u": "°C", "d": "냉매 출구 온도"}, {"n": "h_ref_out", "u": "kJ/kg", "d": "냉매 출구 엔탈피"}, {"n": "P_ref_out", "u": "bar", "d": "냉매 출구 압력"}, {"n": "quality_out", "u": "-", "d": "출구 quality (음수=SC)"}, {"n": "SC_out", "u": "K", "d": "출구 과냉도"}, {"n": "T_cond", "u": "°C", "d": "응축 포화 온도"}, {"n": "T_air_out", "u": "°C", "d": "공기 출구 온도"}, {"n": "RH_air_out", "u": "%", "d": "공기 출구 RH"}, {"n": "W_air_out", "u": "kg/kg", "d": "공기 출구 humidity"}, {"n": "Q_total", "u": "W", "d": "총 열교환량"}, {"n": "Q_deSH", "u": "W", "d": "De-SH zone 열량"}, {"n": "Q_2ph", "u": "W", "d": "2-phase zone 열량"}, {"n": "Q_SC", "u": "W", "d": "SC zone 열량"}, {"n": "L_deSH_fraction", "u": "-", "d": "De-SH zone 길이 비율"}, {"n": "L_2ph_fraction", "u": "-", "d": "2-phase zone 길이 비율"}, {"n": "L_SC_fraction", "u": "-", "d": "SC zone 길이 비율"}, {"n": "alpha_air", "u": "W/(m²·K)", "d": "공기측 α (계산값)"}, {"n": "alpha_2ph", "u": "W/(m²·K)", "d": "2-phase α (응축)"}, {"n": "alpha_SP", "u": "W/(m²·K)", "d": "Single-phase α (deSH/SC)"}, {"n": "eta_fin", "u": "-", "d": "Fin 효율"}, {"n": "UA_2ph_full", "u": "W/K", "d": "2-phase zone 전체-면적 UA"}], "parameters": [{"n": "fluid", "u": "-", "d": "냉매 종류", "def": "R290", "g": "Material"}, {"n": "D_o", "u": "m", "d": "튜브 외경", "def": 0.007, "g": "Geometry"}, {"n": "D_i", "u": "m", "d": "튜브 내경", "def": 0.0065, "g": "Geometry"}, {"n": "L_tube_total", "u": "m", "d": "튜브 총 길이", "def": 10.0, "g": "Geometry"}, {"n": "N_tubes", "u": "-", "d": "튜브 본수", "def": 24.0, "g": "Geometry"}, {"n": "N_rows", "u": "-", "d": "공기 row 수", "def": 2.0, "g": "Geometry"}, {"n": "P_t", "u": "m", "d": "Transverse pitch", "def": 0.025, "g": "Geometry"}, {"n": "P_l", "u": "m", "d": "Longitudinal pitch", "def": 0.022, "g": "Geometry"}, {"n": "t_fin", "u": "m", "d": "핀 두께", "def": 0.00012, "g": "Geometry"}, {"n": "FPI", "u": "fins/inch", "d": "FPI", "def": 12.0, "g": "Geometry"}, {"n": "k_fin", "u": "W/(m·K)", "d": "핀 열전도율", "def": 200.0, "g": "Geometry"}, {"n": "A_o_face", "u": "m²", "d": "정면 (face) 면적", "def": 0.05, "g": "Geometry"}, {"n": "corr_cond", "u": "-", "d": "2-phase condensation correlation", "def": "Shah", "g": "Correlation"}, {"n": "corr_SP", "u": "-", "d": "Single-phase (deSH/SC) correlation", "def": "Dittus-Boelter", "g": "Correlation"}, {"n": "corr_air", "u": "-", "d": "공기측 correlation", "def": "Wang-Chi-Chang", "g": "Correlation"}, {"n": "corr_fin", "u": "-", "d": "Fin 효율 correlation", "def": "Schmidt", "g": "Correlation"}, {"n": "htc_corr_cond", "u": "-", "d": "Condensation α 보정", "def": 1.0, "g": "Fitting"}, {"n": "htc_corr_SP", "u": "-", "d": "Single-phase α 보정", "def": 1.0, "g": "Fitting"}, {"n": "htc_corr_air", "u": "-", "d": "공기측 α 보정", "def": 1.0, "g": "Fitting"}, {"n": "dP_ref", "u": "-", "d": "냉매 측 압력 손실 비율", "def": 0.03, "g": "Fitting"}]}, "condenser-on": {"typeNo": 222, "inputs": [{"n": "P_evap", "u": "bar", "d": "증발 압력 (abs)"}, {"n": "h_in", "u": "kJ/kg", "d": "냉매 입구 비엔탈피"}, {"n": "m_dot_ref", "u": "kg/s", "d": "냉매 질량 유량"}, {"n": "T_air_in", "u": "°C", "d": "공기 입구 온도"}, {"n": "RH_air_in", "u": "%", "d": "공기 입구 상대습도"}, {"n": "V_air_CMM", "u": "CMM", "d": "공기 풍량 (m³/min, CMM) — 한국 HVAC 표준 단위"}], "outputs": [{"n": "T_ref_out", "u": "°C", "d": "냉매 출구 온도"}, {"n": "h_ref_out", "u": "kJ/kg", "d": "냉매 출구 엔탈피"}, {"n": "P_ref_out", "u": "bar", "d": "냉매 출구 압력"}, {"n": "quality_out", "u": "-", "d": "출구 quality (>1 = SH)"}, {"n": "SH_out", "u": "K", "d": "출구 과열도 (evap mode)"}, {"n": "T_evap", "u": "°C", "d": "증발 포화 온도"}, {"n": "T_air_out", "u": "°C", "d": "공기 출구 온도"}, {"n": "RH_air_out", "u": "%", "d": "공기 출구 RH"}, {"n": "W_air_out", "u": "kg/kg", "d": "공기 출구 humidity ratio"}, {"n": "Q_total", "u": "W", "d": "총 열교환량"}, {"n": "Q_sensible", "u": "W", "d": "현열"}, {"n": "Q_latent", "u": "W", "d": "잠열 (응축)"}, {"n": "SHR", "u": "-", "d": "Sensible Heat Ratio = Q_sensible / Q_total"}, {"n": "dP_ref", "u": "Pa", "d": "냉매측 총 dP (마찰 + 가속 + bend)"}, {"n": "dP_bend", "u": "Pa", "d": "U-bend dP만 분리 (진단)"}, {"n": "dP_air", "u": "Pa", "d": "공기측 총 dP"}, {"n": "N_seg_used", "u": "-", "d": "실제 사용된 N_seg"}, {"n": "wet_fraction", "u": "-", "d": "Wet segment 비율"}, {"n": "is_wet", "u": "-", "d": "Wet coil 여부 (1 if wet_fraction > 0.05)"}, {"n": "wet_dp_factor", "u": "-", "d": "Wet coil dP boost factor"}, {"n": "outer_iter", "u": "-", "d": "Outer iteration count"}, {"n": "converged", "u": "-", "d": "1 if converged"}, {"n": "warnings_count", "u": "-", "d": "Correlation 검증 범위 외 warning 수"}, {"n": "warnings_text", "u": "-", "d": "검증 범위 warning 메시지 (다중 -> | 구분)"}, {"n": "evap_corr_used", "u": "-", "d": "실제 사용된 evap correlation"}, {"n": "air_j_corr_used", "u": "-", "d": "실제 사용된 air j-factor correlation"}, {"n": "dp_corr_used", "u": "-", "d": "실제 사용된 refrigerant dP correlation"}], "parameters": [{"n": "fluid", "u": "-", "d": "냉매 종류", "def": "R290", "g": "Material"}, {"n": "W", "u": "m", "d": "튜브 길이 방향 (코일 width)", "def": 0.4, "g": "Geometry"}, {"n": "H", "u": "m", "d": "공기 흐름 face 높이 (코일 height)", "def": 0.3, "g": "Geometry"}, {"n": "D", "u": "m", "d": "공기 흐름 방향 두께 (코일 depth)", "def": 0.044, "g": "Geometry"}, {"n": "D_o", "u": "m", "d": "튜브 외경", "def": 0.007, "g": "Tube"}, {"n": "D_i", "u": "m", "d": "튜브 내경", "def": 0.0065, "g": "Tube"}, {"n": "P_t", "u": "m", "d": "Transverse pitch (공기 방향 수직)", "def": 0.025, "g": "Tube"}, {"n": "P_l", "u": "m", "d": "Longitudinal pitch (공기 방향)", "def": 0.022, "g": "Tube"}, {"n": "N_rows", "u": "-", "d": "공기 흐름 row 수", "def": 2.0, "g": "Tube"}, {"n": "N_tubes_per_row", "u": "-", "d": "Row당 튜브 수 (총 튜브: Nr × Nt)", "def": 12.0, "g": "Tube"}, {"n": "layout", "u": "-", "d": "튜브 배열: staggered (일반) / inline", "def": "staggered", "g": "Tube"}, {"n": "FPI", "u": "fins/inch", "d": "핀 밀도 (FPI=12 → P_fin ≈ 2.12mm)", "def": 12.0, "g": "Fin"}, {"n": "t_fin", "u": "m", "d": "핀 두께", "def": 0.00012, "g": "Fin"}, {"n": "fin_type", "u": "-", "d": "Fin 타입 — plain/wavy/louver/slit", "def": "plain", "g": "Fin"}, {"n": "k_fin", "u": "W/(m·K)", "d": "핀 열전도율 (Al~200, Cu~390)", "def": 200.0, "g": "Fin"}, {"n": "edge_type", "u": "-", "d": "Kc/Ke edge type — sharp(보수적)/rounded(실코일)/chamfered(최소)", "def": "rounded", "g": "Fin"}, {"n": "wavy_amplitude", "u": "m", "d": "(wavy) 진폭 (peak-to-peak/2)", "def": 0.001, "g": "Fin"}, {"n": "wavy_wavelength", "u": "m", "d": "(wavy) 파장", "def": 0.01, "g": "Fin"}, {"n": "louver_pitch", "u": "m", "d": "(louver) Lp", "def": 0.0017, "g": "Fin"}, {"n": "louver_angle", "u": "deg", "d": "(louver) θ", "def": 27.0, "g": "Fin"}, {"n": "circuit_mode", "u": "-", "d": "Circuit 모드: row_parallel/serpentine_2/serpentine_4/single/custom", "def": "row_parallel", "g": "Circuit"}, {"n": "custom_circuits", "u": "-", "d": "(custom 모드만) JSON: [[[r,c], ...], ...]  비워두면 row_parallel", "def": "", "g": "Circuit"}, {"n": "N_seg", "u": "-", "d": "튜브당 segment 수 (8~15 권장, default 10)", "def": 10.0, "g": "Numerical"}, {"n": "N_seg_auto", "u": "-", "d": "N_seg 자동 추천 (G_ref 기반, 8~15)", "def": "off", "g": "Numerical"}, {"n": "evap_corr", "u": "-", "d": "Evaporation HTC correlation", "def": "chen1966", "g": "Correlations"}, {"n": "cond_corr", "u": "-", "d": "(condenser 모드) Condensation HTC correlation", "def": "shah1979", "g": "Correlations"}, {"n": "dp_corr", "u": "-", "d": "Refrigerant dP correlation", "def": "friedel1979", "g": "Correlations"}, {"n": "air_j_corr", "u": "-", "d": "Air-side j-factor (auto = fin_type 기반 자동 선택)", "def": "auto", "g": "Correlations"}, {"n": "mode", "u": "-", "d": "운전 모드: cond (응축기 default for typeNo 222) / evap", "def": "cond", "g": "Operating"}, {"n": "wet_dp_max", "u": "-", "d": "Wet coil dP factor max (학계 1.10~1.30, 1.0 = 비활성)", "def": 1.2, "g": "Tuning"}, {"n": "K_bend", "u": "-", "d": "U-bend loss coefficient (Idelchik 0.5~1.0)", "def": 0.75, "g": "Tuning"}, {"n": "cf_j", "u": "-", "d": "Air j-factor 보정 multiplier", "def": 1.0, "g": "Fitting"}, {"n": "cf_f", "u": "-", "d": "Air f-factor (friction) 보정", "def": 1.0, "g": "Fitting"}, {"n": "cf_hi", "u": "-", "d": "냉매측 HTC 보정", "def": 1.0, "g": "Fitting"}, {"n": "cf_dp_ref", "u": "-", "d": "냉매측 dP 보정", "def": 1.0, "g": "Fitting"}]}, "eev-off": {"typeNo": 130, "inputs": [{"n": "P_in", "u": "bar", "d": "입구 압력 (subcool liquid)"}, {"n": "h_in", "u": "kJ/kg", "d": "입구 비엔탈피"}, {"n": "P_out", "u": "bar", "d": "출구 압력 (2-phase)"}, {"n": "opening", "u": "%", "d": "(control mode) Opening 0~100%"}, {"n": "m_dot_meas", "u": "kg/s", "d": "(measure mode) 측정 ṁ → opening 역산"}], "outputs": [{"n": "m_dot_ref", "u": "kg/s", "d": "냉매 mass flow"}, {"n": "opening_calc", "u": "%", "d": "opening (measure 시 역산)"}, {"n": "h_out", "u": "kJ/kg", "d": "출구 비엔탈피 (= h_in)"}, {"n": "T_out", "u": "°C", "d": "출구 온도"}, {"n": "x_out", "u": "-", "d": "출구 quality"}, {"n": "phi_op", "u": "-", "d": "Φ(opening) — normalized flow coefficient"}, {"n": "rho_in", "u": "kg/m³", "d": "입구 밀도"}, {"n": "dP", "u": "bar", "d": "P_in - P_out"}], "parameters": [{"n": "fluid", "u": "-", "d": "냉매 종류", "def": "R290", "g": "Material"}, {"n": "mode", "u": "-", "d": "control: opening→ṁ / measure: ṁ→opening", "def": "control", "g": "Operating"}, {"n": "A_orifice", "u": "m²", "d": "Maximum orifice 면적 (D=2mm → 3.14e-6 m²)", "def": 3.14e-06, "g": "Geometry"}, {"n": "opening_min", "u": "%", "d": "Minimum opening % (leakage)", "def": 0.0, "g": "Geometry"}, {"n": "Cv_rated", "u": "-", "d": "Cv at fully open (R290 EEV typical: 0.65~0.75)", "def": 0.7, "g": "Curve"}, {"n": "c0", "u": "-", "d": "Φ(op) = c0 + c1·op + c2·op² + c3·op³ (op in [0,1])", "def": 0.0, "g": "Curve"}, {"n": "c1", "u": "-", "d": "선형 항 계수", "def": 0.5, "g": "Curve"}, {"n": "c2", "u": "-", "d": "2차 항 계수 (typical: opening curve 약간 위로 볼록)", "def": 0.3, "g": "Curve"}, {"n": "c3", "u": "-", "d": "3차 항 계수", "def": 0.2, "g": "Curve"}]}, "eev-semi": {"typeNo": 131, "inputs": [{"n": "P_in", "u": "bar", "d": "입구 압력 (subcool liquid)"}, {"n": "h_in", "u": "kJ/kg", "d": "입구 비엔탈피"}, {"n": "P_out", "u": "bar", "d": "출구 압력 (2-phase)"}, {"n": "opening", "u": "%", "d": "(control) Opening 0~100%"}, {"n": "m_dot_meas", "u": "kg/s", "d": "(measure) 측정 ṁ"}], "outputs": [{"n": "m_dot_ref", "u": "kg/s", "d": "냉매 mass flow"}, {"n": "opening_calc", "u": "%", "d": "opening (measure 시 역산)"}, {"n": "h_out", "u": "kJ/kg", "d": "출구 비엔탈피"}, {"n": "T_out", "u": "°C", "d": "출구 온도"}, {"n": "x_out", "u": "-", "d": "출구 quality"}, {"n": "Cd_eff", "u": "-", "d": "실제 적용된 Cd (correction 적용 후)"}, {"n": "Re", "u": "-", "d": "Throat Reynolds number"}, {"n": "T_sub", "u": "K", "d": "입구 subcooling"}, {"n": "rho_in", "u": "kg/m³", "d": "입구 밀도"}, {"n": "dP", "u": "bar", "d": "P_in - P_out (실제)"}, {"n": "dP_eff", "u": "bar", "d": "실제 효과 ΔP (choke cap)"}, {"n": "is_choked", "u": "-", "d": "2-phase choke 발생 여부 (1/0)"}], "parameters": [{"n": "fluid", "u": "-", "d": "냉매 종류", "def": "R290", "g": "Material"}, {"n": "mode", "u": "-", "d": "control: opening→ṁ / measure: ṁ→opening", "def": "control", "g": "Operating"}, {"n": "use_choke", "u": "-", "d": "2-phase choke 활성화", "def": "on", "g": "Operating"}, {"n": "A_orifice", "u": "m²", "d": "Maximum orifice 면적 (D=2mm → 3.14e-6 m²)", "def": 3.14e-06, "g": "Geometry"}, {"n": "opening_min", "u": "%", "d": "Minimum opening %", "def": 0.0, "g": "Geometry"}, {"n": "Cd_0", "u": "-", "d": "Base Cd at high Re, full opening, no subcooling", "def": 0.72, "g": "Fitting"}, {"n": "Re_c", "u": "-", "d": "Critical Re for low-Re correction", "def": 5000.0, "g": "Fitting"}, {"n": "k_sub", "u": "-", "d": "Subcooling sensitivity (per 10K subcool)", "def": 0.05, "g": "Fitting"}, {"n": "k_op", "u": "-", "d": "Low-opening Cd reduction factor", "def": 0.15, "g": "Fitting"}, {"n": "Y_crit", "u": "-", "d": "Critical pressure ratio for choke (R290 typical: 0.5~0.6)", "def": 0.55, "g": "Choke"}, {"n": "cf_A", "u": "-", "d": "A_eff 보정 factor", "def": 1.0, "g": "Fitting"}]}, "eev-on": {"typeNo": 132, "inputs": [{"n": "P_in", "u": "bar", "d": "입구 압력 (subcool liquid)"}, {"n": "h_in", "u": "kJ/kg", "d": "입구 비엔탈피"}, {"n": "P_out", "u": "bar", "d": "출구 압력 (2-phase)"}, {"n": "opening", "u": "%", "d": "(control mode) Opening 0~100%"}, {"n": "m_dot_meas", "u": "kg/s", "d": "(measure mode) 측정 ṁ → opening 역산"}], "outputs": [{"n": "m_dot_ref", "u": "kg/s", "d": "냉매 mass flow"}, {"n": "opening_calc", "u": "%", "d": "opening (measure 시 역산)"}, {"n": "h_out", "u": "kJ/kg", "d": "출구 비엔탈피 (= h_in)"}, {"n": "T_out", "u": "°C", "d": "출구 온도"}, {"n": "x_out", "u": "-", "d": "출구 quality"}, {"n": "stroke", "u": "mm", "d": "실제 needle stroke (mm)"}, {"n": "A_throat", "u": "mm²", "d": "실제 throat 면적 (needle profile 기반)"}, {"n": "A_throat_unclamped", "u": "mm²", "d": "A_max 적용 전 면적 (clamp 진단)"}, {"n": "Cd_eff", "u": "-", "d": "실제 적용된 Cd (Re 보정 포함)"}, {"n": "Re_throat", "u": "-", "d": "Throat Reynolds number"}, {"n": "rho_in", "u": "kg/m³", "d": "입구 밀도"}, {"n": "dP_actual", "u": "bar", "d": "P_in - P_out (실제)"}, {"n": "dP_eff", "u": "bar", "d": "실제 효과 ΔP (choke cap)"}, {"n": "is_choked", "u": "-", "d": "2-phase choke 발생 여부 (1/0)"}], "parameters": [{"n": "fluid", "u": "-", "d": "냉매 종류", "def": "R290", "g": "Material"}, {"n": "needle_material", "u": "-", "d": "Needle 재질 (정보용, 결과 영향 없음)", "def": "SUS304", "g": "Material"}, {"n": "mode", "u": "-", "d": "control: opening→m_dot / measure: m_dot→opening", "def": "control", "g": "Operating"}, {"n": "use_choke", "u": "-", "d": "2-phase choke 활성화 여부", "def": "on", "g": "Operating"}, {"n": "use_Re_correction", "u": "-", "d": "Low-Re Cd 보정 활성화", "def": "on", "g": "Operating"}, {"n": "needle_profile", "u": "-", "d": "Needle 형상 — cone (원추), parabolic, linear", "def": "cone", "g": "Geometry"}, {"n": "needle_angle", "u": "deg", "d": "Needle cone 반각 α/2 (보통 15~45°)", "def": 30.0, "g": "Geometry"}, {"n": "D_seat", "u": "m", "d": "Seat 내경 = 오리피스 직경 (보통 1.5~3 mm for R290 EEV)", "def": 0.002, "g": "Geometry"}, {"n": "stroke_max", "u": "m", "d": "Needle 최대 stroke (full-open 시, 보통 0.5~2 mm)", "def": 0.001, "g": "Geometry"}, {"n": "L_inlet", "u": "m", "d": "Inlet pipe 길이 (시각화용)", "def": 0.03, "g": "Geometry"}, {"n": "L_outlet", "u": "m", "d": "Outlet pipe 길이 (시각화용)", "def": 0.03, "g": "Geometry"}, {"n": "opening_min", "u": "%", "d": "Minimum opening % (default 0, leakage 시뮬용)", "def": 0.0, "g": "Geometry"}, {"n": "choke_ratio", "u": "-", "d": "(P_out/P_in)_crit (R290 typical: ~0.5)", "def": 0.5, "g": "Choke"}, {"n": "Cd_base", "u": "-", "d": "Cd at fully open + high Re (R290 EEV: 0.65~0.78)", "def": 0.72, "g": "Fitting"}, {"n": "Re_transition", "u": "-", "d": "Cd가 0.5×Cd_base까지 떨어지는 Re (low Re 영역)", "def": 1000.0, "g": "Fitting"}, {"n": "cf_A", "u": "-", "d": "A_throat 보정 multiplier", "def": 1.0, "g": "Fitting"}]}};
+
+// param group 정렬 순서
+const GROUP_ORDER = ['Material','Operating','Curve','Geometry','Tube','Fin','Circuit','Correlation','Correlations','Choke','Numerical','Tuning','Fitting'];
+
+function _ioRows(arr, withDefault) {
+  return arr.map(v => {
+    const unit = v.u && v.u !== '-' ? v.u : '';
+    const def = withDefault ? `<td class="num">${v.def !== '' && v.def != null ? v.def : '—'}</td>` : '';
+    return `<tr><td class="mono">${v.n}</td><td>${v.d || ''}</td><td class="nomen-unit" style="text-align:left">${unit}</td>${def}</tr>`;
+  }).join('');
+}
+
+function buildIOSection(modelId) {
+  const io = MODEL_IO[modelId];
+  if (!io) return null;
+
+  // parameters group별 정렬
+  const params = [...io.parameters].sort((a,b) => {
+    const ga = GROUP_ORDER.indexOf(a.g); const gb = GROUP_ORDER.indexOf(b.g);
+    return (ga<0?99:ga) - (gb<0?99:gb);
+  });
+
+  const sec = document.createElement('div');
+  sec.className = 'doc-section';
+  sec.innerHTML = `
+    <h2>인터페이스 (I/O)</h2>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:8px;">backend <code>modelDescription</code> 자동 추출 · typeNo ${io.typeNo}</p>
+
+    <h3 style="color:var(--accent)">▸ Inputs <span style="font-size:11px;color:var(--muted);font-weight:500">(${io.inputs.length})</span></h3>
+    <table class="params"><thead><tr><th>Variable</th><th>Description</th><th>Unit</th></tr></thead>
+    <tbody>${_ioRows(io.inputs, false)}</tbody></table>
+
+    <h3 style="color:var(--green)">▸ Outputs <span style="font-size:11px;color:var(--muted);font-weight:500">(${io.outputs.length})</span></h3>
+    <table class="params"><thead><tr><th>Variable</th><th>Description</th><th>Unit</th></tr></thead>
+    <tbody>${_ioRows(io.outputs, false)}</tbody></table>
+
+    <h3 style="color:var(--amber)">▸ Parameters <span style="font-size:11px;color:var(--muted);font-weight:500">(${params.length})</span></h3>
+    <table class="params"><thead><tr><th>Variable</th><th>Description</th><th>Unit</th><th>Default</th></tr></thead>
+    <tbody>${_ioRows(params, true)}</tbody></table>
+  `;
+  return sec;
+}
+
 function loadModel(modelId) {
   // sidebar active
   document.querySelectorAll('.sidebar-item').forEach(el => el.classList.remove('active'));
@@ -2905,6 +2793,23 @@ function loadModel(modelId) {
     clone.getElementById('todo-title').textContent = meta.title;
     clone.getElementById('todo-code').innerHTML = `<span class="file">${meta.code}</span>`;
     content.appendChild(clone);
+  }
+
+  // I/O 인터페이스 섹션 동적 삽입 (Code Mapping 앞)
+  const ioSec = buildIOSection(modelId);
+  if (ioSec) {
+    // "Code Mapping" h2를 가진 doc-section 찾기
+    let mountBefore = null;
+    content.querySelectorAll('.doc-section h2').forEach(h => {
+      if (!mountBefore && h.textContent.trim().startsWith('Code Mapping')) {
+        mountBefore = h.closest('.doc-section');
+      }
+    });
+    if (mountBefore) {
+      mountBefore.parentNode.insertBefore(ioSec, mountBefore);
+    } else {
+      content.appendChild(ioSec);
+    }
   }
 
   // KaTeX re-render
