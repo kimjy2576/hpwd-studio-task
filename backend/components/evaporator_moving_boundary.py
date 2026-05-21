@@ -83,13 +83,9 @@ modelDescription = {
         {'name': 'N_tubes', 'causality': 'parameter', 'type': 'Real',
          'group': 'Geometry', 'start': 24.0, 'unit': '-',
          'description': '튜브 본수 (병렬 회로 기준 분포)'},
-        {'name': 'circuit_mode', 'causality': 'parameter', 'type': 'String',
-         'group': 'Geometry', 'start': 'single', 'unit': '-',
-         'options': ['row_parallel', 'serpentine_2', 'serpentine_4', 'single', 'custom'],
-         'description': '냉매 회로 구성 (On과 동일 — 회로 수 = f(mode, N_tubes/N_rows))'},
-        {'name': 'custom_circuits', 'causality': 'parameter', 'type': 'String',
-         'group': 'Geometry', 'start': '', 'unit': '-',
-         'description': 'custom 모드일 때 회로 정의 JSON (회로 수만 사용)'},
+        {'name': 'n_circuits', 'causality': 'parameter', 'type': 'Real',
+         'group': 'Geometry', 'start': 2.0, 'unit': '-',
+         'description': '병렬 냉매 회로 수 (G = ṁ/n_circuits/A_cross). 검증 시 On circuit_mode의 회로수와 일치시킴'},
         {'name': 'N_rows', 'causality': 'parameter', 'type': 'Real',
          'group': 'Geometry', 'start': 2.0, 'unit': '-',
          'description': '공기 흐름 방향 row 수'},
@@ -260,33 +256,6 @@ def _W_sat(T_C, P_atm=101325.0):
         return 0.622 * Psat / (P_atm - Psat)
 
 
-def _ncirc_from_mode(mode, Nt_per_row, custom_json=''):
-    """circuit_mode → 병렬 회로 수. On(solver.py)과 동일 규칙.
-    Nt_per_row = N_tubes / N_rows (컬럼 수 기준).
-      row_parallel — Nt_per_row 회로 (각 컬럼 독립)
-      serpentine_N — Nt_per_row // N 회로
-      single       — 1 회로
-      custom       — custom_circuits JSON의 회로 수
-    """
-    Nt = max(1, int(round(Nt_per_row)))
-    if mode == 'single':
-        return 1
-    if mode == 'custom':
-        try:
-            import json
-            c = json.loads(custom_json) if custom_json and custom_json.strip() else []
-            return max(1, len(c)) if isinstance(c, list) else 1
-        except Exception:
-            return 1
-    if mode.startswith('serpentine'):
-        try:
-            grp = int(mode.split('_')[1])
-        except (IndexError, ValueError):
-            grp = 2
-        return max(1, Nt // grp)
-    return Nt  # row_parallel (default)
-
-
 def _h_air_sat(T_C, P_atm=101325.0):
     """포화 공기 비엔탈피 (J/kg dry air) at temperature T_C.
     학계 표준 wet coil 모델에서 'apparatus dew point' 가정용.
@@ -368,11 +337,7 @@ def step(input, params, state, dt):
     L_tube_total = float(params.get('L_tube_total', 10.0))
     N_tubes = float(params.get('N_tubes', 24.0))
     N_rows = float(params.get('N_rows', 2.0))
-    # 회로 수 — On과 동일하게 circuit_mode로 결정 (per_row = N_tubes/N_rows 기준)
-    circuit_mode = params.get('circuit_mode', 'single')
-    custom_circuits_json = params.get('custom_circuits', '')
-    _Nt_per_row = N_tubes / max(N_rows, 1.0)
-    n_circuits = float(_ncirc_from_mode(circuit_mode, _Nt_per_row, custom_circuits_json))
+    n_circuits = float(params.get('n_circuits', 2.0))  # 병렬 회로 수 (G 결정)
     P_t = float(params.get('P_t', 25.0e-3))
     P_l = float(params.get('P_l', 22.0e-3))
     t_fin = float(params.get('t_fin', 0.12e-3))
