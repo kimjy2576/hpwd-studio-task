@@ -2253,12 +2253,13 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
   </div>
 
   <div class="doc-section">
-    <h2>검증 결과 (9 CMM)</h2>
+    <h2>검증 결과 — 표준 운전점</h2>
+    <p style="font-size:12px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-bottom:12px;line-height:1.5">R290 · P_e 5.51 bar (T_evap 5°C) · ṁ 4.6 g/s · SH 8K · 공기 35°C / RH 80% · 3 CMM</p>
     <div class="val-grid">
-      <div class="val-card"><div class="val-label">Q (Off)</div><div class="val-value">1191<span class="val-unit">W</span></div></div>
-      <div class="val-card good"><div class="val-label">vs On★ 1021W</div><div class="val-value">+17%</div></div>
-      <div class="val-card good"><div class="val-label">평가 속도</div><div class="val-value">&lt; 1ms</div></div>
-      <div class="val-card"><div class="val-label">zones</div><div class="val-value">2</div></div>
+      <div class="val-card"><div class="val-label">Q_total</div><div class="val-value">1194<span class="val-unit">W</span></div></div>
+      <div class="val-card"><div class="val-label">Q_sensible</div><div class="val-value">458<span class="val-unit">W</span></div></div>
+      <div class="val-card good"><div class="val-label">Q_latent</div><div class="val-value">736<span class="val-unit">W</span></div></div>
+      <div class="val-card"><div class="val-label">T_air,out</div><div class="val-value">27.1<span class="val-unit">°C</span></div></div>
     </div>
   </div>
 </template>
@@ -2341,6 +2342,11 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
     <div class="eq-block">
       $$\frac{1}{UA_h} = \frac{1}{UA_{o,eff}} + \frac{\dot{m}_w^*}{UA_{i,eff}}, \quad \dot{m}_w^* = \frac{b_{sat}}{c_{p,air}}, \quad b_{sat} = \frac{dh_{sat}}{dT}$$
     </div>
+    <p>apparatus dew point(ADP)는 <b>표면온도</b> 기준 (Threlkeld 표준 — 냉매온도가 아님). 냉매측 film $\Delta T$를 반영해 보정:</p>
+    <div class="eq-block">
+      $$h_{app} = h_{sat}(T_{surf}), \quad T_{surf} = T_{evap} + \frac{Q}{\alpha_{2ph} A_i}$$
+    </div>
+    <p>$Q \leftrightarrow T_{surf}$ 상호의존 → 5회 iteration 수렴 (under-relax 0.5). ADP를 $T_{evap}$로 두면 냉매측 저항 무시로 제습 과대평가됨.</p>
     <p>$Q_{sensible}$ / $Q_{latent}$는 결과로 분해.</p>
 
     <h3>Step 12: 압력 강하 (마찰 + 가속)</h3>
@@ -2405,12 +2411,13 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
   </div>
 
   <div class="doc-section">
-    <h2>검증 결과 (9 CMM)</h2>
+    <h2>검증 결과 — 표준 운전점</h2>
+    <p style="font-size:12px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-bottom:12px;line-height:1.5">R290 · P_e 5.51 bar (T_evap 5°C) · ṁ 4.6 g/s · SH 8K · 공기 35°C / RH 80% · 3 CMM</p>
     <div class="val-grid">
-      <div class="val-card"><div class="val-label">Q (Semi)</div><div class="val-value">1126<span class="val-unit">W</span></div></div>
-      <div class="val-card good"><div class="val-label">vs On★ 1021W</div><div class="val-value">+10%</div></div>
-      <div class="val-card good"><div class="val-label">wet coil</div><div class="val-value" style="font-size:12px">✓<span class="val-unit">M-R</span></div></div>
-      <div class="val-card"><div class="val-label">Newton iter</div><div class="val-value">5~10</div></div>
+      <div class="val-card"><div class="val-label">Q_total</div><div class="val-value">1044<span class="val-unit">W</span></div></div>
+      <div class="val-card"><div class="val-label">Q_sensible</div><div class="val-value">330<span class="val-unit">W</span></div></div>
+      <div class="val-card good"><div class="val-label">Q_latent</div><div class="val-value">713<span class="val-unit">W</span></div></div>
+      <div class="val-card"><div class="val-label">T_air,out</div><div class="val-value">29.7<span class="val-unit">°C</span></div></div>
     </div>
   </div>
 </template>
@@ -2467,6 +2474,11 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
       $$T_w^{new} = T_{ref,eff} + Q_{seg}\, R_i, \quad T_w \leftarrow \alpha\, T_w^{new} + (1-\alpha)\, T_w$$
     </div>
     <p>$|\Delta T_w| < tol_T$ (0.05 K) <b>및</b> $|\Delta Q| < tol_Q$ (0.5 W) 까지 반복 (max 12회). wet 여부 ($T_w < T_{dp}$)도 매 반복 재판정.</p>
+    <p>습표면(wet)에서는 sensible $UA \cdot \Delta T$ 대신 <b>enthalpy potential method</b> (Threlkeld / ASHRAE / CoilDesigner 표준) — 현열·잠열을 표면 포화 엔탈피와의 차로 통합:</p>
+    <div class="eq-block">
+      $$Q_{seg} = \frac{\eta_{fin}\alpha_{air}A_{o,seg}}{c_{p,air}}\left(h_{air} - h_s(T_w)\right), \quad Q_{sens} = \eta_{fin}\alpha_{air}A_{o,seg}(T_{air} - T_w)$$
+    </div>
+    <p>$h_s(T_w)$ = 표면 포화 엔탈피, $Q_{lat} = Q_{seg} - Q_{sens}$. humidity 차($W_{air}-W_s$)가 아닌 <b>엔탈피 차</b>를 구동력으로 써서 wall 온도 민감도를 완화 — wall이 따뜻해도 제습이 죽지 않음.</p>
 
     <h3>Step 5: 세그먼트 march (forward Euler)</h3>
     <p>세그먼트 출구 = 다음 세그먼트 입구. P·h·x를 segment-by-segment 갱신:</p>
@@ -2538,12 +2550,13 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
   </div>
 
   <div class="doc-section">
-    <h2>검증 결과 (9 CMM)</h2>
+    <h2>검증 결과 — 표준 운전점</h2>
+    <p style="font-size:12px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-bottom:12px;line-height:1.5">R290 · P_e 5.51 bar (T_evap 5°C) · ṁ 4.6 g/s · SH 8K · 공기 35°C / RH 80% · 3 CMM</p>
     <div class="val-grid">
-      <div class="val-card good"><div class="val-label">Q (On★)</div><div class="val-value">1021<span class="val-unit">W</span></div></div>
-      <div class="val-card good"><div class="val-label">기준</div><div class="val-value" style="font-size:13px">Ground<span class="val-unit">Truth</span></div></div>
-      <div class="val-card"><div class="val-label">correlation</div><div class="val-value">30+</div></div>
-      <div class="val-card good"><div class="val-label">P_local</div><div class="val-value" style="font-size:12px">✓<span class="val-unit">추적</span></div></div>
+      <div class="val-card good"><div class="val-label">Q_total</div><div class="val-value">1113<span class="val-unit">W</span></div></div>
+      <div class="val-card"><div class="val-label">Q_sensible</div><div class="val-value">425<span class="val-unit">W</span></div></div>
+      <div class="val-card good"><div class="val-label">Q_latent</div><div class="val-value">688<span class="val-unit">W</span></div></div>
+      <div class="val-card"><div class="val-label">T_air,out</div><div class="val-value">28.5<span class="val-unit">°C</span></div></div>
     </div>
   </div>
 </template>
@@ -2650,12 +2663,13 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
   </div>
 
   <div class="doc-section">
-    <h2>검증 결과 (9 CMM)</h2>
+    <h2>검증 결과 — 표준 운전점</h2>
+    <p style="font-size:12px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-bottom:12px;line-height:1.5">R290 · P_c 19.07 bar (T_cond 55°C) · ṁ 4.6 g/s · 토출 73°C · 공기 25°C / RH 100% · 3 CMM</p>
     <div class="val-grid">
-      <div class="val-card"><div class="val-label">Q (Off)</div><div class="val-value">845<span class="val-unit">W</span></div></div>
-      <div class="val-card good"><div class="val-label">vs On★ 681W</div><div class="val-value">+24%</div></div>
-      <div class="val-card good"><div class="val-label">평가 속도</div><div class="val-value">&lt; 1ms</div></div>
-      <div class="val-card"><div class="val-label">zones</div><div class="val-value">3</div></div>
+      <div class="val-card"><div class="val-label">Q_total</div><div class="val-value">1106<span class="val-unit">W</span></div></div>
+      <div class="val-card"><div class="val-label">T_air,out</div><div class="val-value">43.5<span class="val-unit">°C</span></div></div>
+      <div class="val-card"><div class="val-label">T_ref,out</div><div class="val-value">48.6<span class="val-unit">°C</span></div></div>
+      <div class="val-card"><div class="val-label">zones</div><div class="val-value">3<span class="val-unit"></span></div></div>
     </div>
   </div>
 </template>
@@ -2770,12 +2784,13 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
   </div>
 
   <div class="doc-section">
-    <h2>검증 결과 (9 CMM)</h2>
+    <h2>검증 결과 — 표준 운전점</h2>
+    <p style="font-size:12px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-bottom:12px;line-height:1.5">R290 · P_c 19.07 bar (T_cond 55°C) · ṁ 4.6 g/s · 토출 73°C · 공기 25°C / RH 100% · 3 CMM</p>
     <div class="val-grid">
-      <div class="val-card"><div class="val-label">Q (Semi)</div><div class="val-value">776<span class="val-unit">W</span></div></div>
-      <div class="val-card good"><div class="val-label">vs On★ 681W</div><div class="val-value">+14%</div></div>
-      <div class="val-card good"><div class="val-label">correlation</div><div class="val-value" style="font-size:12px">✓<span class="val-unit">registry</span></div></div>
-      <div class="val-card"><div class="val-label">zones</div><div class="val-value">3</div></div>
+      <div class="val-card"><div class="val-label">Q_total</div><div class="val-value">934<span class="val-unit">W</span></div></div>
+      <div class="val-card"><div class="val-label">T_air,out</div><div class="val-value">40.6<span class="val-unit">°C</span></div></div>
+      <div class="val-card"><div class="val-label">T_ref,out</div><div class="val-value">55.0<span class="val-unit">°C</span></div></div>
+      <div class="val-card"><div class="val-label">zones</div><div class="val-value">3<span class="val-unit"></span></div></div>
     </div>
   </div>
 </template>
@@ -2916,12 +2931,13 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
   </div>
 
   <div class="doc-section">
-    <h2>검증 결과 (9 CMM)</h2>
+    <h2>검증 결과 — 표준 운전점</h2>
+    <p style="font-size:12px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-bottom:12px;line-height:1.5">R290 · P_c 19.07 bar (T_cond 55°C) · ṁ 4.6 g/s · 토출 73°C · 공기 25°C / RH 100% · 3 CMM</p>
     <div class="val-grid">
-      <div class="val-card good"><div class="val-label">Q (On★)</div><div class="val-value">681<span class="val-unit">W</span></div></div>
-      <div class="val-card good"><div class="val-label">기준</div><div class="val-value" style="font-size:13px">Ground<span class="val-unit">Truth</span></div></div>
-      <div class="val-card good"><div class="val-label">Evap 공유</div><div class="val-value" style="font-size:12px">✓<span class="val-unit">solver</span></div></div>
-      <div class="val-card"><div class="val-label">correlation</div><div class="val-value">30+</div></div>
+      <div class="val-card good"><div class="val-label">Q_total</div><div class="val-value">1085<span class="val-unit">W</span></div></div>
+      <div class="val-card"><div class="val-label">T_air,out</div><div class="val-value">42.8<span class="val-unit">°C</span></div></div>
+      <div class="val-card"><div class="val-label">T_ref,out</div><div class="val-value">55.0<span class="val-unit">°C</span></div></div>
+      <div class="val-card"><div class="val-label">segments</div><div class="val-value">seg<span class="val-unit"></span></div></div>
     </div>
   </div>
 </template>
