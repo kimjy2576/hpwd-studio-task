@@ -2204,6 +2204,9 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
       $$Q_{total} = Q_{2ph} + Q_{SH}, \quad h_{ref,out} = h_{in} + \frac{Q_{total}}{\dot{m}_{ref}}$$
       $$\dot{m}_{cond} = \dot{m}_{air}\big(\omega_{air,in} - \omega_{sat}(T_{coil})\big) \;\;(\text{wet})$$
     </div>
+    <p style="background:#FEF9C3;border-radius:8px;padding:10px 14px;font-size:13px;color:var(--ink-soft);border:1px solid #FDE68A">
+      <b>L1 단순화 (의도됨):</b> 잠열을 <b>humidity 차</b>($\omega_{in} - \omega_{sat}$)로 계산하며, 표면온도를 $T_{coil} = T_{evap}$로 가정합니다 (냉매측 저항 무시). Semi·On이 쓰는 enthalpy potential / ADP 표면온도 보정과 달리 빠른 근사이며, 표면을 냉매만큼 차갑게 봐서 제습을 다소 과대평가하는 경향이 있습니다. L1(UA 직접 입력)의 빠른 추정 목적에는 충분하며, 정밀도가 필요하면 Semi(L2)·On(L3)을 사용합니다.
+    </p>
   </div>
 
   <div class="doc-section">
