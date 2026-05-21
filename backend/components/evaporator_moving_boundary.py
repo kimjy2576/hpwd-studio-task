@@ -542,8 +542,6 @@ def step(input, params, state, dt):
     
     if is_wet:
         # ── air-side enthalpy potential ε-NTU ──
-        h_apparatus = _h_air_sat(T_evap_C)  # apparatus dew point = T_evap
-        
         # Saturation enthalpy slope b (J/kg-dry-air per K)
         # 평균 슬로프 사용: T_evap ~ T_air_in 사이
         b_sat = _b_slope(T_evap_C, T_air_in_C)
@@ -556,9 +554,6 @@ def step(input, params, state, dt):
         NTU_h_air = UA_o_eff / (m_dot_air * cp_air) if (m_dot_air * cp_air) > 0 else 0
         
         # ref-side enthalpy NTU (2-phase: α_r × A_i / m_w*)
-        # 2-phase: ref-side T 거의 일정 (T_evap) → Cr_h → 0 (single stream limit)
-        # 이 경우 ε_h = 1 - exp(-NTU_h_overall)
-        # NTU_h_overall = 1 / (1/NTU_h_air + m_w*/NTU_h_ref)
         UA_i_eff_2ph = alpha_2ph * A_i  # 2-phase 측 UA (전체 zone 가정 — 보수적)
         # SH zone도 있으면 가중평균
         if ref_fully_evap and UA_SH_actual > 0:
@@ -579,7 +574,30 @@ def step(input, params, state, dt):
         # ε_h: single-stream (ref-side T const → Cr ~ 0 가정)
         eps_h = 1.0 - math.exp(-NTU_h_overall) if NTU_h_overall < 50 else 1.0
         
-        # ── air outlet enthalpy ──
+        # ── ADP 표면온도 보정 iteration ──
+        # ═══════════════════════════════════════════════════════════════════
+        # 기존: ADP(apparatus dew point) = T_evap (냉매 온도) 가정
+        #   → 냉매측 열저항 무시 → 표면을 냉매만큼 차갑게 봐서 제습 과대평가
+        #   (On enthalpy potential 대비 구동력 ~2.7배 → Q 과대)
+        # 수정: 표면온도 = T_evap + 냉매측 film ΔT = T_evap + Q/(α_2ph·A_i)
+        #   Threlkeld/ASHRAE 표준 — ADP는 표면온도(냉매측 저항 반영)지 냉매온도 아님.
+        #   Q↔ADP 상호의존 → 5회 iteration 수렴 (On L3 ground truth에 정합)
+        # ═══════════════════════════════════════════════════════════════════
+        UA_i_ref_film = alpha_2ph * A_i  # 2-phase 냉매측 conductance [W/K]
+        T_surf_C = T_evap_C
+        for _adp_it in range(5):
+            h_app_it = _h_air_sat(T_surf_C)
+            h_out_it = h_air_in - eps_h * (h_air_in - h_app_it)
+            Q_it = m_dot_air * (h_air_in - h_out_it)
+            dT_film = Q_it / UA_i_ref_film if UA_i_ref_film > 0 else 0.0
+            T_surf_new = T_evap_C + dT_film
+            if abs(T_surf_new - T_surf_C) < 0.05:
+                T_surf_C = T_surf_new
+                break
+            T_surf_C = 0.5 * T_surf_new + 0.5 * T_surf_C  # under-relax
+        
+        # ── 보정된 표면온도(ADP)로 최종 계산 ──
+        h_apparatus = _h_air_sat(T_surf_C)
         h_air_out = h_air_in - eps_h * (h_air_in - h_apparatus)
         
         # ── Q_total (air-side enthalpy balance) ──
@@ -593,15 +611,16 @@ def step(input, params, state, dt):
         BF = (h_air_out - h_apparatus) / max(h_air_in - h_apparatus, 1e-6)
         BF = max(0.0, min(1.0, BF))
         
-        # Outlet humidity: ω_out = BF × ω_in + (1-BF) × ω_sat(T_apparatus)
-        W_apparatus = _W_sat(T_evap_C)
+        # Outlet humidity: ω_out = BF × ω_in + (1-BF) × ω_sat(T_surface)
+        # 보정된 표면온도 T_surf_C 기준 (냉매측 film ΔT 반영)
+        W_apparatus = _W_sat(T_surf_C)
         W_air_out = BF * W_in + (1.0 - BF) * W_apparatus
         # Bounds
         W_air_out = min(W_in, max(W_apparatus, W_air_out))
         
         # condensate, Q_latent
         condensate_rate = m_dot_air * (W_in - W_air_out)
-        h_fg_water = 2501e3 - 2.4 * T_evap_C
+        h_fg_water = 2501e3 - 2.4 * T_surf_C
         Q_latent = condensate_rate * h_fg_water
         Q_latent = max(0, Q_latent)
         
