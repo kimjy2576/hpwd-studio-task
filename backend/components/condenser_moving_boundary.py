@@ -42,6 +42,11 @@ import math
 import CoolProp.CoolProp as CP
 
 from .correlations import condensation, single_phase, air_side, fin_efficiency, pressure_drop
+# 2상 condensation·공기측은 On(segment march)과 동일 vendor 식 사용 (correlation 라이브러리 통일).
+from _vendor.hx_sim.correlations import h_with_transition as _vendor_h_tp
+from _vendor.hx_sim.correlations import compute_j_factor as _vendor_j_factor
+from _vendor.hx_sim.properties import RefrigerantProperties as _VendorRefProps
+from _vendor.hx_sim.properties import MoistAirProperties as _VendorAirProps
 
 
 FLUIDS = ['R290']
@@ -78,6 +83,9 @@ modelDescription = {
          'group': 'Geometry', 'start': 24.0, 'unit': '-', 'description': '튜브 본수'},
         {'name': 'N_rows', 'causality': 'parameter', 'type': 'Real',
          'group': 'Geometry', 'start': 2.0, 'unit': '-', 'description': '공기 row 수'},
+        {'name': 'n_circuits', 'causality': 'parameter', 'type': 'Real',
+         'group': 'Geometry', 'start': 2.0, 'unit': '-',
+         'description': '병렬 냉매 회로 수 (G = ṁ/n_circuits/A_cross). 검증 시 On circuit_mode의 회로수와 일치시킴'},
         {'name': 'P_t', 'causality': 'parameter', 'type': 'Real',
          'group': 'Geometry', 'start': 25.0e-3, 'unit': 'm', 'description': 'Transverse pitch'},
         {'name': 'P_l', 'causality': 'parameter', 'type': 'Real',
@@ -93,17 +101,17 @@ modelDescription = {
 
         # Correlation
         {'name': 'corr_cond', 'causality': 'parameter', 'type': 'String',
-         'group': 'Correlation', 'start': condensation.DEFAULT, 'unit': '-',
-         'options': CORR_2PH_OPTIONS,
-         'description': '2-phase condensation correlation'},
+         'group': 'Correlation', 'start': 'shah1979', 'unit': '-',
+         'options': ['shah1979', 'cavallini2006', 'dobson_chato1998'],
+         'description': '2-phase condensation correlation (On과 동일 vendor 식)'},
         {'name': 'corr_SP', 'causality': 'parameter', 'type': 'String',
          'group': 'Correlation', 'start': single_phase.DEFAULT, 'unit': '-',
          'options': CORR_SP_OPTIONS,
          'description': 'Single-phase (deSH/SC) correlation'},
         {'name': 'corr_air', 'causality': 'parameter', 'type': 'String',
-         'group': 'Correlation', 'start': air_side.DEFAULT, 'unit': '-',
-         'options': CORR_AIR_OPTIONS,
-         'description': '공기측 correlation'},
+         'group': 'Correlation', 'start': 'wang2000_plain', 'unit': '-',
+         'options': ['wang2000_plain', 'gray_webb1986'],
+         'description': '공기측 j-factor correlation (On과 동일 vendor 식)'},
         {'name': 'corr_fin', 'causality': 'parameter', 'type': 'String',
          'group': 'Correlation', 'start': fin_efficiency.DEFAULT, 'unit': '-',
          'options': CORR_FIN_OPTIONS,
@@ -252,15 +260,16 @@ def step(input, params, state, dt):
     L_tube_total = float(params.get('L_tube_total', 10.0))
     N_tubes = float(params.get('N_tubes', 24.0))
     N_rows = float(params.get('N_rows', 2.0))
+    n_circuits = float(params.get('n_circuits', 2.0))  # 병렬 회로 수 (G 결정)
     P_t = float(params.get('P_t', 25.0e-3))
     P_l = float(params.get('P_l', 22.0e-3))
     t_fin = float(params.get('t_fin', 0.12e-3))
     FPI = float(params.get('FPI', 12.0))
     k_fin = float(params.get('k_fin', 200.0))
     A_o_face = float(params.get('A_o_face', 0.05))
-    corr_cond = params.get('corr_cond', condensation.DEFAULT)
+    corr_cond = params.get('corr_cond', 'shah1979')
     corr_SP = params.get('corr_SP', single_phase.DEFAULT)
-    corr_air = params.get('corr_air', air_side.DEFAULT)
+    corr_air = params.get('corr_air', 'wang2000_plain')
     corr_fin = params.get('corr_fin', fin_efficiency.DEFAULT)
     htc_corr_cond = float(params.get('htc_corr_cond', 1.0))
     htc_corr_SP = float(params.get('htc_corr_SP', 1.0))
@@ -324,12 +333,20 @@ def step(input, params, state, dt):
     A_o = A_tube_outer + A_fin_total
     A_i = math.pi * D_i * L_tube_total
 
-    # ── 4. 공기측 α + Schmidt fin ──
+    # ── 4. 공기측 α — On(segment march)과 동일 vendor j-factor 식 ──
     T_air_avg_K = (T_air_in_C + 273.15 + T_cond_K) / 2.0
-    alpha_air = air_side.evaluate(corr_air,
-                                   m_dot_air=m_dot_air, T_air_avg_K=T_air_avg_K,
-                                   D_o=D_o, P_t=P_t, P_l=P_l, P_fin=P_fin,
-                                   t_fin=t_fin, N_row=int(N_rows), A_o_face=A_o_face)
+    _mu_a = _VendorAirProps.mu_air(T_air_avg_K, 101325.0)
+    _Pr_a = _VendorAirProps.Pr_air(T_air_avg_K, 101325.0)
+    _cp_a = _VendorAirProps.cp_air(T_air_avg_K, 0.0, 101325.0)
+    _Dc = D_o + 2.0 * t_fin
+    _gap = P_fin - t_fin
+    _sigma = max((P_t - _Dc) * _gap / (P_t * P_fin), 0.1)
+    _A_c = _sigma * A_o_face
+    _G_air = m_dot_air / max(_A_c, 1e-9)
+    _Re_Dc = _G_air * _Dc / max(_mu_a, 1e-9)
+    _j_air = _vendor_j_factor(corr_air, Re_Dc=_Re_Dc, Nr=int(N_rows), Dc=_Dc,
+                              Pt=P_t, Pl=P_l, FPI=FPI, fin_thickness=t_fin)
+    alpha_air = _j_air * _G_air * _cp_a / _Pr_a ** (2.0 / 3.0)
     alpha_air *= htc_corr_air
 
     eta_fin = fin_efficiency.evaluate(corr_fin,
@@ -337,27 +354,25 @@ def step(input, params, state, dt):
                                        t_fin=t_fin, k_fin=k_fin, alpha_o=alpha_air)
     eta_overall = (A_tube_outer + A_fin_total * eta_fin) / A_o if A_o > 0 else eta_fin
 
-    # ── 5. 냉매측 α — zone별 ──
+    # ── 5. 냉매측 α — zone별 (2상은 On과 동일 vendor condensation 식) ──
+    _A_cross = math.pi * D_i ** 2 / 4.0
+    _G_2ph = (m_dot_ref / max(n_circuits, 1)) / max(_A_cross, 1e-12)
+    _ref_obj = _VendorRefProps(fluid)
     Q_2ph_demand = m_dot_ref * h_fg
     q_flux_cond_est = Q_2ph_demand / max(A_i, 1e-6)
-    alpha_2ph = condensation.evaluate(corr_cond,
-                                       P_Pa=P_cond_Pa, x_avg=0.5,
-                                       m_dot=m_dot_ref / max(N_tubes, 1),
-                                       D_i=D_i, q_flux=q_flux_cond_est, fluid=fluid)
+    alpha_2ph = _vendor_h_tp(x=0.5, G=_G_2ph, Di=D_i, q_flux=q_flux_cond_est,
+                             ref=_ref_obj, P=P_cond_Pa, mode='cond',
+                             hx_type='FT', cond_corr=corr_cond)
     alpha_2ph *= htc_corr_cond
 
-    T_deSH_avg_K = (T_ref_in_K + T_cond_K) / 2.0 if h_in_J >= h_v else T_cond_K + 5
-    alpha_deSH = single_phase.evaluate(corr_SP,
-                                        P_Pa=P_cond_Pa, T_avg_K=T_deSH_avg_K,
-                                        m_dot=m_dot_ref / max(N_tubes, 1),
-                                        D_i=D_i, fluid=fluid, heating=False)
+    # 단상(deSH/SC)도 On과 동일 vendor 식 — h_with_transition이 x로 영역 분기
+    #   x>1.05 → 과열 vapor Gnielinski / x<0 → 과냉 liquid Gnielinski
+    alpha_deSH = _vendor_h_tp(x=1.5, G=_G_2ph, Di=D_i, q_flux=q_flux_cond_est,
+                              ref=_ref_obj, P=P_cond_Pa, mode='cond', hx_type='FT')
     alpha_deSH *= htc_corr_SP
 
-    T_SC_avg_K = T_cond_K - 5.0
-    alpha_SC = single_phase.evaluate(corr_SP,
-                                      P_Pa=P_cond_Pa, T_avg_K=T_SC_avg_K,
-                                      m_dot=m_dot_ref / max(N_tubes, 1),
-                                      D_i=D_i, fluid=fluid, heating=False)
+    alpha_SC = _vendor_h_tp(x=-0.5, G=_G_2ph, Di=D_i, q_flux=q_flux_cond_est,
+                            ref=_ref_obj, P=P_cond_Pa, mode='cond', hx_type='FT')
     alpha_SC *= htc_corr_SP
 
     # ── 6. UA per zone (전체 면적 가정 — cascade 방식) ──
@@ -505,8 +520,8 @@ def validate(params):
     if t_fin >= fin_pitch:
         issues.append({'key': 't_fin', 'msg': f'핀 두께({t_fin*1000:.2f}) ≥ 핀 간격({fin_pitch*1000:.2f}mm)'})
     
-    corr_cond = params.get('corr_cond', condensation.DEFAULT)
-    if corr_cond not in CORR_2PH_OPTIONS:
+    corr_cond = params.get('corr_cond', 'shah1979')
+    if corr_cond not in ('shah1979', 'cavallini2006', 'dobson_chato1998'):
         issues.append({'key': 'corr_cond', 'msg': f"unknown condensation correlation '{corr_cond}'"})
     
     return issues
