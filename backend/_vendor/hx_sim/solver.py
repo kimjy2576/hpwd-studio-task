@@ -892,21 +892,27 @@ class HXSolver:
             else:
                 dT = T_ref_eff - T_air
 
-            Q_air = UA * dT if dT > 0 else 0
-
-            # --- Wet surface: additional latent heat ---
+            # --- Heat transfer: dry(sensible) vs wet(enthalpy potential) ---
+            # Wet surface는 Threlkeld/ASHRAE enthalpy potential method 사용.
+            #   구동력 = 공기 enthalpy − 표면 포화 enthalpy (sensible+latent 통합)
+            #   Q_tot = (η_o·h_o·A_o / cp_a)·(h_air − h_s(T_w))
+            # 기존 humidity-차 방식(Q_lat ∝ W_air−Ws(T_w))은 wall이 따뜻하면
+            #   제습이 죽는 악순환 → CoilDesigner/EnergyPlus 표준인 enthalpy potential로 교체.
             Q_lat = 0
             if is_wet and inp.mode == "evap":
+                cp_a = self.air.cp_air(T_air, W_air, inp.P_atm)
+                h_air = self.air.h_simple(T_air, W_air, inp.P_atm)
                 Ws_wall = self.air.Ws_from_T(T_w, inp.P_atm)
-                if W_air > Ws_wall:
-                    # 진영님 audit: hardcoded 2501000 (water h_fg) + 1006 (cp_air) → CoolProp
-                    # h_fg는 wall T 기반 (응축 일어나는 표면 T), cp는 air state 기반
-                    h_fg_w = self.air.h_fg_water(T_w, inp.P_atm)
-                    cp_a = self.air.cp_air(T_air, W_air, inp.P_atm)
-                    Q_lat = eta_o * h_o * A_o_seg * h_fg_w * (W_air - Ws_wall) / cp_a
-                    Q_lat = max(Q_lat, 0)
-
-            Q_total_seg = Q_air + Q_lat
+                h_s_wall = self.air.h_simple(T_w, Ws_wall, inp.P_atm)  # 표면 포화 enthalpy
+                # enthalpy potential — 전체(sensible+latent) 열전달
+                Q_total_seg = max(eta_o * h_o * A_o_seg / cp_a * (h_air - h_s_wall), 0.0)
+                # sensible 분해 (공기 → 표면 현열)
+                Q_air = max(eta_o * h_o * A_o_seg * (T_air - T_w), 0.0)
+                Q_lat = max(Q_total_seg - Q_air, 0.0)
+            else:
+                # Dry: sensible only (직렬 저항 UA)
+                Q_air = UA * dT if dT > 0 else 0
+                Q_total_seg = Q_air
 
             # --- Update T_wall ---
             T_w_new = T_ref_eff + Q_total_seg * R_i if inp.mode == "evap" else T_ref_eff - Q_total_seg * R_i
