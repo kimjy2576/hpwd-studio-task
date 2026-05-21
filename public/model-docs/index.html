@@ -719,22 +719,34 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
   </div>
 
   <div class="doc-section">
-    <h2>수학적 정의</h2>
-    <p>압축기 mass flow rate $\dot{m}$ 와 전력 $\dot{W}$를 흡입온도 $T_{suc}$ 와 응축온도 $T_{cond}$ 의 <b>2변수 10-계수 다항식</b>으로 fit합니다:</p>
+    <h2>수학적 정의 (step별)</h2>
+    <p>흡입온도·응축온도 2변수 10-계수 다항식 fit. 코드 실행 순서:</p>
 
+    <h3>Step 1: 입력 정리</h3>
+    <p>흡입온도 $T_{suc}$, 응축온도 $T_{cond}$ (= AHRI 기준 saturation 온도):</p>
     <div class="eq-block">
-      <div class="eq-label">Mass flow rate</div>
+      $$T_{suc} = T_{sat}(P_{suc}) + SH_{ref}, \quad T_{cond} = T_{sat}(P_{dis})$$
+    </div>
+
+    <h3>Step 2: Mass flow 다항식</h3>
+    <div class="eq-block">
       $$\dot{m} = C_1 + C_2 T_{suc} + C_3 T_{cond} + C_4 T_{suc}^2 + C_5 T_{suc} T_{cond} + C_6 T_{cond}^2$$
     </div>
 
+    <h3>Step 3: Electrical power 다항식</h3>
     <div class="eq-block">
-      <div class="eq-label">Electrical power</div>
       $$\dot{W} = D_1 + D_2 T_{suc} + D_3 T_{cond} + D_4 T_{suc}^2 + D_5 T_{suc} T_{cond} + D_6 T_{cond}^2$$
     </div>
 
-    <p>토출온도 $T_{dis}$는 isentropic 가정에 효율 $\eta_{is}$ 보정:</p>
+    <h3>Step 4: RPM 스케일 (가변속)</h3>
+    <p>정격 대비 회전수로 선형 스케일 (정속이면 생략):</p>
     <div class="eq-block">
-      $$T_{dis} = T_{suc} + \frac{T_{2s} - T_{suc}}{\eta_{is}}, \quad T_{2s} = T_{suc} \left( \frac{P_{dis}}{P_{suc}} \right)^{(\gamma-1)/\gamma}$$
+      $$\dot{m} \leftarrow \dot{m}\cdot\frac{N}{N_{rated}}, \quad \dot{W} \leftarrow \dot{W}\cdot\frac{N}{N_{rated}}$$
+    </div>
+
+    <h3>Step 5: 토출온도 (isentropic + 효율)</h3>
+    <div class="eq-block">
+      $$T_{2s} = T_{suc}\left(\frac{P_{dis}}{P_{suc}}\right)^{(\gamma-1)/\gamma}, \quad T_{dis} = T_{suc} + \frac{T_{2s} - T_{suc}}{\eta_{is}}$$
     </div>
   </div>
 
@@ -1492,20 +1504,32 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
   </div>
 
   <div class="doc-section">
-    <h2>수학적 정의</h2>
-    <p>유량을 <b>orifice 방정식 × normalized opening curve</b>로 표현:</p>
+    <h2>수학적 정의 (step별)</h2>
+    <p>orifice 방정식 × normalized opening curve. 코드 실행 순서:</p>
+
+    <h3>Step 1: 입구 상태 (CoolProp)</h3>
+    <p>입구 P·h로 밀도. EEV는 isenthalpic 팽창:</p>
     <div class="eq-block">
-      $$\dot{m} = C_{v,rated}\, A_{orifice}\, \Phi(op)\sqrt{2\rho_{in}\,\Delta P}$$
+      $$\rho_{in} = \rho(P_{in}, h_{in}), \quad h_{out} = h_{in}\;(\text{isenthalpic})$$
     </div>
-    <p>opening curve Φ는 제조사 데이터로 fit한 3차 다항식 (0~1 normalized):</p>
+
+    <h3>Step 2: Opening curve Φ(op)</h3>
+    <p>제조사 데이터로 fit한 3차 다항식 (0~1 normalized):</p>
     <div class="eq-block">
       $$\Phi(op) = c_0 + c_1 op + c_2 op^2 + c_3 op^3$$
     </div>
-    <ul style="color: var(--ink-soft); font-size: 13px; line-height: 1.8;">
-      <li>$c_0 = 0$ — closed 시 $\dot{m} = 0$</li>
-      <li>$c_0 + c_1 + c_2 + c_3 \approx 1$ — fully open 시 $\Phi = 1$</li>
-    </ul>
-    <p>isenthalpic 팽창 ($h_{out} = h_{in}$) → 출구 quality $x_{out}$ 결정.</p>
+    <p>$c_0 = 0$ (closed → ṁ=0), $c_0+c_1+c_2+c_3 \approx 1$ (fully open → Φ=1).</p>
+
+    <h3>Step 3: Mass flow (ARI orifice)</h3>
+    <div class="eq-block">
+      $$\Delta P = P_{in} - P_{out}, \quad \dot{m} = C_{v,rated}\, A_{orifice}\, \Phi(op)\sqrt{2\rho_{in}\,\Delta P}$$
+    </div>
+
+    <h3>Step 4: 출구 quality</h3>
+    <p>isenthalpic 후 저압에서 flash → 2-phase:</p>
+    <div class="eq-block">
+      $$x_{out} = \frac{h_{in} - h_l(P_{out})}{h_{fg}(P_{out})}$$
+    </div>
   </div>
 
   <div class="doc-section">
@@ -1597,27 +1621,41 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
   </div>
 
   <div class="doc-section">
-    <h2>수학적 정의</h2>
-    <h3>Normal flow</h3>
+    <h2>수학적 정의 (step별)</h2>
+    <p>normal/choked 유량 중 작은 값. 코드 실행 순서:</p>
+
+    <h3>Step 1: 입구 상태 + 유효 면적</h3>
     <div class="eq-block">
-      $$\dot{m}_{normal} = C_{d,eff}\, A_{eff}\sqrt{2\rho_{in}\,\Delta P_{eff}}$$
+      $$\rho_{in} = \rho(P_{in}, h_{in}), \quad A_{eff} = cf_A\cdot A_{orifice}\cdot op$$
     </div>
 
-    <h3>Choked flow ($P_{out}/P_{in} < Y_{crit}$)</h3>
-    <p>임계 압력비 아래에서는 유량이 choke됨 (Henry-Fauske 단순화):</p>
-    <div class="eq-block">
-      $$G_{crit} = \sqrt{\rho\, P_{in}\, Y_{crit}}, \quad \dot{m}_{choked} = G_{crit}\, A_{eff}$$
-      $$\Delta P_{eff} = P_{in}(1 - Y_{crit})$$
-    </div>
-    <div class="eq-block">
-      $$\dot{m} = \min(\dot{m}_{normal},\; \dot{m}_{choked})$$
-    </div>
-
-    <h3>Discharge coefficient 보정</h3>
+    <h3>Step 2: Discharge coefficient 보정</h3>
     <p>$C_{d,eff}$를 Reynolds·subcooling·opening 3개 인자로 보정:</p>
     <div class="eq-block">
       $$C_{d,eff} = C_{d,0}\, f_{Re}\, f_{sub}\, f_{op}$$
       $$f_{Re} = 1 - e^{-Re/Re_c}, \quad f_{sub} = 1 + k_{sub}\frac{\Delta T_{sub}}{10}, \quad f_{op} = 1 - k_{op}(1 - op)$$
+    </div>
+
+    <h3>Step 3: Normal flow</h3>
+    <div class="eq-block">
+      $$\dot{m}_{normal} = C_{d,eff}\, A_{eff}\sqrt{2\rho_{in}\,\Delta P_{eff}}$$
+    </div>
+
+    <h3>Step 4: Choked flow 판정 (Henry-Fauske)</h3>
+    <p>임계 압력비 $Y_{crit}$ 아래로 떨어지면 choke:</p>
+    <div class="eq-block">
+      $$\frac{P_{out}}{P_{in}} < Y_{crit} \;\Rightarrow\; \text{choked}$$
+      $$G_{crit} = \sqrt{\rho\, P_{in}\, Y_{crit}}, \quad \dot{m}_{choked} = G_{crit}\, A_{eff}, \quad \Delta P_{eff} = P_{in}(1 - Y_{crit})$$
+    </div>
+
+    <h3>Step 5: 최종 유량 (min)</h3>
+    <div class="eq-block">
+      $$\dot{m} = \min(\dot{m}_{normal},\; \dot{m}_{choked})$$
+    </div>
+
+    <h3>Step 6: 출구 quality (isenthalpic)</h3>
+    <div class="eq-block">
+      $$x_{out} = \frac{h_{in} - h_l(P_{out})}{h_{fg}(P_{out})}$$
     </div>
   </div>
 
@@ -1713,32 +1751,32 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
   </div>
 
   <div class="doc-section">
-    <h2>수학적 정의</h2>
-    <h3>1. Needle stroke (opening → 변위)</h3>
+    <h2>수학적 정의 (step별)</h2>
+    <h3>Step 1: Needle stroke (opening → 변위)</h3>
     <div class="eq-block">
       $$\text{stroke} = \text{stroke}_{max}\cdot\frac{op}{100}$$
     </div>
 
-    <h3>2. Annular throat 면적 (cone needle + conical seat)</h3>
+    <h3>Step 2: Annular throat 면적 (cone needle + conical seat)</h3>
     <p>needle 각도 $\alpha$, seat 직경 $D_{seat}$로부터 환형 유동 면적:</p>
     <div class="eq-block">
       $$A_{throat} = \pi\, D_{seat}\cdot \text{stroke}\cdot\sin\!\left(\frac{\alpha}{2}\right)$$
     </div>
     <p>최대 면적 $A_{max}$에서 saturate (clamp).</p>
 
-    <h3>3. Re 기반 Cd 보정 (vena contracta)</h3>
+    <h3>Step 3: Re 기반 Cd 보정 (vena contracta)</h3>
     <div class="eq-block">
       $$Re_{throat} = \frac{\dot{m}\, D_h}{\mu\, A_{throat}}, \quad C_{d,eff} = C_{d,base}\, f(Re)$$
     </div>
     <p>$f(Re) \to 1$ (high Re), $< 1$ (low Re, very low opening).</p>
 
-    <h3>4. 2-phase choke (homogeneous sonic)</h3>
+    <h3>Step 4: 2-phase choke (homogeneous sonic)</h3>
     <p>vena contracta에서 임계 유속 — 단순 $\sqrt{\rho\Delta P}$ 대신 2-phase sonic velocity:</p>
     <div class="eq-block">
       $$G_{crit} = \rho_{2ph}\, c_{2ph}, \quad c_{2ph} \approx \sqrt{\frac{K\,P}{\rho}}$$
     </div>
 
-    <h3>5. 최종 유량</h3>
+    <h3>Step 5: 최종 유량</h3>
     <div class="eq-block">
       $$\dot{m} = C_{d,eff}\, A_{throat}\sqrt{2\rho_{in}\,\Delta P_{eff}}$$
     </div>
@@ -2115,19 +2153,48 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
   </div>
 
   <div class="doc-section">
-    <h2>수학적 정의</h2>
-    <p>증발기를 <b>2개 zone</b>으로 분할 — 입구 2-phase → 출구 superheat:</p>
+    <h2>수학적 정의 (6-step)</h2>
+    <p>증발기를 <b>2개 zone</b> (입구 2-phase → 출구 superheat)으로 분할. 코드 실행 순서대로:</p>
+
+    <h3>Step 1: 냉매 입구 상태 (CoolProp)</h3>
+    <p>증발 압력으로 포화 온도·입구 건도 산출:</p>
     <div class="eq-block">
-      <div class="eq-label">2-Phase zone (C_ref → ∞)</div>
-      $$\varepsilon_{2ph} = 1 - e^{-NTU_{2ph}}, \quad Q_{2ph} = \varepsilon_{2ph}\, C_{air}(T_{air,in} - T_{evap})$$
+      $$T_{evap} = T_{sat}(P_{evap}), \quad x_{in} = \frac{h_{in} - h_l}{h_{fg}}$$
     </div>
+
+    <h3>Step 2: 공기 입구 상태</h3>
+    <p>공기 질량 유량 + 습도. 체적 유량 CMM → 질량 유량:</p>
     <div class="eq-block">
-      <div class="eq-label">Superheat zone (counter-flow)</div>
-      $$\varepsilon_{SH} = \frac{1 - e^{-NTU(1-C_r)}}{1 - C_r e^{-NTU(1-C_r)}}, \quad C_r = \frac{C_{min}}{C_{max}}$$
+      $$\dot{m}_{air} = \rho_{air}\cdot \frac{\dot{V}_{air,CMM}}{60}, \quad C_{air} = \dot{m}_{air}\, c_{p,air}$$
     </div>
-    <p>$NTU = UA / C_{min}$. 에너지 보존으로 두 zone 길이 자동 분배.</p>
-    <h3>Wet-coil (응축)</h3>
-    <p>코일 표면 $T_{coil} \approx T_{evap}$이 공기 이슬점보다 낮으면 응축. 포화 humidity ratio $\omega_{sat}(T_{coil})$로 latent 처리.</p>
+
+    <h3>Step 3: Wet-coil 판단</h3>
+    <p>코일 표면 $T_{coil} \approx T_{evap}$이 공기 이슬점보다 낮으면 응축 발생:</p>
+    <div class="eq-block">
+      $$T_{dew}(\omega_{air,in}) > T_{coil} \;\Rightarrow\; \text{wet (응축)}$$
+    </div>
+
+    <h3>Step 4: 2-Phase zone ε-NTU (C_ref → ∞)</h3>
+    <p>2상에서 냉매 온도 일정 → $C_{min} = C_{air}$, $C_r = 0$:</p>
+    <div class="eq-block">
+      $$\varepsilon_{2ph} = 1 - e^{-NTU_{2ph}}, \quad NTU_{2ph} = \frac{UA_{2ph}}{C_{air}}$$
+      $$Q_{2ph} = \min\big(\varepsilon_{2ph}\, C_{air}(T_{air,in} - T_{evap}),\; \dot{m}_{ref}(h_v - h_{in})\big)$$
+    </div>
+    <p>2-phase zone 길이 비율 $L_{2ph,frac} = Q_{2ph}/Q_{2ph,max}$.</p>
+
+    <h3>Step 5: Superheat zone ε-NTU (counter-flow)</h3>
+    <p>공기 온도는 이미 2ph zone에서 떨어진 상태에서 시작. 양측 유한 열용량:</p>
+    <div class="eq-block">
+      $$\varepsilon_{SH} = \frac{1 - e^{-NTU(1-C_r)}}{1 - C_r\, e^{-NTU(1-C_r)}}, \quad C_r = \frac{C_{min}}{C_{max}}$$
+      $$Q_{SH} = \varepsilon_{SH}\, C_{min}(T_{air,2ph,out} - T_{evap})$$
+    </div>
+
+    <h3>Step 6: 출구 상태 + Wet-coil latent</h3>
+    <p>총 열량 + 응축 시 잠열. 포화 humidity ratio로 응축량:</p>
+    <div class="eq-block">
+      $$Q_{total} = Q_{2ph} + Q_{SH}, \quad h_{ref,out} = h_{in} + \frac{Q_{total}}{\dot{m}_{ref}}$$
+      $$\dot{m}_{cond} = \dot{m}_{air}\big(\omega_{air,in} - \omega_{sat}(T_{coil})\big) \;\;(\text{wet})$$
+    </div>
   </div>
 
   <div class="doc-section">
@@ -2208,29 +2275,73 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
   </div>
 
   <div class="doc-section">
-    <h2>수학적 정의</h2>
-    <h3>1. Moving Boundary — 경계 위치 ζ</h3>
-    <p>2-phase zone 길이 비율 $\zeta = L_{2ph}/L_{total}$을 에너지 보존으로 결정:</p>
-    <div class="eq-block">
-      $$Q_{2ph}(\zeta) + Q_{SH}(\zeta) = \dot{m}_{ref}\,\Delta h$$
-      $$Q_{2ph} = \varepsilon_{2ph}(NTU(\zeta))\, C_{min}(T_{air,in} - T_{evap})$$
-    </div>
-    <p>Newton iteration on $\zeta$ (보통 5~10회 수렴).</p>
+    <h2>수학적 정의 (step별)</h2>
+    <p>geometry로 면적·HTC를 계산하고, 경계 위치 ζ를 Newton으로 풀고, wet coil은 enthalpy potential로 처리:</p>
 
-    <h3>2. Wet Coil — Enthalpy Potential Method (Mirth-Ramadhyani)</h3>
-    <p>현열·잠열을 따로 더하지 않고 <b>엔탈피 차</b>로 일괄 처리 (double counting 방지):</p>
+    <h3>Step 1-2: 냉매 포화 + 공기 입구</h3>
+    <div class="eq-block">
+      $$T_{evap} = T_{sat}(P_{evap}), \quad x_{in} = \frac{h_{in} - h_l}{h_{fg}}, \quad \dot{m}_{air} = \rho_{air}\frac{\dot{V}_{CMM}}{60}$$
+    </div>
+
+    <h3>Step 3: 외부/내부 면적 (geometry)</h3>
+    <p>관·핀 치수로 전열 면적 자동 계산:</p>
+    <div class="eq-block">
+      $$A_i = \pi D_i L_{tube} N_{tubes}, \quad A_o = A_{tube,o} + A_{fin}$$
+    </div>
+
+    <h3>Step 4: 공기측 HTC (correlation)</h3>
+    <p>Wang-Chi-Chang 등 air-side correlation (Colburn j-factor):</p>
+    <div class="eq-block">
+      $$j = f(Re_{Dc}, \text{geometry}), \quad \alpha_{air} = \frac{j\, G_{air}\, c_{p,air}}{Pr_{air}^{2/3}}$$
+    </div>
+
+    <h3>Step 5: Schmidt fin 효율</h3>
+    <div class="eq-block">
+      $$\eta_{fin} = \frac{\tanh(m r_o \phi)}{m r_o \phi}, \quad m = \sqrt{\frac{2\alpha_{air}}{k_{fin} t_{fin}}}$$
+    </div>
+
+    <h3>Step 6: 냉매측 HTC — zone별</h3>
+    <p>2-phase는 Shah flow boiling, SH는 Dittus-Boelter:</p>
+    <div class="eq-block">
+      $$\alpha_{2ph} = \alpha_{Shah}(x, G, q''), \quad \alpha_{SH} = 0.023\, Re^{0.8} Pr^{0.4}\frac{k}{D_i}$$
+    </div>
+
+    <h3>Step 7: Zone별 UA (ζ에 비례)</h3>
+    <div class="eq-block">
+      $$\frac{1}{UA_{zone}} = \frac{1}{\alpha_{ref}A_{i}\zeta_{zone}} + \frac{1}{\eta_{fin}\alpha_{air}A_{o}\zeta_{zone}}$$
+    </div>
+
+    <h3>Step 8: Newton iteration on ζ</h3>
+    <p>2-phase zone 길이 비율 $\zeta = L_{2ph}/L_{total}$을 에너지 보존 잔차로:</p>
+    <div class="eq-block">
+      $$R(\zeta) = Q_{2ph}(\zeta) + Q_{SH}(\zeta) - \dot{m}_{ref}\,\Delta h = 0$$
+      $$\zeta^{(k+1)} = \zeta^{(k)} - \frac{R(\zeta^{(k)})}{R'(\zeta^{(k)})} \quad (\text{5~10회 수렴})$$
+    </div>
+
+    <h3>Step 9-10: 수렴된 ζ로 Q + SH zone</h3>
+    <div class="eq-block">
+      $$Q_{2ph} = \varepsilon_{2ph}\, C_{air}(T_{air,in} - T_{evap}), \quad \varepsilon_{2ph} = 1 - e^{-NTU_{2ph}}$$
+    </div>
+
+    <h3>Step 11: Wet-coil — Enthalpy Potential Method (Mirth-Ramadhyani)</h3>
+    <p>현열·잠열을 따로 더하지 않고 <b>엔탈피 차</b>로 일괄 (double counting 방지):</p>
     <div class="eq-block">
       $$Q_{total} = \dot{m}_{air}(h_{air,in} - h_{air,out}), \quad \varepsilon_h = 1 - e^{-NTU_h}$$
     </div>
-    <p>유효 enthalpy conductance — 공기측·냉매측 직렬 합성:</p>
+    <p>유효 enthalpy conductance (공기측·냉매측 직렬, $\dot{m}_w^*$는 포화선 기울기):</p>
     <div class="eq-block">
-      $$\frac{1}{UA_h} = \frac{1}{UA_{o,eff}} + \frac{\dot{m}_w^*}{UA_{i,eff}}, \quad \dot{m}_w^* = \frac{b_{sat}}{c_{p,air}}$$
+      $$\frac{1}{UA_h} = \frac{1}{UA_{o,eff}} + \frac{\dot{m}_w^*}{UA_{i,eff}}, \quad \dot{m}_w^* = \frac{b_{sat}}{c_{p,air}}, \quad b_{sat} = \frac{dh_{sat}}{dT}$$
     </div>
-    <p>$b_{sat}$는 포화 enthalpy 곡선의 기울기 ($h_{sat}$ vs $T$). $Q_{sensible}/Q_{latent}$는 결과로 분해.</p>
+    <p>$Q_{sensible}$ / $Q_{latent}$는 결과로 분해.</p>
 
-    <h3>3. Schmidt Fin Efficiency</h3>
+    <h3>Step 12: 압력 강하 (마찰 + 가속)</h3>
     <div class="eq-block">
-      $$\eta_{fin} = \frac{\tanh(m r_o \phi)}{m r_o \phi}, \quad m = \sqrt{\frac{2 h_c}{k_{fin} t_{fin}}}$$
+      $$\Delta P_{total} = \Delta P_{fric,2ph} + \Delta P_{fric,SH} + \Delta P_{accel}$$
+    </div>
+
+    <h3>Step 13: 출구 상태</h3>
+    <div class="eq-block">
+      $$h_{ref,out} = h_{in} + \frac{Q_{total}}{\dot{m}_{ref}}, \quad P_{ref,out} = P_{evap} - \Delta P_{total}$$
     </div>
   </div>
 
@@ -2316,19 +2427,52 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
   </div>
 
   <div class="doc-section">
-    <h2>수학적 정의</h2>
-    <p>열교환기를 <b>Nr행 × Nt열 × N_seg</b> 세그먼트로 분할. 각 세그먼트에서 local 상태로 ε-NTU:</p>
+    <h2>수학적 정의 (step별)</h2>
+    <p>열교환기를 <b>Nr행 × Nt열 × N_seg</b> 세그먼트로 분할. 각 세그먼트를 local 상태로 풀고 march:</p>
+
+    <h3>Step 1: 세그먼트 분할 + circuit 구성</h3>
+    <p>circuit mode (row_parallel/serpentine/...)에 따라 냉매 경로 결정. 각 관을 N_seg 등분:</p>
     <div class="eq-block">
+      $$N_{total} = N_r \times N_t \times N_{seg}, \quad L_{seg} = \frac{L_{tube}}{N_{seg}}$$
+    </div>
+
+    <h3>Step 2: 세그먼트 local 물성 (CoolProp)</h3>
+    <p>각 세그먼트 입구의 local P·h로 상태 결정:</p>
+    <div class="eq-block">
+      $$x_{seg} = x(P_{seg}, h_{seg}), \quad \rho_{seg}, \mu_{seg}, \dots = f(P_{seg}, h_{seg})$$
+    </div>
+
+    <h3>Step 3: 세그먼트 HTC (x-dependent correlation)</h3>
+    <p>30+ correlation 중 선택. 2-phase는 x에 따라 변하는 local HTC:</p>
+    <div class="eq-block">
+      $$\alpha_{ref,seg} = \alpha_{Chen}(x_{seg}, G, q''_{seg}), \quad \alpha_{air,seg} = \alpha(Re_{seg}, \text{geometry})$$
+    </div>
+
+    <h3>Step 4: 세그먼트 ε-NTU</h3>
+    <p>각 세그먼트에서 local UA로 열전달:</p>
+    <div class="eq-block">
+      $$\frac{1}{UA_{seg}} = \frac{1}{\alpha_{ref}A_{i,seg}} + \frac{1}{\eta_{fin}\alpha_{air}A_{o,seg}}$$
       $$Q_{seg} = \varepsilon_{seg}\, C_{min,seg}(T_{air,seg} - T_{ref,seg})$$
     </div>
-    <p>세그먼트별 local HTC (correlation):</p>
+
+    <h3>Step 5: 세그먼트 march (forward Euler)</h3>
+    <p>세그먼트 출구 = 다음 세그먼트 입구. P·h·x를 segment-by-segment 갱신:</p>
     <div class="eq-block">
-      $$\alpha_{ref}(x, G, q'') \quad \text{(Chen, x-dependent)}, \quad \alpha_{air}(Re, geometry)$$
+      $$h_{seg+1} = h_{seg} + \frac{Q_{seg}}{\dot{m}_{ref}}, \quad P_{seg+1} = P_{seg} - \Delta P_{seg}$$
     </div>
-    <p>세그먼트 출구 = 다음 세그먼트 입구. forward Euler로 P·h·x를 segment-by-segment 추적. 압력 강하 (Friedel + U-bend):</p>
+
+    <h3>Step 6: 압력 강하 (마찰 + U-bend)</h3>
+    <p>Friedel 2-phase 마찰 + U-bend 손실 + edge (Kc/Ke):</p>
     <div class="eq-block">
-      $$\Delta P_{total} = \sum_{seg}\Delta P_{fric,seg} + \sum_{bend} K_{bend}\frac{G^2}{2\rho}$$
+      $$\Delta P_{total} = \sum_{seg}\Delta P_{fric,seg} + \sum_{bend} K_{bend}\frac{G^2}{2\rho} + \Delta P_{edge}$$
     </div>
+
+    <h3>Step 7: Wet-coil (세그먼트별) + outer iteration</h3>
+    <p>각 세그먼트에서 wet/dry 판정. 공기측 결합으로 outer iteration 수렴:</p>
+    <div class="eq-block">
+      $$Q_{total} = \sum_{seg} Q_{seg}, \quad SHR = \frac{Q_{sensible}}{Q_{total}}$$
+    </div>
+    <p>Re·x·P_r가 correlation 검증 범위 벗어나면 자동 warning.</p>
   </div>
 
   <div class="doc-section">
@@ -2404,21 +2548,46 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
   </div>
 
   <div class="doc-section">
-    <h2>수학적 정의 (3-zone cascade)</h2>
-    <p>응축기는 입구 과열 증기 → 출구 과냉 액으로 <b>3개 zone</b> 순차:</p>
+    <h2>수학적 정의 (step별)</h2>
+    <p>응축기를 <b>3개 zone</b> (입구 과열 증기 → 응축 → 출구 과냉 액)으로 cascade 분할. 코드 실행 순서:</p>
+
+    <h3>Step 1: 냉매 입구 상태 (CoolProp)</h3>
+    <p>응축 압력으로 포화 온도, 입구 과열도:</p>
     <div class="eq-block">
-      <div class="eq-label">Zone 1 — De-superheat (vapor cooling)</div>
-      $$Q_{deSH} = \varepsilon_{deSH}\, C_{min}(T_{ref,in} - T_{air,in}), \quad T_{ref,in} \to T_{sat}$$
+      $$T_{cond} = T_{sat}(P_{cond}), \quad SH_{in} = T_{ref,in} - T_{cond}$$
     </div>
+
+    <h3>Step 2: 공기 입구 상태</h3>
     <div class="eq-block">
-      <div class="eq-label">Zone 2 — Condensation (x: 1 → 0, C_ref → ∞)</div>
-      $$Q_{2ph} = \varepsilon_{2ph}\, C_{air}(T_{sat} - T_{air,z2}), \quad \varepsilon_{2ph} = 1 - e^{-NTU_{2ph}}$$
+      $$\dot{m}_{air} = \rho_{air}\frac{\dot{V}_{CMM}}{60}, \quad C_{air} = \dot{m}_{air}\, c_{p,air}$$
     </div>
+
+    <h3>Step 3: Zone 1 — De-superheat (vapor cooling)</h3>
+    <p>입구 과열 증기 → $T_{sat}$ 도달까지. 양측 유한 열용량 (counter-flow):</p>
     <div class="eq-block">
-      <div class="eq-label">Zone 3 — Subcooling (liquid)</div>
-      $$Q_{SC} = \varepsilon_{SC}\, C_{min}(T_{sat} - T_{air,z3})$$
+      $$\varepsilon_{deSH} = \frac{1 - e^{-NTU(1-C_r)}}{1 - C_r\, e^{-NTU(1-C_r)}}, \quad C_{ref} = \dot{m}_{ref}\, c_{p,vapor}$$
+      $$Q_{deSH} = \varepsilon_{deSH}\, C_{min}(T_{ref,in} - T_{air,in})$$
     </div>
-    <p>cascade: 각 zone 공기 출구가 다음 zone 입구 ($T_{air,z+1} = T_{air,out,z}$). 응축기는 보통 dry (외기 노출, wet 가정 무시).</p>
+
+    <h3>Step 4: Zone 2 — Condensation (x: 1 → 0, C_ref → ∞)</h3>
+    <p>응축 중 냉매 온도 일정 → $C_r = 0$. 공기는 Zone 1 출구 온도에서 시작:</p>
+    <div class="eq-block">
+      $$\varepsilon_{2ph} = 1 - e^{-NTU_{2ph}}, \quad Q_{2ph} = \varepsilon_{2ph}\, C_{air}(T_{cond} - T_{air,z2})$$
+    </div>
+
+    <h3>Step 5: Zone 3 — Subcooling (liquid)</h3>
+    <p>응축 완료 후 남은 공기 capacity로 과냉:</p>
+    <div class="eq-block">
+      $$Q_{SC} = \varepsilon_{SC}\, C_{min}(T_{cond} - T_{air,z3}), \quad C_{ref} = \dot{m}_{ref}\, c_{p,liquid}$$
+    </div>
+
+    <h3>Step 6: Cascade 결합 + 출구 상태</h3>
+    <p>각 zone 공기 출구 = 다음 zone 입구 ($T_{air,z+1} = T_{air,out,z}$). 총 열량:</p>
+    <div class="eq-block">
+      $$Q_{total} = Q_{deSH} + Q_{2ph} + Q_{SC}, \quad h_{ref,out} = h_{in} - \frac{Q_{total}}{\dot{m}_{ref}}$$
+      $$SC_{out} = T_{cond} - T_{ref,out}$$
+    </div>
+    <p>응축기는 보통 dry (외기 노출 — wet 가정 무시).</p>
   </div>
 
   <div class="doc-section">
@@ -2495,17 +2664,49 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
   </div>
 
   <div class="doc-section">
-    <h2>수학적 정의</h2>
-    <p>Off와 동일한 3-zone cascade이나, UA를 <b>correlation으로 자동 계산</b> (직접 입력 아님):</p>
+    <h2>수학적 정의 (step별)</h2>
+    <p>Off와 동일한 3-zone cascade이나, UA를 <b>correlation으로 자동 계산</b> (직접 입력 아님). 코드 8-step:</p>
+
+    <h3>Step 1-2: 냉매 포화 + 공기 입구</h3>
     <div class="eq-block">
-      <div class="eq-label">Zone별 UA (직렬 저항)</div>
+      $$T_{cond} = T_{sat}(P_{cond}), \quad SH_{in} = T_{ref,in} - T_{cond}, \quad \dot{m}_{air} = \rho_{air}\frac{\dot{V}_{CMM}}{60}$$
+    </div>
+
+    <h3>Step 3: 외부/내부 면적 (geometry)</h3>
+    <div class="eq-block">
+      $$A_i = \pi D_i L_{tube} N_{tubes}, \quad A_o = A_{tube,o} + A_{fin}$$
+    </div>
+
+    <h3>Step 4: 공기측 HTC + Schmidt fin</h3>
+    <div class="eq-block">
+      $$\alpha_{air} = \frac{j\, G_{air}\, c_{p,air}}{Pr_{air}^{2/3}}, \quad \eta_{fin} = \frac{\tanh(m r_o \phi)}{m r_o \phi}$$
+    </div>
+
+    <h3>Step 5: 냉매측 HTC — zone별</h3>
+    <p>응축은 Shah, 단상(de-SH/SC)은 Dittus-Boelter:</p>
+    <div class="eq-block">
+      $$\alpha_{2ph} = \alpha_{LO}\left[(1-x)^{0.8} + \frac{3.8\,x^{0.76}(1-x)^{0.04}}{P_r^{0.38}}\right]$$
+      $$\alpha_{SP} = 0.023\, Re^{0.8} Pr^{0.3}\frac{k}{D_i}$$
+    </div>
+
+    <h3>Step 6: Zone별 UA (직렬 저항)</h3>
+    <div class="eq-block">
       $$\frac{1}{UA_{zone}} = \frac{1}{\alpha_{ref}A_i} + \frac{1}{\eta_{fin}\alpha_{air}A_o}$$
     </div>
+
+    <h3>Step 7: Cascade 3-zone (de-SH → 응축 → SC)</h3>
+    <p>각 zone ε-NTU, 공기 출구가 다음 zone 입구:</p>
     <div class="eq-block">
-      <div class="eq-label">응축 HTC (Zone 2, Shah)</div>
-      $$\alpha_{2ph} = \alpha_{LO}\left[(1-x)^{0.8} + \frac{3.8\,x^{0.76}(1-x)^{0.04}}{P_r^{0.38}}\right]$$
+      $$Q_{deSH} = \varepsilon_{deSH}\, C_{min}(T_{ref,in} - T_{air,in})$$
+      $$Q_{2ph} = \varepsilon_{2ph}\, C_{air}(T_{cond} - T_{air,z2}), \quad \varepsilon_{2ph} = 1 - e^{-NTU_{2ph}}$$
+      $$Q_{SC} = \varepsilon_{SC}\, C_{min}(T_{cond} - T_{air,z3})$$
     </div>
-    <p>$P_r$ = reduced pressure. 각 zone HTC가 운전 조건(x, G, P)에 따라 자동 변화 → Off 대비 정확.</p>
+
+    <h3>Step 8: 출구 상태</h3>
+    <div class="eq-block">
+      $$Q_{total} = Q_{deSH} + Q_{2ph} + Q_{SC}, \quad h_{ref,out} = h_{in} - \frac{Q_{total}}{\dot{m}_{ref}}$$
+    </div>
+    <p>각 zone HTC가 운전 조건(x, G, P)에 따라 자동 변화 → Off 대비 정확.</p>
   </div>
 
   <div class="doc-section">
@@ -2587,22 +2788,65 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
   </div>
 
   <div class="doc-section">
-    <h2>수학적 정의 (Evap On과 동일 + cond 차이)</h2>
-    <p>Nr×Nt×N_seg 세그먼트 ε-NTU는 Evap On과 동일. 응축기 고유 차이:</p>
+    <h2>수학적 정의 (step별)</h2>
+    <p>Evaporator On과 동일한 HX-Sim 세그먼트 solver를 <b>mode='cond'</b>로 호출. 코드는 공유하지만, 응축기 거동을 step별로 완전히 기술 (생략 없이):</p>
+
+    <h3>Step 1: 세그먼트 분할 + circuit 구성</h3>
+    <p>circuit mode에 따라 냉매 경로 결정. 각 관을 N_seg 등분:</p>
+    <div class="eq-block">
+      $$N_{total} = N_r \times N_t \times N_{seg}, \quad L_{seg} = \frac{L_{tube}}{N_{seg}}$$
+    </div>
+
+    <h3>Step 2: 세그먼트 local 물성 (CoolProp)</h3>
+    <p>응축기는 입구 과열 증기 → 출구 과냉 액. local P·h로 상태:</p>
+    <div class="eq-block">
+      $$x_{seg} = x(P_{seg}, h_{seg}) \;\; (1 \to 0\;\text{응축}), \quad \rho_{seg}, \mu_{seg} = f(P_{seg}, h_{seg})$$
+    </div>
+
+    <h3>Step 3: 세그먼트 HTC (응축 correlation)</h3>
+    <p>응축 default는 Shah 1979 (Evap의 Chen flow boiling 대신). x-dependent:</p>
+    <div class="eq-block">
+      $$\alpha_{ref,seg} = \alpha_{Shah}(x_{seg}, G, P_r), \quad \alpha_{air,seg} = \alpha(Re_{seg}, \text{geometry})$$
+    </div>
+
+    <h3>Step 4: 세그먼트 ε-NTU</h3>
+    <div class="eq-block">
+      $$\frac{1}{UA_{seg}} = \frac{1}{\alpha_{ref}A_{i,seg}} + \frac{1}{\eta_{fin}\alpha_{air}A_{o,seg}}$$
+      $$Q_{seg} = \varepsilon_{seg}\, C_{min,seg}(T_{ref,seg} - T_{air,seg})$$
+    </div>
+    <p>응축기는 냉매가 공기보다 뜨거움 → 부호가 Evap과 반대 ($T_{ref} - T_{air}$).</p>
+
+    <h3>Step 5: 세그먼트 march (forward Euler)</h3>
+    <p>냉매가 열을 잃음 → 엔탈피 감소:</p>
+    <div class="eq-block">
+      $$h_{seg+1} = h_{seg} - \frac{Q_{seg}}{\dot{m}_{ref}}, \quad P_{seg+1} = P_{seg} - \Delta P_{seg}$$
+    </div>
+
+    <h3>Step 6: 압력 강하 (마찰 + U-bend)</h3>
+    <div class="eq-block">
+      $$\Delta P_{total} = \sum_{seg}\Delta P_{fric,seg} + \sum_{bend} K_{bend}\frac{G^2}{2\rho} + \Delta P_{edge}$$
+    </div>
+
+    <h3>Step 7: 결합 + outer iteration</h3>
+    <p>응축기는 보통 dry (외기 노출). 공기측 결합으로 수렴:</p>
+    <div class="eq-block">
+      $$Q_{total} = \sum_{seg} Q_{seg}, \quad SC_{out} = T_{cond} - T_{ref,out}$$
+    </div>
+    <p>Re·x·P_r가 correlation 검증 범위 벗어나면 자동 warning. 고압(~1.6 MPa) 운전이라 검증 범위 주의.</p>
+
+    <h3>Evaporator와의 차이 (동일 solver, 다른 mode)</h3>
     <table class="params">
       <thead><tr><th>항목</th><th>Evaporator</th><th>Condenser</th></tr></thead>
       <tbody>
         <tr><td>mode</td><td class="mono">evap</td><td class="mono">cond</td></tr>
         <tr><td>ref correlation</td><td class="mono">chen1966</td><td class="mono">shah1979</td></tr>
         <tr><td>운전 압력</td><td>저압 ~0.5 MPa</td><td>고압 ~1.6 MPa</td></tr>
-        <tr><td>SH/SC</td><td>Superheat</td><td>Subcool</td></tr>
-        <tr><td>Quality 추세</td><td>x_in→1 (증발)</td><td>1→0 (응축)</td></tr>
+        <tr><td>Quality 추세</td><td>x_in → 1 (증발)</td><td>1 → 0 (응축)</td></tr>
+        <tr><td>Q_seg 부호</td><td class="mono">T_air − T_ref</td><td class="mono">T_ref − T_air</td></tr>
+        <tr><td>march 방향</td><td>h 증가</td><td>h 감소</td></tr>
         <tr><td>Wet 가정</td><td>wet coil</td><td>dry (외기)</td></tr>
       </tbody>
     </table>
-    <div class="eq-block">
-      $$Q_{seg} = \varepsilon_{seg}\, C_{min,seg}(T_{ref,seg} - T_{air,seg}), \quad \alpha_{2ph} = \alpha_{Shah}(x, G, P_r)$$
-    </div>
   </div>
 
   <div class="doc-section">
