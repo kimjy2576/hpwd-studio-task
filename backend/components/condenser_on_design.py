@@ -67,6 +67,11 @@ for var in modelDescription['variables']:
     name = var.get('name')
     if name in _overrides:
         var.update(_overrides[name])
+    # P_evap → P_cond rename (응축기 의미 명확화).
+    # 내부 evap solver는 'P_evap' 키를 읽으므로 step()에서 매핑함.
+    if name == 'P_evap':
+        var['name'] = 'P_cond'
+        var['description'] = '응축 압력 (abs)'
 
 
 # ════════ step / validate — Evaporator 그대로 재사용 ════════
@@ -83,7 +88,12 @@ def step(input, params, state, dt):
     # params는 dict (frontend payload). 변형해도 무방하지만 안전을 위해 copy.
     p = dict(params) if params else {}
     p.setdefault('mode', 'cond')
-    return _evap_step(input, p, state, dt)
+    # P_cond(노출 변수명) → P_evap(내부 solver 키) 매핑.
+    # modelDescription은 P_cond으로 노출하나, 공유 evap solver는 P_evap 키를 읽음.
+    inp = dict(input) if input else {}
+    if 'P_cond' in inp and 'P_evap' not in inp:
+        inp['P_evap'] = inp.pop('P_cond')
+    return _evap_step(inp, p, state, dt)
 
 
 def validate(params):
