@@ -181,6 +181,10 @@ modelDescription = {
          'group': 'Correlations', 'start': 'auto', 'unit': '-',
          'options': ['auto'] + AIR_J_ALL,
          'description': 'Air-side j-factor (auto = fin_type 기반 자동 선택)'},
+        {'name': 'void_model', 'causality': 'parameter', 'type': 'String',
+         'group': 'Correlations', 'start': 'Premoli', 'unit': '-',
+         'options': ['Homogeneous', 'Zivi', 'Rigot', 'Hughmark', 'Premoli', 'Rouhani-Axelsson'],
+         'description': 'Void fraction 모델 (charge holdup 계산용, default Premoli)'},
 
         # ═══════ Operating mode ═══════
         {'name': 'mode', 'causality': 'parameter', 'type': 'String',
@@ -253,6 +257,8 @@ modelDescription = {
          'unit': 'W', 'description': '잠열 (응축)'},
         {'name': 'SHR', 'causality': 'output', 'type': 'Real',
          'unit': '-', 'description': 'Sensible Heat Ratio = Q_sensible / Q_total'},
+        {'name': 'M_holdup', 'causality': 'output', 'type': 'Real',
+         'unit': 'kg', 'description': '내부 냉매 질량 (charge holdup, void fraction 적분)'},
         # 압력강하
         {'name': 'dP_ref', 'causality': 'output', 'type': 'Real',
          'unit': 'Pa', 'description': '냉매측 총 dP (마찰 + 가속 + bend)'},
@@ -495,6 +501,30 @@ def step(input, params, state, dt):
     if result.error:
         raise RuntimeError(f"HX-Sim solve 실패: {result.error}")
     
+    # ═══════ 냉매 charge holdup (void fraction 적분) ═══════
+    # segment march의 각 세그먼트에서 ρ_seg·V_seg 적분 → 내부 냉매 질량.
+    #   2상(0<x<1): void fraction 모델 → mean_density
+    #   단상(x≤0 액 / x≥1 과열): CoolProp (P, T)
+    # void 모델은 dropdown 선택 (default Premoli). charge inventory의 기초.
+    from components.correlations import void_fraction as _vf
+    void_model = params.get('void_model', _vf.DEFAULT)
+    A_cross = math.pi * D_i ** 2 / 4.0
+    L_seg = W / max(N_seg, 1)            # tube 한 가닥(W)을 N_seg 분할
+    V_seg = A_cross * L_seg              # 세그먼트 내부 부피 (균일 분할)
+    M_holdup = 0.0
+    for _s in result.segments:
+        _x = _s.x_ref
+        _P = _s.P_local if _s.P_local > 1e3 else P_evap_Pa
+        if 0.0 < _x < 1.0:
+            _alpha = _vf.evaluate(void_model, x=_x, P_Pa=_P, m_dot=m_dot_ref, D_i=D_i, fluid=fluid)
+            _rho = _vf.mean_density(_alpha, _P, fluid)
+        else:
+            try:
+                _rho = CP.PropsSI('D', 'P', _P, 'T', _s.T_ref, fluid)
+            except Exception:
+                _rho = CP.PropsSI('D', 'P', _P, 'Q', 0 if _x <= 0 else 1, fluid)
+        M_holdup += _rho * V_seg
+    
     # ═══════ 결과 → outputs 매핑 ═══════
     T_ref_out_K = result.T_ref_out
     T_air_out_K = result.T_air_out
@@ -569,6 +599,8 @@ def step(input, params, state, dt):
             'Q_sensible': result.Q_sensible,
             'Q_latent': result.Q_latent,
             'SHR': SHR,
+            # 냉매 charge holdup
+            'M_holdup': M_holdup,
             # 압력강하
             'dP_ref': result.dp_ref,
             'dP_bend': result.dp_bend_total,
