@@ -724,29 +724,26 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
     <h2>수학적 정의 (step별)</h2>
     <p>흡입온도·응축온도 2변수 10-계수 다항식 fit. 코드 실행 순서:</p>
 
-    <h3>Step 1: 입력 정리</h3>
-    <p>흡입온도 $T_{suc}$, 응축온도 $T_{cond}$ (= AHRI 기준 saturation 온도):</p>
+    <h3>Step 1: 포화 온도 변환 (CoolProp)</h3>
+    <p>흡입·토출 압력을 AHRI 기준 saturation 온도로 변환:</p>
     <div class="eq-block">
       $$T_{suc} = T_{sat}(P_{suc}) + SH_{ref}, \quad T_{cond} = T_{sat}(P_{dis})$$
     </div>
 
-    <h3>Step 2: Mass flow 다항식</h3>
+    <h3>Step 2: AHRI 다항식 평가 (ṁ · Ẇ 동시)</h3>
+    <p>두 10-계수 다항식을 같은 $(T_{suc}, T_{cond})$로 동시 평가:</p>
     <div class="eq-block">
       $$\dot{m} = C_1 + C_2 T_{suc} + C_3 T_{cond} + C_4 T_{suc}^2 + C_5 T_{suc} T_{cond} + C_6 T_{cond}^2$$
-    </div>
-
-    <h3>Step 3: Electrical power 다항식</h3>
-    <div class="eq-block">
       $$\dot{W} = D_1 + D_2 T_{suc} + D_3 T_{cond} + D_4 T_{suc}^2 + D_5 T_{suc} T_{cond} + D_6 T_{cond}^2$$
     </div>
 
-    <h3>Step 4: RPM 스케일 (가변속)</h3>
+    <h3>Step 3: RPM 스케일 (가변속)</h3>
     <p>정격 대비 회전수로 선형 스케일 (정속이면 생략):</p>
     <div class="eq-block">
       $$\dot{m} \leftarrow \dot{m}\cdot\frac{N}{N_{rated}}, \quad \dot{W} \leftarrow \dot{W}\cdot\frac{N}{N_{rated}}$$
     </div>
 
-    <h3>Step 5: 토출온도 (isentropic + 효율)</h3>
+    <h3>Step 4: 토출온도 (isentropic + 효율)</h3>
     <div class="eq-block">
       $$T_{2s} = T_{suc}\left(\frac{P_{dis}}{P_{suc}}\right)^{(\gamma-1)/\gamma}, \quad T_{dis} = T_{suc} + \frac{T_{2s} - T_{suc}}{\eta_{is}}$$
     </div>
@@ -854,46 +851,56 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
   </div>
 
   <div class="doc-section">
-    <h2>수학적 정의 (6-step thermodynamic process)</h2>
-    <p>흡입에서 토출까지 6개의 internal sub-process를 물리 기반으로 모델링합니다:</p>
+    <h2>수학적 정의 (T_wall fixed-point iteration)</h2>
+    <p>Winandy 모델은 wall 온도 $T_w$를 미지수로 두고, <b>흡입 가열·체적 효율·열손실을 균형시키는 fixed-point iteration</b>으로 수렴시킵니다. 코드 실행 순서:</p>
 
-    <h3>Step 1: Suction heating-up</h3>
-    <p>흡입가스가 압축기 외벽에서 열을 받음 (envelope 열교환):</p>
-    <div class="eq-block">
-      $$\dot{Q}_{su} = \varepsilon_{su} \dot{m} c_p (T_w - T_{su,1}), \quad \varepsilon_{su} = 1 - \exp\left(-\frac{AU_{su}}{\dot{m} c_p}\right)$$
-    </div>
-
-    <h3>Step 2: Suction pressure drop</h3>
+    <h3>Step 1: 흡입 압력 손실</h3>
     <div class="eq-block">
       $$P_{su,2} = P_{su,1} - \Delta P_{su}$$
     </div>
 
-    <h3>Step 3: Isentropic compression to internal pressure</h3>
-    <p>built-in volume ratio $r_v$ 가 결정하는 internal pressure까지 isentropic 압축:</p>
+    <h3>Step 2: 흡입 chamber 입구 상태 (CoolProp)</h3>
+    <p>wall 온도 초기값은 state warm start (이전 step 값). 첫 iteration엔 $\dot{m}$을 모르므로 $T_{su,2} \approx \tfrac{1}{2}(T_{su,1} + T_w)$로 시작.</p>
+
+    <h3>Step 3: T_wall fixed-point iteration (max 15회)</h3>
+    <p>$T_w$를 가정하고 아래 (a)~(e)를 반복 — wall energy balance가 닫힐 때까지:</p>
+    <p><b>(a) 흡입 가열</b> — NTU-effectiveness (cylinder 입구 ~ wall 온도):</p>
     <div class="eq-block">
-      $$P_{int} = P_{su,2} \cdot r_v^{\gamma}, \quad h_{int,s} = h(P_{int}, s_{su,2})$$
+      $$\varepsilon_{su} = 1 - e^{-AU_{su}/(\dot{m}\,c_p)}, \quad T_{su,2} = T_{su,1} + \varepsilon_{su}(T_w - T_{su,1})$$
+    </div>
+    <p><b>(b) 체적 효율</b> — clearance 재팽창:</p>
+    <div class="eq-block">
+      $$\eta_v = V_{se} - c_{cl}\left[r_p^{1/\gamma} - 1\right], \quad r_p = \frac{P_{dis}}{P_{su,2}}$$
+    </div>
+    <p><b>(c) 질량 유량</b>:</p>
+    <div class="eq-block">
+      $$\dot{m} = \eta_v\, \rho_{su,2}\, V_{disp}\, \omega$$
+    </div>
+    <p><b>(d) 등엔트로피 토출 + over/under-compression</b> (built-in volume ratio $r_v$):</p>
+    <div class="eq-block">
+      $$P_{int} = P_{su,2}\, r_v^{\gamma}, \quad w_{extra} = v_{su,2}(P_{dis} - P_{int})$$
+      $$w_{actual} = (h_{dis,s} - h_{su,2}) + w_{extra}, \quad \dot{W}_{shaft} = \dot{m}\, w_{actual}$$
+    </div>
+    <p><b>(e) Wall energy balance → $T_w$ 갱신</b>. 기계 손실이 외부 열손실 + 흡입 가열로 균형:</p>
+    <div class="eq-block">
+      $$AU_{loss}(T_w - T_{amb}) + AU_{su}(T_w - T_{su,1}) = \dot{W}_{loss,mech}$$
+      $$T_w^{new} = \frac{\dot{W}_{loss,mech} + AU_{loss}T_{amb} + AU_{su}T_{su,1}}{AU_{loss} + AU_{su}}$$
+    </div>
+    <p>under-relaxation 0.7로 갱신: $T_w \leftarrow T_w + 0.7(T_w^{new} - T_w)$. $|\Delta T_w| < 0.05$ K 수렴 (max 15회).</p>
+
+    <h3>Step 4: 전기 입력</h3>
+    <div class="eq-block">
+      $$\dot{W}_{loss,mech} = W_{loss,0} + \alpha\, \dot{W}_{shaft}, \quad \dot{W}_{elec} = \frac{\dot{W}_{shaft} + \dot{W}_{loss,mech}}{\eta_{motor}}$$
     </div>
 
-    <h3>Step 4: Constant volume process to P_dis</h3>
-    <p>$P_{int} \to P_{dis}$ 변환 (under/over-compression loss):</p>
+    <h3>Step 5: 외부 열손실</h3>
     <div class="eq-block">
-      $$w_{12} = (h_{int,s} - h_{su,2}) + \frac{1}{\rho_{int}}(P_{dis} - P_{int})$$
+      $$\dot{Q}_{loss} = AU_{loss}(T_w - T_{amb})$$
     </div>
 
-    <h3>Step 5: Mass flow rate (volumetric efficiency)</h3>
+    <h3>Step 6: 토출 온도 (CoolProp)</h3>
     <div class="eq-block">
-      $$\dot{m} = \rho_{su,2} \cdot V_{disp} \cdot N \cdot \eta_{vol}, \quad \eta_{vol} = 1 - c \left[\left(\frac{P_{dis}}{P_{su,2}}\right)^{1/\gamma} - 1\right]$$
-    </div>
-
-    <h3>Step 6: Electrical power balance</h3>
-    <div class="eq-block">
-      $$\dot{W}_{elec} = \frac{\dot{W}_{shaft} + \dot{W}_{loss}}{\eta_{motor}}, \quad \dot{W}_{loss} = W_{loss,0} + \alpha \dot{W}_{shaft}$$
-    </div>
-
-    <h3>Heat loss to ambient</h3>
-    <p>케이스 외벽 $T_w$가 ambient $T_{amb}$에 손실하는 열량으로 wall temperature 닫힘:</p>
-    <div class="eq-block">
-      $$\dot{Q}_{loss} = AU_{amb} (T_w - T_{amb}), \quad \dot{Q}_{loss} = \dot{Q}_{su} + \dot{W}_{loss}$$
+      $$h_{dis} = h_{su,2} + w_{actual}, \quad T_{dis} = T(P_{dis}, h_{dis})$$
     </div>
   </div>
 
