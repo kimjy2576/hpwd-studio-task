@@ -133,6 +133,10 @@ modelDescription = {
          'group': 'Geometry', 'start': 'Premoli', 'unit': '-',
          'options': ['Homogeneous', 'Zivi', 'Rigot', 'Hughmark', 'Premoli', 'Rouhani-Axelsson'],
          'description': 'Void fraction 모델 (charge holdup 계산용, default Premoli)'},
+        {'name': 'flow_arrangement', 'causality': 'parameter', 'type': 'String',
+         'group': 'Geometry', 'start': 'counter', 'unit': '-',
+         'options': ['counter', 'parallel'],
+         'description': '공기-냉매 흐름 배치 (counter=대향류 default, parallel=평행류). On과 동일'},
         {'name': 'eps_over_D', 'causality': 'parameter', 'type': 'Real',
          'group': 'Geometry', 'start': 0.0, 'unit': '-',
          'description': '튜브 내면 거칠기/직경 (0=smooth, 1.5e-6/D ~ 0.0002 일반 stainless)'},
@@ -289,6 +293,22 @@ def _eps_counterflow(NTU, Cr):
     num = 1.0 - math.exp(-NTU * (1 - Cr))
     den = 1.0 - Cr * math.exp(-NTU * (1 - Cr))
     return num / den
+
+
+def _eps_parallel(NTU, Cr):
+    if NTU <= 0:
+        return 0.0
+    if Cr < 1e-9:
+        return 1.0 - math.exp(-NTU) if NTU < 50 else 1.0
+    denom = 1.0 + Cr
+    return (1.0 - math.exp(-min(NTU * denom, 50))) / denom
+
+
+def _eps_evap(NTU, Cr, flow):
+    """flow arrangement에 따른 ε-NTU (단상 zone용). Cr=0이면 둘 다 1-exp(-NTU)."""
+    if flow == 'parallel':
+        return _eps_parallel(NTU, Cr)
+    return _eps_counterflow(NTU, Cr)
 
 
 # ════════ Q_total(ζ) — Newton 변수 ════════
@@ -478,9 +498,12 @@ def step(input, params, state, dt):
     # ═══════════════════════════════════════════════════════════════════════
     is_wet = (wet_mode == 'auto') and (T_dp_in_C > T_evap_C)
 
-    def _compute_2ph(zeta_val):
+    def _compute_2ph(zeta_val, T_air_2ph=None, h_air_2ph=None):
         """주어진 ζ에서 2상 zone 공급열 Q_sup[W], 표면온도 Ts[°C], eps, 포화엔탈피.
+        T_air_2ph/h_air_2ph: 2상 zone 공기 입구 (counter면 SH 통과 후, parallel/None이면 신선).
         wet은 sub-zone march로 공기 점진 냉각 반영 (enthalpy potential 비선형 → On 정합)."""
+        _Ta2 = T_air_in_C if T_air_2ph is None else T_air_2ph
+        _ha2 = h_air_in if h_air_2ph is None else h_air_2ph
         UA_i_full = alpha_2ph * A_i * zeta_val  # 2상 zone 전체 냉매측 [W/K]
         if is_wet:
             # 공기측을 N_sub로 march: 각 sub-zone에서 공기 냉각 → 구동력 점감
@@ -489,16 +512,16 @@ def step(input, params, state, dt):
             UA_i_sub = UA_i_full / N_sub
             NTU_sub = UA_o_sub / C_air if C_air > 0 else 0
             eps_sub = 1.0 - math.exp(-NTU_sub) if NTU_sub < 50 else 1.0
-            h_air_local = h_air_in
+            h_air_local = _ha2
             Q_sup = 0.0
             Ts_sum = 0.0
-            Ts = 0.5 * (T_evap_C + T_air_in_C)  # warm start
+            Ts = 0.5 * (T_evap_C + _Ta2)  # warm start
             for _s in range(N_sub):
                 # 표면온도 양쪽 균형 (이 sub-zone의 local 공기 엔탈피로)
                 for _ in range(20):
                     Q_b = m_dot_air * eps_sub * (h_air_local - _h_air_sat(Ts))
                     Ts_new = T_evap_C + Q_b / UA_i_sub if UA_i_sub > 0 else T_evap_C
-                    Ts_new = max(T_evap_C, min(Ts_new, T_air_in_C))
+                    Ts_new = max(T_evap_C, min(Ts_new, _Ta2))
                     if abs(Ts_new - Ts) < 0.02:
                         Ts = Ts_new
                         break
@@ -513,78 +536,112 @@ def step(input, params, state, dt):
             UA_2ph = UA_2ph_full * zeta_val
             NTU = UA_2ph / C_air if C_air > 0 else 0
             eps = 1.0 - math.exp(-NTU) if NTU < 50 else 1.0
-            Q_sup = eps * C_air * (T_air_in_C - T_evap_C)  # sensible
+            Q_sup = eps * C_air * (_Ta2 - T_evap_C)  # sensible
             return Q_sup, T_evap_C, eps, None
 
-    # ζ bisection — Q_2ph_supply(ζ)는 ζ에 단조증가, demand 고정
-    Q_at_full, _, _, _ = _compute_2ph(0.999)
-    if Q_at_full <= Q_2ph_demand:
-        # ζ=1이어도 완전증발 불가 → 출구 2상, SH zone 없음 (On에서 흔함)
-        zeta = 1.0
-        ref_fully_evap = False
-    else:
-        _lo, _hi = 0.01, 0.999
-        for _bi in range(50):
+    flow_arr = params.get('flow_arrangement', 'counter')
+
+    # ── 8~10. flow 방향에 따라 SH↔2상 공기 결합 iteration ──
+    #   parallel: 공기 2상(신선) → SH. 순차 → 1회 수렴.
+    #   counter : 공기 SH(신선) → 2상. SH가 공기를 먼저 식힘 → 2상이 식은 공기 받음 → iteration.
+    T_air_2ph_in = T_air_in_C   # 2상 zone 공기 입구온도
+    h_air_2ph_in = h_air_in     # 2상 zone 공기 입구엔탈피 (SH는 dry라 습도는 W_in 유지)
+    zeta = 0.5
+    ref_fully_evap = False
+    Q_2ph = Q_2ph_sup = Q_SH = Q_latent = 0.0
+    T_surf_C = T_evap_C; eps_2ph_w = 0.0; h_app_2ph = None
+    BF = 1.0; W_air_out = W_in
+    h_air_after_2ph = h_air_in; T_air_after_2ph_C = T_air_in_C
+    h_ref_out_J = h_in_J
+    for _ctr in range(15):
+        # ζ bisection — Q_2ph_supply(ζ)는 ζ에 단조증가, demand 고정
+        Q_at_full, _, _, _ = _compute_2ph(0.999, T_air_2ph_in, h_air_2ph_in)
+        if Q_at_full <= Q_2ph_demand:
+            # ζ=1이어도 완전증발 불가 → 출구 2상, SH zone 없음 (On에서 흔함)
+            zeta = 1.0
+            ref_fully_evap = False
+        else:
+            _lo, _hi = 0.01, 0.999
+            for _bi in range(50):
+                zeta = 0.5 * (_lo + _hi)
+                _Qs, _, _, _ = _compute_2ph(zeta, T_air_2ph_in, h_air_2ph_in)
+                if _Qs < Q_2ph_demand:
+                    _lo = zeta
+                else:
+                    _hi = zeta
+                if _hi - _lo < 1e-4:
+                    break
             zeta = 0.5 * (_lo + _hi)
-            _Qs, _, _, _ = _compute_2ph(zeta)
-            if _Qs < Q_2ph_demand:
-                _lo = zeta
-            else:
-                _hi = zeta
-            if _hi - _lo < 1e-4:
-                break
-        zeta = 0.5 * (_lo + _hi)
-        ref_fully_evap = (zeta < 0.99)
-    zeta = max(0.01, min(1.0, zeta))
+            ref_fully_evap = (zeta < 0.99)
+        zeta = max(0.01, min(1.0, zeta))
+
+        # 최종 2상 zone (수렴된 ζ로, 2상 공기 입구 기준)
+        Q_2ph_sup, T_surf_C, eps_2ph_w, h_app_2ph = _compute_2ph(zeta, T_air_2ph_in, h_air_2ph_in)
+        Q_2ph = Q_2ph_demand if ref_fully_evap else Q_2ph_sup
+        UA_SH_actual = UA_SH_full * (1.0 - zeta) if zeta < 1.0 else 0
+
+        # 2상 zone 공기 출구 상태 (enthalpy 감소 + 제습) — 2상 공기 입구 기준
+        h_air_after_2ph = h_air_2ph_in - Q_2ph / m_dot_air
+        if is_wet:
+            BF = (h_air_after_2ph - h_app_2ph) / max(h_air_2ph_in - h_app_2ph, 1e-6)
+            BF = max(0.0, min(1.0, BF))
+            W_sat_surf = _W_sat(T_surf_C)
+            W_air_out = BF * W_in + (1.0 - BF) * W_sat_surf
+            W_air_out = min(W_in, max(W_sat_surf, W_air_out))
+            condensate_rate = m_dot_air * (W_in - W_air_out)
+            h_fg_water = 2501e3 - 2.4 * T_surf_C
+            Q_latent = max(0.0, condensate_rate * h_fg_water)
+        else:
+            BF = 1.0
+            W_air_out = W_in
+            condensate_rate = 0.0
+            Q_latent = 0.0
+        try:
+            T_air_after_2ph_C = CP.HAPropsSI('T', 'H', h_air_after_2ph, 'P', 101325.0, 'W', W_air_out) - 273.15
+        except Exception:
+            T_air_after_2ph_C = T_air_2ph_in - (Q_2ph - Q_latent) / C_air if C_air > 0 else T_air_2ph_in
+
+        # SH zone (dry sensible) — 공기 입구는 flow 방향: counter=신선, parallel=2상 통과 후
+        Q_SH = 0.0
+        h_ref_out_J = h_in_J + Q_2ph / m_dot_ref
+        if ref_fully_evap and UA_SH_actual > 0:
+            try:
+                cp_ref_SH = CP.PropsSI('C', 'P', P_evap_Pa, 'Q', 1, fluid)
+            except Exception:
+                cp_ref_SH = 1700
+            C_ref = m_dot_ref * cp_ref_SH
+            Cmin_SH = min(C_ref, C_air)
+            Cmax_SH = max(C_ref, C_air)
+            Cr = Cmin_SH / Cmax_SH if Cmax_SH > 0 else 0
+            NTU_SH = UA_SH_actual / Cmin_SH if Cmin_SH > 0 else 0
+            eps_SH = _eps_evap(NTU_SH, Cr, flow_arr)
+            T_air_SH_in = T_air_in_C if flow_arr == 'counter' else T_air_after_2ph_C
+            Q_SH = max(0.0, eps_SH * Cmin_SH * (T_air_SH_in - T_evap_C))
+            h_ref_out_J = h_v + Q_SH / m_dot_ref
+
+        # 2상 공기 입구 업데이트 (counter면 SH 통과 후, parallel이면 신선 고정)
+        if flow_arr == 'counter':
+            T_air_2ph_new = T_air_in_C - Q_SH / C_air if C_air > 0 else T_air_in_C
+            h_air_2ph_new = h_air_in - Q_SH / m_dot_air
+        else:
+            T_air_2ph_new = T_air_in_C
+            h_air_2ph_new = h_air_in
+
+        if abs(T_air_2ph_new - T_air_2ph_in) < 0.03:
+            T_air_2ph_in, h_air_2ph_in = T_air_2ph_new, h_air_2ph_new
+            break
+        T_air_2ph_in, h_air_2ph_in = T_air_2ph_new, h_air_2ph_new
+
+    eps_h = eps_2ph_w  # 하위호환 (진단/BF 참조)
+    UA_2ph_actual = UA_2ph_full * zeta
     n_iter = 50
     converged = True
 
-    # ── 9. 최종 2상 zone (수렴된 ζ로) ──
-    Q_2ph_sup, T_surf_C, eps_2ph_w, h_app_2ph = _compute_2ph(zeta)
-    Q_2ph = Q_2ph_demand if ref_fully_evap else Q_2ph_sup
-    eps_h = eps_2ph_w  # 하위호환 (진단/BF 참조)
-    UA_2ph_actual = UA_2ph_full * zeta
-    UA_SH_actual = UA_SH_full * (1.0 - zeta) if zeta < 1.0 else 0
-
-    # 2상 zone 공기 출구 상태 (enthalpy 감소 + 제습)
-    h_air_after_2ph = h_air_in - Q_2ph / m_dot_air
-    if is_wet:
-        BF = (h_air_after_2ph - h_app_2ph) / max(h_air_in - h_app_2ph, 1e-6)
-        BF = max(0.0, min(1.0, BF))
-        W_sat_surf = _W_sat(T_surf_C)
-        W_air_out = BF * W_in + (1.0 - BF) * W_sat_surf
-        W_air_out = min(W_in, max(W_sat_surf, W_air_out))
-        condensate_rate = m_dot_air * (W_in - W_air_out)
-        h_fg_water = 2501e3 - 2.4 * T_surf_C
-        Q_latent = max(0.0, condensate_rate * h_fg_water)
+    # 공기 최종 출구온도 (counter=공기가 2상에서 마지막, parallel=SH에서 마지막)
+    if flow_arr == 'counter':
+        T_air_out_C = T_air_after_2ph_C
     else:
-        BF = 1.0
-        W_air_out = W_in
-        condensate_rate = 0.0
-        Q_latent = 0.0
-    try:
-        T_air_after_2ph_C = CP.HAPropsSI('T', 'H', h_air_after_2ph, 'P', 101325.0, 'W', W_air_out) - 273.15
-    except Exception:
-        T_air_after_2ph_C = T_air_in_C - (Q_2ph - Q_latent) / C_air if C_air > 0 else T_air_in_C
-
-    # ── 10. SH zone (dry sensible, 공기 after-2상으로) ──
-    Q_SH = 0.0
-    h_ref_out_J = h_in_J + Q_2ph / m_dot_ref
-    T_air_out_C = T_air_after_2ph_C
-    if ref_fully_evap and UA_SH_actual > 0:
-        try:
-            cp_ref_SH = CP.PropsSI('C', 'P', P_evap_Pa, 'Q', 1, fluid)
-        except Exception:
-            cp_ref_SH = 1700
-        C_ref = m_dot_ref * cp_ref_SH
-        Cmin_SH = min(C_ref, C_air)
-        Cmax_SH = max(C_ref, C_air)
-        Cr = Cmin_SH / Cmax_SH if Cmax_SH > 0 else 0
-        NTU_SH = UA_SH_actual / Cmin_SH if Cmin_SH > 0 else 0
-        eps_SH = _eps_counterflow(NTU_SH, Cr)
-        Q_SH = max(0.0, eps_SH * Cmin_SH * (T_air_after_2ph_C - T_evap_C))
-        h_ref_out_J = h_v + Q_SH / m_dot_ref
-        T_air_out_C = T_air_after_2ph_C - Q_SH / C_air if C_air > 0 else T_air_after_2ph_C
+        T_air_out_C = (T_air_after_2ph_C - Q_SH / C_air) if C_air > 0 else T_air_after_2ph_C
 
     # ── 11. Q_total 집계 ──
     Q_total = Q_2ph + Q_SH
