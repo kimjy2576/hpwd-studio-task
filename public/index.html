@@ -867,6 +867,8 @@ const TYPES = {
       // ─── Circuit ───
       { key: 'n_circuits', group: 'Circuit', label: 'N_circuits (병렬 회로 수)',
         value: 2, unit: '' },
+      { key: 'flow_arrangement', group: 'Circuit', label: 'Flow 배치',
+        value: 'counter', options: ['counter', 'parallel'], unit: '' },
       // ─── Numerical ───
       { key: 'N_seg',      group: 'Numerical', label: 'N_seg', value: 10, unit: '-' },
       { key: 'N_seg_auto', group: 'Numerical', label: 'Auto N_seg', value: 'off',
@@ -1036,6 +1038,8 @@ const TYPES = {
       { key: 'N_tubes',      group: 'Geometry', label: 'N_tubes',      value: 24,      unit: '-' },
       { key: 'N_rows',       group: 'Geometry', label: 'N_rows',       value: 2,       unit: '-' },
       { key: 'n_circuits',   group: 'Geometry', label: 'N_circuits (병렬 회로 수)', value: 2, unit: '' },
+      { key: 'flow_arrangement', group: 'Geometry', label: 'Flow 배치',
+        value: 'counter', options: ['counter', 'parallel'], unit: '' },
       { key: 'P_t',          group: 'Geometry', label: 'P_t',          value: 25.0e-3, unit: 'm' },
       { key: 'P_l',          group: 'Geometry', label: 'P_l',          value: 22.0e-3, unit: 'm' },
       { key: 't_fin',        group: 'Geometry', label: 't_fin',        value: 0.12e-3, unit: 'm' },
