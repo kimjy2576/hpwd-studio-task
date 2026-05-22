@@ -3,6 +3,10 @@ Condenser (L1 Off-design)
 ═══════════════════════════════════════════════════════════════════════
 3-zone cascade ε-NTU. 설계 변수 없음, UA 또는 ε 직접 입력.
 
+[charge holdup 미지원] Off는 형상(D_i·L_tube·V_internal)이 없는 성능 전용
+모델이라 냉매 charge(=ρ×V_internal)를 산출하지 않는다. 시스템 charge 합산은
+형상이 있는 Semi(moving boundary)·On(segment march)에서 수행한다.
+
 Zone 구조 (응축기 — evap의 2-zone과 다름):
   Zone 1: De-SH    — vapor cooling (T_in_SH → T_sat)
   Zone 2: 2-phase  — condensation (x=1 → x=0)

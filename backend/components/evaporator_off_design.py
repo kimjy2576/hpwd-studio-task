@@ -3,6 +3,11 @@ Evaporator (Off-design L1) — 2-zone ε-NTU
 ═══════════════════════════════════════════════════════════════════════
 설계 변수 없음. 사용자가 UA 또는 ε를 직접 입력 (또는 fitting).
 
+[charge holdup 미지원] Off는 형상(D_i·L_tube·V_internal)이 없는 성능 전용
+모델이라 냉매 charge(=ρ×V_internal)를 산출하지 않는다. 시스템 charge 합산은
+형상이 있는 Semi(moving boundary)·On(segment march)에서 수행한다. Off는
+사이클을 빠르게 닫을 때(P_e/P_c 탐색)만 쓰고, charge가 필요하면 Semi/On으로 재평가.
+
 2-zone 구조:
   ┌─ 2-phase zone ─────┐ ┌─ Superheat zone ─┐
   │ x_in → x=1         │ │ x=1 → SH_out     │
