@@ -139,3 +139,69 @@ def pipe_charge(fluid, L_mm, di_mm, P_bar, h_kJ, m_dot=None, void_model=None):
     """pipe_segment의 charge 부분만 반환 (하위호환 wrapper)."""
     return pipe_segment(fluid, L_mm, di_mm, P_bar, h_kJ,
                         m_dot=m_dot, void_model=void_model)
+
+
+# ════════════════════════════════════════════════════════════════════
+# 시스템 charge 합산
+# ════════════════════════════════════════════════════════════════════
+
+def edge_to_pipe_args(line_params):
+    """연결선 lineParams(프론트) → pipe_segment 형상 인자 변환.
+
+    프론트 냉매배관 연결선은 L_horiz/L_vert/vert_dir로 입력받는다.
+      L_mm    = L_horiz + L_vert      (마찰·charge용 총 경로)
+      elev_mm = +L_vert(상승)/−L_vert(하강)  (hydrostatic용 순 고도차)
+    """
+    L_h = float(line_params.get('L_horiz', 0.0) or 0.0)
+    L_v = float(line_params.get('L_vert', 0.0) or 0.0)
+    vdir = line_params.get('vert_dir', '상승')
+    return {
+        'L_mm':    L_h + L_v,
+        'di_mm':   float(line_params.get('di', 6.35)),
+        'elev_mm': L_v if vdir == '상승' else -L_v,
+        'bends':   int(float(line_params.get('bends', 0) or 0)),
+    }
+
+
+def system_charge(nodes, edges, fluid='R290', m_dot=None, void_model=None):
+    """시스템 냉매 charge 합산 (후처리).
+
+    닫힌 냉매 control volume 가정 — 노드 holdup + 연결선(배관) charge를 합산.
+    각 노드/연결선의 상태(P, h)는 사이클이 풀린 뒤(또는 캔버스 순차실행 뒤)
+    채워져 있어야 한다(이 함수는 후처리 합산이지 솔버가 아님).
+
+    Args:
+        nodes: 컴포넌트 결과 리스트.
+               각 항목 {'name', 'M_holdup'[kg]} — Off는 M_holdup 없음(0 처리).
+        edges: 냉매배관 연결선 리스트.
+               각 항목 {'name', 'lineParams'(프론트 dict),
+                        'P_bar'(상류 노드 출구 P), 'h_kJ'(상류 노드 출구 h),
+                        선택 'm_dot'}
+        fluid, m_dot(기본 유량), void_model
+
+    Returns:
+        {
+          'M_total'[kg], 'M_nodes'[kg], 'M_edges'[kg],
+          'breakdown': {'nodes':[{name,M}], 'edges':[{name,M,phase,dP_total,P_out}]}
+        }
+    """
+    node_break, M_nodes = [], 0.0
+    for nd in nodes:
+        M = float(nd.get('M_holdup', 0.0) or 0.0)
+        M_nodes += M
+        node_break.append({'name': nd.get('name', '?'), 'M': M})
+
+    edge_break, M_edges = [], 0.0
+    for eg in edges:
+        a = edge_to_pipe_args(eg.get('lineParams', {}))
+        r = pipe_segment(fluid, a['L_mm'], a['di_mm'], eg['P_bar'], eg['h_kJ'],
+                         m_dot=(eg.get('m_dot') or m_dot),
+                         bends=a['bends'], elev_mm=a['elev_mm'],
+                         void_model=void_model)
+        M_edges += r['M']
+        edge_break.append({'name': eg.get('name', '?'), 'M': r['M'],
+                           'phase': r['phase'], 'dP_total': r['dP_total'],
+                           'P_out': r['P_out']})
+
+    return {'M_total': M_nodes + M_edges, 'M_nodes': M_nodes, 'M_edges': M_edges,
+            'breakdown': {'nodes': node_break, 'edges': edge_break}}
