@@ -1464,7 +1464,9 @@ const LINE_KINDS = {
     dasharray: undefined,
     desc: '구리 동관 — 냉매 사이클. 양상(액/기/2상) 변화',
     fields: [
-      { key: 'L', label: '길이', unit: 'mm', value: 300 },
+      { key: 'L_horiz', label: '수평 길이', unit: 'mm', value: 300 },
+      { key: 'L_vert', label: '수직 길이', unit: 'mm', value: 0 },
+      { key: 'vert_dir', label: '수직 방향', type: 'select', options: ['상승', '하강'], value: '상승' },
       { key: 'di', label: '내경', unit: 'mm', value: 6.35 },
       { key: 'do', label: '외경', unit: 'mm', value: 7.94 },
       { key: 'ins_thk', label: '단열재 두께', unit: 'mm', value: 5 },
