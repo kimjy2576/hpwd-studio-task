@@ -36,24 +36,30 @@ _DP2PH = {
 
 
 def pipe_segment(fluid, L_mm, di_mm, P_bar, h_kJ, m_dot=None,
-                 bends=0, K_bend=0.75, eps_over_D=0.0,
+                 bends=0, K_bend=0.75, eps_over_D=0.0, elev_mm=0.0,
                  void_model=None, dp_corr_2ph='Friedel'):
     """연결선(냉매배관) 1구간: charge holdup + 압력강하.
 
-    형상(L, di)으로 charge(체적 효과)와 ΔP(마찰+벤드)를 함께 산출한다.
+    형상(L, di)으로 charge(체적 효과)와 ΔP(마찰+벤드+hydrostatic)를 함께 산출.
     배관은 짧고 상변화가 거의 없어 입구 상태(상류 노드 출구 P, h)로 균일 가정.
-    열손실·hydrostatic(액주)은 제외 — 수평·단열 가정 (HX와 동일 관례).
+    열손실은 제외(단열 가정). hydrostatic(액주)은 elev_mm로 반영 — 수직 구간이
+    있는 연결배관에선 액관에서 특히 큼(액주 1m ≈ 44mbar). HX는 수평/상쇄라 제외했음.
+
+    L_mm은 마찰·charge용 총 경로 길이(수평+수직), elev_mm은 hydrostatic용
+    순 고도차 ΔH(부호). 프론트의 L_horiz/L_vert/방향은 호출 레이어에서
+    L_mm = L_horiz + L_vert, elev_mm = ±L_vert 로 변환해 넘긴다.
 
     Args:
         fluid:       냉매 (예: 'R290')
-        L_mm:        배관 길이 [mm]  (연결선 lineParams.L)
+        L_mm:        배관 총 경로 길이 [mm] (수평+수직, 마찰·charge용)
         di_mm:       배관 내경 [mm]  (연결선 lineParams.di)
         P_bar:       배관 내 압력 [bar]      (상류 노드 출구 P_ref_out)
         h_kJ:        배관 내 비엔탈피 [kJ/kg] (상류 노드 출구 h_ref_out)
-        m_dot:       냉매 질량유량 [kg/s] — ΔP 계산에 필수. None이면 ΔP=None (charge만).
+        m_dot:       냉매 질량유량 [kg/s] — 마찰·벤드 ΔP에 필수. None이면 hydrostatic만.
         bends:       벤드 수 (연결선 lineParams.bends) — minor loss용
         K_bend:      벤드 1개 손실계수 (Idelchik, default 0.75)
         eps_over_D:  관 내면 조도/내경 (단상 마찰)
+        elev_mm:     순 고도차 ΔH [mm] — hydrostatic (부호: +냉매상승/−냉매하강)
         void_model:  void fraction 모델명 (default Premoli)
         dp_corr_2ph: 2상 마찰 상관식 ('Friedel'/'MSH'/'Lockhart-Martinelli'/'Chisholm')
 
@@ -66,7 +72,8 @@ def pipe_segment(fluid, L_mm, di_mm, P_bar, h_kJ, m_dot=None,
           phase       [str]   'liquid' / 'vapor' / 'two-phase'
           dP_friction [Pa]    관 마찰 압력강하 (m_dot 없으면 None)
           dP_bend     [Pa]    벤드 minor loss (m_dot 없으면 None)
-          dP_total    [Pa]    합계 (m_dot 없으면 None)
+          dP_hydro    [Pa]    hydrostatic ρgΔH (부호: +상승손실/−하강회복)
+          dP_total    [Pa]    합계 (마찰+벤드+hydrostatic)
           P_out       [bar]   하류 입구 압력 = P_bar − dP_total
     """
     P_Pa = P_bar * 1e5
@@ -100,9 +107,12 @@ def pipe_segment(fluid, L_mm, di_mm, P_bar, h_kJ, m_dot=None,
 
     M = rho * V
 
-    # ── 압력강하 (m_dot 주어질 때만) ──
-    dP_friction = dP_bend = dP_total = None
-    P_out = P_bar
+    # ── 압력강하 ──
+    # hydrostatic은 유량 무관(밀도·고도차만), 마찰·벤드는 m_dot 필요
+    elev_m = elev_mm / 1000.0
+    dP_hydro = rho * 9.81 * elev_m  # elev>0(상승)→손실(+), elev<0(하강)→회복(−)
+
+    dP_friction = dP_bend = None
     if m_dot:
         G = m_dot / A  # mass flux [kg/m²s]
         if phase == 'two-phase':
@@ -115,12 +125,13 @@ def pipe_segment(fluid, L_mm, di_mm, P_bar, h_kJ, m_dot=None,
                                               eps_over_D=eps_over_D)
         # 벤드 minor loss: ΔP = N · K · ρv²/2 = N · K · G²/(2ρ)
         dP_bend = bends * K_bend * (G ** 2) / (2.0 * rho)
-        dP_total = dP_friction + dP_bend
-        P_out = P_bar - dP_total / 1e5
+
+    dP_total = (dP_friction or 0.0) + (dP_bend or 0.0) + dP_hydro
+    P_out = P_bar - dP_total / 1e5
 
     return {'M': M, 'rho': rho, 'V': V, 'x': x, 'phase': phase,
             'dP_friction': dP_friction, 'dP_bend': dP_bend,
-            'dP_total': dP_total, 'P_out': P_out}
+            'dP_hydro': dP_hydro, 'dP_total': dP_total, 'P_out': P_out}
 
 
 # 하위호환: charge만 필요한 호출용 얇은 wrapper
