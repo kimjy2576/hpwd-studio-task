@@ -86,6 +86,14 @@ modelDescription = {
         {'name': 'n_circuits', 'causality': 'parameter', 'type': 'Real',
          'group': 'Geometry', 'start': 2.0, 'unit': '-',
          'description': '병렬 냉매 회로 수 (G = ṁ/n_circuits/A_cross). 검증 시 On circuit_mode의 회로수와 일치시킴'},
+        {'name': 'void_model', 'causality': 'parameter', 'type': 'String',
+         'group': 'Geometry', 'start': 'Premoli', 'unit': '-',
+         'options': ['Homogeneous', 'Zivi', 'Rigot', 'Hughmark', 'Premoli', 'Rouhani-Axelsson'],
+         'description': 'Void fraction 모델 (charge holdup 계산용, default Premoli)'},
+        {'name': 'flow_arrangement', 'causality': 'parameter', 'type': 'String',
+         'group': 'Geometry', 'start': 'counter', 'unit': '-',
+         'options': ['counter', 'parallel'],
+         'description': '공기-냉매 흐름 배치 (counter=대향류 default, parallel=평행류). On과 동일'},
         {'name': 'P_t', 'causality': 'parameter', 'type': 'Real',
          'group': 'Geometry', 'start': 25.0e-3, 'unit': 'm', 'description': 'Transverse pitch'},
         {'name': 'P_l', 'causality': 'parameter', 'type': 'Real',
@@ -162,6 +170,11 @@ modelDescription = {
         {'name': 'L_deSH_fraction', 'causality': 'output', 'type': 'Real', 'unit': '-', 'description': 'De-SH zone 길이 비율'},
         {'name': 'L_2ph_fraction', 'causality': 'output', 'type': 'Real', 'unit': '-', 'description': '2-phase zone 길이 비율'},
         {'name': 'L_SC_fraction', 'causality': 'output', 'type': 'Real', 'unit': '-', 'description': 'SC zone 길이 비율'},
+        {'name': 'M_holdup', 'causality': 'output', 'type': 'Real', 'unit': 'kg',
+         'description': '내부 냉매 질량 (charge holdup, zone 분할 + void fraction)'},
+        {'name': 'M_deSH', 'causality': 'output', 'type': 'Real', 'unit': 'kg', 'description': 'De-SH zone 냉매 질량'},
+        {'name': 'M_2ph', 'causality': 'output', 'type': 'Real', 'unit': 'kg', 'description': '2상 zone 냉매 질량 (void fraction 적분)'},
+        {'name': 'M_SC', 'causality': 'output', 'type': 'Real', 'unit': 'kg', 'description': 'SC zone 냉매 질량 (과냉 액)'},
         # 진단 (계산된 α, UA)
         {'name': 'alpha_air', 'causality': 'output', 'type': 'Real', 'unit': 'W/(m²·K)', 'description': '공기측 α (계산값)'},
         {'name': 'alpha_2ph', 'causality': 'output', 'type': 'Real', 'unit': 'W/(m²·K)', 'description': '2-phase α (응축)'},
@@ -226,6 +239,34 @@ def _eps_NTU_counter(NTU, Cr):
         return 1.0 / Cr if Cr < 1 else 1.0
     e = math.exp(arg)
     return (1.0 - e) / (1.0 - Cr * e)
+
+
+def _eps_NTU_parallel(NTU, Cr):
+    if NTU <= 0:
+        return 0.0
+    if Cr <= 1e-6:
+        return _eps_NTU_C0(NTU)
+    denom = 1.0 + Cr
+    arg = -NTU * denom
+    if arg < -50:
+        return 1.0 / denom
+    return (1.0 - math.exp(arg)) / denom
+
+
+def _eps_NTU(NTU, Cr, flow):
+    """flow arrangement에 따른 ε-NTU. Cr=0이면 둘 다 1-exp(-NTU)."""
+    if flow == 'parallel':
+        return _eps_NTU_parallel(NTU, Cr)
+    return _eps_NTU_counter(NTU, Cr)
+
+
+def _lmtd(dT_a, dT_b):
+    """로그평균온도차 (zone 길이 = Q/(UA_full·ΔT_lm) 계산용)."""
+    dT_a = max(dT_a, 1e-6)
+    dT_b = max(dT_b, 1e-6)
+    if abs(dT_a - dT_b) < 1e-9:
+        return dT_a
+    return (dT_a - dT_b) / math.log(dT_a / dT_b)
 
 
 def _P_sat_water(T_C):
@@ -380,64 +421,123 @@ def step(input, params, state, dt):
     UA_2ph_full  = 1.0 / (1.0 / (alpha_2ph  * A_i) + 1.0 / (alpha_air * A_o * eta_overall))
     UA_SC_full   = 1.0 / (1.0 / (alpha_SC   * A_i) + 1.0 / (alpha_air * A_o * eta_overall))
 
-    # ── 7. Cascade 3-zone ──
-    T_air_curr = T_air_in_C
-    h_ref_curr = h_in_J
-    Q_deSH = 0.0
-    Q_2ph_total = 0.0
-    Q_SC = 0.0
+    # ── 7. Moving Boundary 3-zone (각 zone 신선 공기 = cross-flow 근사) ──
+    # 증발기 Semi와 동일 패러다임: 경계를 demand로 풀어 zone 길이 ζ를 직접 결정.
+    #   ζ_deSH: deSH 끝(h_v)까지, ζ_2ph: 2상 끝(h_l)까지, ζ_SC = 나머지.
+    # cascade의 공기 순차 가열(counter-flow 가정) 대신 각 zone이 신선 공기를 봄
+    # → SC zone도 신선 공기 ΔT를 받아 Q 과소 해소.
+    flow_arr = params.get('flow_arrangement', 'counter')
+    try:
+        cp_v = CP.PropsSI('CPMASS', 'P', P_cond_Pa, 'T', 0.5 * (T_ref_in_K + T_cond_K), fluid)
+    except Exception:
+        cp_v = 1800.0
+    try:
+        cp_l = CP.PropsSI('CPMASS', 'P', P_cond_Pa, 'Q', 0, fluid)
+    except Exception:
+        cp_l = 2700.0
+    C_ref_v = m_dot_ref * cp_v
+    C_ref_l = m_dot_ref * cp_l
 
-    # Zone 1: De-SH
-    if h_ref_curr > h_v and T_air_curr < T_ref_in_C:
-        try:
-            cp_v = CP.PropsSI('CPMASS', 'P', P_cond_Pa, 'T', T_ref_in_K, fluid)
-        except Exception:
-            cp_v = 1800.0
-        C_ref_v = m_dot_ref * cp_v
-        C_min = min(C_ref_v, C_air)
-        C_max = max(C_ref_v, C_air)
-        Cr = C_min / C_max if C_max > 0 else 0.0
+    def _Q_deSH(z, T_air):
+        if z <= 1e-9:
+            return 0.0
+        Cmin = min(C_ref_v, C_air); Cmax = max(C_ref_v, C_air)
+        Cr = Cmin / Cmax if Cmax > 0 else 0.0
+        NTU = (UA_deSH_full * z) / Cmin if Cmin > 0 else 0.0
+        return _eps_NTU(NTU, Cr, flow_arr) * Cmin * (T_ref_in_C - T_air)
 
-        Q_max_deSH_ref = m_dot_ref * (h_ref_curr - h_v)
-        NTU = UA_deSH_full / C_min if C_min > 0 else 0
-        eps = _eps_NTU_counter(NTU, Cr)
-        if C_min > 0:
-            Q_deSH = eps * C_min * (T_ref_in_C - T_air_curr)
-            Q_deSH = max(0.0, min(Q_deSH, Q_max_deSH_ref))
-        T_air_curr += Q_deSH / C_air if C_air > 0 else 0
-        h_ref_curr -= Q_deSH / m_dot_ref if m_dot_ref > 0 else 0
+    def _Q_2ph(z, T_air):
+        if z <= 1e-9:
+            return 0.0
+        NTU = (UA_2ph_full * z) / C_air if C_air > 0 else 0.0
+        return _eps_NTU_C0(NTU) * C_air * (T_cond_C - T_air)
 
-    # Zone 2: 2-phase
-    if h_ref_curr > h_l + 1e-3 and T_air_curr < T_cond_C - 0.05:
-        Q_max_2ph_ref = m_dot_ref * (h_ref_curr - h_l)
-        NTU = UA_2ph_full / C_air if C_air > 0 else 0
-        eps = _eps_NTU_C0(NTU)
-        Q_2ph_total = eps * C_air * (T_cond_C - T_air_curr)
-        Q_2ph_total = max(0.0, min(Q_2ph_total, Q_max_2ph_ref))
-        T_air_curr += Q_2ph_total / C_air if C_air > 0 else 0
-        h_ref_curr -= Q_2ph_total / m_dot_ref if m_dot_ref > 0 else 0
+    def _Q_SC(z, T_air):
+        if z <= 1e-9:
+            return 0.0
+        Cmin = min(C_ref_l, C_air); Cmax = max(C_ref_l, C_air)
+        Cr = Cmin / Cmax if Cmax > 0 else 0.0
+        NTU = (UA_SC_full * z) / Cmin if Cmin > 0 else 0.0
+        return _eps_NTU(NTU, Cr, flow_arr) * Cmin * (T_cond_C - T_air)
 
-    # Zone 3: SC
-    if h_ref_curr <= h_l + 1e-3 and T_air_curr < T_cond_C - 0.05:
-        try:
-            cp_l = CP.PropsSI('CPMASS', 'P', P_cond_Pa, 'Q', 0, fluid)
-        except Exception:
-            cp_l = 2700.0
-        C_ref_l = m_dot_ref * cp_l
-        C_min = min(C_ref_l, C_air)
-        C_max = max(C_ref_l, C_air)
-        Cr = C_min / C_max if C_max > 0 else 0.0
+    def _bisect_zeta(Qfunc, demand, z_max):
+        """Q(z)=demand 만족하는 z (Q는 z에 단조증가). z_max로도 부족하면 z_max 반환."""
+        if demand <= 1e-9 or z_max <= 1e-9:
+            return 0.0
+        if Qfunc(z_max) <= demand:
+            return z_max
+        lo, hi = 0.0, z_max
+        for _ in range(60):
+            mid = 0.5 * (lo + hi)
+            if Qfunc(mid) < demand:
+                lo = mid
+            else:
+                hi = mid
+            if hi - lo < 1e-6:
+                break
+        return 0.5 * (lo + hi)
 
-        NTU = UA_SC_full / C_min if C_min > 0 else 0
-        eps = _eps_NTU_counter(NTU, Cr)
-        Q_SC = eps * C_min * (T_cond_C - T_air_curr)
-        Q_SC = max(0.0, Q_SC)
-        T_air_curr += Q_SC / C_air if C_air > 0 else 0
-        h_ref_curr -= Q_SC / m_dot_ref if m_dot_ref > 0 else 0
+    # flow_arrangement에 따라 공기 누적 방향 결정 (zone 내 ε도 flow에 맞춤).
+    #   counter : 냉매 출구쪽(SC)이 신선 공기 → deSH로 누적 (역순)
+    #   parallel: 냉매 입구쪽(deSH)이 신선 공기 → SC로 누적 (순서)
+    # zone 길이 ζ는 냉매 enthalpy demand(deSH/2상)로, SC는 나머지. 공기 의존 → iteration.
+    C_air_safe = max(C_air, 1e-9)
+    Q_deSH_demand = m_dot_ref * max(0.0, h_in_J - h_v)
+    Q_2ph_demand = m_dot_ref * (h_v - h_l)
+    has_deSH = Q_deSH_demand > 1e-6 and T_ref_in_C > T_cond_C
+
+    def _zone_air_temps(zd, z2, zs):
+        """현재 ζ에서 각 zone 공기 입구온도 (flow 방향으로 누적)."""
+        if flow_arr == 'parallel':
+            Ta_deSH = T_air_in_C
+            Qd = min(_Q_deSH(zd, Ta_deSH), Q_deSH_demand) if has_deSH else 0.0
+            Ta_2ph = Ta_deSH + Qd / C_air_safe
+            Q2 = min(_Q_2ph(z2, Ta_2ph), Q_2ph_demand)
+            Ta_SC = Ta_2ph + Q2 / C_air_safe
+        else:  # counter
+            Ta_SC = T_air_in_C
+            Qs = _Q_SC(zs, Ta_SC); Qs = max(0.0, min(Qs, C_ref_l * (T_cond_C - Ta_SC)))
+            Ta_2ph = Ta_SC + Qs / C_air_safe
+            Q2 = min(_Q_2ph(z2, Ta_2ph), Q_2ph_demand)
+            Ta_deSH = Ta_2ph + Q2 / C_air_safe
+        return Ta_deSH, Ta_2ph, Ta_SC
+
+    zeta_deSH = 0.15 if has_deSH else 0.0
+    zeta_2ph = 0.6
+    zeta_SC = max(0.0, 1.0 - zeta_deSH - zeta_2ph)
+    for _it in range(40):
+        Ta_deSH, Ta_2ph, Ta_SC = _zone_air_temps(zeta_deSH, zeta_2ph, zeta_SC)
+        zeta_2ph_new = _bisect_zeta(lambda z: _Q_2ph(z, Ta_2ph), Q_2ph_demand, 1.0)
+        if has_deSH:
+            zeta_deSH_new = _bisect_zeta(lambda z: _Q_deSH(z, Ta_deSH),
+                                         Q_deSH_demand, max(0.0, 1.0 - zeta_2ph_new))
+        else:
+            zeta_deSH_new = 0.0
+        zeta_SC_new = max(0.0, 1.0 - zeta_deSH_new - zeta_2ph_new)
+        if (abs(zeta_deSH_new - zeta_deSH) + abs(zeta_2ph_new - zeta_2ph)
+                + abs(zeta_SC_new - zeta_SC)) < 1e-5:
+            zeta_deSH, zeta_2ph, zeta_SC = zeta_deSH_new, zeta_2ph_new, zeta_SC_new
+            break
+        _a = 0.5
+        zeta_deSH = _a * zeta_deSH_new + (1 - _a) * zeta_deSH
+        zeta_2ph = _a * zeta_2ph_new + (1 - _a) * zeta_2ph
+        zeta_SC = max(0.0, 1.0 - zeta_deSH - zeta_2ph)
+
+    # 수렴된 ζ로 최종 Q
+    Ta_deSH, Ta_2ph, Ta_SC = _zone_air_temps(zeta_deSH, zeta_2ph, zeta_SC)
+    Q_SC = _Q_SC(zeta_SC, Ta_SC)
+    Q_SC = max(0.0, min(Q_SC, C_ref_l * (T_cond_C - Ta_SC)))
+    Q_2ph_total = min(_Q_2ph(zeta_2ph, Ta_2ph), Q_2ph_demand)
+    Q_deSH = min(_Q_deSH(zeta_deSH, Ta_deSH), Q_deSH_demand) if has_deSH else 0.0
+    # 공기 최종 출구 (counter=deSH쪽 마지막, parallel=SC쪽 마지막)
+    if flow_arr == 'parallel':
+        T_air_exit_C = Ta_SC + Q_SC / C_air_safe
+    else:
+        T_air_exit_C = Ta_deSH + Q_deSH / C_air_safe
 
     # ── 8. 출구 상태 ──
     Q_total = Q_deSH + Q_2ph_total + Q_SC
-    h_out_J = h_ref_curr
+    h_out_J = h_in_J - Q_total / m_dot_ref if m_dot_ref > 0 else h_in_J
 
     if h_out_J >= h_v:
         try:
@@ -460,17 +560,54 @@ def step(input, params, state, dt):
 
     T_ref_out_C = T_ref_out_K - 273.15
 
+    # 공기 출구온도 — moving boundary는 각 zone 신선 공기이므로 전체 Q로 산출
+    T_air_out_C = T_air_exit_C  # counter: 공기 출구 = deSH쪽
+
     P_atm = 101325.0
-    P_ws_out = _P_sat_water(T_air_curr)
+    P_ws_out = _P_sat_water(T_air_out_C)
     P_w_out = W_in / (W_in + 0.622) * P_atm
     RH_out = max(0.0, min(100.0, P_w_out / P_ws_out * 100.0)) if P_ws_out > 0 else 0.0
 
-    if Q_total > 0:
-        L_deSH_frac = Q_deSH / Q_total
-        L_2ph_frac = Q_2ph_total / Q_total
-        L_SC_frac = Q_SC / Q_total
+    # ── zone 길이 비율 — moving boundary가 ζ를 직접 풀었으므로 그대로 사용 ──
+    L_deSH_frac = zeta_deSH
+    L_2ph_frac  = zeta_2ph
+    L_SC_frac   = zeta_SC
+
+    # ── charge holdup (zone 분할 + void fraction) ──
+    from components.correlations import void_fraction as _vf
+    void_model = params.get('void_model', _vf.DEFAULT)
+    V_internal = (math.pi * D_i ** 2 / 4.0) * L_tube_total
+    m_per_circuit = m_dot_ref / max(n_circuits, 1)  # 회로 기준 G (alpha와 동일)
+    # deSH zone: 과열 vapor 평균밀도
+    if L_deSH_frac > 1e-6:
+        try:
+            rho_deSH = CP.PropsSI('D', 'P', P_cond_Pa, 'T', 0.5 * (T_ref_in_K + T_cond_K), fluid)
+        except Exception:
+            rho_deSH = CP.PropsSI('D', 'P', P_cond_Pa, 'Q', 1, fluid)
+        M_deSH = rho_deSH * (L_deSH_frac * V_internal)
     else:
-        L_deSH_frac = L_2ph_frac = L_SC_frac = 0.0
+        M_deSH = 0.0
+    # 2상 zone: void fraction을 quality [x_out_2ph, 1] 10점 적분 (응축은 1→0 방향)
+    x_out_2ph = max(0.0, min(1.0, x_out))  # SC 출구→0, 2상 출구→x_out, 과열→1(L=0)
+    _N_int = 10
+    _rho_sum = 0.0
+    for _i in range(_N_int):
+        _x = x_out_2ph + (1.0 - x_out_2ph) * (_i + 0.5) / _N_int
+        _a = _vf.evaluate(void_model, x=_x, P_Pa=P_cond_Pa,
+                          m_dot=m_per_circuit, D_i=D_i, fluid=fluid)
+        _rho_sum += _vf.mean_density(_a, P_cond_Pa, fluid)
+    rho_2ph = _rho_sum / _N_int
+    M_2ph = rho_2ph * (L_2ph_frac * V_internal)
+    # SC zone: 과냉 liquid 평균밀도
+    if L_SC_frac > 1e-6:
+        try:
+            rho_SC = CP.PropsSI('D', 'P', P_cond_Pa, 'T', 0.5 * (T_cond_K + T_ref_out_K), fluid)
+        except Exception:
+            rho_SC = CP.PropsSI('D', 'P', P_cond_Pa, 'Q', 0, fluid)
+        M_SC = rho_SC * (L_SC_frac * V_internal)
+    else:
+        M_SC = 0.0
+    M_holdup = M_deSH + M_2ph + M_SC
 
     P_ref_out_bar = P_cond_bar * (1.0 - dP_ref)
 
@@ -482,7 +619,7 @@ def step(input, params, state, dt):
             'quality_out': x_out,
             'SC_out': SC_out,
             'T_cond': T_cond_C,
-            'T_air_out': T_air_curr,
+            'T_air_out': T_air_out_C,
             'RH_air_out': RH_out,
             'W_air_out': W_in,
             'Q_total': Q_total,
@@ -492,6 +629,10 @@ def step(input, params, state, dt):
             'L_deSH_fraction': L_deSH_frac,
             'L_2ph_fraction': L_2ph_frac,
             'L_SC_fraction': L_SC_frac,
+            'M_holdup': M_holdup,
+            'M_deSH': M_deSH,
+            'M_2ph': M_2ph,
+            'M_SC': M_SC,
             'alpha_air': alpha_air,
             'alpha_2ph': alpha_2ph,
             'alpha_SP': (alpha_deSH + alpha_SC) / 2.0,
