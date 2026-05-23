@@ -99,4 +99,60 @@ package HPWDcycle "L1 사이클 — volume 2개(고압/저압) + 컴포넌트 �
     SH_evap = evap.SH;
     SC_cond = cond.SC;
   end Cycle_L1_ramp;
+
+  model EEV_Orifice_ctrl "EEV momentum + 개도(opening) 입력 → phi 가변"
+    package M = HelmholtzMedia.HelmholtzFluids.Propane;
+    HPWD.RefPort port_a; HPWD.RefPort port_b;
+    Modelica.Blocks.Interfaces.RealInput opening "개도 [%] (PI 제어 신호)";
+    parameter Real A_orifice=5.5e-7, Cv=0.7, L_inertia=1e6;
+    parameter Real c0=0.0, c1=0.5, c2=0.3, c3=0.2 "phi 큐빅맵 (op=0.5 → phi=0.35)";
+    parameter Real opening_floor=1.0 "phi=0 방지용 하한 [%]";
+    Real op, phi, h_in, rho_in, m_dot(start=1e-5, fixed=true), dP_orifice;
+  equation
+    op = max(opening_floor, min(100.0, opening))/100.0;
+    phi = c0 + c1*op + c2*op^2 + c3*op^3;
+    h_in = inStream(port_a.h_outflow);
+    rho_in = M.density(M.setState_ph(port_a.p, h_in));
+    dP_orifice = (m_dot/(Cv*A_orifice*phi))^2/(2.0*rho_in);
+    der(m_dot) = (port_a.p - port_b.p - dP_orifice)/L_inertia;
+    port_a.m_flow = m_dot;
+    port_a.m_flow + port_b.m_flow = 0;
+    port_b.h_outflow = h_in;
+    port_a.h_outflow = port_b.h_outflow;
+  end EEV_Orifice_ctrl;
+
+  model Cycle_L1_ramp_PI "Cycle_L1_ramp + PI(SH 제어) — 가변 EEV로 SH_target 추종"
+    parameter Modelica.Units.SI.Pressure p_rest = 9.0e5;
+    parameter Modelica.Units.SI.SpecificEnthalpy h_rest = 360e3 "9bar 2상 x≈0.28 → charge≈120g (SH6 달성에 필요한 밸브 authority 확보)";
+    parameter Real t_ramp = 20.0;
+    parameter Real SH_target = 6.0 "목표 과열도 [K]";
+    HPWD.Comp_Theoretical comp(V_disp=10e-6,N=3000.0,eta_vol=0.85,eta_isen=0.65,t_ramp=t_ramp);
+    Volume vol1(V=5e-4, p_start=p_rest, h_start=h_rest, fixedState=true);
+    HPWDhx.Cond_UA_eq cond(T_air_in_C=35.0,RH_in=0.5,V_air_CMM=25.42,UA_deSH=8.0,UA_2ph=50.0,UA_SC=5.0,R_fric=1e7, m_dot(start=1e-5));
+    Volume vol2(V=5e-4, p_start=p_rest, h_start=h_rest, fixedState=true);
+    EEV_Orifice_ctrl eev(A_orifice=5.5e-7,Cv=0.7);
+    Volume vol3(V=5e-4, p_start=p_rest, h_start=h_rest, fixedState=true);
+    HPWDhx.Evap_UA_eq evap(T_air_in=50.0+273.15,RH_in=0.9,V_air_CMM=2.54,UA_2ph=25.0,UA_SH=4.0,R_fric=2e6, m_dot(start=1e-5));
+    Volume vol4(V=5e-4, p_start=p_rest, h_start=h_rest, fixedState=true);
+    HPWDctrl.PI_Controller ctrl(SH_target=SH_target,Kp=2.0,Ki=0.5,opening_init=50.0,opening_min=5.0,opening_max=100.0, I(fixed=true));
+    Real charge, Pc_bar, Pe_bar, mdot_comp, SH_evap, SC_cond, opening;
+  equation
+    connect(comp.port_b, vol1.port_a);
+    connect(vol1.port_b, cond.port_a);
+    connect(cond.port_b, vol2.port_a);
+    connect(vol2.port_b, eev.port_a);
+    connect(eev.port_b, vol3.port_a);
+    connect(vol3.port_b, evap.port_a);
+    connect(evap.port_b, vol4.port_a);
+    connect(vol4.port_b, comp.port_a);
+    connect(evap.SH, ctrl.SH_meas);     // SH 측정 → PI
+    connect(ctrl.opening, eev.opening); // PI 출력 → EEV 개도
+    charge = vol1.rho*vol1.V + vol2.rho*vol2.V + vol3.rho*vol3.V + vol4.rho*vol4.V;
+    Pc_bar = vol1.p/1e5;
+    Pe_bar = vol3.p/1e5;
+    mdot_comp = comp.m_dot;
+    SH_evap = evap.SH;
+    SC_cond = cond.SC;
+    opening = ctrl.opening;
+  end Cycle_L1_ramp_PI;
 end HPWDcycle;

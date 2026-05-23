@@ -19,7 +19,7 @@ L1 = 1차 설계용 "대강" 모델 (압축기 이론식 / HX UA / EEV 등엔탈
 ## 파일
 - `HPWD.mo` — RefPort(connector), Source/Sink, **Comp_Theoretical**(이론 압축기, +N ramp), Comp_AHRI(L2로 강등), EEV_L1
 - `EvapUA.mo` — Cond_UA_eq / Evap_UA_eq (equation 버전, momentum + 운전점 start), satProps/airProps function, algorithm 버전(단독검증 reference)
-- `Cycle.mo` — EEV_Orifice(momentum), Volume(control volume, +fixedState), Cycle_L1_dyn(운전점 init·구버전), **Cycle_L1_ramp**(rest 평형 출발 — 현재 메인)
+- `Cycle.mo` — EEV_Orifice(고정 phi·momentum), **EEV_Orifice_ctrl**(개도입력→phi가변·momentum), Volume(+fixedState), Cycle_L1_dyn(구버전), Cycle_L1_ramp(개루프), **Cycle_L1_ramp_PI**(PI SH제어 — 현재 메인)
 - `Control.mo` — PI_Controller
 
 ## 구조 (핵심 — 이미 확정/통과)
@@ -67,13 +67,32 @@ L1 = 1차 설계용 "대강" 모델 (압축기 이론식 / HX UA / EEV 등엔탈
 
 → 폐루프가 열역학적으로 자기일관(압축기 에너지밸런스 정확·EEV 등엔탈피·질량보존). **블로커 해소.**
 
+## SH 제어 (Cycle_L1_ramp_PI, PI → 가변 EEV, 2026-05-23)
+PI_Controller(Control.mo)를 evap.SH 측정 → EEV 개도로 연결. EEV는 EEV_Orifice_ctrl
+(phi 큐빅맵 c1=0.5,c2=0.3,c3=0.2 → opening 50%=phi 0.35로 고정 orifice 베이스라인과 일치).
+SH_target=6K, Kp=2, Ki=0.5, opening_init=50, clamp[5,100], 적분기 I(fixed=true).
+
+### ★ 핵심 발견: SH=6 도달은 charge authority 문제
+밸브만으론 한계. charge별 정상상태(PI 수렴):
+| charge | Pc | Pe | ṁ | SH | opening |
+|---|---|---|---|---|---|
+| 89g  | 20.5 | 7.18 | 6.15 | 8.99 | **100% 포화** |
+| 102g | 21.95| 7.91 | 6.83 | 7.02 | 100% 막포화 |
+| **120g** | 23.40| 8.33 | 7.24 | **6.00** | 95.1% (여유) |
+| 138g | 24.25| 8.30 | 7.21 | 6.00 | 87.6% |
+
+- 89g(rest 9bar/400kJ/kg)에선 밸브 100% 열어도 SH 바닥 ~9K → **밸브 authority 부족**.
+- charge ≥ ~120g(rest h_rest=360kJ/kg)부터 밸브가 포화에서 풀리고 **SH=6.00K 정확히 추종**.
+- → Cycle_L1_ramp_PI 기본 h_rest=360e3(120g)로 설정. SH=6 락, opening 95%, W 559W.
+- 부수: charge↑ 하면 Pc/Pe도 동반 상승(89→120g: Pc 20.5→23.4, Pe 7.2→8.3). 따라서
+  *SH와 Pc/Pe를 독립 타겟팅하려면 추가 DOF 필요*(N 또는 UA/airflow). EEV 1개론 SH만 제어 가능.
+
 ## 다음 세션 첫 작업 (우선순위)
-1. **운전점 타겟팅(charge·EEV 튜닝)** — 현재 self-determined 운전점이 타겟(19/5.5bar, ṁ0.005, SH15)
-   대비 *flow-starved* (Pe·ṁ 낮고 SH 35K 과다, SC=0). 진단: 고정 orifice + 89g charge로 증발기 starve.
-   - lever: ① charge↑(p_rest/h_rest 또는 V 키워 증발기 flooding↑ → Pe↑·SH↓), ② EEV phi_fixed/A_orifice↑.
-   - charge × phi 2D sweep로 5.5/19bar·SH15 근방 착지. (각 조합 simulate, 정상상태 5변수 비교)
-2. EEV에 PI 제어 결합(Control.mo PI_Controller) — SH_target=15로 opening 자동조절(고정 orifice→가변).
-3. 동특성 검토: t_ramp·L_inertia·R_fric 민감도, overshoot 크기, 정착시간.
+1. **Pc/Pe 동시 타겟팅** — SH는 PI(EEV)로 잡힘. 그러나 Pc/Pe가 타겟(19/5.5bar) 대비 높음
+   (현재 120g charge에서 23.4/8.3bar). 추가 DOF로 조정: ① N(압축기 속도)↓ → Pc·ṁ↓,
+   ② cond UA/airflow↑ → Pc↓, ③ evap UA/airflow → Pe. SH=6 유지하며 N×charge 2D sweep.
+2. EEV PI 게인 튜닝 — 현재 t≈20에서 SH 4.5K로 살짝 언더슈트 후 6K 정착. Kp/Ki·anti-windup 검토.
+3. 동특성: t_ramp·L_inertia·R_fric 민감도, overshoot, 정착시간(현재 SH~70s).
 
 ## 운전점 / 파라미터 (R290 HPWD, 진영님 "얼추 맞음" 확인)
 - (타겟) HP 19 bar, 토출 h≈700 / LP 5.5 bar, 증발후 h≈590 kJ/kg, ṁ≈0.005 kg/s, SH 15
@@ -94,5 +113,5 @@ L1 = 1차 설계용 "대강" 모델 (압축기 이론식 / HX UA / EEV 등엔탈
 - 과도구간(t≈20 overshoot) `setState_pTX: d_min/d_max did not bracket the root` — root-finder가 회복, 비치명적
 
 ## 로드맵
-L1 폐루프 완성(✓) → 운전점 타겟팅·PI제어 → L2(Comp_AHRI/Winandy, EEV Sami-Schnotale, MovingBoundary HX, charge_inventory)
+L1 폐루프 완성(✓) → SH PI제어(✓) → Pc/Pe 타겟팅(N·UA) → L2(Comp_AHRI/Winandy, EEV Sami-Schnotale, MovingBoundary HX, charge_inventory)
 → L3 → fidelity 비교. 추후: 동특성(EEV 응답지연), surrogate 데이터, 캔버스→.mo 생성기.
