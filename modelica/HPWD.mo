@@ -86,16 +86,19 @@ package HPWD "HPWD 냉매 사이클 컴포넌트 (L1)"
     RefPort port_a "흡입 (저압)";
     RefPort port_b "토출 (고압)";
     parameter Real V_disp = 10e-6 "행정체적 [m³/rev]";
-    parameter Real N = 3000.0 "회전수 [rpm]";
+    parameter Real N = 3000.0 "회전수 [rpm] (목표/정격)";
     parameter Real eta_vol = 0.85 "체적효율";
     parameter Real eta_isen = 0.65 "등엔트로피효율";
+    parameter Real t_ramp = 0.0 "기동 ramp 시간 [s]. 0이면 N 고정(단독검증), >0이면 0→N로 선형 상승";
+    Real N_eff "유효 회전수 (ramp 적용)";
     Real h_suc(start=590e3), s_suc(start=2450), rho_suc(start=11), h_dis_s(start=648e3), h_dis(start=680e3), m_dot(start=0.005), W(start=450);
   equation
+    N_eff = if t_ramp > 0.0 then N*min(1.0, time/t_ramp) else N;    // 정지(N=0)에서 운전점으로 단계 기동
     h_suc = inStream(port_a.h_outflow);
     rho_suc = M.density(M.setState_ph(port_a.p, h_suc));
     s_suc = M.specificEntropy(M.setState_ph(port_a.p, h_suc));
     h_dis_s = M.specificEnthalpy(M.setState_ps(port_b.p, s_suc));   // 등엔트로피 토출
-    m_dot = eta_vol*V_disp*(N/60.0)*rho_suc;                        // ṁ = ηv·Vd·(N/60)·ρ_suc
+    m_dot = eta_vol*V_disp*(N_eff/60.0)*rho_suc;                    // ṁ = ηv·Vd·(N_eff/60)·ρ_suc
     W = m_dot*(h_dis_s - h_suc)/eta_isen;                           // 소요 동력
     h_dis = h_suc + (h_dis_s - h_suc)/eta_isen;                     // 실제 토출 엔탈피
     port_a.m_flow = m_dot;
