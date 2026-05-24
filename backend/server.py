@@ -56,6 +56,30 @@ except Exception as e:
     import traceback
     traceback.print_exc()
 
+# ─── Modelica 브릿지 (canvas→.mo→omc) — 로컬 dev 전용 ────────────────
+# import는 omc 불필요(안전). 실제 실행 시에만 omc 필요 → 배포본(omc 없음)은
+# /compute_modelica 호출 시 친절한 에러만 반환하고 /compute(Python)는 정상 동작.
+import shutil
+_modelica = {'imported': False, 'error': None}
+try:
+    from modelica.bridge import compute_modelica as _mod_compute, COMPONENT_REGISTRY, HELMHOLTZ_PATH
+    _modelica['imported'] = True
+    print(f"[OK]   Modelica bridge imported (components: {list(COMPONENT_REGISTRY)})")
+except Exception as e:
+    _modelica['error'] = f"{type(e).__name__}: {e}"
+    print(f"[WARN] Modelica bridge import 실패: {_modelica['error']}")
+
+
+def _modelica_status():
+    """Modelica 엔진 사용 가능 여부 (omc + HelmholtzMedia 존재)."""
+    if not _modelica['imported']:
+        return False, f"bridge import 실패: {_modelica['error']}"
+    if shutil.which("omc") is None:
+        return False, "omc 없음 (OpenModelica 미설치 — 로컬 dev에서만 사용 가능)"
+    if not os.path.exists(HELMHOLTZ_PATH):
+        return False, f"HelmholtzMedia 없음: {HELMHOLTZ_PATH} (env HELMHOLTZ_PATH 설정)"
+    return True, None
+
 
 # ─── Request/Response 스키마 ───────────────────────────────────────
 class ComputeRequest(BaseModel):
@@ -76,6 +100,7 @@ class ComputeResponse(BaseModel):
 @app.get("/health")
 def health():
     """서버가 살아있는지 + 등록된 컴포넌트 목록 + design router 상태"""
+    m_ok, m_why = _modelica_status()
     return {
         "status": "ok",
         "version": "0.1.0",
@@ -83,6 +108,11 @@ def health():
         "design_studio": {
             "mounted": _design_status['mounted'],
             "error": _design_status['error'],
+        },
+        "modelica_engine": {
+            "available": m_ok,
+            "reason": m_why,
+            "components": list(COMPONENT_REGISTRY) if _modelica['imported'] else [],
         },
     }
 
@@ -133,6 +163,40 @@ def compute(req: ComputeRequest):
         return ComputeResponse(
             outputs={},
             newState=req.state,
+            error=f"{type(e).__name__}: {e}",
+        )
+
+
+@app.post("/compute_modelica", response_model=ComputeResponse)
+def compute_modelica(req: ComputeRequest):
+    """컴포넌트 1 step 계산 — Modelica 엔진 버전 (canvas→.mo→omc).
+
+    /compute 와 동일 입출력 shape. 프론트는 엔진 토글로 둘 중 하나를 호출.
+    omc 미설치(배포본)면 error 필드에 사유를 담아 반환(크래시 안 함).
+    주의: 호출마다 omc 컴파일(~10s) — 인터랙티브엔 느림. 배포·고속화는 FMU 선컴파일(PILOT.md).
+    """
+    ok, why = _modelica_status()
+    if not ok:
+        return ComputeResponse(
+            outputs={}, newState=req.state,
+            error=f"Modelica 엔진 사용 불가: {why}. (배포본은 /compute[Python] 사용)",
+        )
+    if req.component not in COMPONENT_REGISTRY:
+        return ComputeResponse(
+            outputs={}, newState=req.state,
+            error=f"Modelica 브릿지 미지원 컴포넌트: '{req.component}'. "
+                  f"지원: {list(COMPONENT_REGISTRY)}",
+        )
+    try:
+        block = {'component': req.component, 'params': req.params, 'inputs': req.input}
+        result = _mod_compute(block)
+        return ComputeResponse(
+            outputs=result.get("outputs", {}),
+            newState=req.state,
+        )
+    except Exception as e:
+        return ComputeResponse(
+            outputs={}, newState=req.state,
             error=f"{type(e).__name__}: {e}",
         )
 
