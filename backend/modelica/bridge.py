@@ -19,14 +19,15 @@ canvas 블록 스펙(/compute 요청과 동일 shape: {component, params, inputs
   - HelmholtzMedia: 환경변수 HELMHOLTZ_PATH (default 아래) — R290 물성
   - HPWD .mo: repo의 modelica/ (HPWD.mo 등)
 """
-import os, subprocess, csv as _csv
+import os, subprocess, csv as _csv, tempfile
 
 # ── 경로 (환경변수로 override 가능) ──────────────────────────────
 _REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 MODELICA_DIR = os.environ.get("HPWD_MODELICA_DIR", os.path.join(_REPO, "modelica"))
 HELMHOLTZ_PATH = os.environ.get(
     "HELMHOLTZ_PATH", "/home/claude/HelmholtzMedia/HelmholtzMedia/package.mo")
-_WORK = os.environ.get("HPWD_MODELICA_WORK", "/tmp/hpwd_modelica_work")
+_WORK = os.environ.get("HPWD_MODELICA_WORK",
+                       os.path.join(tempfile.gettempdir(), "hpwd_modelica_work"))
 
 
 # ── 단위 변환기 ──────────────────────────────────────────────────
@@ -115,10 +116,16 @@ def run_omc(mo, vars_, timeout=120):
     os.makedirs(_WORK, exist_ok=True)
     open(os.path.join(_WORK, "CanvasGen.mo"), "w").write(mo)
     vf = "|".join(["time"] + vars_)
+    # omc .mos의 문자열 리터럴에선 '\'가 escape로 해석됨 → Windows 경로(C:\..)가 깨짐.
+    # omc는 forward slash를 허용하므로 모든 경로를 '/'로 정규화해서 넘긴다.
+    fs = lambda p: p.replace("\\", "/")
+    helm = fs(HELMHOLTZ_PATH)
+    hpwd = fs(os.path.join(MODELICA_DIR, "HPWD.mo"))
+    canvas = fs(os.path.join(_WORK, "CanvasGen.mo"))
     mos = (f'loadModel(Modelica); getErrorString();\n'
-           f'loadFile("{HELMHOLTZ_PATH}"); getErrorString();\n'
-           f'loadFile("{os.path.join(MODELICA_DIR, "HPWD.mo")}"); getErrorString();\n'
-           f'loadFile("{os.path.join(_WORK, "CanvasGen.mo")}"); getErrorString();\n'
+           f'loadFile("{helm}"); getErrorString();\n'
+           f'loadFile("{hpwd}"); getErrorString();\n'
+           f'loadFile("{canvas}"); getErrorString();\n'
            f'simulate(CanvasGen.GenCase, startTime=0, stopTime=1, numberOfIntervals=1,'
            f' outputFormat="csv", variableFilter="{vf}"); getErrorString();\n')
     open(os.path.join(_WORK, "run.mos"), "w").write(mos)
