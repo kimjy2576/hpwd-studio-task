@@ -3,7 +3,7 @@ package HPWDctrl "제어 컴포넌트"
   model PI_Controller "PI 제어기 (SH → EEV opening)"
     Modelica.Blocks.Interfaces.RealInput SH_meas "측정 과열도 [K]";
     Modelica.Blocks.Interfaces.RealOutput opening "EEV 개도 [%]";
-    parameter Real SH_target = 5.0 "목표 과열도 [K]";
+    parameter Real SH_target = 6.0 "목표 과열도 [K] (default: L1 운전점)";
     parameter Real Kp = 2.0 "비례 게인";
     parameter Real Ki = 0.5 "적분 게인";
     parameter Real opening_init = 50.0 "적분기 초기값";

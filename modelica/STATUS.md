@@ -125,6 +125,30 @@ SH_target=6K, Kp=2, Ki=0.5, opening_init=50, clamp[5,100], 적분기 I(fixed=tru
 - 트레이드오프: 차가운 코일(Tsat 5°C)이라 lift 커져 **COP 2.0→1.75 하락**(제습력↔효율 교환). evap UA 10은 ε≈0.15(작은 코일).
 - 대안 경로(같은 Pe5.5, 용량↑): j0.40+N3300 → ṁ5.38,W555 / j0.50+N3600 → ṁ6.21,W639,Pc23.2. 건조용량 요구 따라 선택.
 
+## 운전점 → 컴포넌트 default 이관 + 재현성 (2026-05-23)
+이 해석의 운전점을 각 L1 컴포넌트 *정의의 파라미터 default*로 저장(인스턴스 modifier 아님).
+- `Comp_Theoretical`: N3000/Vd10e-6/ηv0.85/ηi0.65 (기존 일치), t_ramp default 0(run 설정).
+- `Cond_UA_eq`: air 35°C/0.5/**3.0CMM**, UA **24/150/15**(합189). *algorithm Cond_UA는 reference라 원본 보존*.
+- `Evap_UA_eq`: air 50°C/0.9/**3.0CMM**, UA **8.75/1.4**(Pe5.5 타겟). *algorithm Evap_UA 보존*.
+- `EEV_Orifice_ctrl`: A5.5e-7/Cv0.7/큐빅맵 (기존 일치).
+- `PI_Controller`: **SH_target 5→6**, Kp2/Ki0.5.
+- `Volume`: **V5e-4 / p_start 9bar / h_start 360kJ/kg**(rest 평형 → charge 120g).
+- `Cycle_L1_ramp_PI` 슬림화: 운전점 modifier 전부 제거, *구조적 설정만* 남김
+  (t_ramp, fixedState=true, flow start≈0, PI I(fixed), 토폴로지). **default만으로 Pc21.0/Pe5.51/SH6.00/W487 동일 재현 확인.**
+
+### ★ 재현성 레시피 (직접 조립 시 같은 결과 나오는 조건)
+정상상태는 *파라미터+토폴로지+BC*가 결정 → default 박힌 지금은 컴포넌트만 같으면 동일 정상상태.
+단, **다음 4개가 함께 맞아야** 함(컴포넌트 default만으론 부족):
+1. **토폴로지** — comp→vol1→cond→vol2→eev→vol3→evap→vol4→comp 링 + (evap.SH→ctrl.SH_meas, ctrl.opening→eev.opening).
+2. **rest-평형 init** — 4 volume `fixedState=true`(9bar/360kJ/kg start), 3 flow momentum `m_dot(start≈0)`, PI `I(fixed=true)`.
+   → 이게 charge(120g)를 *결정*함. init 상태 다르면 charge 달라져 **정상상태 자체가 바뀜**(89g→120g가 운전점 이동시킨 사례). 단순 "수렴하는 아무 init"이 아니라 *이 rest 상태*여야 동일.
+   → init 없이 그냥 연결만 하면 cold-start 대수루프 발산(원 블로커) 재현됨.
+3. **N ramp** — comp.t_ramp=20 (즉시 풀N도 rest에서 출발하면 수렴은 하나, 과도 다름).
+4. **솔버/버전** — dassl, tol 1e-6, stopTime≥150s(정착), HelmholtzMedia R290 + MSL4.1.0 + OMC1.26.7.
+
+→ 캔버스→.mo 생성기는 컴포넌트 인스턴스화뿐 아니라 **(2)rest-init·(3)ramp 패턴도 함께 emit**해야 함.
+   `Cycle_L1_ramp_PI`가 그 템플릿(운전점=default, 구조=명시).
+
 ## 다음 세션 첫 작업 (우선순위)
 1. **건조 용량 스펙 확정** — 현재 Pe5.5 점은 ṁ4.8g/s·Q_evap853W·COP1.75. 차가운코일=강제습/저효율 교환.
    실제 건조시간·제습량 요구에 맞춰 운전점(Pe·N·evap UA) 재선택. 용량 원하면 j0.40+N3300 등 대안.
