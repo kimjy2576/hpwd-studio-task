@@ -67,8 +67,8 @@ modelDescription = {
          'group': 'Operating', 'start': 'on', 'unit': '-', 'options': ['on', 'off'],
          'description': '2-phase choke 활성화'},
         {'name': 'A_orifice', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Geometry', 'start': 3.14e-6, 'unit': 'm²',
-         'description': 'Maximum orifice 면적 (D=2mm → 3.14e-6 m²)'},
+         'group': 'Geometry', 'start': 3.14, 'unit': 'mm²',
+         'description': 'Maximum orifice 면적 [mm²] (D=2mm → 3.14 mm²). 내부에서 ×1e-6로 m² 변환'},
         {'name': 'opening_min', 'causality': 'parameter', 'type': 'Real',
          'group': 'Geometry', 'start': 0.0, 'unit': '%',
          'description': 'Minimum opening %'},
@@ -165,7 +165,7 @@ def step(input, params, state, dt):
     mode = params.get('mode', 'control')
     use_choke = params.get('use_choke', 'on')
 
-    A_orifice = float(params.get('A_orifice', 3.14e-6))
+    A_orifice = float(params.get('A_orifice', 3.14)) * 1e-6   # mm² → m² (UI=mm², 물리=SI)
     opening_min = float(params.get('opening_min', 0.0))
     Cd_0 = float(params.get('Cd_0', 0.72))
     Re_c = float(params.get('Re_c', 5000.0))
@@ -319,10 +319,13 @@ def _zero_output(P_in_bar, P_out_bar, h_in_kjkg, mode, opening_pct):
 
 def validate(params):
     issues = []
-    A_orifice = float(params.get('A_orifice', 3.14e-6))
-    if A_orifice <= 0 or A_orifice > 1e-4:
+    A_mm2 = float(params.get('A_orifice', 3.14))   # mm²
+    if A_mm2 <= 0 or A_mm2 > 100:
         issues.append({'key': 'A_orifice',
-                       'msg': f'A_orifice={A_orifice*1e6:.2f}mm² — 보통 1~30 mm²'})
+                       'msg': f'A_orifice={A_mm2:.2f}mm² — 보통 1~30 mm²'})
+    elif A_mm2 < 0.1:
+        issues.append({'key': 'A_orifice',
+                       'msg': f'A_orifice={A_mm2:.2e}mm² 너무 작음 — 단위가 mm²로 변경됨 (옛 m² 값이면 ×1e6 필요)'})
     Cd_0 = float(params.get('Cd_0', 0.72))
     if Cd_0 < 0.4 or Cd_0 > 0.95:
         issues.append({'key': 'Cd_0', 'msg': f'Cd_0={Cd_0} — 0.6~0.8 권장'})
