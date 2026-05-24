@@ -87,10 +87,32 @@ SH_target=6K, Kp=2, Ki=0.5, opening_init=50, clamp[5,100], 적분기 I(fixed=tru
 - 부수: charge↑ 하면 Pc/Pe도 동반 상승(89→120g: Pc 20.5→23.4, Pe 7.2→8.3). 따라서
   *SH와 Pc/Pe를 독립 타겟팅하려면 추가 DOF 필요*(N 또는 UA/airflow). EEV 1개론 SH만 제어 가능.
 
+## 공기 풍량 가정 변경 + 응축기 right-sizing (2026-05-23)
+공기루프(팬·필터·덕트·드럼) 미완 → decoupled 고정 air boundary 유지하되, 단일루프 지향으로
+**cond·evap 풍량 모두 3.0 CMM** 으로 통일(기존 cond 25.42 / evap 2.54).
+
+### 발견: 3.0 CMM에선 응축기가 air-starved
+- cond 풍량 25.42→3.0 (×1/8.5) → C_air ≈510→57 W/K. 기존 cond UA(63)와 맞먹어 NTU≈1, ε↓
+  → 같은 열 버리려 Tcond↑ → **Pc 23.4→28.3bar 급등**(R290 부품 설계압 ~30bar 근접, 저COP).
+- air-side 천장: cond UA→∞ 여도 Q≤C_air·(Tcond−35) 라 Pc 바닥 ~23.5bar(k=5 UA315 확인).
+
+### Pc<25bar 만드는 레버 (air 3.0/3.0, charge 120g, SH=6 락 유지)
+| 조정 | UA_cond | N | Pc | Pe | ṁ | W | 비고 |
+|---|---|---|---|---|---|---|---|
+| 기준 | 63 | 3000 | 28.3 | 8.6 | 7.4 | 659 | air-starved |
+| UA×2 | 126 | 3000 | 24.96 | 8.5 | 7.4 | 593 | 막 <25 |
+| **UA×3** | **189** | **3000** | **24.0** | **8.4** | **7.3** | **573** | **채택(여유·풀용량)** |
+| UA×2+N↓ | 126 | 2400 | 23.24 | 9.2 | 6.4 | 443 | 최고효율(용량↓) |
+
+→ **Cycle_L1_ramp_PI 기본값 = air 3.0/3.0 + cond UA(24/150/15, 합189)**. 정상상태:
+  Pc 24.0 / Pe 8.44 bar, ṁ 7.33 g/s, SH 6.00K, EEV 95%, W 573W, Q_evap≈1128W, **COP≈2.0**, charge 120g.
+- 물리 해석: 3.0 CMM 단일루프엔 *기존 응축기가 undersized*. UA 3배 = 핀/패스 추가로 응축기 키운 것.
+- N-trim(2400rpm)은 Pc·W 동시 ↓(효율 best)지만 용량 ↓ → 건조 용량 요구에 따라 선택.
+
 ## 다음 세션 첫 작업 (우선순위)
-1. **Pc/Pe 동시 타겟팅** — SH는 PI(EEV)로 잡힘. 그러나 Pc/Pe가 타겟(19/5.5bar) 대비 높음
-   (현재 120g charge에서 23.4/8.3bar). 추가 DOF로 조정: ① N(압축기 속도)↓ → Pc·ṁ↓,
-   ② cond UA/airflow↑ → Pc↓, ③ evap UA/airflow → Pe. SH=6 유지하며 N×charge 2D sweep.
+1. **Pe 타겟팅** — Pc는 응축기 right-size로 <25 확보(24.0bar). 남은 건 Pe(현재 8.4bar, 타겟 5.5).
+   Pe↓ 하려면 evap UA↓ 또는 N↑ 또는 charge 재배분. SH=6 유지하며 evap측 sweep.
+   (단, 실제 타겟 5.5/19은 25.42CMM 조건 기준이라 3.0CMM 단일루프에선 운전점 자체가 다를 수 있음.)
 2. EEV PI 게인 튜닝 — 현재 t≈20에서 SH 4.5K로 살짝 언더슈트 후 6K 정착. Kp/Ki·anti-windup 검토.
 3. 동특성: t_ramp·L_inertia·R_fric 민감도, overshoot, 정착시간(현재 SH~70s).
 
