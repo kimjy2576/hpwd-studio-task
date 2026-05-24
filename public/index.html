@@ -98,6 +98,8 @@ window.HPWD_BACKEND = {
   components: [],
   lastError: null,
   presets: DEFAULT_BACKENDS,
+  engine: 'python',                                       // 'python' | 'modelica'
+  modelica: { available: false, components: [], reason: null },  // /health에서 채움
 };
 
 // 사용자가 backend URL 변경 시 호출되는 setter
@@ -119,6 +121,17 @@ window.HPWD_setBackend = function(newUrl) {
   checkBackendHealth();  // 즉시 다시 체크
 };
 
+// 사용자가 계산 엔진(Python/Modelica) 토글 시 호출되는 setter
+window.HPWD_setEngine = function(engine) {
+  if (engine !== 'python' && engine !== 'modelica') return;
+  // Modelica 선택 시 서버에 omc 엔진이 없으면 python 유지 (조용히 무시)
+  if (engine === 'modelica' && !(window.HPWD_BACKEND.modelica && window.HPWD_BACKEND.modelica.available)) {
+    return;
+  }
+  window.HPWD_BACKEND.engine = engine;
+  window.dispatchEvent(new Event('hpwd-backend-status'));
+};
+
 // 비동기 health check — 5초마다 폴링
 async function checkBackendHealth() {
   const url = window.HPWD_BACKEND.url;
@@ -128,6 +141,11 @@ async function checkBackendHealth() {
     const data = await r.json();
     window.HPWD_BACKEND.connected = true;
     window.HPWD_BACKEND.components = data.components || [];
+    window.HPWD_BACKEND.modelica = data.modelica_engine || { available: false, components: [], reason: null };
+    // 현재 엔진이 modelica인데 이 백엔드엔 omc가 없으면 python으로 자동 복귀
+    if (window.HPWD_BACKEND.engine === 'modelica' && !window.HPWD_BACKEND.modelica.available) {
+      window.HPWD_BACKEND.engine = 'python';
+    }
     window.HPWD_BACKEND.lastError = null;
   } catch (e) {
     window.HPWD_BACKEND.connected = false;
@@ -145,7 +163,8 @@ setInterval(checkBackendHealth, 5000);
 function callBackendSync(componentName, input, params, state, dt) {
   const xhr = new XMLHttpRequest();
   const url = window.HPWD_BACKEND.url;
-  xhr.open('POST', `${url}/compute`, false); // 동기 호출
+  const endpoint = window.HPWD_BACKEND.engine === 'modelica' ? '/compute_modelica' : '/compute';
+  xhr.open('POST', `${url}${endpoint}`, false); // 동기 호출
   xhr.setRequestHeader('Content-Type', 'application/json');
   try {
     xhr.send(JSON.stringify({ component: componentName, input, params, state, dt }));
@@ -5259,6 +5278,12 @@ function BackendStatus() {
   const isCloud = status.url === presets.cloud;
   const isCustom = !isLocal && !isCloud;
 
+  const engine = status.engine || 'python';
+  const modelica = status.modelica || { available: false, components: [], reason: null };
+  const switchEngine = (eng) => {
+    if (typeof window.HPWD_setEngine === 'function') window.HPWD_setEngine(eng);
+  };
+
   const tooltip = status.connected
     ? `Backend OK · ${status.url}\n등록된 컴포넌트: ${status.components.join(', ')}`
     : `Backend 연결 안 됨 · ${status.url}\n${status.lastError || '서버 미실행'}`;
@@ -5354,6 +5379,43 @@ function BackendStatus() {
                 className="px-2 text-[9px] font-bold bg-cyan-600 text-white rounded hover:bg-cyan-700 disabled:opacity-40 disabled:cursor-not-allowed"
               >SET</button>
             </div>
+          </div>
+
+          {/* 계산 엔진 토글 (Python ↔ Modelica) */}
+          <div className="mt-2 pt-2 border-t border-slate-100">
+            <div className="px-2 py-1 text-slate-500 text-[10px] uppercase tracking-wider flex items-center justify-between">
+              <span>Compute Engine</span>
+              {!modelica.available && (
+                <span className="text-[8px] text-slate-400 normal-case tracking-normal">Modelica: omc 없음</span>
+              )}
+            </div>
+            <div className="flex gap-1 px-2 pb-1">
+              <button
+                onClick={() => switchEngine('python')}
+                className={`flex-1 px-2 py-1 rounded border text-[10px] font-semibold transition-colors ${
+                  engine === 'python'
+                    ? 'bg-cyan-600 text-white border-cyan-600'
+                    : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'
+                }`}
+              >Python</button>
+              <button
+                onClick={() => switchEngine('modelica')}
+                disabled={!modelica.available}
+                title={modelica.available
+                  ? `Modelica 엔진 (omc) · ${modelica.components.join(', ')}`
+                  : `사용 불가: ${modelica.reason || 'omc 미설치'}`}
+                className={`flex-1 px-2 py-1 rounded border text-[10px] font-semibold transition-colors ${
+                  engine === 'modelica'
+                    ? 'bg-violet-600 text-white border-violet-600'
+                    : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'
+                } disabled:opacity-40 disabled:cursor-not-allowed`}
+              >Modelica</button>
+            </div>
+            {engine === 'modelica' && (
+              <div className="px-2 pb-1 text-[9px] text-violet-700">
+                ● omc 컴파일로 호출당 ~10s 소요 (지원: {modelica.components.join(', ') || '없음'})
+              </div>
+            )}
           </div>
 
           {/* 상태 정보 */}
