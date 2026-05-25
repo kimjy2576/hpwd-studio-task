@@ -98,7 +98,11 @@ window.HPWD_BACKEND = {
   components: [],
   lastError: null,
   presets: DEFAULT_BACKENDS,
-  engine: 'python',                                       // 'python' | 'modelica'
+  engine: 'python',                                       // 'python' | 'modelica' (활성)
+  enginePref: (function () {                              // 선호 엔진 (localStorage 유지)
+    try { return localStorage.getItem('hpwd_engine_pref') === 'modelica' ? 'modelica' : 'python'; }
+    catch (e) { return 'python'; }
+  })(),
   modelica: { available: false, components: [], reason: null },  // /health에서 채움
 };
 
@@ -124,11 +128,12 @@ window.HPWD_setBackend = function(newUrl) {
 // 사용자가 계산 엔진(Python/Modelica) 토글 시 호출되는 setter
 window.HPWD_setEngine = function(engine) {
   if (engine !== 'python' && engine !== 'modelica') return;
-  // Modelica 선택 시 서버에 omc 엔진이 없으면 python 유지 (조용히 무시)
-  if (engine === 'modelica' && !(window.HPWD_BACKEND.modelica && window.HPWD_BACKEND.modelica.available)) {
-    return;
-  }
-  window.HPWD_BACKEND.engine = engine;
+  // 선호 엔진 저장 (리프레시해도 유지)
+  window.HPWD_BACKEND.enginePref = engine;
+  try { localStorage.setItem('hpwd_engine_pref', engine); } catch (e) {}
+  // 활성 엔진 = 선호 ∩ 가용성 (modelica 선택했어도 omc 없으면 python)
+  const avail = window.HPWD_BACKEND.modelica && window.HPWD_BACKEND.modelica.available;
+  window.HPWD_BACKEND.engine = (engine === 'modelica' && avail) ? 'modelica' : 'python';
   window.dispatchEvent(new Event('hpwd-backend-status'));
 };
 
@@ -142,10 +147,11 @@ async function checkBackendHealth() {
     window.HPWD_BACKEND.connected = true;
     window.HPWD_BACKEND.components = data.components || [];
     window.HPWD_BACKEND.modelica = data.modelica_engine || { available: false, components: [], reason: null };
-    // 현재 엔진이 modelica인데 이 백엔드엔 omc가 없으면 python으로 자동 복귀
-    if (window.HPWD_BACKEND.engine === 'modelica' && !window.HPWD_BACKEND.modelica.available) {
-      window.HPWD_BACKEND.engine = 'python';
-    }
+    // 활성 엔진 = 선호 엔진(저장됨) ∩ 가용성 → Local 서버 잡히면 Modelica 자동 복원,
+    // 끊기면 python으로 자동 복귀 (선호는 유지)
+    window.HPWD_BACKEND.engine =
+      (window.HPWD_BACKEND.enginePref === 'modelica' && window.HPWD_BACKEND.modelica.available)
+        ? 'modelica' : 'python';
     window.HPWD_BACKEND.lastError = null;
   } catch (e) {
     window.HPWD_BACKEND.connected = false;
@@ -5491,7 +5497,7 @@ function BackendStatus() {
             </div>
             {engine === 'modelica' && (
               <div className="px-2 pb-1 text-[9px] text-violet-700">
-                ● omc 컴파일로 호출당 ~10s 소요 (지원: {modelica.components.join(', ') || '없음'})
+                ● 첫 호출만 omc 빌드(~수십초), 이후 캐시로 즉시 (지원: {modelica.components.join(', ') || '없음'})
               </div>
             )}
           </div>
