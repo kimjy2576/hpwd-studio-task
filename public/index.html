@@ -211,14 +211,14 @@ const TYPES = {
   // ═══════════════════════════════════════════════════════════════════
   __meta_compressor: {
     isMeta: true,
-    typeNo: 102,  // default fidelity (Off)의 typeNo
+    typeNo: 100,  // default fidelity (Off=이론)의 typeNo
     name: 'Compressor',
     category: 'refrigerant',
     color: '#dc2626',
     icon: Gauge,
     image: './images/compressor.png',
     desc: 'Compressor — Off/Semi/On 통합 (properties에서 fidelity 선택)',
-    fidelityKeys: { 'Off': 'compressor_ahri', 'Semi': 'compressor_winandy', 'On': 'compressor_chamber' },
+    fidelityKeys: { 'Off': 'compressor_theoretical', 'Semi': 'compressor_winandy', 'On': 'compressor_chamber' },
     defaultFidelity: 'Off',
     commonParamKeys: ['fluid'],  // fidelity 변경 시 유지할 param key
   },
@@ -506,6 +506,42 @@ const TYPES = {
     ],
     compute: () => ({ T_db: NaN, P: NaN, RH: NaN, W: NaN, T_wb: NaN, T_dp: NaN,
                       h: NaN, rho: NaN, cp: NaN, mu: NaN, k: NaN, P_w: NaN }),
+  },
+
+  // ================ Compressor (이론 L1) ================
+  // 벤더 성능맵 없이 효율 2개(체적·등엔트로피)만 추정 → 1차 설계용.
+  // L1 (AHRI map은 L2, Chamber는 L3). Modelica HPWD.Comp_Theoretical과 동일 식.
+  compressor_theoretical: {
+    typeNo: 100, name: 'Compressor (Off)', category: 'refrigerant', color: '#dc2626', icon: Gauge, image: './images/compressor.png',
+    desc: '이론 압축기 L1 — 체적효율 + 등엔트로피효율 (벤더맵 불필요, 1차 설계)',
+    isHiddenFromLibrary: true,
+    backend: 'python',
+    pythonComponent: 'compressor_theoretical',
+    parameters: [
+      { key: 'fluid',    group: 'Material', label: 'Fluid',  value: 'R290', options: ['R290'], unit: '' },
+      { key: 'V_disp',   group: 'Geometry', label: 'V_disp', value: 10.0,  unit: 'cm³' },
+      { key: 'eta_vol',  group: 'Fitting',  label: 'η_vol',  value: 0.85,  unit: '-' },
+      { key: 'eta_isen', group: 'Fitting',  label: 'η_isen', value: 0.65,  unit: '-' },
+      { key: 'output_select', label: 'Outputs', value: ['m_dot', 'W', 'T_dis', 'h_dis', 'pi_ratio'],
+        multiSelect: ['m_dot', 'W', 'h_dis', 'T_dis', 'rho_suc', 'h_dis_s', 'pi_ratio'], unit: '' },
+    ],
+    inputs: [
+      { key: 'P_suc', label: 'P_suc', unit: 'bar', value: 5.51 },
+      { key: 'T_suc', label: 'T_suc', unit: '°C',  value: 10.0 },
+      { key: 'P_dis', label: 'P_dis', unit: 'bar', value: 19.07 },
+      { key: 'N',     label: 'N',     unit: 'rpm', value: 3000.0 },
+    ],
+    outputs: [
+      { key: 'm_dot',    label: 'ṁ',        unit: 'kg/s' },
+      { key: 'W',        label: 'W',        unit: 'W' },
+      { key: 'h_dis',    label: 'h_dis',    unit: 'kJ/kg' },
+      { key: 'T_dis',    label: 'T_dis',    unit: '°C' },
+      { key: 'rho_suc',  label: 'ρ_suc',    unit: 'kg/m³' },
+      { key: 'h_dis_s',  label: 'h_dis,s',  unit: 'kJ/kg' },
+      { key: 'pi_ratio', label: 'π',        unit: '-' },
+    ],
+    compute: () => Object.fromEntries(
+      ['m_dot', 'W', 'h_dis', 'T_dis', 'rho_suc', 'h_dis_s', 'pi_ratio'].map(k => [k, NaN])),
   },
 
   // ================ Compressor (Winandy semi-empirical) ================

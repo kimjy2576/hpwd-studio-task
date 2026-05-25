@@ -40,6 +40,7 @@ _fs = lambda p: p.replace("\\", "/")   # omc .mos 문자열은 '/'만 안전 (Wi
 # ── 단위 변환기 ──────────────────────────────────────────────────
 def _ident(v): return float(v)
 def _mm2_to_m2(v): return float(v) * 1e-6      # 면적 mm² → m²  ★ 단위변경 반영
+def _cc_to_m3(v): return float(v) * 1e-6       # 부피 cm³ → m³ (행정체적)
 def _bar_to_pa(v): return float(v) * 1e5       # 압력 bar → Pa
 def _kjkg_to_jkg(v): return float(v) * 1e3     # 비엔탈피 kJ/kg → J/kg
 
@@ -74,6 +75,40 @@ end CanvasGen;
 """
 
 
+# ── Compressor(이론, L1) 템플릿 — HPWD.Comp_Theoretical ──────────
+def _comp_theoretical_template(mp, bc):
+    modstr = ",".join(f"{k}={v:.10g}" for k, v in mp.items())
+    return f"""package CanvasGen
+  model GenCase "canvas Compressor(이론) → HPWD.Comp_Theoretical (자동생성)"
+    package M = HelmholtzMedia.HelmholtzFluids.Propane;
+    HPWD.Comp_Theoretical comp({modstr});
+    HPWD.Source src(p={bc['P_suc']:.10g}, h={bc['h_suc']:.10g});
+    HPWD.Sink snk(p={bc['P_dis']:.10g});
+    Real m_dot, W, h_dis, T_dis, rho_suc, h_dis_s, pi_ratio;
+  equation
+    connect(src.port, comp.port_a);
+    connect(comp.port_b, snk.port);
+    m_dot = comp.m_dot;
+    W = comp.W;
+    h_dis   = comp.h_dis/1000.0;     // J/kg → kJ/kg (Python 출력과 동일 단위)
+    h_dis_s = comp.h_dis_s/1000.0;
+    rho_suc = comp.rho_suc;
+    pi_ratio = snk.p/src.p;
+    T_dis = M.temperature(M.setState_ph(snk.p, comp.h_dis)) - 273.15;
+  end GenCase;
+end CanvasGen;
+"""
+
+
+def _comp_th_derive(src):
+    """흡입 (P_suc, T_suc) → h_suc[J/kg] (Python과 동일 CoolProp 호출 → 동일 상태)."""
+    import CoolProp.CoolProp as CP
+    P = float(src['P_suc']) * 1e5
+    T = float(src['T_suc']) + 273.15
+    fluid = src.get('fluid', 'R290')
+    return {'src.h': CP.PropsSI('H', 'P', P, 'T', T, fluid)}
+
+
 # ── 컴포넌트 레지스트리 (확장 지점) ──────────────────────────────
 #   type → { template, param_defaults, build_bc, override_map, outputs }
 #   override_map: canvas_key → (flatten된 leaf parameter 이름, 단위변환기)
@@ -97,7 +132,23 @@ COMPONENT_REGISTRY = {
         'outputs': ['m_dot_ref', 'phi_op', 'rho_in', 'h_out', 'T_out', 'x_out'],
         'template': _eev_template,
     },
-    # TODO: 'compressor_ahri', 'evaporator_off_design', 'condenser_off_design' ...
+    'compressor_theoretical': {
+        'modelica_model': 'HPWD.Comp_Theoretical',
+        'param_defaults': {'V_disp': 10e-6, 'N': 3000.0, 'eta_vol': 0.85, 'eta_isen': 0.65},
+        'build_bc': {'P_suc': 551000.0, 'h_suc': 590000.0, 'P_dis': 1907000.0},
+        'override_map': {
+            'V_disp':   ('comp.V_disp', _cc_to_m3),   # cm³ → m³
+            'eta_vol':  ('comp.eta_vol', _ident),
+            'eta_isen': ('comp.eta_isen', _ident),
+            'N':        ('comp.N', _ident),
+            'P_suc':    ('src.p', _bar_to_pa),
+            'P_dis':    ('snk.p', _bar_to_pa),
+        },
+        'derive': _comp_th_derive,   # (P_suc,T_suc) → src.h
+        'outputs': ['m_dot', 'W', 'h_dis', 'T_dis', 'rho_suc', 'h_dis_s', 'pi_ratio'],
+        'template': _comp_theoretical_template,
+    },
+    # TODO: 'evaporator_off_design', 'condenser_off_design' ...
     #       각 항목에 template + override_map(leaf 이름) + build_bc 추가
 }
 
@@ -170,6 +221,10 @@ def compute_modelica(block, timeout=60):
     for ck, (leaf, conv) in spec['override_map'].items():
         if ck in src and src[ck] is not None and src[ck] != '':
             overrides.append(f"{leaf}={conv(src[ck]):.10g}")
+    # 파생 override (예: (P_suc,T_suc) → src.h) — 여러 입력 조합이 필요한 경우
+    if 'derive' in spec:
+        for leaf, val in spec['derive'](src).items():
+            overrides.append(f"{leaf}={float(val):.10g}")
 
     args = [built['exe']]
     if overrides:
