@@ -43,6 +43,8 @@ def _mm2_to_m2(v): return float(v) * 1e-6      # 면적 mm² → m²  ★ 단위
 def _cc_to_m3(v): return float(v) * 1e-6       # 부피 cm³ → m³ (행정체적)
 def _bar_to_pa(v): return float(v) * 1e5       # 압력 bar → Pa
 def _kjkg_to_jkg(v): return float(v) * 1e3     # 비엔탈피 kJ/kg → J/kg
+def _c_to_k(v): return float(v) + 273.15       # 온도 °C → K
+def _pct_to_frac(v): return float(v) / 100.0   # % → 0~1 (RH)
 
 
 # ── EEV(Off, type 130) 템플릿 ───────────────────────────────────
@@ -109,6 +111,65 @@ def _comp_th_derive(src):
     return {'src.h': CP.PropsSI('H', 'P', P, 'T', T, fluid)}
 
 
+# ── Evaporator(Off, L1) 템플릿 — HPWDhx.Evap_UA (2-zone ε-NTU, wet coil) ──
+def _evap_template(mp, bc):
+    modstr = ",".join(f"{k}={v:.10g}" for k, v in mp.items())
+    return f"""package CanvasGen
+  model GenCase "canvas Evaporator(Off) → HPWDhx.Evap_UA (자동생성)"
+    HPWDhx.Evap_UA evap({modstr});
+    HPWDhx.FlowSource src(p={bc['P_evap']:.10g}, h={bc['h_in']:.10g}, m_flow_set={bc['m_dot']:.10g});
+    HPWDhx.SinkOpen snk;
+    Real T_ref_out, h_ref_out, P_ref_out, SH_out, T_evap, T_air_out;
+    Real Q_total, Q_sensible, Q_latent, condensate_rate, is_wet;
+  equation
+    connect(src.port, evap.port_a);
+    connect(evap.port_b, snk.port);
+    T_ref_out = evap.T_ref_out;
+    h_ref_out = evap.h_out/1000.0;          // J/kg → kJ/kg
+    P_ref_out = evap.P_ref_out/1e5;         // Pa → bar
+    SH_out = evap.SH_calc;
+    T_evap = evap.T_evap;
+    T_air_out = evap.T_air_out_K - 273.15;
+    Q_total = evap.Q_2ph_total + evap.Q_SH;
+    Q_sensible = evap.Q_sensible_2ph + evap.Q_SH;
+    Q_latent = evap.Q_latent;
+    condensate_rate = evap.condensate_rate;
+    is_wet = evap.is_wet;
+  end GenCase;
+end CanvasGen;
+"""
+
+
+# ── Condenser(Off, L1) 템플릿 — HPWDhx.Cond_UA (3-zone cascade ε-NTU) ──
+def _cond_template(mp, bc):
+    modstr = ",".join(f"{k}={v:.10g}" for k, v in mp.items())
+    return f"""package CanvasGen
+  model GenCase "canvas Condenser(Off) → HPWDhx.Cond_UA (자동생성)"
+    HPWDhx.Cond_UA cond({modstr});
+    HPWDhx.FlowSource src(p={bc['P_cond']:.10g}, h={bc['h_in']:.10g}, m_flow_set={bc['m_dot']:.10g});
+    HPWDhx.SinkOpen snk;
+    Real T_ref_out, h_ref_out, P_ref_out, SC_out, T_cond, T_air_out, RH_air_out;
+    Real Q_total, Q_deSH, Q_2ph, Q_SC, quality_out;
+  equation
+    connect(src.port, cond.port_a);
+    connect(cond.port_b, snk.port);
+    T_ref_out = cond.T_ref_out;
+    h_ref_out = cond.h_out/1000.0;
+    P_ref_out = src.p*(1.0 - cond.dP_ref)/1e5;   // Pa → bar (dP 후)
+    SC_out = cond.SC_calc;
+    T_cond = cond.T_cond_C;
+    T_air_out = cond.T_air_out;
+    RH_air_out = cond.RH_air_out;
+    Q_total = cond.Q_total;
+    Q_deSH = cond.Q_deSH;
+    Q_2ph = cond.Q_2ph;
+    Q_SC = cond.Q_SC;
+    quality_out = cond.quality_out;
+  end GenCase;
+end CanvasGen;
+"""
+
+
 # ── 컴포넌트 레지스트리 (확장 지점) ──────────────────────────────
 #   type → { template, param_defaults, build_bc, override_map, outputs }
 #   override_map: canvas_key → (flatten된 leaf parameter 이름, 단위변환기)
@@ -148,8 +209,52 @@ COMPONENT_REGISTRY = {
         'outputs': ['m_dot', 'W', 'h_dis', 'T_dis', 'rho_suc', 'h_dis_s', 'pi_ratio'],
         'template': _comp_theoretical_template,
     },
-    # TODO: 'evaporator_off_design', 'condenser_off_design' ...
-    #       각 항목에 template + override_map(leaf 이름) + build_bc 추가
+    'evaporator_off_design': {
+        'modelica_model': 'HPWDhx.Evap_UA',
+        'extra_mo': ['EvapUA.mo'],
+        'param_defaults': {'T_air_in': 323.15, 'RH_in': 0.9, 'V_air_CMM': 2.54,
+                           'UA_2ph': 25.0, 'UA_SH': 4.0, 'dP_ref': 0.02},
+        'build_bc': {'P_evap': 551000.0, 'h_in': 336563.0, 'm_dot': 0.00458812},
+        'override_map': {
+            'T_air_in':  ('evap.T_air_in', _c_to_k),     # °C → K
+            'RH_air_in': ('evap.RH_in', _pct_to_frac),   # % → 0~1
+            'V_air_CMM': ('evap.V_air_CMM', _ident),
+            'UA_2ph':    ('evap.UA_2ph', _ident),
+            'UA_SH':     ('evap.UA_SH', _ident),
+            'dP_ref':    ('evap.dP_ref', _ident),
+            'P_evap':    ('src.p', _bar_to_pa),
+            'h_in':      ('src.h', _kjkg_to_jkg),
+            'm_dot_ref': ('src.m_flow_set', _ident),
+        },
+        'outputs': ['T_ref_out', 'h_ref_out', 'P_ref_out', 'SH_out', 'T_evap',
+                    'T_air_out', 'Q_total', 'Q_sensible', 'Q_latent',
+                    'condensate_rate', 'is_wet'],
+        'template': _evap_template,
+    },
+    'condenser_off_design': {
+        'modelica_model': 'HPWDhx.Cond_UA',
+        'extra_mo': ['EvapUA.mo'],
+        'param_defaults': {'T_air_in_C': 35.0, 'RH_in': 0.5, 'V_air_CMM': 25.42,
+                           'UA_deSH': 8.0, 'UA_2ph': 50.0, 'UA_SC': 5.0, 'dP_ref': 0.03},
+        'build_bc': {'P_cond': 1907000.0, 'h_in': 702725.0, 'm_dot': 0.00458812},
+        'override_map': {
+            'T_air_in':  ('cond.T_air_in_C', _ident),    # °C (변환 없음)
+            'RH_air_in': ('cond.RH_in', _pct_to_frac),
+            'V_air_CMM': ('cond.V_air_CMM', _ident),
+            'UA_deSH':   ('cond.UA_deSH', _ident),
+            'UA_2ph':    ('cond.UA_2ph', _ident),
+            'UA_SC':     ('cond.UA_SC', _ident),
+            'dP_ref':    ('cond.dP_ref', _ident),
+            'P_cond':    ('src.p', _bar_to_pa),
+            'h_in':      ('src.h', _kjkg_to_jkg),
+            'm_dot_ref': ('src.m_flow_set', _ident),
+        },
+        'outputs': ['T_ref_out', 'h_ref_out', 'P_ref_out', 'SC_out', 'T_cond',
+                    'T_air_out', 'RH_air_out', 'Q_total', 'Q_deSH', 'Q_2ph',
+                    'Q_SC', 'quality_out'],
+        'template': _cond_template,
+    },
+    # L1 컴포넌트 전부 등록됨 (EEV·압축기·증발기·응축기). 다음: 사이클 그래프 조립.
 }
 
 
@@ -167,9 +272,14 @@ def _ensure_built(comp, timeout=240):
     # 기본값으로 .mo 생성 (런타임에 -override로 바꿀 것)
     mo = spec['template'](dict(spec['param_defaults']), dict(spec['build_bc']))
     open(os.path.join(bdir, "CanvasGen.mo"), "w").write(mo)
+    # 추가 .mo 의존 (예: HX는 EvapUA.mo) — HPWD.mo 뒤, CanvasGen.mo 앞에 로드
+    extra_loads = "".join(
+        f'loadFile("{_fs(os.path.join(MODELICA_DIR, f))}"); getErrorString();\n'
+        for f in spec.get('extra_mo', []))
     mos = (f'loadModel(Modelica); getErrorString();\n'
            f'loadFile("{_fs(HELMHOLTZ_PATH)}"); getErrorString();\n'
            f'loadFile("{_fs(os.path.join(MODELICA_DIR, "HPWD.mo"))}"); getErrorString();\n'
+           f'{extra_loads}'
            f'loadFile("{_fs(os.path.join(bdir, "CanvasGen.mo"))}"); getErrorString();\n'
            f'buildModel(CanvasGen.GenCase, outputFormat="csv", stopTime=1,'
            f' numberOfIntervals=1); getErrorString();\n')
