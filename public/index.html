@@ -1268,10 +1268,10 @@ const TYPES = {
                       'phi_op','rho_in','dP'], unit: '' },
     ],
     inputs: [
-      { key: 'P_in',       label: 'P_in',    unit: 'bar' },
-      { key: 'h_in',       label: 'h_in',    unit: 'kJ/kg' },
-      { key: 'P_out',      label: 'P_out',   unit: 'bar' },
-      { key: 'opening',    label: 'opening', unit: '%' },
+      { key: 'P_in',       label: 'P_in',    unit: 'bar',   value: 17.0 },
+      { key: 'h_in',       label: 'h_in',    unit: 'kJ/kg', value: 280.0 },
+      { key: 'P_out',      label: 'P_out',   unit: 'bar',   value: 5.84 },
+      { key: 'opening',    label: 'opening', unit: '%',     value: 50.0 },
       { key: 'm_dot_meas', label: 'ṁ_meas', unit: 'kg/s' },
     ],
     outputs: [
@@ -2691,9 +2691,9 @@ function HPWDStudio() {
           }
           break;
         }
-        // 연결이 없으면 블록에 직접 입력한 값(inputValues)을 입력으로 사용
+        // 연결이 없으면 블록에 직접 입력한 값(inputValues) 또는 포트 기본값(inp.value)을 사용
         if (!connected) {
-          const manual = b.inputValues?.[inp.key];
+          const manual = b.inputValues?.[inp.key] ?? inp.value;
           if (manual !== undefined && manual !== '' && manual !== null) {
             const num = Number(manual);
             inputs[inp.key] = Number.isNaN(num) ? manual : num;
@@ -4939,7 +4939,7 @@ function HPWDStudio() {
                             </span>
                           ) : (
                             <ParamInput
-                              value={selectedBlock.inputValues?.[p.key] ?? ''}
+                              value={selectedBlock.inputValues?.[p.key] ?? p.value ?? ''}
                               isNumber={true}
                               onChange={(v) => updateInputValue(selectedBlock.id, p.key, v)}
                             />
@@ -4950,7 +4950,7 @@ function HPWDStudio() {
                     })}
                     {selectedDef.inputs.some(p => {
                       const connected = connections.find(c => c.to.blockId === selectedBlock.id && (c.signals || []).some(s => s.toPort === p.key));
-                      const manual = selectedBlock.inputValues?.[p.key];
+                      const manual = selectedBlock.inputValues?.[p.key] ?? p.value;
                       return !connected && (manual === undefined || manual === '' || manual === null);
                     }) && (
                       <div className="text-[9px] text-amber-600 mt-1 flex items-center gap-1">
