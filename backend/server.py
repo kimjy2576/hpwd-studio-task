@@ -64,6 +64,7 @@ _modelica = {'imported': False, 'error': None}
 try:
     from modelica.bridge import (compute_modelica as _mod_compute,
                                   run_cycle as _run_cycle,
+                                  run_canvas_cycle as _run_canvas_cycle,
                                   COMPONENT_REGISTRY, CYCLE_MODELS, HELMHOLTZ_PATH)
     _modelica['imported'] = True
     print(f"[OK]   Modelica bridge imported (components: {list(COMPONENT_REGISTRY)})")
@@ -110,6 +111,21 @@ class CycleResponse(BaseModel):
     stop_time: float = 0.0
     settled: dict[str, Any] = {}        # 정착값 (Pc_bar, Pe_bar, SH_evap, ... , W)
     trajectory: dict[str, Any] = {}     # {time:[...], var:[...]} 다운샘플 궤적
+    error: str | None = None
+
+
+class CanvasCycleRequest(BaseModel):
+    # 캔버스에서 추출한 링 토폴로지 + 기동/초기화 설정
+    topology: dict[str, Any]            # {components:[{id,kind,params}], ring:[id...], volumes:[V...]}
+    settings: dict[str, Any] = {}       # {charge_g, p_rest_bar, t_ramp, stop_time, tolerance, intervals}
+
+
+class CanvasCycleResponse(BaseModel):
+    settled: dict[str, Any] = {}
+    trajectory: dict[str, Any] = {}
+    meta: dict[str, Any] = {}           # {h_rest, charge_g, pc_vol, pe_vol, ...}
+    generated_mo: str | None = None     # 생성된 .mo 텍스트 (디버그/표시용)
+    stop_time: float = 0.0
     error: str | None = None
 
 
@@ -240,6 +256,32 @@ def run_cycle(req: CycleRequest):
                              settled=r['settled'], trajectory=r['trajectory'])
     except Exception as e:
         return CycleResponse(model=req.model, error=f"{type(e).__name__}: {e}")
+
+
+@app.post("/run_canvas_cycle", response_model=CanvasCycleResponse)
+def run_canvas_cycle(req: CanvasCycleRequest):
+    """캔버스 토폴로지 → 사이클 .mo 자동생성 → transient 시뮬 → 정착값+궤적.
+
+    /run_cycle 은 손으로 짠 고정 모델, 이건 사용자가 캔버스에서 구성한 링을
+    받아 .mo 를 생성해서 푼다. omc 필요."""
+    ok, why = _modelica_status()
+    if not ok:
+        return CanvasCycleResponse(error=f"Modelica 엔진 사용 불가: {why}.")
+    try:
+        topo = req.topology or {}
+        ring = topo.get('ring') or []
+        kinds = {c.get('kind') for c in (topo.get('components') or [])}
+        need = {'compressor', 'condenser', 'eev', 'evaporator'}
+        if not need.issubset(kinds):
+            return CanvasCycleResponse(
+                error=f"링에 필요한 컴포넌트 부족: {sorted(need - kinds)} 누락 "
+                      f"(현재 {sorted(kinds)}). Comp·Cond·EEV·Evap 4개가 닫힌 링이어야 함.")
+        r = _run_canvas_cycle(topo, req.settings or {})
+        return CanvasCycleResponse(settled=r['settled'], trajectory=r['trajectory'],
+                                   meta=r['meta'], generated_mo=r['generated_mo'],
+                                   stop_time=r['stop_time'])
+    except Exception as e:
+        return CanvasCycleResponse(error=f"{type(e).__name__}: {e}")
 
 
 # ─── Server 실행 ────────────────────────────────────────────────────

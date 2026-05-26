@@ -406,6 +406,158 @@ def run_cycle(model='Cycle_L1_ramp_PI', stop_time=120.0, tolerance=1e-6,
             'settled': settled, 'trajectory': traj}
 
 
+# ── 캔버스 토폴로지 → 사이클 .mo 자동생성 (Phase A: 고정 EEV 링) ──────
+#   사용자가 캔버스에서 구성한 링(comp→cond→eev→evap)을 받아서,
+#   각 연결에 Volume(압력노드)를 자동삽입하고 acausal connect를 emit →
+#   검증된 컴포넌트 모델(HPWD/HPWDhx/HPWDcycle)을 재사용하는 .mo 생성.
+_GEN_MONITORS = ['Pc_bar', 'Pe_bar', 'mdot_comp', 'SH_evap', 'SC_cond', 'charge', 'W']
+
+# 캔버스 kind → (Modelica 모델, 파라미터 emit)
+def _emit_compressor(inst, p):
+    return (f'    HPWD.Comp_Theoretical {inst}(V_disp={p.get("V_disp",10e-6):.6g}, '
+            f'N={p.get("N",3000.0):.6g}, eta_vol={p.get("eta_vol",0.85):.6g}, '
+            f'eta_isen={p.get("eta_isen",0.65):.6g}, t_ramp=t_ramp);\n')
+def _emit_condenser(inst, p):
+    return (f'    HPWDhx.Cond_UA_eq {inst}(T_air_in_C={p.get("T_air_in_C",35.0):.6g}, '
+            f'RH_in={p.get("RH_in",0.5):.6g}, V_air_CMM={p.get("V_air_CMM",25.42):.6g}, '
+            f'UA_deSH={p.get("UA_deSH",8.0):.6g}, UA_2ph={p.get("UA_2ph",50.0):.6g}, '
+            f'UA_SC={p.get("UA_SC",5.0):.6g}, R_fric={p.get("R_fric",1e7):.6g}, m_dot(start=1e-5));\n')
+def _emit_eev(inst, p):
+    return (f'    HPWDcycle.EEV_Orifice {inst}(A_orifice={p.get("A_orifice",5.5e-7):.6g}, '
+            f'Cv={p.get("Cv",0.7):.6g}, phi_fixed={p.get("phi_fixed",0.35):.6g}, m_dot(start=1e-5));\n')
+def _emit_evaporator(inst, p):
+    return (f'    HPWDhx.Evap_UA_eq {inst}(T_air_in={p.get("T_air_in_K",323.15):.6g}, '
+            f'RH_in={p.get("RH_in",0.9):.6g}, V_air_CMM={p.get("V_air_CMM",2.54):.6g}, '
+            f'UA_2ph={p.get("UA_2ph",25.0):.6g}, UA_SH={p.get("UA_SH",4.0):.6g}, '
+            f'R_fric={p.get("R_fric",2e6):.6g}, m_dot(start=1e-5));\n')
+_KIND_EMIT = {'compressor': _emit_compressor, 'condenser': _emit_condenser,
+              'eev': _emit_eev, 'evaporator': _emit_evaporator}
+
+
+def _h_rest_from_charge(charge_kg, p_rest_pa, sumV_m3, fluid='R290'):
+    """목표 충전량 → 균압 p_rest에서의 균일 엔탈피 h_rest 역산.
+    charge = rho(p_rest, h_rest) * ΣV  →  rho_target = charge/ΣV  →  h(p,rho)."""
+    import CoolProp.CoolProp as CP
+    rho_target = charge_kg / sumV_m3
+    return CP.PropsSI('H', 'P', p_rest_pa, 'D', rho_target, fluid)   # J/kg
+
+
+def generate_cycle_mo(topology, settings):
+    """캔버스 토폴로지 → GenCycle.Cycle_gen .mo 텍스트 생성.
+
+    topology = {components:[{id,kind,params}], ring:[id...], volumes:[V...]}
+    settings = {charge_g, p_rest_bar, t_ramp, ...}
+    반환: (mo_text, meta)
+    """
+    comps = {c['id']: c for c in topology['components']}
+    ring = topology['ring']
+    n = len(ring)
+    vols = topology.get('volumes') or [5e-4] * n
+    p_rest = float(settings.get('p_rest_bar', 9.0)) * 1e5
+    sumV = sum(vols)
+    charge_kg = float(settings.get('charge_g', 89.0)) / 1000.0
+    h_rest = _h_rest_from_charge(charge_kg, p_rest, sumV,
+                                 fluid=settings.get('fluid', 'R290'))
+    t_ramp = float(settings.get('t_ramp', 20.0))
+
+    # 컴포넌트 + Volume 선언 (링 순서: cᵢ 다음에 volᵢ₊₁)
+    decl = []
+    for i, cid in enumerate(ring):
+        c = comps[cid]
+        emit = _KIND_EMIT.get(c['kind'])
+        if emit is None:
+            raise ValueError(f"미지원 컴포넌트 kind: {c['kind']}")
+        decl.append(emit(cid, c.get('params', {})))
+        decl.append(f'    HPWDcycle.Volume vol{i+1}(V={vols[i]:.6g}, '
+                    f'p_start=p_rest, h_start=h_rest, fixedState=true);\n')
+
+    # acausal 연결: cᵢ.port_b → volᵢ₊₁.port_a → c(다음).port_a (마지막은 ring[0]로 닫힘)
+    conn = []
+    for i, cid in enumerate(ring):
+        nxt = ring[(i + 1) % n]
+        conn.append(f'    connect({cid}.port_b, vol{i+1}.port_a);\n')
+        conn.append(f'    connect(vol{i+1}.port_b, {nxt}.port_a);\n')
+
+    # 모니터 매핑: 압축기 직후 vol = HP(Pc), EEV 직후 vol = LP(Pe)
+    def _id_of(kind):
+        return next(c['id'] for c in topology['components'] if c['kind'] == kind)
+    comp_id, eev_id = _id_of('compressor'), _id_of('eev')
+    cond_id, evap_id = _id_of('condenser'), _id_of('evaporator')
+    pc_vol = f'vol{ring.index(comp_id)+1}'
+    pe_vol = f'vol{ring.index(eev_id)+1}'
+    charge_expr = ' + '.join(f'vol{i+1}.rho*vol{i+1}.V' for i in range(n))
+
+    mo = (f'within ;\n'
+          f'package GenCycle "캔버스 토폴로지에서 자동생성된 L1 사이클"\n'
+          f'  model Cycle_gen\n'
+          f'    parameter Modelica.Units.SI.Pressure p_rest = {p_rest:.6g};\n'
+          f'    parameter Modelica.Units.SI.SpecificEnthalpy h_rest = {h_rest:.6g};\n'
+          f'    parameter Real t_ramp = {t_ramp:.6g};\n'
+          f'{"".join(decl)}'
+          f'    Real charge, Pc_bar, Pe_bar, mdot_comp, SH_evap, SC_cond, W;\n'
+          f'  equation\n'
+          f'{"".join(conn)}'
+          f'    charge = {charge_expr};\n'
+          f'    Pc_bar = {pc_vol}.p/1e5;\n'
+          f'    Pe_bar = {pe_vol}.p/1e5;\n'
+          f'    mdot_comp = {comp_id}.m_dot;\n'
+          f'    SH_evap = {evap_id}.SH;\n'
+          f'    SC_cond = {cond_id}.SC;\n'
+          f'    W = {comp_id}.W;\n'
+          f'  end Cycle_gen;\n'
+          f'end GenCycle;\n')
+    meta = {'h_rest': h_rest, 'charge_g': charge_kg * 1000, 'sumV': sumV,
+            'pc_vol': pc_vol, 'pe_vol': pe_vol, 'n_volumes': n}
+    return mo, meta
+
+
+def _parse_cycle_csv(csv_path, monitors, n_traj=80):
+    rows = list(_csv.reader(open(csv_path)))
+    hdr, data = rows[0], rows[1:]
+    col = {h: i for i, h in enumerate(hdr)}
+    present = [m for m in monitors if m in col]
+    last = data[-1]
+    settled = {m: float(last[col[m]]) for m in present}
+    step = max(1, len(data) // n_traj)
+    idx = list(range(0, len(data), step))
+    if idx[-1] != len(data) - 1:
+        idx.append(len(data) - 1)
+    traj = {'time': [float(data[i][col['time']]) for i in idx]}
+    for m in present:
+        traj[m] = [float(data[i][col[m]]) for i in idx]
+    return settled, traj
+
+
+def run_canvas_cycle(topology, settings):
+    """캔버스 토폴로지로 사이클 .mo 생성 → transient 시뮬 → 정착값+궤적."""
+    mo, meta = generate_cycle_mo(topology, settings)
+    wdir = os.path.join(_WORK, 'cycle_gen')
+    os.makedirs(wdir, exist_ok=True)
+    open(os.path.join(wdir, 'GenCycle.mo'), 'w').write(mo)
+    loads = "".join(
+        f'loadFile("{_fs(os.path.join(MODELICA_DIR, f))}"); getErrorString();\n'
+        for f in _CYCLE_MO)
+    stop = float(settings.get('stop_time', 120.0))
+    tol = float(settings.get('tolerance', 1e-6))
+    intervals = int(settings.get('intervals', 240))
+    mos = (f'loadModel(Modelica); getErrorString();\n'
+           f'loadFile("{_fs(HELMHOLTZ_PATH)}"); getErrorString();\n'
+           f'{loads}'
+           f'loadFile("{_fs(os.path.join(wdir, "GenCycle.mo"))}"); getErrorString();\n'
+           f'simulate(GenCycle.Cycle_gen, stopTime={stop:.6g}, '
+           f'numberOfIntervals={intervals}, method="dassl", '
+           f'tolerance={tol:.3g}, outputFormat="csv"); getErrorString();\n')
+    open(os.path.join(wdir, 'run.mos'), 'w').write(mos)
+    r = subprocess.run(["omc", "run.mos"], cwd=wdir,
+                       capture_output=True, text=True, timeout=900)
+    csv_path = os.path.join(wdir, "GenCycle.Cycle_gen_res.csv")
+    if not os.path.exists(csv_path):
+        raise RuntimeError(f"생성 사이클 실행 실패:\n{(r.stdout + r.stderr)[-1800:]}")
+    settled, traj = _parse_cycle_csv(csv_path, _GEN_MONITORS)
+    return {'settled': settled, 'trajectory': traj, 'meta': meta, 'generated_mo': mo,
+            'stop_time': stop}
+
+
 # ── 캐시 무효화 (모델/템플릿 수정 후 강제 재빌드용) ──────────────
 def clear_cache():
     _BUILD_CACHE.clear()
