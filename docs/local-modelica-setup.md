@@ -63,13 +63,13 @@ pip install -r requirements.txt
 
 ```powershell
 cd $HOME\hpwd-studio-task\backend
-$env:HELMHOLTZ_PATH = ($HOME -replace '\\','/') + "/HelmholtzMedia/HelmholtzMedia/package.mo"
+$env:HELMHOLTZ_PATH = "$HOME\HelmholtzMedia\HelmholtzMedia\package.mo".Replace('\','/')
 $env:PORT="8010"
 echo $env:HELMHOLTZ_PATH        # 경로 맞는지 눈으로 확인
 python server.py
 ```
 
-- ⚠️ `HELMHOLTZ_PATH`는 **슬래시 `/`** 여야 함 (역슬래시 `\` 쓰면 Modelica 문자열이 깨짐). 위 `$HOME -replace` 한 줄이 현재 계정 홈을 자동으로 슬래시 경로로 바꿔줌 → 계정명(`kimjy`, `kimjy2576.kim` 등) 달라도 그대로 동작.
+- ⚠️ `HELMHOLTZ_PATH`는 **슬래시 `/`** 여야 함 (역슬래시 `\` 쓰면 Modelica 문자열이 깨짐). 위 `.Replace('\','/')` 한 줄이 현재 계정 홈(`$HOME`)을 자동으로 슬래시 경로로 바꿔줌 → 계정명(`kimjy`, `kimjy2576.kim` 등) 달라도 그대로 동작. (`-replace`는 정규식이라 백슬래시 escape가 필요해 헷갈림 → `.Replace()` 사용)
 - ⚠️ `PORT=8010` — 8000은 Docker·다른 LLM 서버가 자주 잡아서 충돌남. 8010으로 띄우는 걸 권장
 - 성공 로그: `Uvicorn running on http://0.0.0.0:8010` + `Modelica bridge imported (components: [...])`
 - ⚠️ **이 창을 닫거나 Ctrl+C 하면 서버가 즉시 죽음.** 캔버스 쓰는 내내 열어둘 것. 다른 명령은 **새 창**에서.
@@ -125,7 +125,7 @@ Get-NetTCPConnection -LocalPort 8010 -State Listen -EA SilentlyContinue
 
 ```powershell
 cd $HOME\hpwd-studio-task\backend
-$env:HELMHOLTZ_PATH = ($HOME -replace '\\','/') + "/HelmholtzMedia/HelmholtzMedia/package.mo"
+$env:HELMHOLTZ_PATH = "$HOME\HelmholtzMedia\HelmholtzMedia\package.mo".Replace('\','/')
 $env:PORT="8010"
 python server.py
 ```
@@ -147,7 +147,7 @@ Invoke-RestMethod http://localhost:8010/health
 ### 빠른 복붙 (원래 PC, 한 줄)
 
 ```powershell
-cd $HOME\hpwd-studio-task\backend; $env:HELMHOLTZ_PATH = ($HOME -replace '\\','/') + "/HelmholtzMedia/HelmholtzMedia/package.mo"; $env:PORT="8010"; python server.py
+cd $HOME\hpwd-studio-task\backend; $env:HELMHOLTZ_PATH = "$HOME\HelmholtzMedia\HelmholtzMedia\package.mo".Replace('\','/'); $env:PORT="8010"; python server.py
 ```
 → 그 다음 캔버스에서 연결만 확인 (이미 저장돼 있으면 자동).
 
