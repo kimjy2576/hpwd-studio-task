@@ -68,7 +68,7 @@
  */
 const DEFAULT_BACKENDS = {
   cloud: 'https://hpwd-studio-task-production.up.railway.app',  // Railway 배포 URL
-  local: 'http://localhost:8000',
+  local: 'http://localhost:8010',   // 로컬 백엔드 (8000은 Docker/LLM 서버와 자주 충돌 → 8010)
 };
 
 function resolveBackendUrl() {
@@ -5357,7 +5357,7 @@ function BackendStatus() {
   }, [open]);
 
   const status = window.HPWD_BACKEND || { connected: false, components: [], lastError: null, url: '', presets: {} };
-  const presets = status.presets || { cloud: '', local: 'http://localhost:8000' };
+  const presets = status.presets || { cloud: '', local: 'http://localhost:8010' };
   const isLocal = status.url === presets.local;
   const isCloud = status.url === presets.cloud;
   const isCustom = !isLocal && !isCloud;
