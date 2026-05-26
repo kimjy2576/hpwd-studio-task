@@ -348,6 +348,64 @@ def compute_modelica(block, timeout=60):
     return {'outputs': {k: res[k] for k in spec['outputs'] if k in res}}
 
 
+# ── 폐루프 사이클 실행 (전체 L1 cycle, transient) ────────────────
+#   단일 컴포넌트(FlowSource→블록→SinkOpen, 대수)와 달리 사이클은
+#   닫힌 루프 + Volume 상태 + N-ramp → transient 시뮬(dassl)로 정착시킴.
+CYCLE_MODELS = {
+    'Cycle_L1_ramp':    {'has_opening': False},   # 고정 phi EEV (깔끔한 레퍼런스)
+    'Cycle_L1_ramp_PI': {'has_opening': True},    # PI(SH 제어) — 현재 메인
+    'Cycle_L1_dyn':     {'has_opening': False},   # 구버전
+}
+_CYCLE_MO = ['HPWD.mo', 'EvapUA.mo', 'Control.mo', 'Cycle.mo']
+_CYCLE_MONITORS = ['Pc_bar', 'Pe_bar', 'mdot_comp', 'SH_evap', 'SC_cond',
+                   'charge', 'opening', 'comp.W']
+
+
+def run_cycle(model='Cycle_L1_ramp_PI', stop_time=120.0, tolerance=1e-6,
+              intervals=240, n_traj=80, timeout=900):
+    """HPWDcycle.<model>을 transient 시뮬 → 정착값 + 다운샘플 궤적 반환.
+
+    반환: {model, stop_time, settled{...}, trajectory{time, var:[...]}}
+    settled = 마지막 행(정착), trajectory = ~n_traj 포인트로 다운샘플.
+    """
+    if model not in CYCLE_MODELS:
+        raise ValueError(f"미지원 사이클 모델: {model} (지원: {list(CYCLE_MODELS)})")
+    wdir = os.path.join(_WORK, 'cycle_' + model)
+    os.makedirs(wdir, exist_ok=True)
+    loads = "".join(
+        f'loadFile("{_fs(os.path.join(MODELICA_DIR, f))}"); getErrorString();\n'
+        for f in _CYCLE_MO)
+    mos = (f'loadModel(Modelica); getErrorString();\n'
+           f'loadFile("{_fs(HELMHOLTZ_PATH)}"); getErrorString();\n'
+           f'{loads}'
+           f'simulate(HPWDcycle.{model}, stopTime={float(stop_time):.6g}, '
+           f'numberOfIntervals={int(intervals)}, method="dassl", '
+           f'tolerance={float(tolerance):.3g}, outputFormat="csv"); getErrorString();\n')
+    open(os.path.join(wdir, 'run.mos'), 'w').write(mos)
+    r = subprocess.run(["omc", "run.mos"], cwd=wdir,
+                       capture_output=True, text=True, timeout=timeout)
+    csv_path = os.path.join(wdir, f"HPWDcycle.{model}_res.csv")
+    if not os.path.exists(csv_path):
+        raise RuntimeError(f"사이클 실행 실패 ({model}):\n{(r.stdout + r.stderr)[-1500:]}")
+
+    rows = list(_csv.reader(open(csv_path)))
+    hdr, data = rows[0], rows[1:]
+    col = {h: i for i, h in enumerate(hdr)}
+    present = [m for m in _CYCLE_MONITORS if m in col]
+    last = data[-1]
+    settled = {('W' if m == 'comp.W' else m): float(last[col[m]]) for m in present}
+    # 다운샘플 궤적
+    step = max(1, len(data) // n_traj)
+    idx = list(range(0, len(data), step))
+    if idx[-1] != len(data) - 1:
+        idx.append(len(data) - 1)
+    traj = {'time': [float(data[i][col['time']]) for i in idx]}
+    for m in present:
+        traj['W' if m == 'comp.W' else m] = [float(data[i][col[m]]) for i in idx]
+    return {'model': model, 'stop_time': float(stop_time),
+            'settled': settled, 'trajectory': traj}
+
+
 # ── 캐시 무효화 (모델/템플릿 수정 후 강제 재빌드용) ──────────────
 def clear_cache():
     _BUILD_CACHE.clear()

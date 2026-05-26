@@ -62,7 +62,9 @@ except Exception as e:
 import shutil
 _modelica = {'imported': False, 'error': None}
 try:
-    from modelica.bridge import compute_modelica as _mod_compute, COMPONENT_REGISTRY, HELMHOLTZ_PATH
+    from modelica.bridge import (compute_modelica as _mod_compute,
+                                  run_cycle as _run_cycle,
+                                  COMPONENT_REGISTRY, CYCLE_MODELS, HELMHOLTZ_PATH)
     _modelica['imported'] = True
     print(f"[OK]   Modelica bridge imported (components: {list(COMPONENT_REGISTRY)})")
 except Exception as e:
@@ -96,6 +98,21 @@ class ComputeResponse(BaseModel):
     error: str | None = None
 
 
+class CycleRequest(BaseModel):
+    model: str = "Cycle_L1_ramp_PI"   # Cycle_L1_ramp | Cycle_L1_ramp_PI | Cycle_L1_dyn
+    stop_time: float = 120.0
+    tolerance: float = 1e-6
+    intervals: int = 240
+
+
+class CycleResponse(BaseModel):
+    model: str
+    stop_time: float = 0.0
+    settled: dict[str, Any] = {}        # 정착값 (Pc_bar, Pe_bar, SH_evap, ... , W)
+    trajectory: dict[str, Any] = {}     # {time:[...], var:[...]} 다운샘플 궤적
+    error: str | None = None
+
+
 # ─── Routes ─────────────────────────────────────────────────────────
 @app.get("/health")
 def health():
@@ -113,6 +130,7 @@ def health():
             "available": m_ok,
             "reason": m_why,
             "components": list(COMPONENT_REGISTRY) if _modelica['imported'] else [],
+            "cycles": list(CYCLE_MODELS) if _modelica['imported'] else [],
         },
     }
 
@@ -199,6 +217,29 @@ def compute_modelica(req: ComputeRequest):
             outputs={}, newState=req.state,
             error=f"{type(e).__name__}: {e}",
         )
+
+
+@app.post("/run_cycle", response_model=CycleResponse)
+def run_cycle(req: CycleRequest):
+    """전체 L1 폐루프 사이클을 Modelica로 transient 시뮬 → 정착값 + 궤적.
+
+    단일 컴포넌트(/compute_modelica)와 달리 닫힌 루프 + Volume + N-ramp라
+    transient 시뮬(dassl)로 정착시킴 (~수십초, 컴파일 포함). omc 필요.
+    """
+    ok, why = _modelica_status()
+    if not ok:
+        return CycleResponse(model=req.model,
+                             error=f"Modelica 엔진 사용 불가: {why}.")
+    if req.model not in CYCLE_MODELS:
+        return CycleResponse(model=req.model,
+                             error=f"미지원 사이클 모델: '{req.model}'. 지원: {list(CYCLE_MODELS)}")
+    try:
+        r = _run_cycle(model=req.model, stop_time=req.stop_time,
+                       tolerance=req.tolerance, intervals=req.intervals)
+        return CycleResponse(model=r['model'], stop_time=r['stop_time'],
+                             settled=r['settled'], trajectory=r['trajectory'])
+    except Exception as e:
+        return CycleResponse(model=req.model, error=f"{type(e).__name__}: {e}")
 
 
 # ─── Server 실행 ────────────────────────────────────────────────────
