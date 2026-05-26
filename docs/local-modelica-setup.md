@@ -28,31 +28,32 @@
    확인: `python --version`
 
 3. **OpenModelica (64-bit)** — https://openmodelica.org/download/download-windows/
-   - 1.26.x 권장. 설치 중 PATH 추가 옵션 켜기 (보통 기본값)
+   - 1.26.x 권장. 설치 중 PATH 추가 옵션 켜기 (보통 기본값). **설치 용량 크고 시간 좀 걸림.**
    - **새 PowerShell 창** 열고 확인: `omc --version` → `OpenModelica 1.26.x` 나와야 함
-   - 안 잡히면 시스템 PATH에 `C:\Program Files\OpenModelica1.26.x-64bit\bin` 추가 후 새 창
+   - 안 잡히면 시스템 PATH에 `C:\Program Files\OpenModelica1.26.x-64bit\bin` 추가 후 **새 창**
+   - ⚠️ 이게 빠지면 `/health`의 `reason`이 **"omc 없음"** 으로 뜨고 Modelica 토글이 회색됨. omc는 **반드시 새 창**에서 확인 (PATH 변경은 새 창부터 적용).
 
 ### B. 코드 / 라이브러리 받기
 
-PowerShell 열고 (`<사용자명>`은 본인 윈도우 계정명으로):
+PowerShell 열고 (홈 디렉토리에 받음 — `$HOME`은 현재 윈도우 계정의 홈, 계정명 신경 안 써도 됨):
 
 ```powershell
-cd C:\Users\<사용자명>
+cd $HOME
 git clone https://github.com/kimjy2576/hpwd-studio-task.git
 git clone https://github.com/thorade/HelmholtzMedia.git
 ```
 
 > repo가 비공개면 clone 시 GitHub 로그인(또는 PAT) 요구됨.
 
-받고 나면:
-- HPWD 코드 → `C:\Users\<사용자명>\hpwd-studio-task`
-- HelmholtzMedia → `C:\Users\<사용자명>\HelmholtzMedia`
+받고 나면 (`$HOME` 예: `C:\Users\<내계정>`):
+- HPWD 코드 → `$HOME\hpwd-studio-task`
+- HelmholtzMedia → `$HOME\HelmholtzMedia`
   (라이브러리 진입점: `HelmholtzMedia\HelmholtzMedia\package.mo` ← 폴더가 한 번 더 중첩됨)
 
 ### C. Python 패키지 설치
 
 ```powershell
-cd C:\Users\<사용자명>\hpwd-studio-task\backend
+cd $HOME\hpwd-studio-task\backend
 pip install -r requirements.txt
 ```
 
@@ -61,13 +62,14 @@ pip install -r requirements.txt
 ### D. 서버 띄우기
 
 ```powershell
-cd C:\Users\<사용자명>\hpwd-studio-task\backend
-$env:HELMHOLTZ_PATH="C:/Users/<사용자명>/HelmholtzMedia/HelmholtzMedia/package.mo"
+cd $HOME\hpwd-studio-task\backend
+$env:HELMHOLTZ_PATH = ($HOME -replace '\\','/') + "/HelmholtzMedia/HelmholtzMedia/package.mo"
 $env:PORT="8010"
+echo $env:HELMHOLTZ_PATH        # 경로 맞는지 눈으로 확인
 python server.py
 ```
 
-- ⚠️ `HELMHOLTZ_PATH`는 **슬래시 `/`** 사용 (역슬래시 `\` 쓰면 Modelica 문자열이 깨짐)
+- ⚠️ `HELMHOLTZ_PATH`는 **슬래시 `/`** 여야 함 (역슬래시 `\` 쓰면 Modelica 문자열이 깨짐). 위 `$HOME -replace` 한 줄이 현재 계정 홈을 자동으로 슬래시 경로로 바꿔줌 → 계정명(`kimjy`, `kimjy2576.kim` 등) 달라도 그대로 동작.
 - ⚠️ `PORT=8010` — 8000은 Docker·다른 LLM 서버가 자주 잡아서 충돌남. 8010으로 띄우는 걸 권장
 - 성공 로그: `Uvicorn running on http://0.0.0.0:8010` + `Modelica bridge imported (components: [...])`
 - ⚠️ **이 창을 닫거나 Ctrl+C 하면 서버가 즉시 죽음.** 캔버스 쓰는 내내 열어둘 것. 다른 명령은 **새 창**에서.
@@ -105,7 +107,7 @@ Invoke-RestMethod http://localhost:8010/health
 ### Step 1 — 최신 코드 받기 (변경 있었을 때만)
 
 ```powershell
-cd C:\Users\kimjy\hpwd-studio-task
+cd $HOME\hpwd-studio-task
 git pull
 ```
 - **백엔드** 바뀜 → 서버 재시작 필요
@@ -122,8 +124,8 @@ Get-NetTCPConnection -LocalPort 8010 -State Listen -EA SilentlyContinue
 ### Step 3 — 서버 띄우기 (환경변수는 매번 다시!)
 
 ```powershell
-cd C:\Users\kimjy\hpwd-studio-task\backend
-$env:HELMHOLTZ_PATH="C:/Users/kimjy/HelmholtzMedia/HelmholtzMedia/package.mo"
+cd $HOME\hpwd-studio-task\backend
+$env:HELMHOLTZ_PATH = ($HOME -replace '\\','/') + "/HelmholtzMedia/HelmholtzMedia/package.mo"
 $env:PORT="8010"
 python server.py
 ```
@@ -145,7 +147,7 @@ Invoke-RestMethod http://localhost:8010/health
 ### 빠른 복붙 (원래 PC, 한 줄)
 
 ```powershell
-cd C:\Users\kimjy\hpwd-studio-task\backend; $env:HELMHOLTZ_PATH="C:/Users/kimjy/HelmholtzMedia/HelmholtzMedia/package.mo"; $env:PORT="8010"; python server.py
+cd $HOME\hpwd-studio-task\backend; $env:HELMHOLTZ_PATH = ($HOME -replace '\\','/') + "/HelmholtzMedia/HelmholtzMedia/package.mo"; $env:PORT="8010"; python server.py
 ```
 → 그 다음 캔버스에서 연결만 확인 (이미 저장돼 있으면 자동).
 
@@ -157,7 +159,9 @@ cd C:\Users\kimjy\hpwd-studio-task\backend; $env:HELMHOLTZ_PATH="C:/Users/kimjy/
 |---|---|---|
 | `/health`가 `{"detail":"Not Found"}` (404) | 그 포트에 **HPWD가 아닌 다른 서버**가 떠 있음 (Docker / Open WebUI / llama 등) | 포트 점유자 확인 후 정리하거나, **HPWD를 다른 포트로**(`$env:PORT="8010"`) |
 | Status **"Failed to fetch" / Disconnected** | 로컬 서버가 안 떠 있음 (창 닫힘 / Ctrl+C / 크래시) | 서버 다시 띄우기 (Step 3) |
-| Modelica 토글이 **회색 (omc 없음)** | 백엔드 연결 안 됨, 또는 HELMHOLTZ_PATH 미설정 | `/health`의 `reason` 확인 → 환경변수 재설정 후 재시작 |
+| `/health` reason **"omc 없음"** | OpenModelica 미설치 or PATH 안 잡힘 | OpenModelica 설치 → **새 창**에서 `omc --version` 확인 → 그 창에서 서버 재시작 |
+| `/health` reason **"HelmholtzMedia 없음: <경로>"** | `HELMHOLTZ_PATH` 미설정 또는 경로 틀림 (계정명 다름 등) | `$HOME` 방식으로 재설정 (아래) → `Test-Path`로 파일 존재 확인 |
+| Modelica 토글이 **회색** (연결은 됨) | 위 둘 중 하나 (reason 확인) | `Invoke-RestMethod .../health | ConvertTo-Json -Depth 5` 로 reason 보기 |
 | 새 창에서 서버 띄웠더니 `available=False` | `$env:HELMHOLTZ_PATH`가 안 잡힘 (환경변수는 **창마다 따로**) | 같은 창에서 HELMHOLTZ_PATH 다시 설정 후 재시작 |
 | 포트 8000이 자꾸 충돌 | Docker 컨테이너 등이 8000 점유 | **PORT=8010** 등 다른 포트 사용 (권장) |
 | 같은 포트에 python 2개가 listen | 이전 서버가 Ctrl+C로 안 죽음 | `Get-NetTCPConnection -LocalPort <포트> -State Listen` 으로 PID 확인 → `Stop-Process` |
