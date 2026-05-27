@@ -5111,7 +5111,8 @@ function HPWDStudio() {
           currentConnectionCount={connections.length}
         />
       )}
-      {cycleOpen && <CycleRunnerModal onClose={() => setCycleOpen(false)} blocks={blocks} connections={connections} />}
+      {cycleOpen && <CycleRunnerModal onClose={() => setCycleOpen(false)} blocks={blocks} connections={connections}
+        onLoadTestRing={() => { const r = makeL1TestRing(); pushHistory(blocks, connections); setBlocks(r.blocks); setConnections(r.connections); return r; }} />}
       <ChatFAB onSend={chatExecuteMock} />
     </div>
   );
@@ -5614,6 +5615,51 @@ function extractCycleTopology(blocks, connections) {
   return { components, ring, volumes, ringLabels: ringKinds.map(k => labelOf[k]) };
 }
 
+// =============================================================
+// makeL1TestRing — 검증된 레퍼런스 사이클(Pc 16.59)을 캔버스 블록+연결로 생성
+//   원클릭 테스트용. params/inputValues를 레퍼런스 값으로 박아 매번 동일 재현.
+// =============================================================
+function makeL1TestRing() {
+  const ts = Date.now();
+  const mk = (i, type, x, y, name, params, inputValues) => {
+    const def = TYPES[type] || {};
+    return {
+      id: `tst${ts}_${i}`, type, x, y, name,
+      params: { ...Object.fromEntries((def.parameters || []).map(p => [p.key, p.value])), ...params },
+      inputValues: inputValues || {},
+      outputs: {},
+      state: def.stateInit ? JSON.parse(JSON.stringify(def.stateInit)) : {},
+    };
+  };
+  const comp = mk(0, 'compressor_theoretical', 470, 90,  'Comp · test',
+    { V_disp: 10, eta_vol: 0.85, eta_isen: 0.65 }, { N: 3000 });
+  const cond = mk(1, 'condenser_off_design', 650, 210, 'Cond · test',
+    { UA_deSH: 8, UA_2ph: 50, UA_SC: 5, dP_ref: 0.03 },
+    { T_air_in: 35, RH_air_in: 50, V_air_CMM: 25.42, P_cond: 19.07, m_dot_ref: 0.00458 });
+  const eev = mk(2, 'eev_off_design', 470, 330, 'EEV · test',
+    { A_orifice: 0.55, Cv_rated: 0.7, c0: 0, c1: 0.5, c2: 0.3, c3: 0.2 }, { opening: 50 });
+  const evap = mk(3, 'evaporator_off_design', 290, 210, 'Evap · test',
+    { UA_2ph: 25, UA_SH: 4, dP_ref: 0.02 },
+    { T_air_in: 50, RH_air_in: 90, V_air_CMM: 2.54, P_evap: 5.51, m_dot_ref: 0.00458 });
+  const blocks = [comp, cond, eev, evap];
+  const edge = (from, to, fside, tside) => ({
+    from: { blockId: from.id, side: fside, slot: 0 },
+    to: { blockId: to.id, side: tside, slot: 0 },
+    kind: 'refrigerant',
+    signals: autoMapSignals(from, to),
+    lineParams: defaultLineParams('refrigerant'),
+    cornerRadius: 8, routeMode: 'auto',
+  });
+  // 냉매 흐름 링: Comp→Cond→EEV→Evap→Comp
+  const connections = [
+    edge(comp, cond, 'right', 'top'),
+    edge(cond, eev, 'bottom', 'right'),
+    edge(eev, evap, 'left', 'bottom'),
+    edge(evap, comp, 'top', 'left'),
+  ];
+  return { blocks, connections };
+}
+
 function CyclePlot({ traj }) {
   if (!traj || !Array.isArray(traj.Pc_bar) || !traj.Pc_bar.length
       || !Array.isArray(traj.Pe_bar) || !Array.isArray(traj.SH_evap) || !Array.isArray(traj.time)) {
@@ -5660,7 +5706,7 @@ function CyclePlot({ traj }) {
 // =============================================================
 // CycleRunnerModal — 전체 L1 폐루프를 Modelica로 실행 (/run_cycle)
 // =============================================================
-function CycleRunnerModal({ onClose, blocks, connections }) {
+function CycleRunnerModal({ onClose, blocks, connections, onLoadTestRing }) {
   const [mode, setMode] = useState('fixed');          // 'fixed' | 'canvas'
   const [model, setModel] = useState('Cycle_L1_ramp');
   const [running, setRunning] = useState(false);
@@ -5705,9 +5751,11 @@ function CycleRunnerModal({ onClose, blocks, connections }) {
     setRunning(false);
   };
 
-  const runCanvasCycle = async () => {
+  const runCanvasCycle = async (blk, conn) => {
+    const useBlocks = blk || blocks;
+    const useConns = conn || connections;
     setRunning(true); setError(null); setResult(null); setDetected(null);
-    const topo = extractCycleTopology(blocks, connections);
+    const topo = extractCycleTopology(useBlocks, useConns);
     if (topo.error) { setError(topo.error); setRunning(false); return; }
     setDetected(topo.ringLabels);
     const settings = {
@@ -5815,14 +5863,25 @@ function CycleRunnerModal({ onClose, blocks, connections }) {
                       ))}
                     </div>
                   </div>
-                  <button onClick={runCanvasCycle} disabled={running}
-                    className="ml-auto inline-flex items-center gap-2 bg-violet-600 hover:bg-violet-700 disabled:opacity-60 text-white rounded-xl px-5 py-2.5 font-bold text-sm shadow-lg shadow-violet-500/25 transition">
-                    {running ? (<><span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" /> 실행 중…</>) : '▶ 캔버스에서 추출 & 실행'}
-                  </button>
+                  <div className="ml-auto flex items-center gap-2">
+                    {onLoadTestRing && (
+                      <button
+                        onClick={() => { const r = onLoadTestRing(); runCanvasCycle(r.blocks, r.connections); }}
+                        disabled={running} title="레퍼런스 사이클을 캔버스에 자동 구성하고 바로 실행 (Pc≈16.6)"
+                        className="inline-flex items-center gap-2 bg-white border border-violet-300 text-violet-700 hover:bg-violet-50 disabled:opacity-60 rounded-xl px-4 py-2.5 font-bold text-sm transition">
+                        🧪 테스트 링 구축 & 실행
+                      </button>
+                    )}
+                    <button onClick={() => runCanvasCycle()} disabled={running}
+                      className="inline-flex items-center gap-2 bg-violet-600 hover:bg-violet-700 disabled:opacity-60 text-white rounded-xl px-5 py-2.5 font-bold text-sm shadow-lg shadow-violet-500/25 transition">
+                      {running ? (<><span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" /> 실행 중…</>) : '▶ 캔버스에서 추출 & 실행'}
+                    </button>
+                  </div>
                 </div>
                 <div className="text-xs text-slate-500 leading-relaxed">
                   캔버스의 <b className="text-slate-700">냉매 연결</b>에서 링(Comp→Cond→EEV→Evap)을 추출해 .mo 자동생성·실행.
-                  {detected && (<span className="ml-1 font-mono text-violet-600">감지: {detected.join(' → ')} → {detected[0]}</span>)}
+                  <span className="ml-1">손으로 그렸으면 <b className="text-slate-700">캔버스에서 추출 & 실행</b>, 빠른 검증은 <b className="text-violet-700">테스트 링 구축 & 실행</b>.</span>
+                  {detected && (<span className="block mt-0.5 font-mono text-violet-600">감지: {detected.join(' → ')} → {detected[0]}</span>)}
                 </div>
               </div>
             )}
