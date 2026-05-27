@@ -5111,7 +5111,7 @@ function HPWDStudio() {
           currentConnectionCount={connections.length}
         />
       )}
-      {cycleOpen && <CycleRunnerModal onClose={() => setCycleOpen(false)} />}
+      {cycleOpen && <CycleRunnerModal onClose={() => setCycleOpen(false)} blocks={blocks} connections={connections} />}
       <ChatFAB onSend={chatExecuteMock} />
     </div>
   );
@@ -5548,6 +5548,72 @@ function ToolBtn({ icon: Icon, label, onClick, disabled, color = 'text-slate-700
 // =============================================================
 // CyclePlot — 사이클 기동 과도 궤적 (Pc/Pe[bar 좌축] + SH[K 우축] vs time)
 // =============================================================
+// =============================================================
+// extractCycleTopology — 캔버스 블록+연결 → 사이클 링 토폴로지
+//   냉매 컴포넌트 4종을 찾아, kind:'refrigerant' 연결의 from→to를 따라
+//   닫힌 링(comp→cond→eev→evap→comp)을 재구성. raw 파라미터 수집.
+// =============================================================
+function cycleKindOf(type) {
+  if (!type) return null;
+  if (type.startsWith('compressor')) return 'compressor';
+  if (type.startsWith('condenser')) return 'condenser';
+  if (type.startsWith('eev')) return 'eev';
+  if (type.startsWith('evaporator')) return 'evaporator';
+  return null;
+}
+
+function extractCycleTopology(blocks, connections) {
+  const refBlocks = (blocks || []).filter(b => cycleKindOf(b.type));
+  const byId = Object.fromEntries(refBlocks.map(b => [b.id, b]));
+  const NEED = ['compressor', 'condenser', 'eev', 'evaporator'];
+  const present = new Set(refBlocks.map(b => cycleKindOf(b.type)));
+  const missing = NEED.filter(k => !present.has(k));
+  const labelOf = { compressor: 'Compressor', condenser: 'Condenser', eev: 'EEV', evaporator: 'Evaporator' };
+  if (missing.length) {
+    return { error: `캔버스에 ${missing.map(k => labelOf[k]).join(', ')} 가 없음. Comp·Cond·EEV·Evap 4개가 냉매 연결로 닫힌 링을 이뤄야 함.` };
+  }
+
+  // 냉매 연결의 directed adjacency (컴포넌트 간, 첫 연결만)
+  const adj = {};
+  (connections || []).forEach(c => {
+    if (c.kind !== 'refrigerant') return;
+    const f = c.from?.blockId, t = c.to?.blockId;
+    if (byId[f] && byId[t] && f !== t && !(f in adj)) adj[f] = t;
+  });
+
+  // 압축기에서 from→to 따라 워크
+  const comp = refBlocks.find(b => cycleKindOf(b.type) === 'compressor');
+  const ring = [];
+  const seen = new Set();
+  let cur = comp.id;
+  while (cur && byId[cur] && !seen.has(cur)) {
+    seen.add(cur); ring.push(cur);
+    cur = adj[cur];
+  }
+  // 닫힘: 마지막 노드가 압축기로 돌아오고, 4종이 정확히 한 번씩
+  const closes = cur === comp.id;
+  const ringKinds = ring.map(id => cycleKindOf(byId[id].type));
+  if (ring.length !== 4 || !closes || new Set(ringKinds).size !== 4) {
+    return {
+      error: `닫힌 냉매 링이 아님 (감지 경로: ${ring.map(id => labelOf[cycleKindOf(byId[id].type)]).join('→') || '없음'}). `
+        + `Comp→Cond→EEV→Evap→Comp 순서로 냉매 연결을 닫아줘 (연결 방향=냉매 흐름).`,
+    };
+  }
+
+  // raw 파라미터 수집: b.params + inputValues(없으면 포트 기본값)
+  const components = ring.map(id => {
+    const b = byId[id];
+    const def = TYPES[b.type] || {};
+    const raw = { ...(b.params || {}) };
+    (def.inputs || []).forEach(inp => {
+      raw[inp.key] = b.inputValues?.[inp.key] ?? inp.value;
+    });
+    return { id: b.id, kind: cycleKindOf(b.type), params: raw };
+  });
+  const volumes = ring.map(() => 5e-4);   // 연결마다 0.5L (L1 lumped Volume)
+  return { components, ring, volumes, ringLabels: ringKinds.map(k => labelOf[k]) };
+}
+
 function CyclePlot({ traj }) {
   if (!traj || !Array.isArray(traj.Pc_bar) || !traj.Pc_bar.length
       || !Array.isArray(traj.Pe_bar) || !Array.isArray(traj.SH_evap) || !Array.isArray(traj.time)) {
@@ -5594,39 +5660,67 @@ function CyclePlot({ traj }) {
 // =============================================================
 // CycleRunnerModal — 전체 L1 폐루프를 Modelica로 실행 (/run_cycle)
 // =============================================================
-function CycleRunnerModal({ onClose }) {
+function CycleRunnerModal({ onClose, blocks, connections }) {
+  const [mode, setMode] = useState('fixed');          // 'fixed' | 'canvas'
   const [model, setModel] = useState('Cycle_L1_ramp');
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState(null);   // {settled, trajectory}
   const [error, setError] = useState(null);
+  const [detected, setDetected] = useState(null);     // 감지된 링 라벨
+  // 기동·초기화 설정 (캔버스 모드)
+  const [chargeG, setChargeG] = useState('89');
+  const [pRest, setPRest] = useState('9');
+  const [tRamp, setTRamp] = useState('20');
 
   const status = window.HPWD_BACKEND || {};
   const modelica = status.modelica || { available: false, reason: null, cycles: [] };
   const url = status.url || '';
 
+  const _applyResult = (data) => {
+    if (data.error) { setError(data.error); return; }
+    if (!data.trajectory || !Array.isArray(data.trajectory.Pc_bar) || !data.trajectory.Pc_bar.length) {
+      setError('결과에 궤적이 없음 — 서버 버전 확인 (git pull 후 python server.py 재시작).'); return;
+    }
+    setResult({ settled: data.settled || {}, trajectory: data.trajectory });
+  };
+
+  const _fetchErr = async (r, path) => {
+    let detail = `HTTP ${r.status}`;
+    try { const j = await r.json(); detail = j.detail || j.error || detail; } catch (e) {}
+    return r.status === 404
+      ? `로컬 서버에 ${path} 가 없음 (${detail}). git pull 후 python server.py 재시작 필요.`
+      : `서버 응답 오류: ${detail}`;
+  };
+
   const runCycle = async () => {
-    setRunning(true); setError(null); setResult(null);
+    setRunning(true); setError(null); setResult(null); setDetected(null);
     try {
       const r = await fetch(`${url}/run_cycle`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ model, stop_time: 120, tolerance: 1e-6, intervals: 240 }),
       });
-      if (!r.ok) {
-        let detail = `HTTP ${r.status}`;
-        try { const j = await r.json(); detail = j.detail || j.error || detail; } catch (e) {}
-        setError(r.status === 404
-          ? `로컬 서버에 /run_cycle 이 없음 (${detail}). git pull 후 python server.py 재시작 필요.`
-          : `서버 응답 오류: ${detail}`);
-        setRunning(false); return;
-      }
-      const data = await r.json();
-      if (data.error) {
-        setError(data.error);
-      } else if (!data.trajectory || !Array.isArray(data.trajectory.Pc_bar) || !data.trajectory.Pc_bar.length) {
-        setError('결과에 궤적이 없음 — 서버 버전 확인 (git pull 후 python server.py 재시작).');
-      } else {
-        setResult({ settled: data.settled || {}, trajectory: data.trajectory });
-      }
+      if (!r.ok) { setError(await _fetchErr(r, '/run_cycle')); setRunning(false); return; }
+      _applyResult(await r.json());
+    } catch (e) { setError(`요청 실패: ${e.message}`); }
+    setRunning(false);
+  };
+
+  const runCanvasCycle = async () => {
+    setRunning(true); setError(null); setResult(null); setDetected(null);
+    const topo = extractCycleTopology(blocks, connections);
+    if (topo.error) { setError(topo.error); setRunning(false); return; }
+    setDetected(topo.ringLabels);
+    const settings = {
+      charge_g: parseFloat(chargeG) || 89, p_rest_bar: parseFloat(pRest) || 9,
+      t_ramp: parseFloat(tRamp) || 20, stop_time: 120, tolerance: 1e-6, intervals: 240,
+    };
+    try {
+      const r = await fetch(`${url}/run_canvas_cycle`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ topology: topo, settings }),
+      });
+      if (!r.ok) { setError(await _fetchErr(r, '/run_canvas_cycle')); setRunning(false); return; }
+      _applyResult(await r.json());
     } catch (e) { setError(`요청 실패: ${e.message}`); }
     setRunning(false);
   };
@@ -5645,7 +5739,7 @@ function CycleRunnerModal({ onClose }) {
   const NODES = [
     ['🌀', 'Compressor', running ? '…' : '이론 L1', 'from-blue-600 to-blue-400'],
     ['♨', 'Condenser', ('Pc_bar' in s) ? `${s.Pc_bar.toFixed(2)} bar` : '— bar', 'from-amber-600 to-amber-400'],
-    ['🔻', 'EEV', ('opening' in s) ? `${s.opening.toFixed(0)}% 개도` : (('Pc_bar' in s) ? 'phi 0.35' : '개도'), 'from-red-600 to-red-400'],
+    ['🔻', 'EEV', ('opening' in s) ? `${s.opening.toFixed(0)}% 개도` : (('Pc_bar' in s) ? 'phi 고정' : '개도'), 'from-red-600 to-red-400'],
     ['❄', 'Evaporator', ('Pe_bar' in s) ? `${s.Pe_bar.toFixed(2)} bar` : '— bar', 'from-teal-600 to-teal-400'],
   ];
 
@@ -5668,34 +5762,70 @@ function CycleRunnerModal({ onClose }) {
           </div>
         ) : (
           <div className="p-5 space-y-4">
-            {/* controls */}
-            <div className="flex items-end gap-4 flex-wrap">
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wide">사이클 모델</label>
-                <div className="flex border border-slate-200 rounded-lg overflow-hidden bg-slate-50">
-                  {[['Cycle_L1_ramp', '고정 EEV'], ['Cycle_L1_ramp_PI', 'PI 제어']].map(([m, lbl]) => (
-                    <button key={m} onClick={() => setModel(m)} disabled={running}
-                      className={`px-3.5 py-2 text-sm font-semibold transition ${model === m ? 'bg-white text-slate-800 shadow-[inset_0_-2px_0_0_#0D9488]' : 'text-slate-500 hover:text-slate-700'}`}>
-                      {lbl}<span className="block font-mono text-[10px] text-slate-400">{m}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wide">시뮬 설정</label>
-                <div className="flex gap-2 text-xs font-mono text-slate-600">
-                  <span className="bg-slate-100 border border-slate-200 rounded px-2.5 py-2">stop <b className="text-slate-800">120</b>s</span>
-                  <span className="bg-slate-100 border border-slate-200 rounded px-2.5 py-2">dassl</span>
-                  <span className="bg-slate-100 border border-slate-200 rounded px-2.5 py-2">tol <b className="text-slate-800">1e-6</b></span>
-                </div>
-              </div>
-              <button onClick={runCycle} disabled={running}
-                className="ml-auto inline-flex items-center gap-2 bg-violet-600 hover:bg-violet-700 disabled:opacity-60 text-white rounded-xl px-5 py-2.5 font-bold text-sm shadow-lg shadow-violet-500/25 transition">
-                {running
-                  ? (<><span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" /> 실행 중…</>)
-                  : '▶ Run Cycle'}
-              </button>
+            {/* mode toggle */}
+            <div className="flex border border-slate-200 rounded-lg overflow-hidden bg-slate-50 w-fit">
+              {[['fixed', '고정 모델', '레퍼런스 .mo'], ['canvas', '캔버스 토폴로지', '내가 그린 링']].map(([m, lbl, sub]) => (
+                <button key={m} onClick={() => { setMode(m); setError(null); }} disabled={running}
+                  className={`px-4 py-2 text-sm font-semibold transition text-left ${mode === m ? 'bg-white text-violet-700 shadow-[inset_0_-2px_0_0_#7C3AED]' : 'text-slate-500 hover:text-slate-700'}`}>
+                  {lbl}<span className="block font-mono text-[10px] text-slate-400">{sub}</span>
+                </button>
+              ))}
             </div>
+
+            {/* controls — mode dependent */}
+            {mode === 'fixed' ? (
+              <div className="flex items-end gap-4 flex-wrap">
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wide">사이클 모델</label>
+                  <div className="flex border border-slate-200 rounded-lg overflow-hidden bg-slate-50">
+                    {[['Cycle_L1_ramp', '고정 EEV'], ['Cycle_L1_ramp_PI', 'PI 제어']].map(([m, lbl]) => (
+                      <button key={m} onClick={() => setModel(m)} disabled={running}
+                        className={`px-3.5 py-2 text-sm font-semibold transition ${model === m ? 'bg-white text-slate-800 shadow-[inset_0_-2px_0_0_#0D9488]' : 'text-slate-500 hover:text-slate-700'}`}>
+                        {lbl}<span className="block font-mono text-[10px] text-slate-400">{m}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wide">시뮬 설정</label>
+                  <div className="flex gap-2 text-xs font-mono text-slate-600">
+                    <span className="bg-slate-100 border border-slate-200 rounded px-2.5 py-2">stop <b className="text-slate-800">120</b>s</span>
+                    <span className="bg-slate-100 border border-slate-200 rounded px-2.5 py-2">dassl</span>
+                    <span className="bg-slate-100 border border-slate-200 rounded px-2.5 py-2">tol <b className="text-slate-800">1e-6</b></span>
+                  </div>
+                </div>
+                <button onClick={runCycle} disabled={running}
+                  className="ml-auto inline-flex items-center gap-2 bg-violet-600 hover:bg-violet-700 disabled:opacity-60 text-white rounded-xl px-5 py-2.5 font-bold text-sm shadow-lg shadow-violet-500/25 transition">
+                  {running ? (<><span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" /> 실행 중…</>) : '▶ Run Cycle'}
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="flex items-end gap-4 flex-wrap">
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wide">기동·초기화</label>
+                    <div className="flex gap-2">
+                      {[['charge', chargeG, setChargeG, 'g'], ['p_rest', pRest, setPRest, 'bar'], ['t_ramp', tRamp, setTRamp, 's']].map(([lbl, val, setter, u]) => (
+                        <label key={lbl} className="flex flex-col gap-1">
+                          <span className="font-mono text-[10px] text-slate-400">{lbl} [{u}]</span>
+                          <input type="number" value={val} disabled={running}
+                            onChange={(e) => setter(e.target.value)}
+                            className="w-20 bg-white border border-slate-200 rounded px-2 py-1.5 text-sm font-mono text-slate-700 focus:border-violet-400 outline-none" />
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                  <button onClick={runCanvasCycle} disabled={running}
+                    className="ml-auto inline-flex items-center gap-2 bg-violet-600 hover:bg-violet-700 disabled:opacity-60 text-white rounded-xl px-5 py-2.5 font-bold text-sm shadow-lg shadow-violet-500/25 transition">
+                    {running ? (<><span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" /> 실행 중…</>) : '▶ 캔버스에서 추출 & 실행'}
+                  </button>
+                </div>
+                <div className="text-xs text-slate-500 leading-relaxed">
+                  캔버스의 <b className="text-slate-700">냉매 연결</b>에서 링(Comp→Cond→EEV→Evap)을 추출해 .mo 자동생성·실행.
+                  {detected && (<span className="ml-1 font-mono text-violet-600">감지: {detected.join(' → ')} → {detected[0]}</span>)}
+                </div>
+              </div>
+            )}
 
             {/* loop schematic */}
             <div className="flex items-center gap-1 flex-wrap bg-slate-50 border border-slate-200 rounded-xl px-4 py-3">
