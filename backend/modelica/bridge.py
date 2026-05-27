@@ -434,6 +434,43 @@ _KIND_EMIT = {'compressor': _emit_compressor, 'condenser': _emit_condenser,
               'eev': _emit_eev, 'evaporator': _emit_evaporator}
 
 
+def _canvas_to_cycle_params(kind, raw):
+    """캔버스 raw 파라미터(+inputValues, 캔버스 단위) → SI 사이클 파라미터.
+
+    물리 매핑을 한 곳(백엔드)에 집중:
+      - 단위변환: V_disp cm³→m³, A_orifice mm²→m², RH %→frac, T_air °C→K(evap)
+      - R_fric 역산: dP_ref · p_nom / ṁ_nom   (캔버스 dP_ref 재사용; (b) 결정)
+      - EEV phi_fixed = ARI곡선 Φ(opening) = c0+c1·u+c2·u²+c3·u³, u=opening/100
+    """
+    def g(k, d):
+        v = raw.get(k, None)
+        try:
+            return float(v) if v not in (None, '') else float(d)
+        except (TypeError, ValueError):
+            return float(d)
+
+    if kind == 'compressor':
+        return {'V_disp': g('V_disp', 10.0) * 1e-6, 'N': g('N', 3000.0),
+                'eta_vol': g('eta_vol', 0.85), 'eta_isen': g('eta_isen', 0.65)}
+    if kind == 'condenser':
+        dP, P, mdot = g('dP_ref', 0.03), g('P_cond', 19.07) * 1e5, g('m_dot_ref', 0.00458)
+        return {'T_air_in_C': g('T_air_in', 35.0), 'RH_in': g('RH_air_in', 50.0) / 100.0,
+                'V_air_CMM': g('V_air_CMM', 25.42), 'UA_deSH': g('UA_deSH', 8.0),
+                'UA_2ph': g('UA_2ph', 50.0), 'UA_SC': g('UA_SC', 5.0),
+                'R_fric': dP * P / max(mdot, 1e-6)}
+    if kind == 'evaporator':
+        dP, P, mdot = g('dP_ref', 0.02), g('P_evap', 5.51) * 1e5, g('m_dot_ref', 0.00458)
+        return {'T_air_in_K': g('T_air_in', 50.0) + 273.15, 'RH_in': g('RH_air_in', 90.0) / 100.0,
+                'V_air_CMM': g('V_air_CMM', 2.54), 'UA_2ph': g('UA_2ph', 25.0),
+                'UA_SH': g('UA_SH', 4.0), 'R_fric': dP * P / max(mdot, 1e-6)}
+    if kind == 'eev':
+        u = g('opening', 50.0) / 100.0
+        phi = g('c0', 0.0) + g('c1', 0.5) * u + g('c2', 0.3) * u**2 + g('c3', 0.2) * u**3
+        return {'A_orifice': g('A_orifice', 3.14) * 1e-6, 'Cv': g('Cv_rated', 0.7),
+                'phi_fixed': max(phi, 1e-4)}
+    raise ValueError(f"미지원 kind: {kind}")
+
+
 def _h_rest_from_charge(charge_kg, p_rest_pa, sumV_m3, fluid='R290'):
     """목표 충전량 → 균압 p_rest에서의 균일 엔탈피 h_rest 역산.
     charge = rho(p_rest, h_rest) * ΣV  →  rho_target = charge/ΣV  →  h(p,rho)."""
@@ -528,8 +565,16 @@ def _parse_cycle_csv(csv_path, monitors, n_traj=80):
     return settled, traj
 
 
-def run_canvas_cycle(topology, settings):
-    """캔버스 토폴로지로 사이클 .mo 생성 → transient 시뮬 → 정착값+궤적."""
+def run_canvas_cycle(topology, settings, raw_params=True):
+    """캔버스 토폴로지로 사이클 .mo 생성 → transient 시뮬 → 정착값+궤적.
+
+    raw_params=True (기본): components[].params 가 캔버스 raw 값 → SI로 변환.
+    False: 이미 SI 파라미터로 간주 (내부 검증용)."""
+    if raw_params:
+        comps = [{'id': c['id'], 'kind': c['kind'],
+                  'params': _canvas_to_cycle_params(c['kind'], c.get('params', {}))}
+                 for c in topology['components']]
+        topology = {**topology, 'components': comps}
     mo, meta = generate_cycle_mo(topology, settings)
     wdir = os.path.join(_WORK, 'cycle_gen')
     os.makedirs(wdir, exist_ok=True)
