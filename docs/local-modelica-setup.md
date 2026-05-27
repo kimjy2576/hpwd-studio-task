@@ -159,7 +159,7 @@ cd $HOME\hpwd-studio-task\backend; $env:HELMHOLTZ_PATH = "$HOME\HelmholtzMedia\H
 |---|---|---|
 | `/health`가 `{"detail":"Not Found"}` (404) | 그 포트에 **HPWD가 아닌 다른 서버**가 떠 있음 (Docker / Open WebUI / llama 등) | 포트 점유자 확인 후 정리하거나, **HPWD를 다른 포트로**(`$env:PORT="8010"`) |
 | Status **"Failed to fetch" / Disconnected** | 로컬 서버가 안 떠 있음 (창 닫힘 / Ctrl+C / 크래시) | 서버 다시 띄우기 (Step 3) |
-| `/health` reason **"omc 없음"** | OpenModelica 미설치 or PATH 안 잡힘 | OpenModelica 설치 → **새 창**에서 `omc --version` 확인 → 그 창에서 서버 재시작 |
+| `/health` reason **"omc 없음"** | OpenModelica 미설치, **또는 (자주) 설치는 됐는데 서버를 띄운 창의 PATH에 omc가 없음** | 서버 창에서 `omc --version` 확인 → 안 되면 아래 **"⚠️ omc가 깔려있는데 'omc 없음'"** 참고 |
 | `/health` reason **"HelmholtzMedia 없음: <경로>"** | `HELMHOLTZ_PATH` 미설정 또는 경로 틀림 (계정명 다름 등) | `$HOME` 방식으로 재설정 (아래) → `Test-Path`로 파일 존재 확인 |
 | Modelica 토글이 **회색** (연결은 됨) | 위 둘 중 하나 (reason 확인) | `Invoke-RestMethod .../health | ConvertTo-Json -Depth 5` 로 reason 보기 |
 | 새 창에서 서버 띄웠더니 `available=False` | `$env:HELMHOLTZ_PATH`가 안 잡힘 (환경변수는 **창마다 따로**) | 같은 창에서 HELMHOLTZ_PATH 다시 설정 후 재시작 |
@@ -170,6 +170,40 @@ cd $HOME\hpwd-studio-task\backend; $env:HELMHOLTZ_PATH = "$HOME\HelmholtzMedia\H
 ```powershell
 Get-Process -Id (Get-NetTCPConnection -LocalPort 8010 -State Listen -EA SilentlyContinue).OwningProcess | Select Id, ProcessName, Path
 ```
+
+### ⚠️ omc가 깔려있는데도 `/health` reason이 "omc 없음"일 때 (실제로 자주 겪음)
+
+**원인:** 서버는 **자기를 띄운 PowerShell 창의 PATH**를 물려받음. 그 창이 OpenModelica 설치 *전*에 열렸거나, 설치로 바뀐 PATH를 아직 못 받았으면 — omc가 설치돼 있어도 서버(`shutil.which("omc")`)가 못 찾음. (다른 창에서 `omc --version`이 되더라도, **서버 띄운 그 창**에 없으면 소용 없음.)
+
+**진단 — 서버 띄운 바로 그 창에서:**
+```powershell
+omc --version
+```
+여기서 실패하면 그 창 PATH에 omc 없음 (= 원인 확정).
+
+**omc.exe 위치 찾기** (omc 되는 창에서, 또는 검색):
+```powershell
+where.exe omc
+# 안 나오면:
+Get-ChildItem "C:\Program Files\OpenModelica*\bin\omc.exe","C:\OpenModelica*\bin\omc.exe" -EA SilentlyContinue | Select FullName
+```
+
+**해결 1 (즉시)** — 서버 창에서 omc bin을 PATH 앞에 끼우고 서버 띄움 (경로는 실제 설치 경로로):
+```powershell
+$env:PATH = "C:\Program Files\OpenModelica1.26.x-64bit\bin;" + $env:PATH
+$env:HELMHOLTZ_PATH = "$HOME\HelmholtzMedia\HelmholtzMedia\package.mo".Replace('\','/')
+$env:PORT="8010"
+omc --version          # 이제 버전이 떠야 함
+python server.py
+```
+
+**해결 2 (영구)** — User PATH에 한 번 박고 **새 창**부터 사용:
+```powershell
+[Environment]::SetEnvironmentVariable("Path", $env:Path + ";C:\Program Files\OpenModelica1.26.x-64bit\bin", "User")
+# 이후 새로 여는 PowerShell 창은 omc가 항상 잡힘 (기존 창엔 적용 안 됨 → 새 창 열 것)
+```
+
+> 핵심: **서버는 반드시 `omc --version`이 되는 창에서 띄울 것.** 환경변수(`HELMHOLTZ_PATH`)와 마찬가지로 PATH도 "그 창에서" 유효해야 함.
 
 **알아두면 좋은 것**
 - 환경변수(`$env:...`)는 **PowerShell 창마다 따로**. 새 창 열면 다시 설정해야 함.
