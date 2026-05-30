@@ -74,11 +74,16 @@ except Exception as e:
 
 
 def _modelica_status():
-    """Modelica 엔진 사용 가능 여부 (omc + HelmholtzMedia 존재)."""
+    """Modelica 엔진 사용 가능 여부 (omc + HelmholtzMedia 존재).
+    omc 탐지 순서: ① $OMC_BIN (직접 지정한 omc.exe 경로) → ② PATH 상의 'omc'."""
     if not _modelica['imported']:
         return False, f"bridge import 실패: {_modelica['error']}"
-    if shutil.which("omc") is None:
-        return False, "omc 없음 (OpenModelica 미설치 — 로컬 dev에서만 사용 가능)"
+    omc_bin = os.environ.get("OMC_BIN")
+    if omc_bin:
+        if not os.path.isfile(omc_bin):
+            return False, f"OMC_BIN 경로에 파일 없음: {omc_bin}"
+    elif shutil.which("omc") is None:
+        return False, "omc 없음 (OpenModelica 미설치 or PATH 미설정 — $OMC_BIN env로 omc.exe 경로 직접 지정 가능)"
     if not os.path.exists(HELMHOLTZ_PATH):
         return False, f"HelmholtzMedia 없음: {HELMHOLTZ_PATH} (env HELMHOLTZ_PATH 설정)"
     return True, None

@@ -151,6 +151,12 @@ cd $HOME\hpwd-studio-task\backend; $env:HELMHOLTZ_PATH = "$HOME\HelmholtzMedia\H
 ```
 → 그 다음 캔버스에서 연결만 확인 (이미 저장돼 있으면 자동).
 
+> **omc PATH 분쟁이 잦은 PC라면** — `OMC_BIN`을 한 번 박아두면 PATH 무관하게 동작:
+> ```powershell
+> [Environment]::SetEnvironmentVariable("OMC_BIN", "C:\Program Files\OpenModelica1.26.x-64bit\bin\omc.exe", "User")
+> # 새 창부터 자동 적용. 자세한 건 트러블슈팅의 "해결 3" 참고.
+> ```
+
 ---
 
 ## 트러블슈팅 (이번에 실제로 겪은 것들)
@@ -203,7 +209,19 @@ python server.py
 # 이후 새로 여는 PowerShell 창은 omc가 항상 잡힘 (기존 창엔 적용 안 됨 → 새 창 열 것)
 ```
 
-> 핵심: **서버는 반드시 `omc --version`이 되는 창에서 띄울 것.** 환경변수(`HELMHOLTZ_PATH`)와 마찬가지로 PATH도 "그 창에서" 유효해야 함.
+**해결 3 (PATH 완전 우회)** — `$OMC_BIN` 환경변수로 omc.exe 경로 **직접 지정** (백엔드가 이 변수를 PATH보다 우선 사용):
+```powershell
+$env:OMC_BIN = "C:\Program Files\OpenModelica1.26.3-64bit\bin\omc.exe"   # omc.exe 까지 풀경로
+$env:HELMHOLTZ_PATH = "$HOME\HelmholtzMedia\HelmholtzMedia\package.mo".Replace('\','/')
+$env:PORT="8010"
+python server.py    # PATH에 omc 없어도 동작. where.exe omc 가 못 찾아도 OK.
+```
+> 가장 깔끔한 방법. PATH 분쟁(설치 위치 못 찾음 / 다른 omc와 충돌 / 새 창마다 prepend) 다 우회. `$env:OMC_BIN` 한 줄만 박으면 됨. **영구 등록**하려면 User 환경변수에 박으면 새 창마다 자동 적용:
+> ```powershell
+> [Environment]::SetEnvironmentVariable("OMC_BIN", "C:\Program Files\OpenModelica1.26.3-64bit\bin\omc.exe", "User")
+> ```
+
+> 핵심: **서버는 반드시 `omc --version`이 되는 창에서 띄울 것** (해결 1·2의 경우). `OMC_BIN`(해결 3)을 쓰면 `where.exe omc`가 못 찾아도 동작함.
 
 **알아두면 좋은 것**
 - 환경변수(`$env:...`)는 **PowerShell 창마다 따로**. 새 창 열면 다시 설정해야 함.

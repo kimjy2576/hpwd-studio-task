@@ -37,6 +37,12 @@ _WORK = os.environ.get("HPWD_MODELICA_WORK",
 _fs = lambda p: p.replace("\\", "/")   # omc .mos 문자열은 '/'만 안전 (Windows)
 
 
+def _omc_bin():
+    """omc 실행 파일 경로 결정. $OMC_BIN(omc.exe 전체 경로)이 있으면 우선 사용,
+    없으면 'omc'를 그대로 반환(=PATH에서 찾음). Windows의 PATH 분쟁을 우회하는 통로."""
+    return os.environ.get("OMC_BIN") or "omc"
+
+
 # ── 단위 변환기 ──────────────────────────────────────────────────
 def _ident(v): return float(v)
 def _mm2_to_m2(v): return float(v) * 1e-6      # 면적 mm² → m²  ★ 단위변경 반영
@@ -284,7 +290,7 @@ def _ensure_built(comp, timeout=240):
            f'buildModel(CanvasGen.GenCase, outputFormat="csv", stopTime=1,'
            f' numberOfIntervals=1); getErrorString();\n')
     open(os.path.join(bdir, "build.mos"), "w").write(mos)
-    r = subprocess.run(["omc", "build.mos"], cwd=bdir, capture_output=True,
+    r = subprocess.run([_omc_bin(), "build.mos"], cwd=bdir, capture_output=True,
                        text=True, timeout=timeout)
     # 실행파일 탐색 (Windows .exe / Linux 확장자 없음)
     exe = None
@@ -382,7 +388,7 @@ def run_cycle(model='Cycle_L1_ramp_PI', stop_time=120.0, tolerance=1e-6,
            f'numberOfIntervals={int(intervals)}, method="dassl", '
            f'tolerance={float(tolerance):.3g}, outputFormat="csv"); getErrorString();\n')
     open(os.path.join(wdir, 'run.mos'), 'w').write(mos)
-    r = subprocess.run(["omc", "run.mos"], cwd=wdir,
+    r = subprocess.run([_omc_bin(), "run.mos"], cwd=wdir,
                        capture_output=True, text=True, timeout=timeout)
     csv_path = os.path.join(wdir, f"HPWDcycle.{model}_res.csv")
     if not os.path.exists(csv_path):
@@ -593,7 +599,7 @@ def run_canvas_cycle(topology, settings, raw_params=True):
            f'numberOfIntervals={intervals}, method="dassl", '
            f'tolerance={tol:.3g}, outputFormat="csv"); getErrorString();\n')
     open(os.path.join(wdir, 'run.mos'), 'w').write(mos)
-    r = subprocess.run(["omc", "run.mos"], cwd=wdir,
+    r = subprocess.run([_omc_bin(), "run.mos"], cwd=wdir,
                        capture_output=True, text=True, timeout=900)
     csv_path = os.path.join(wdir, "GenCycle.Cycle_gen_res.csv")
     if not os.path.exists(csv_path):
