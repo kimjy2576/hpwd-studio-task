@@ -73,6 +73,7 @@ python server.py
 - ⚠️ `PORT=8010` — 8000은 Docker·다른 LLM 서버가 자주 잡아서 충돌남. 8010으로 띄우는 걸 권장
 - 성공 로그: `Uvicorn running on http://0.0.0.0:8010` + `Modelica bridge imported (components: [...])`
 - ⚠️ **이 창을 닫거나 Ctrl+C 하면 서버가 즉시 죽음.** 캔버스 쓰는 내내 열어둘 것. 다른 명령은 **새 창**에서.
+- 💡 omc PATH 충돌이 잦으면 → `$env:OMC_BIN="C:\...\omc.exe"`로 PATH 우회 가능 (아래 **빠른 복붙 B** / 트러블슈팅 **해결 3** 참고)
 
 ### E. 서버 확인 (새 PowerShell 창에서)
 
@@ -130,6 +131,7 @@ $env:PORT="8010"
 python server.py
 ```
 - 이 창은 열어둘 것 (서버 점유)
+- omc가 이 창 PATH에 안 잡혀 있다면 → `$env:OMC_BIN`으로 omc.exe 경로 직접 지정 가능 (아래 **빠른 복붙 B** 참고)
 
 ### Step 4 — 확인 (새 창)
 
@@ -146,16 +148,34 @@ Invoke-RestMethod http://localhost:8010/health
 
 ### 빠른 복붙 (원래 PC, 한 줄)
 
+서버 띄우는 방식 두 가지. **omc PATH 분쟁이 한 번이라도 있었다면 B 권장.**
+
+**A. 표준 — omc가 PATH에 잡힌 창에서:**
 ```powershell
 cd $HOME\hpwd-studio-task\backend; $env:HELMHOLTZ_PATH = "$HOME\HelmholtzMedia\HelmholtzMedia\package.mo".Replace('\','/'); $env:PORT="8010"; python server.py
 ```
-→ 그 다음 캔버스에서 연결만 확인 (이미 저장돼 있으면 자동).
 
-> **omc PATH 분쟁이 잦은 PC라면** — `OMC_BIN`을 한 번 박아두면 PATH 무관하게 동작:
-> ```powershell
-> [Environment]::SetEnvironmentVariable("OMC_BIN", "C:\Program Files\OpenModelica1.26.x-64bit\bin\omc.exe", "User")
-> # 새 창부터 자동 적용. 자세한 건 트러블슈팅의 "해결 3" 참고.
-> ```
+**B. OMC_BIN 경로 직접 지정 (권장) — PATH 신경 안 써도 됨.**
+
+① **일회용** (이 창에서만):
+```powershell
+cd $HOME\hpwd-studio-task\backend
+$env:OMC_BIN = "C:\Program Files\OpenModelica1.26.3-64bit\bin\omc.exe"   # 실제 omc.exe 경로
+$env:HELMHOLTZ_PATH = "$HOME\HelmholtzMedia\HelmholtzMedia\package.mo".Replace('\','/')
+$env:PORT="8010"
+python server.py
+```
+
+② **영구** (한 번만 박으면 새 창마다 자동 적용):
+```powershell
+[Environment]::SetEnvironmentVariable("OMC_BIN", "C:\Program Files\OpenModelica1.26.3-64bit\bin\omc.exe", "User")
+# 그 다음 새 창부터는 OMC_BIN 줄 빼도 됨:
+cd $HOME\hpwd-studio-task\backend; $env:HELMHOLTZ_PATH = "$HOME\HelmholtzMedia\HelmholtzMedia\package.mo".Replace('\','/'); $env:PORT="8010"; python server.py
+```
+
+> `OMC_BIN`은 백엔드(`bridge.py` `_omc_bin()`, `server.py` `_modelica_status()`)가 PATH보다 **우선** 사용. `where.exe omc`가 못 찾아도 동작함. 자세한 작동 원리는 트러블슈팅의 **해결 3** 참고.
+
+→ 그 다음 캔버스에서 연결만 확인 (이미 저장돼 있으면 자동).
 
 ---
 
