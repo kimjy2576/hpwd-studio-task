@@ -179,3 +179,16 @@ SH_target=6K, Kp=2, Ki=0.5, opening_init=50, clamp[5,100], 적분기 I(fixed=tru
 ## 로드맵
 L1 폐루프 완성(✓) → SH PI제어(✓) → Pc/Pe 타겟팅(N·UA) → L2(Comp_AHRI/Winandy, EEV Sami-Schnotale, MovingBoundary HX, charge_inventory)
 → L3 → fidelity 비교. 추후: 동특성(EEV 응답지연), surrogate 데이터, 캔버스→.mo 생성기.
+
+---
+
+## Air-side track (Phase A) — 진행 중
+
+### Step 1 (✓ 완료): foundation
+- `HPWDair.MoistAir` — 비압축 + dry-air basis 규약. p_vs/W_sat/rho_da/h_g/h_fg/h_da/T_from_h (Magnus + ideal humid-air). p_ref=101325.
+- `HPWDair.AirPort` — RefPort의 air 짝. (p, m_flow_da; stream h_tilde, W).
+- `HPWDair.AirVolume` — CRCR의 C 요소. 상태 T, W (stateSelect.prefer). 보존식 (m_da·der(W), m_da·der(h_tilde) 분리형, ρ_da·V 인라인).
+- `HPWDair.BoundaryAir_pTW` — 테스트용 p/T/W 경계.
+- checkModel 통과 (AirVolume 14/14, Boundary 4/4). MoistAir 25°C·W=0.01 textbook 일치 (p_vs 3168, W_sat 0.02007, ρ 1.165, h_da 50.6k, h_fg 2.443M, T round-trip OK).
+
+### Step 2~ (예정): Filter (Darcy-Forchheimer ΔP=K·u|u|) → Fan (Euler+Stodola+η) → HX 양면화(_air suffix, 기존 안 깸) → Drum (첫 동적, m_w·T_cl 상태) → 공기 링 + 냉매 짝짓기 → drum X(t)/SMER 검증
