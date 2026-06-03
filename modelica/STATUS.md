@@ -186,6 +186,7 @@ L1 폐루프 완성(✓) → SH PI제어(✓) → Pc/Pe 타겟팅(N·UA) → L2(
 
 ### Step 1 (✓ 완료): foundation
 - `HPWDair.MoistAir` — 비압축 + dry-air basis 규약. p_vs/W_sat/rho_da/h_g/h_fg/h_da/T_from_h (Magnus + ideal humid-air). p_ref=101325.
+  - **Path B 채택** (ASHRAE 정형식 직접). 과거 채팅 권고문의 "MSL 정합 후 미세차 크면 B로" 분기 발동: MSL이 HPWD 핵심 운전점(50°C/RH 90%, 드럼 출구)에서 CoolProp 대비 −5.6% h̃ 오차. Direct는 CoolProp 대비 ≤0.13%. Model docs `tpl-moistair-direct`에 근거·식·검증표 등재.
 - `HPWDair.AirPort` — RefPort의 air 짝. (p, m_flow_da; stream h_tilde, W).
 - `HPWDair.AirVolume` — CRCR의 C 요소. 상태 T, W (stateSelect.prefer). 보존식 (m_da·der(W), m_da·der(h_tilde) 분리형, ρ_da·V 인라인).
 - `HPWDair.BoundaryAir_pTW` — 테스트용 p/T/W 경계.

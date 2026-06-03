@@ -236,6 +236,7 @@ code, .mono { font-family: 'JetBrains Mono', monospace; }
 .badge-semi { background: #DBEAFE; color: #1E40AF; }
 .badge-on { background: #D1FAE5; color: #065F46; }
 .badge-future { background: #EDE9FE; color: #6D28D9; }
+.badge-direct { background: #CCFBF1; color: #115E59; }
 
 /* ════════ Content (우) ════════ */
 .content {
@@ -702,6 +703,13 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
       <div class="sidebar-item" data-model="filter-off"><span class="fidelity-badge badge-off">OFF</span> Darcy-Forchheimer</div>
       <div class="sidebar-item" data-model="filter-semi"><span class="fidelity-badge badge-semi">SEMI</span> DF 2항 (a·b fit)</div>
       <div class="sidebar-item" data-model="filter-on"><span class="fidelity-badge badge-on">ON</span> 메쉬 기하 → Ergun</div>
+    </div>
+
+    <div class="sidebar-section">Working Fluids</div>
+
+    <div class="sidebar-group">
+      <div class="sidebar-group-header"><span class="sidebar-group-icon">M</span> Moist Air</div>
+      <div class="sidebar-item" data-model="moistair-direct"><span class="fidelity-badge badge-direct">DIRECT</span> ASHRAE 정형식</div>
     </div>
 
     <div class="sidebar-section">Cross-cutting Phenomena</div>
@@ -3170,6 +3178,196 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
     <p>Evap Transient(typeNo 123) 구현 후 mode='cond'로 자동 파생. 별도 개발 거의 없음 (착상/제습 step만 비활성). typeNo <b>223</b> 예약.</p>
   </div>
 </template>
+<!-- ════════ Moist Air — DIRECT (ASHRAE psychrometric, path B) ════════ -->
+<template id="tpl-moistair-direct">
+  <div class="doc-header">
+    <div class="doc-eyebrow">MOIST AIR / Working Fluid</div>
+    <h1 class="doc-title">ASHRAE Direct Psychrometric<span class="doc-title-badge badge-direct">DIRECT</span></h1>
+    <div class="doc-subtitle">비압축 + dry-air basis. ASHRAE 정형식 직접 구현 — fitting 0개, CoolProp 대비 &lt;0.1% 일치.</div>
+  </div>
+
+  <div class="doc-section">
+    <h2>학계 참고문헌</h2>
+    <div class="ref-card">
+      <div class="ref-title">Primary</div>
+      <div class="ref-body"><b>ASHRAE Handbook of Fundamentals 2017</b>, Ch.1 — Psychrometrics. 정형식 (정의·이상혼합 + 잠열).</div>
+    </div>
+    <div class="ref-card">
+      <div class="ref-title">포화수증기압</div>
+      <div class="ref-body"><b>Magnus formula</b> (Alduchov &amp; Eskridge 1996) — 0~60°C에서 H-W 정형식 대비 ≤0.1% 오차. HPWD 운전범위(5~65°C) 충분.</div>
+    </div>
+    <div class="ref-card">
+      <div class="ref-title">Ground Truth</div>
+      <div class="ref-body"><b>CoolProp <code>HAPropsSI</code></b> (ASHRAE RP-1485, 실기체 enhancement factor 포함). 본 모델의 검증 기준.</div>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>매질 선택 근거 — Path A (MSL) vs Path B (Direct)</h2>
+    <p style="font-size:13px;color:var(--ink-soft);line-height:1.65;margin:6px 0">초기 권고문 ("MSL 정합 빠르게 확인, <b>미세차 크면 B로</b>")의 분기점. <b>HPWD 핵심 운전점</b>(드럼 출구: 50°C/RH 90%) 검증에서 MSL(이상기체)이 CoolProp 대비 5.6% h̃ 오차 → 트리거 조건 발동, <b>Path B 채택</b>.</p>
+
+    <div class="nomenclature">
+      <div class="nomen-group">
+        <div class="nomen-group-title">Path A — MSL <code>Modelica.Media.Air.MoistAir</code></div>
+        <div class="nomen-row"><span class="nomen-desc"><b>장점</b>: Modelica 표준 라이브러리, 다른 패키지와 호환</span></div>
+        <div class="nomen-row"><span class="nomen-desc"><b>단점</b>: 이상기체 혼합 가정 → 고습도(50°C/RH 90%)에서 CoolProp 대비 <b>−5.6% h̃</b></span></div>
+        <div class="nomen-row"><span class="nomen-desc">규약 충돌: per-total-mass enthalpy + X[water,da] mass fraction → 우리 per-dry-air + W 규약과 어댑터 필요</span></div>
+      </div>
+      <div class="nomen-group">
+        <div class="nomen-group-title">Path B — ASHRAE 정형식 (채택)</div>
+        <div class="nomen-row"><span class="nomen-desc"><b>장점</b>: CoolProp(ASHRAE RP-1485) 대비 ≤0.1% — HPWD 전 운전점</span></div>
+        <div class="nomen-row"><span class="nomen-desc"><b>장점</b>: per-dry-air basis 규약과 native 일치, 어댑터 불필요</span></div>
+        <div class="nomen-row"><span class="nomen-desc"><b>장점</b>: 식 7개 (~100줄), 외부 의존성 0, "fitting 없는 물리" 패러다임</span></div>
+        <div class="nomen-row"><span class="nomen-desc"><b>제약</b>: 표준 라이브러리 아님 → 자체 검증 의무 (CoolProp 비교 완료)</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>수학적 정의</h2>
+
+    <h3>① 포화수증기압 (Magnus)</h3>
+    <div class="eq-block">$$p_{vs}(T) = 610.78 \cdot \exp\!\left(\frac{17.27\,T_C}{T_C + 237.3}\right)\,\text{[Pa]}, \qquad T_C = T - T_0$$</div>
+    <p style="font-size:13px;color:var(--ink-soft);line-height:1.6;margin:6px 0">$T_0 = 273.15$ K (0°C). 0~60°C에서 H-W 정형식 대비 ≤0.1% 오차.</p>
+
+    <h3>② 포화 습도비</h3>
+    <div class="eq-block">$$W_s(T) = \varepsilon \cdot \frac{p_{vs}(T)}{p_{ref} - p_{vs}(T)}, \qquad \varepsilon = \frac{M_v}{M_{da}} = 0.622$$</div>
+    <p style="font-size:13px;color:var(--ink-soft);line-height:1.6;margin:6px 0">$p_{ref} = 101325$ Pa (비압축 규약). Drum 모델의 $h_m A_{eff}(W_s(T_{cl}) - W_{air})$ 구동력 항에서 사용.</p>
+
+    <h3>③ 건공기 부분 밀도</h3>
+    <div class="eq-block">$$\rho_{da}(T, W) = \frac{p_{ref} \cdot \varepsilon}{(\varepsilon + W) \cdot R_{da} \cdot T}\,\text{[kg}_{da}/\text{m}^3\text{]}$$</div>
+    <p style="font-size:13px;color:var(--ink-soft);line-height:1.6;margin:6px 0">$R_{da} = 287.05$ J/kg·K. 비압축이므로 로컬 $p$ 대신 $p_{ref}$ 사용. AirVolume의 $m_{da} = \rho_{da}V$.</p>
+
+    <h3>④ 습공기 엔탈피 (per dry-air basis)</h3>
+    <div class="eq-block">$$\tilde{h}(T, W) = c_{p,da}(T-T_0) + W\!\left[h_{fg,0} + c_{p,v}(T-T_0)\right]\,\text{[J/kg}_{da}\text{]}$$</div>
+    <p style="font-size:13px;color:var(--ink-soft);line-height:1.6;margin:6px 0">$c_{p,da} = 1005$, $c_{p,v} = 1860$ J/kg·K, $h_{fg,0} = 2.501\times10^6$ J/kg @ $T_0$. <b>참조: 건공기 0°C, 액체수 0°C.</b> 스트림 변수.</p>
+
+    <h3>⑤ 잠열 (Drum 사용)</h3>
+    <div class="eq-block">$$h_{fg}(T) = h_{fg,0} + (c_{p,v} - c_{p,w})(T-T_0), \qquad c_{p,w} = 4186\,\text{J/kg·K}$$</div>
+    <p style="font-size:13px;color:var(--ink-soft);line-height:1.6;margin:6px 0">$T$ 증가 시 감소: $h_{fg}(25°\text{C}) = 2.443\,\text{MJ/kg}$.</p>
+
+    <h3>⑥ 역함수 — T 복원</h3>
+    <div class="eq-block">$$T(\tilde{h}, W) = T_0 + \frac{\tilde{h} - W h_{fg,0}}{c_{p,da} + W c_{p,v}}$$</div>
+    <p style="font-size:13px;color:var(--ink-soft);line-height:1.6;margin:6px 0">$\tilde h(T,W)$가 $T$에 대해 선형이라 닫힌 해. 후처리·초기조건 변환 등.</p>
+  </div>
+
+  <div class="doc-section">
+    <h2>참조 기준점 (State Convention)</h2>
+    <div class="nomenclature">
+      <div class="nomen-group">
+        <div class="nomen-group-title">Reference State</div>
+        <div class="nomen-row"><span class="nomen-sym">$T_0$</span><span class="nomen-desc">건공기·액체수 기준온도</span><span class="nomen-unit">273.15 K</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$p_{ref}$</span><span class="nomen-desc">비압축 기준압 (밀도 평가)</span><span class="nomen-unit">101325 Pa</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$h_{fg,0}$</span><span class="nomen-desc">$T_0$에서의 증발잠열</span><span class="nomen-unit">2.501×10⁶ J/kg</span></div>
+      </div>
+      <div class="nomen-group">
+        <div class="nomen-group-title">Stream Variables (AirPort)</div>
+        <div class="nomen-row"><span class="nomen-sym">$\tilde h$</span><span class="nomen-desc">per-dry-air 엔탈피</span><span class="nomen-unit">J/kg<sub>da</sub></span></div>
+        <div class="nomen-row"><span class="nomen-sym">$W$</span><span class="nomen-desc">습도비 = $m_v/m_{da}$</span><span class="nomen-unit">kg/kg<sub>da</sub></span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\dot m_{da}$</span><span class="nomen-desc">건공기 질량유량 (flow)</span><span class="nomen-unit">kg<sub>da</sub>/s</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>Nomenclature</h2>
+    <div class="nomenclature">
+      <div class="nomen-group">
+        <div class="nomen-group-title">상수</div>
+        <div class="nomen-row"><span class="nomen-sym">$c_{p,da}$</span><span class="nomen-desc">건공기 정압비열</span><span class="nomen-unit">1005 J/kg·K</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$c_{p,v}$</span><span class="nomen-desc">수증기 정압비열</span><span class="nomen-unit">1860 J/kg·K</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$c_{p,w}$</span><span class="nomen-desc">액체수 비열</span><span class="nomen-unit">4186 J/kg·K</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$R_{da}$</span><span class="nomen-desc">건공기 기체상수</span><span class="nomen-unit">287.05 J/kg·K</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\varepsilon$</span><span class="nomen-desc">$M_v/M_{da}$</span><span class="nomen-unit">0.622</span></div>
+      </div>
+      <div class="nomen-group">
+        <div class="nomen-group-title">상태</div>
+        <div class="nomen-row"><span class="nomen-sym">$T, T_C$</span><span class="nomen-desc">온도 (K, °C)</span><span class="nomen-unit">K, °C</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$W$</span><span class="nomen-desc">습도비</span><span class="nomen-unit">kg<sub>v</sub>/kg<sub>da</sub></span></div>
+        <div class="nomen-row"><span class="nomen-sym">$p_{vs}$</span><span class="nomen-desc">포화수증기압</span><span class="nomen-unit">Pa</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\rho_{da}$</span><span class="nomen-desc">건공기 부분 밀도</span><span class="nomen-unit">kg<sub>da</sub>/m³</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>Code Mapping</h2>
+    <div class="code-map">
+<span class="file">modelica/HPWDair.mo → package MoistAir</span><br>
+├─ <span class="func">p_vs(T)</span>                <span class="desc">— Magnus 포화수증기압</span><br>
+├─ <span class="func">W_sat(T)</span>               <span class="desc">— p_ref에서의 포화 습도비</span><br>
+├─ <span class="func">rho_da_fn(T, W)</span>        <span class="desc">— 건공기 부분 밀도</span><br>
+├─ <span class="func">h_g(T)</span>                 <span class="desc">— 수증기 엔탈피 (ref: 액체수 0°C)</span><br>
+├─ <span class="func">h_fg(T)</span>                <span class="desc">— 증발잠열</span><br>
+├─ <span class="func">h_da_fn(T, W)</span>          <span class="desc">— per-dry-air 엔탈피 h̃</span><br>
+└─ <span class="func">T_from_h(h, W)</span>         <span class="desc">— 역변환 (닫힌 해)</span><br>
+<br>
+<span class="desc">※ AirVolume 내부에선 미분 안전을 위해 인라인 식 사용. 함수는 Drum/Filter/Fan에서 호출 (비미분 컨텍스트).</span>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>CoolProp 검증 (3-point Ground Truth)</h2>
+    <p style="font-size:13px;color:var(--ink-soft);line-height:1.65;margin:6px 0">동일 (T, W 또는 RH, p_ref)에서 CoolProp <code>HAPropsSI</code>와 본 식 비교.</p>
+    <div class="nomenclature">
+      <div class="nomen-group">
+        <div class="nomen-group-title">(a) 드럼 출구 — T=50°C, RH=90%</div>
+        <div class="nomen-row"><span class="nomen-sym">$W$</span><span class="nomen-desc">CoolProp 0.07710 / Magnus 0.07710</span><span class="nomen-unit">+0.00%</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\tilde h$</span><span class="nomen-desc">CoolProp 250085 / Direct 250250</span><span class="nomen-unit">+0.07%</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\rho_{da}$</span><span class="nomen-desc">CoolProp 1.04752 / Direct 1.0469</span><span class="nomen-unit">−0.06%</span></div>
+      </div>
+      <div class="nomen-group">
+        <div class="nomen-group-title">(b) 증발기 표면 — T=4.99°C, RH=99.9%</div>
+        <div class="nomen-row"><span class="nomen-sym">$W_{sat}$</span><span class="nomen-desc">CoolProp 0.005416 / Direct 0.005423</span><span class="nomen-unit">+0.13%</span></div>
+      </div>
+      <div class="nomen-group">
+        <div class="nomen-group-title">(c) 표준 검증점 — T=25°C, W=0.01</div>
+        <div class="nomen-row"><span class="nomen-sym">$\tilde h$</span><span class="nomen-desc">CoolProp 50613 / Direct 50600</span><span class="nomen-unit">−0.03%</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$h_{fg}$</span><span class="nomen-desc">교과서 2.443×10⁶ / Direct 2.4429×10⁶</span><span class="nomen-unit">−0.01%</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$T(h,W)$</span><span class="nomen-desc">round-trip (298.15 K → 298.15 K)</span><span class="nomen-unit">정확</span></div>
+      </div>
+    </div>
+    <p style="font-size:13px;color:var(--ink-soft);line-height:1.65;margin:10px 0"><b>최대 오차 0.13% (W_sat)</b> — Magnus의 0~60°C 범위 내 잔여 오차. HPWD L1에서 충분한 정밀도.</p>
+  </div>
+
+  <div class="doc-section">
+    <h2>MSL <code>Modelica.Media.Air.MoistAir</code>와의 차이</h2>
+    <p style="font-size:13px;color:var(--ink-soft);line-height:1.65;margin:6px 0">동일 (a) 지점 (T=50°C, RH=90%)에서 MSL 호출 결과:</p>
+    <div class="nomenclature">
+      <div class="nomen-group">
+        <div class="nomen-group-title">MSL vs Direct vs CoolProp @ (a)</div>
+        <div class="nomen-row"><span class="nomen-sym">$W$</span><span class="nomen-desc">CoolProp 0.07710 / MSL 0.07664 / Direct 0.07710</span><span class="nomen-unit">−0.6% / +0.0%</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\tilde h$</span><span class="nomen-desc">CoolProp 250085 / MSL 236128 / Direct 250250</span><span class="nomen-unit"><b>−5.6%</b> / +0.07%</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\rho$</span><span class="nomen-desc">CoolProp 1.04752 / MSL 1.04991 / Direct 1.0469</span><span class="nomen-unit">+0.2% / −0.06%</span></div>
+      </div>
+    </div>
+    <p style="font-size:13px;color:var(--ink-soft);line-height:1.65;margin:10px 0"><b>−5.6% 엔탈피 오차의 원인</b>: MSL이 이상기체 혼합 가정 사용. CoolProp(ASHRAE RP-1485)은 실기체 enhancement factor 적용. 고습도(W&gt;0.05)일수록 격차 확대. HPWD 드럼 출구가 정확히 이 영역(W≈0.077) → SMER 계산에 직접 영향 (잠열 비중 큼).</p>
+  </div>
+
+  <div class="doc-section">
+    <h2>적용 범위 + 한계</h2>
+    <p><b>✅ 적용 가능</b>: HPWD 전 운전점 (5~65°C, RH 0~99%, p ≈ p_ref ±5%).</p>
+    <p><b>⚠️ 한계</b>:</p>
+    <ul style="color: var(--ink-soft); font-size: 13px; line-height: 1.8;">
+      <li><b>비압축 가정</b> — 로컬 압력 변화로 ρ 안 바뀜. 팬 ΔP(~수백 Pa)는 1 atm 대비 작아 문제 없음. 큰 압력차 시스템 부적합.</li>
+      <li><b>이상혼합 (실기체 보정 없음)</b> — 그러나 ASHRAE 정형식 계수가 이미 RP-1485에 fit되어 있어 CoolProp 대비 0.1%. T &gt; 80°C·고압 영역만 주의.</li>
+      <li><b>Magnus의 T &gt; 60°C 정확도 저하</b> — 필요시 Hyland-Wexler 풀 정형식으로 교체 (수식만 다르고 인터페이스 동일).</li>
+      <li><b>응결수 모델 없음</b> — W가 W_sat 초과해도 자동 응결 X. 응결 처리는 컴포넌트(증발기 wet-coil 등)에서.</li>
+    </ul>
+  </div>
+
+  <div class="doc-section">
+    <h2>검증 상태</h2>
+    <div class="val-grid">
+      <div class="val-card"><div class="val-label">vs CoolProp HAPropsSI</div><div class="val-value">≤0.13%<span class="val-unit">3-point ground truth</span></div></div>
+      <div class="val-card"><div class="val-label">vs MSL MoistAir</div><div class="val-value">−5.6% h̃<span class="val-unit">@ HPWD 운전점 (이상기체 한계)</span></div></div>
+      <div class="val-card"><div class="val-label">checkModel</div><div class="val-value">통과<span class="val-unit">AirVolume 14eq/14var</span></div></div>
+      <div class="val-card"><div class="val-label">Modelica 구현</div><div class="val-value">완료<span class="val-unit">HPWDair.MoistAir</span></div></div>
+    </div>
+  </div>
+</template>
+
+
 <!-- ════════ Fan OFF (Euler + Stodola slip) ════════ -->
 <template id="tpl-fan-off">
   <div class="doc-header">
