@@ -689,6 +689,7 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
       <div class="sidebar-item" data-model="fan-off"><span class="fidelity-badge badge-off">OFF</span> Euler + Slip</div>
       <div class="sidebar-item" data-model="fan-semi"><span class="fidelity-badge badge-semi">SEMI</span> 손실 분해 (Incidence+Friction)</div>
       <div class="sidebar-item" data-model="fan-on"><span class="fidelity-badge badge-on">ON</span> Meanline + 손실 6종</div>
+      <div class="sidebar-item" data-model="fan-cfd"><span class="fidelity-badge badge-future">FUTURE</span> CFD 임펠러·스크롤</div>
     </div>
 
     <div class="sidebar-group">
@@ -696,6 +697,7 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
       <div class="sidebar-item" data-model="drum-off"><span class="fidelity-badge badge-off">OFF</span> Lewis + Constant-rate</div>
       <div class="sidebar-item" data-model="drum-semi"><span class="fidelity-badge badge-semi">SEMI</span> Falling-rate + Sorption</div>
       <div class="sidebar-item" data-model="drum-on"><span class="fidelity-badge badge-on">ON</span> 3-Zone 다층직물</div>
+      <div class="sidebar-item" data-model="drum-cfd"><span class="fidelity-badge badge-future">FUTURE</span> Multi-Scale Fabric</div>
     </div>
 
     <div class="sidebar-group">
@@ -703,6 +705,7 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
       <div class="sidebar-item" data-model="filter-off"><span class="fidelity-badge badge-off">OFF</span> Darcy-Forchheimer</div>
       <div class="sidebar-item" data-model="filter-semi"><span class="fidelity-badge badge-semi">SEMI</span> DF 2항 (a·b fit)</div>
       <div class="sidebar-item" data-model="filter-on"><span class="fidelity-badge badge-on">ON</span> 메쉬 기하 → Ergun</div>
+      <div class="sidebar-item" data-model="filter-cfd"><span class="fidelity-badge badge-future">FUTURE</span> Pore-Scale + 포집</div>
     </div>
 
     <div class="sidebar-section">Working Fluids</div>
@@ -719,6 +722,7 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
       <div class="sidebar-item" data-model="lint-off"><span class="fidelity-badge badge-off">OFF</span> 고정율 + 상수 포집</div>
       <div class="sidebar-item" data-model="lint-semi"><span class="fidelity-badge badge-semi">SEMI</span> 마모 fit + cake loading</div>
       <div class="sidebar-item" data-model="lint-on"><span class="fidelity-badge badge-on">ON</span> 입경별 포집 + cake 진화</div>
+      <div class="sidebar-item" data-model="lint-cfd"><span class="fidelity-badge badge-future">FUTURE</span> Fiber-Scale 생성</div>
     </div>
   </aside>
 
@@ -3674,6 +3678,149 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
 
 
 <!-- ════════ Drum OFF (Lewis + Constant-rate) ════════ -->
+<template id="tpl-fan-cfd">
+  <div class="doc-header">
+    <div class="doc-eyebrow">Fan / High-Fidelity (Future)</div>
+    <h1 class="doc-title">
+      CFD-Based Centrifugal Fan
+      <span class="doc-title-badge badge-future">FUTURE</span>
+    </h1>
+    <div class="doc-subtitle">3D RANS로 임펠러·스크롤 유동장 직접 해석 — 손실 6종을 상관식 없이 격자에서 분해 (구현 spec sheet)</div>
+  </div>
+
+  <div class="doc-section">
+    <h2>개요</h2>
+    <div class="ref-card" style="border-left-color: #7C3AED;">
+      <div class="ref-title" style="color: #7C3AED;">Status — 미구현 (설계 문서)</div>
+      <div class="ref-body">
+        현재 On (Meanline)이 손실 6종을 <b>상관식으로 간접 처리</b>하던 것을, 3D CFD로 <b>직접 공간 해석</b>. 앞전 박리·재순환 영역·스크롤 정압회복을 격자에서 산출. 특히 시로코(전곡 다익) 팬은 <b>스크롤 정압회복이 전압의 절반 이상</b>을 좌우하는데, 1D는 이걸 $\eta_{rec}$로 뭉쳤던 것을 CFD가 직접 포착. On 모델의 손실계수($k_{inc}, k_{fric}$ 등) calibration 데이터 생성이 주 목적.
+      </div>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>학계 참고문헌</h2>
+    <div class="ref-card">
+      <div class="ref-title">손실 기구 분해</div>
+      <div class="ref-body">
+        <b>Denton J.D. (1993)</b>: "Loss Mechanisms in Turbomachines", <i>J. Turbomachinery</i>. — 엔트로피 생성 기반 손실 분해의 고전. CFD 후처리로 영역별 손실을 가르는 근거.
+      </div>
+    </div>
+    <div class="ref-card">
+      <div class="ref-title">난류 모델</div>
+      <div class="ref-body">
+        <b>Menter F.R. (1994)</b>: "Two-equation eddy-viscosity turbulence models for engineering applications", <i>AIAA J.</i> — k-ω SST. 벽면 경계층 + 박리 예측 균형.
+      </div>
+    </div>
+    <div class="ref-card">
+      <div class="ref-title">회전 도메인 (MRF / Sliding Mesh)</div>
+      <div class="ref-body">
+        원심 송풍기 임펠러-볼류트 상호작용 CFD. MRF(정상)는 상대위치 고정 근사, sliding mesh(비정상)는 blade passing 맥동까지 포착.
+      </div>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>1. 지배방정식 (3D RANS, 회전 좌표계)</h2>
+    <p>임펠러는 회전 프레임(상대속도 $\mathbf{w}$)에서 풀어 정상상태화. 회전이 만드는 가상력 두 개가 추가됨:</p>
+    <div class="eq-block">
+      <div class="eq-label">Mass</div>
+      $$\nabla\cdot(\rho\,\mathbf{w}) = 0$$
+    </div>
+    <div class="eq-block">
+      <div class="eq-label">Momentum (회전 프레임)</div>
+      $$\nabla\cdot(\rho\,\mathbf{w}\mathbf{w}) = -\nabla P + \nabla\cdot\boldsymbol{\tau}_{eff} - \rho\underbrace{\left(2\,\boldsymbol{\Omega}\times\mathbf{w}\right)}_{\text{Coriolis}} - \rho\underbrace{\boldsymbol{\Omega}\times(\boldsymbol{\Omega}\times\mathbf{r})}_{\text{원심력}}$$
+    </div>
+    <p style="font-size:13px;color:var(--ink-soft);line-height:1.65;margin:6px 0">Coriolis·원심력이 blade 사이 유동을 휘게 만들고, 이게 곧 slip·재순환의 물리적 근원 — 1D에서 Stodola slip 계수로 뭉쳤던 것을 NS가 직접 만들어냄.</p>
+  </div>
+
+  <div class="doc-section">
+    <h2>2. 회전 도메인 — MRF vs Sliding Mesh</h2>
+    <table class="params">
+      <thead><tr><th>방식</th><th>특성</th><th>용도</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">MRF</td><td>정상상태, 임펠러-스크롤 상대위치 고정</td><td>성능점($\Delta p_t$·η) 빠른 산출</td></tr>
+        <tr><td class="mono">Sliding Mesh</td><td>비정상, 임펠러 실제 회전 + blade passing</td><td>맥동·소음·스크롤 혀(tongue) 상호작용</td></tr>
+      </tbody>
+    </table>
+    <p style="font-size:13px;color:var(--ink-soft);line-height:1.65;margin:6px 0">대부분의 설계점 calibration은 MRF로 충분하고, 스크롤 혀 근처 맥동·소음이 관심사일 때만 sliding mesh로.</p>
+  </div>
+
+  <div class="doc-section">
+    <h2>3. 손실 6종 직접 포착 (상관식 → 격자 해석)</h2>
+    <p>On 모델이 상관식으로 추정하던 손실을, CFD는 유동장에서 직접 (엔트로피 생성률 적분으로 영역 분해):</p>
+    <ul style="color: var(--ink-soft); font-size: 13px; line-height: 1.8;">
+      <li><b>① incidence</b> — 앞전 박리 영역을 직접 (설계점 이탈 시 박리 크기·위치)</li>
+      <li><b>② blade loading</b> — blade 압력·흡입면 압력차 분포</li>
+      <li><b>③ skin friction</b> — 벽면 전단응력 적분</li>
+      <li><b>④ disk friction</b> — 디스크면 점성 토크</li>
+      <li><b>⑤ recirculation</b> — 저유량 시 임펠러 입·출구 재순환 영역</li>
+      <li><b>⑥ scroll</b> — 스크롤 정압회복·박리·혀 손실 (시로코 최대 손실원)</li>
+    </ul>
+    <p style="font-size:13px;color:var(--ink-soft);line-height:1.65;margin:6px 0">즉 L3가 "어떤 손실이 얼마"를 상관식으로 가정했다면, CFD는 "어디서 엔트로피가 얼마나 생기나"를 격자에서 측정 — 손실의 <b>위치</b>를 알려주는 게 1D 대비 결정적 추가 정보.</p>
+  </div>
+
+  <div class="doc-section">
+    <h2>4. Turbulence + 수치</h2>
+    <table class="params">
+      <thead><tr><th>항목</th><th>권장</th><th>비고</th></tr></thead>
+      <tbody>
+        <tr><td>난류 모델</td><td class="mono">k-ω SST</td><td>박리 + 벽면 균형</td></tr>
+        <tr><td>회전</td><td class="mono">MRF / Sliding</td><td>정상 / 비정상</td></tr>
+        <tr><td>격자</td><td class="mono">3D, blade·혀 refine</td><td>y+ &lt; 1 (벽함수 미사용)</td></tr>
+        <tr><td>물성</td><td class="mono">공기 (습공기 옵션)</td><td>건조 공정이라 밀도 일정 근사</td></tr>
+        <tr><td>solver</td><td class="mono">OpenFOAM (MRFSimpleFoam) / Fluent</td><td>pressure-based 권장</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="doc-section">
+    <h2>Nomenclature</h2>
+    <div class="nomenclature">
+      <div class="nomen-group">
+        <div class="nomen-group-title">Latin Symbols</div>
+        <div class="nomen-row"><span class="nomen-sym">$P$</span><span class="nomen-desc">정압</span><span class="nomen-unit">Pa</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\mathbf{r}$</span><span class="nomen-desc">반경 위치 벡터</span><span class="nomen-unit">m</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\mathbf{u}$</span><span class="nomen-desc">절대속도 벡터</span><span class="nomen-unit">m/s</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\mathbf{w}$</span><span class="nomen-desc">상대속도 벡터 (회전 프레임)</span><span class="nomen-unit">m/s</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$y^+$</span><span class="nomen-desc">벽면 무차원 거리</span><span class="nomen-unit">—</span></div>
+      </div>
+      <div class="nomen-group">
+        <div class="nomen-group-title">Greek Symbols</div>
+        <div class="nomen-row"><span class="nomen-sym">$\boldsymbol{\Omega}$</span><span class="nomen-desc">임펠러 각속도 벡터</span><span class="nomen-unit">rad/s</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\rho$</span><span class="nomen-desc">공기 밀도</span><span class="nomen-unit">kg/m³</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\boldsymbol{\tau}_{eff}$</span><span class="nomen-desc">유효 응력 (점성+난류)</span><span class="nomen-unit">Pa</span></div>
+      </div>
+      <div class="nomen-group">
+        <div class="nomen-group-title">Subscripts</div>
+        <div class="nomen-row"><span class="nomen-sym">eff</span><span class="nomen-desc">Effective (점성+난류 합)</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">rec</span><span class="nomen-desc">Recovery (스크롤 정압회복)</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">t</span><span class="nomen-desc">Total (전압)</span><span class="nomen-unit"></span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>구현 로드맵 (제안)</h2>
+    <table class="params">
+      <thead><tr><th>단계</th><th>내용</th><th>난이도</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">M1</td><td>임펠러 단독 MRF 정상 — Δp_t·η 검증 (On과 ±5%)</td><td>중</td></tr>
+        <tr><td class="mono">M2</td><td>스크롤(volute) 결합 — 정압회복 η_rec 직접 산출</td><td>상</td></tr>
+        <tr><td class="mono">M3</td><td>Sliding mesh 비정상 — blade passing 맥동·혀 상호작용</td><td>상</td></tr>
+        <tr><td class="mono">M4</td><td>손실 6종 분해 후처리 (영역별 엔트로피 생성)</td><td>중</td></tr>
+        <tr><td class="mono">M5</td><td>형상 sweep (β2·b2·스크롤각) → On 손실계수 calibration map</td><td>중</td></tr>
+      </tbody>
+    </table>
+    <p style="font-size: 12px; margin-top: 10px;">검증 기준: CFD 성능점이 On (Meanline)과 ±5%. 손실 6종 분해값을 On 모델 $k_{inc}, k_{fric}, \eta_{rec}$에 역주입하여 1D 정확도 향상.</p>
+  </div>
+
+  <div class="doc-section">
+    <h2>현재 모델과의 관계</h2>
+    <p style="font-size: 13px;">On (typeNo 142)이 손실 6종을 <b>상관식으로 추정</b> → CFD (typeNo 143 예정)가 <b>유동장에서 직접 해석</b>. CFD는 런타임 사이클 시뮬엔 너무 느려서, <b>오프라인 calibration 데이터 생성기</b>로 사용 (On 모델의 손실계수·$\eta_{rec}$ map fit). Compressor의 θ-PDSim, EEV의 CFD 2-Phase와 동일 패턴 — <b>고fidelity가 저fidelity를 캘리브레이션</b>.</p>
+  </div>
+</template>
+
 <template id="tpl-drum-off">
   <div class="doc-header">
     <div class="doc-eyebrow">DRUM / Off-Design</div>
@@ -3955,6 +4102,182 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
 
 
 <!-- ════════ Filter OFF (Darcy-Forchheimer) ════════ -->
+<template id="tpl-drum-cfd">
+  <div class="doc-header">
+    <div class="doc-eyebrow">Drum / High-Fidelity (Future)</div>
+    <h1 class="doc-title">
+      Multi-Scale Fabric-Drying Drum
+      <span class="doc-title-badge badge-future">FUTURE</span>
+    </h1>
+    <div class="doc-subtitle">포 텀블링(DEM) + pore-scale 확산(LBM) + 모세관 wicking(VOF)을 결합 — fabric science를 직접 푸는 multi-physics 구현 spec</div>
+  </div>
+
+  <div class="doc-section">
+    <h2>개요</h2>
+    <div class="ref-card" style="border-left-color: #7C3AED;">
+      <div class="ref-title" style="color: #7C3AED;">Status — 미구현 (설계 문서 · 아이디어)</div>
+      <div class="ref-body">
+        On (3-Zone 다층직물)이 Fick 확산계수·Darcy 투과율·텀블링 Fr 효과·NTU를 <b>상관식/1D로 뭉쳤던</b> 것을, <b>3개 스케일의 multi-physics로 직접</b> 푼다. 섬유 사이 공극(μm)의 모세관·확산부터, 의류 한 장(cm)의 conjugate 열·물질, 드럼(m) 속 의류 묶음의 텀블링까지. 단일 솔버가 아니라 <b>스케일별 전용 기법을 약결합(co-simulation)</b>하는 게 핵심 아이디어. 각 스케일이 윗 스케일에 유효물성을 올려주고, 최종적으로 On 모델의 $D_{eff}$·$k_{perm}$·$X_{cr}$·Nu를 calibration.
+      </div>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>학계 참고문헌</h2>
+    <div class="ref-card">
+      <div class="ref-title">모세관 침투 (Wicking)</div>
+      <div class="ref-body">
+        <b>Washburn E.W. (1921)</b>: "The Dynamics of Capillary Flow", <i>Phys. Rev.</i> — 모세관 침투거리 $\propto\sqrt{t}$. 직물 wicking의 원형.
+      </div>
+    </div>
+    <div class="ref-card">
+      <div class="ref-title">다공매질 2상 (모세관압)</div>
+      <div class="ref-body">
+        <b>Leverett (1941)</b> J-function — 포화도-모세관압 관계. On(Darcy-Leverett)에서 이미 1D로 사용, Future는 pore-scale에서 직접 산출.
+      </div>
+    </div>
+    <div class="ref-card">
+      <div class="ref-title">입자 동역학 (DEM)</div>
+      <div class="ref-body">
+        <b>Cundall P.A., Strack O.D.L. (1979)</b>: "A discrete numerical model for granular assemblies", <i>Géotechnique</i>. — DEM 정립. 드럼 속 의류 묶음 텀블링의 거동 해석 기반.
+      </div>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>1. Multi-Scale 3층 구조 (핵심 아이디어)</h2>
+    <p>건조는 세 스케일이 얽힌 문제 — 각 스케일을 전용 기법으로 풀고, 아래가 위에 유효물성을 올려준다:</p>
+    <table class="params">
+      <thead><tr><th>스케일</th><th>대상 / 기법</th><th>산출 → 위로</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">Micro (μm)</td><td>섬유·yarn 공극 / LBM·pore-network</td><td>$D_{eff}$, $k_{perm}$, $P_c(S)$</td></tr>
+        <tr><td class="mono">Meso (cm)</td><td>의류 1장 두께+면 / conjugate + cloth FEM</td><td>건조곡선, 변형·접힘</td></tr>
+        <tr><td class="mono">Macro (m)</td><td>의류 묶음 텀블링 / DEM + 공기 CFD</td><td>접촉면적, 표면 갱신율</td></tr>
+      </tbody>
+    </table>
+    <p style="font-size:13px;color:var(--ink-soft);line-height:1.65;margin:6px 0">On 모델은 이 셋을 전부 상관식 하나씩으로 압축했음 — Future는 각 스케일을 따로 풀어 그 상관식의 <b>물리적 근거</b>를 만든다.</p>
+  </div>
+
+  <div class="doc-section">
+    <h2>2. 포 텀블링 동역학 (Macro)</h2>
+    <p>의류 묶음을 DEM 입자(또는 유연 쉘 FEM)로, 드럼 회전·중력·접촉을 직접 적분. 거동은 Froude 수가 가른다:</p>
+    <div class="eq-block">
+      $$Fr = \frac{\Omega^2 R}{g}$$
+    </div>
+    <ul style="color: var(--ink-soft); font-size: 13px; line-height: 1.8;">
+      <li><b>낮은 Fr</b> — cascading (바닥서 굴러내림, 부드러운 혼합)</li>
+      <li><b>중간 Fr</b> — cataracting (들렸다 낙하, 강한 표면 갱신)</li>
+      <li><b>높은 Fr</b> — centrifuging (벽에 원심 부착, 건조 정지)</li>
+    </ul>
+    <p style="font-size:13px;color:var(--ink-soft);line-height:1.65;margin:6px 0">텀블링이 <b>공기-의류 접촉면적과 표면 갱신율</b>을 결정 → 건조율의 거시 근원. On이 Fr 효과를 곱셈 계수로 뭉쳤던 것을, DEM이 실제 의류 거동에서 직접 산출.</p>
+  </div>
+
+  <div class="doc-section">
+    <h2>3. 포 내부 확산 (Micro, pore-scale)</h2>
+    <p>직물 대표체적(REV)에 yarn·fiber를 실제 배치하고, 공극에서 증기 이동을 직접:</p>
+    <div class="eq-block">
+      <div class="eq-label">Vapor (Fick + Knudsen)</div>
+      $$\frac{\partial(\varepsilon\rho_v)}{\partial t} = \nabla\cdot\left(D_{eff}(S)\,\nabla\rho_v\right), \quad \frac{1}{D_{eff}} = \frac{1}{D_{Fick}} + \frac{1}{D_{Kn}}$$
+    </div>
+    <p style="font-size:13px;color:var(--ink-soft);line-height:1.65;margin:6px 0">섬유 간극이 좁으면(수 μm) 분자가 벽과 더 자주 충돌 → <b>Knudsen 확산</b>이 지배. 공극이 액상으로 차면 증기 경로가 막혀 $D_{eff}$가 포화도 $S$의 강한 함수가 됨. On이 상수로 근사했던 $D_{eff}$를 <b>$D_{eff}(S)$ 곡선</b>으로 도출해 주입.</p>
+  </div>
+
+  <div class="doc-section">
+    <h2>4. 표면장력 · Wicking (Fabric Science)</h2>
+    <p>액상이 섬유 사이를 빨려 이동하는 것이 건조곡선을 좌우한다. 모세관압은 Young-Laplace:</p>
+    <div class="eq-block">
+      <div class="eq-label">모세관압 (Young-Laplace)</div>
+      $$P_c = \frac{2\sigma\cos\theta_c}{r_{pore}}$$
+    </div>
+    <div class="eq-block">
+      <div class="eq-label">Wicking 침투 (Washburn)</div>
+      $$\ell(t) = \sqrt{\frac{\sigma\, r_{pore}\cos\theta_c}{2\mu}\,t}$$
+    </div>
+    <p style="font-size:13px;color:var(--ink-soft);line-height:1.65;margin:6px 0">건조 중 내부 액상이 표면으로 <b>wicking</b>되면 표면 젖음이 유지돼 constant-rate가 연장되고, wicking이 못 따라오면 표면이 말라 falling-rate로 전환됨. 즉 <b>$X_{cr}$(임계함수율)의 미시 근원이 wicking 속도</b>. 액-기 계면은 VOF/phase-field로 추적.</p>
+    <p style="font-size:13px;color:var(--ink-soft);line-height:1.65;margin:6px 0">핵심: <b>접촉각 $\theta_c$(친수성)</b>가 직물 종류를 가른다 — 면(친수, 낮은 $\theta_c$)은 wicking 강해 표면 건조가 오래 유지되고, 폴리에스터(소수, 높은 $\theta_c$)는 wicking 약해 빨리 falling-rate. On에서 직물별 $X_{cr}$ 차이로 나타나던 것의 진짜 원인이 여기.</p>
+  </div>
+
+  <div class="doc-section">
+    <h2>5. Multi-Physics 결합</h2>
+    <p>세 물리는 시간스케일이 달라 약결합(staggered co-simulation)으로 묶는다:</p>
+    <table class="params">
+      <thead><tr><th>물리</th><th>시간스케일</th><th>주고받는 것</th></tr></thead>
+      <tbody>
+        <tr><td>텀블링 (DEM)</td><td class="mono">~ 초</td><td>접촉면적·자세 → 공기</td></tr>
+        <tr><td>공기 전달 (CFD)</td><td class="mono">~ 초</td><td>표면 열·물질플럭스 → 직물</td></tr>
+        <tr><td>내부 확산·wicking</td><td class="mono">~ 분</td><td>표면 함수율 → 증발 경계</td></tr>
+      </tbody>
+    </table>
+    <p style="font-size:13px;color:var(--ink-soft);line-height:1.65;margin:6px 0">의류 <b>변형(접힘·구겨짐)</b>이 공기 접촉면적과 내부 확산 경로를 동시에 바꾸므로, cloth FEM이 텀블링과 내부 모델을 잇는 다리가 된다.</p>
+  </div>
+
+  <div class="doc-section">
+    <h2>6. 수치 + 도구</h2>
+    <table class="params">
+      <thead><tr><th>항목</th><th>권장</th><th>비고</th></tr></thead>
+      <tbody>
+        <tr><td>텀블링</td><td class="mono">DEM (LIGGGHTS) / cloth FEM</td><td>의류 거동·변형</td></tr>
+        <tr><td>공기</td><td class="mono">CFD (OpenFOAM)</td><td>드럼 내 유동·전달</td></tr>
+        <tr><td>pore 확산</td><td class="mono">LBM / pore-network</td><td>유효 $D_{eff}(S)$</td></tr>
+        <tr><td>액상 계면</td><td class="mono">VOF / phase-field</td><td>wicking·모세관</td></tr>
+        <tr><td>물성</td><td class="mono">CoolProp + sorption isotherm</td><td>습공기 + 직물 평형</td></tr>
+        <tr><td>결합</td><td class="mono">co-simulation (preCICE)</td><td>약결합 staggered</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="doc-section">
+    <h2>Nomenclature</h2>
+    <div class="nomenclature">
+      <div class="nomen-group">
+        <div class="nomen-group-title">Latin Symbols</div>
+        <div class="nomen-row"><span class="nomen-sym">$D_{eff}$</span><span class="nomen-desc">유효 확산계수 (포화도 함수)</span><span class="nomen-unit">m²/s</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$Fr$</span><span class="nomen-desc">Froude 수 (텀블링 거동)</span><span class="nomen-unit">—</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$k_{perm}$</span><span class="nomen-desc">투과율</span><span class="nomen-unit">m²</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$P_c$</span><span class="nomen-desc">모세관압</span><span class="nomen-unit">Pa</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$r_{pore}$</span><span class="nomen-desc">공극 반경 (섬유 간극)</span><span class="nomen-unit">m</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$S$</span><span class="nomen-desc">포화도 (액상 체적비)</span><span class="nomen-unit">—</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$X_{cr}$</span><span class="nomen-desc">임계 함수율 (rate 전환점)</span><span class="nomen-unit">kg/kg</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\ell$</span><span class="nomen-desc">Wicking 침투거리</span><span class="nomen-unit">m</span></div>
+      </div>
+      <div class="nomen-group">
+        <div class="nomen-group-title">Greek Symbols</div>
+        <div class="nomen-row"><span class="nomen-sym">$\varepsilon$</span><span class="nomen-desc">공극률</span><span class="nomen-unit">—</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\theta_c$</span><span class="nomen-desc">접촉각 (친수성)</span><span class="nomen-unit">deg</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\sigma$</span><span class="nomen-desc">표면장력</span><span class="nomen-unit">N/m</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\Omega$</span><span class="nomen-desc">드럼 각속도</span><span class="nomen-unit">rad/s</span></div>
+      </div>
+      <div class="nomen-group">
+        <div class="nomen-group-title">Subscripts</div>
+        <div class="nomen-row"><span class="nomen-sym">Fick / Kn</span><span class="nomen-desc">Fick / Knudsen 확산</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">c</span><span class="nomen-desc">Capillary (모세관)</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">eff</span><span class="nomen-desc">Effective (유효)</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">v</span><span class="nomen-desc">Vapor (증기)</span><span class="nomen-unit"></span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>구현 로드맵 (제안)</h2>
+    <table class="params">
+      <thead><tr><th>단계</th><th>내용</th><th>난이도</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">M1</td><td>pore-scale REV → $D_{eff}(S)$·$k_{perm}$·$P_c(S)$ 곡선</td><td>상</td></tr>
+        <tr><td class="mono">M2</td><td>single garment conjugate 열·물질 + wicking (정적)</td><td>상</td></tr>
+        <tr><td class="mono">M3</td><td>텀블링 DEM — Fr별 의류 거동·접촉면적</td><td>상</td></tr>
+        <tr><td class="mono">M4</td><td>coupled (DEM↔CFD↔pore 약결합) + cloth 변형</td><td>최상</td></tr>
+        <tr><td class="mono">M5</td><td>직물 종류 sweep → On 모델 $D_{eff}$·$X_{cr}$·Fr효과·Nu calibration</td><td>중</td></tr>
+      </tbody>
+    </table>
+    <p style="font-size: 12px; margin-top: 10px;">검증 기준: 합성 건조곡선이 실측 건조곡선과 정합. 직물별 $X_{cr}$·$D_{eff}(S)$를 On 모델에 역주입.</p>
+  </div>
+
+  <div class="doc-section">
+    <h2>현재 모델과의 관계</h2>
+    <p style="font-size: 13px;">On (3-Zone 다층직물)이 $D_{eff}$·$k_{perm}$·Fr효과·$X_{cr}$를 <b>상관식/1D로 추정</b> → Future가 <b>3개 스케일에서 직접 도출</b>. multi-scale이라 1회 시뮬이 극도로 무거워 런타임 사이클엔 불가 → <b>오프라인 유효물성 생성기</b>. 특히 접촉각·표면장력·sorption 같은 <b>fabric science가 모델에 직접 들어가는 유일한 레벨</b> — "면이 폴리보다 왜 다르게 마르나"를 물성이 아니라 메커니즘으로 답한다. Compressor θ-PDSim, EEV CFD, Fan CFD와 같은 "고fidelity가 저fidelity를 캘리브레이션" 패턴.</p>
+  </div>
+</template>
+
 <template id="tpl-filter-off">
   <div class="doc-header">
     <div class="doc-eyebrow">FILTER / Off-Design</div>
@@ -4200,6 +4523,147 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
 
 
 <!-- ════════ Lint OFF (고정율 + 상수 포집) ════════ -->
+<template id="tpl-filter-cfd">
+  <div class="doc-header">
+    <div class="doc-eyebrow">Filter / High-Fidelity (Future)</div>
+    <h1 class="doc-title">
+      Pore-Scale Mesh + Particle Capture
+      <span class="doc-title-badge badge-future">FUTURE</span>
+    </h1>
+    <div class="doc-subtitle">메쉬 미세구조 CFD + Lagrangian 입자 포집 + 막힘 진전 — Filter ΔP와 Lint 포집을 동시에 직접 푸는 구현 spec</div>
+  </div>
+
+  <div class="doc-section">
+    <h2>개요</h2>
+    <div class="ref-card" style="border-left-color: #7C3AED;">
+      <div class="ref-title" style="color: #7C3AED;">Status — 미구현 (설계 문서)</div>
+      <div class="ref-body">
+        On (Ergun)이 $\varepsilon, d_f$로 <b>압력강하를 뭉치고</b>, Lint Transport가 포집효율을 <b>상수로 근사</b>하던 것을, 메쉬 wire 주위 미세구조 CFD + Lagrangian 입자 추적으로 <b>직접</b> 푼다. wire 후류 유동·lint 입자 궤적·섬유 포집·막힘 dendrite 성장을 격자에서 산출. <b>Filter와 Lint 두 모델을 동시에 먹이는</b> 유일한 레벨 — On의 $cf_{ergun}$과 Lint의 포집효율 $\eta$·막힘 곡선을 함께 calibration.
+      </div>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>학계 참고문헌</h2>
+    <div class="ref-card">
+      <div class="ref-title">Single-Fiber 포집 효율</div>
+      <div class="ref-body">
+        <b>Hinds W.C. (1999)</b>: <i>Aerosol Technology</i>, 2nd ed., Wiley. — 관성충돌·차단·확산 포집 메커니즘의 표준 정리. single-fiber efficiency 합성.
+      </div>
+    </div>
+    <div class="ref-card">
+      <div class="ref-title">섬유 주위 유동장</div>
+      <div class="ref-body">
+        <b>Kuwabara S. (1959)</b> cell model — 섬유 다발 주위 저Re 유동장 해석해. 포집 효율 계산의 유동 기반.
+      </div>
+    </div>
+    <div class="ref-card">
+      <div class="ref-title">막힘 / Dendrite</div>
+      <div class="ref-body">
+        섬유 여과의 dendrite 성장·막힘 진전 CFD-DEM. 포집 입자가 후속 유동·포집을 바꾸는 2-way 결합.
+      </div>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>1. 메쉬 미세구조 유동 (pore-scale CFD)</h2>
+    <p>wire array(또는 실제 직조 형상)를 격자로 깔고 주위 유동을 직접:</p>
+    <div class="eq-block">
+      <div class="eq-label">Flow (저Re, 단상)</div>
+      $$\nabla\cdot\mathbf{u} = 0, \qquad \rho(\mathbf{u}\cdot\nabla)\mathbf{u} = -\nabla P + \mu\nabla^2\mathbf{u}$$
+    </div>
+    <p style="font-size:13px;color:var(--ink-soft);line-height:1.65;margin:6px 0">On(Ergun)이 $\varepsilon, d_f$ 두 숫자로 뭉친 ΔP를, wire 후류·박리·가속에서 직접 적분. 직조 메쉬가 구형 충전층(Ergun 가정)과 다른 정도가 곧 $cf_{ergun}$의 근원 — 추측이던 보정계수를 격자가 만든다.</p>
+  </div>
+
+  <div class="doc-section">
+    <h2>2. 입자 포집 (Lagrangian + Single-Fiber)</h2>
+    <p>lint 입자를 Lagrangian으로 추적 (항력·관성):</p>
+    <div class="eq-block">
+      $$m_p\frac{d\mathbf{u}_p}{dt} = 3\pi\mu d_p(\mathbf{u} - \mathbf{u}_p) + \mathbf{F}_{ext}$$
+    </div>
+    <p>섬유 하나의 포집 효율 $\eta_f$는 메커니즘 4종의 합 — 어떤 게 지배하는지는 입자 크기가 가른다:</p>
+    <ul style="color: var(--ink-soft); font-size: 13px; line-height: 1.8;">
+      <li><b>관성충돌 (Stokes $Stk$)</b> — 큰/무거운 입자가 유선을 못 따라 섬유에 충돌</li>
+      <li><b>차단 (Interception $R=d_p/d_f$)</b> — 입자 크기로 섬유를 스치며 붙음</li>
+      <li><b>확산 (Péclet $Pe$)</b> — 미세 입자의 브라운 운동으로 섬유 접촉</li>
+      <li><b>정전기</b> — 재질(소수성 폴리·정전처리)에 의존, lint 부착 좌우</li>
+    </ul>
+    <p style="font-size:13px;color:var(--ink-soft);line-height:1.65;margin:6px 0">Lint Transport가 포집효율을 상수 $\eta_0$로 뒀던 것을, Future는 입자 크기 분포·유속별 $\eta_f$ 곡선으로 산출 — "굵은 보풀은 관성으로, 미세 분진은 확산으로 잡힌다"를 메커니즘으로.</p>
+  </div>
+
+  <div class="doc-section">
+    <h2>3. 막힘 진전 (Clogging)</h2>
+    <p>포집된 lint가 섬유에 <b>dendrite(나뭇가지 모양)</b>로 쌓이면 공극이 좁아져 유동·포집이 함께 바뀐다 (2-way):</p>
+    <ul style="color: var(--ink-soft); font-size: 13px; line-height: 1.8;">
+      <li><b>ΔP 상승</b> — 공극 $\varepsilon$ 감소 → 저항 급증 (Ergun의 $(1-\varepsilon)^2/\varepsilon^3$)</li>
+      <li><b>유동 재분배</b> — 막힌 영역 우회 → 국소 유속 변화</li>
+      <li><b>포집 강화/약화</b> — dendrite가 유효 섬유경을 키워 차단↑, 단 박리로 재비산도</li>
+    </ul>
+    <p style="font-size:13px;color:var(--ink-soft);line-height:1.65;margin:6px 0">이 시간 진전이 Lint Transport의 누적 막힘($m_{cake}$, inter-cycle)의 미시 근원 — 사이클마다 ΔP가 어떻게 오르는지를 dendrite morphology에서 직접.</p>
+  </div>
+
+  <div class="doc-section">
+    <h2>4. 수치 + 도구</h2>
+    <table class="params">
+      <thead><tr><th>항목</th><th>권장</th><th>비고</th></tr></thead>
+      <tbody>
+        <tr><td>미세구조 유동</td><td class="mono">pore-scale CFD (OpenFOAM)</td><td>wire array 직접</td></tr>
+        <tr><td>입자</td><td class="mono">Lagrangian DPM</td><td>궤적·포집 판정</td></tr>
+        <tr><td>막힘</td><td class="mono">CFD-DEM (2-way)</td><td>dendrite 성장·재분배</td></tr>
+        <tr><td>포집 모델</td><td class="mono">single-fiber (Stk·R·Pe)</td><td>메커니즘 분해</td></tr>
+        <tr><td>물성</td><td class="mono">공기 + lint 입경 분포</td><td>건조 공정 조건</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="doc-section">
+    <h2>Nomenclature</h2>
+    <div class="nomenclature">
+      <div class="nomen-group">
+        <div class="nomen-group-title">Latin Symbols</div>
+        <div class="nomen-row"><span class="nomen-sym">$d_f$</span><span class="nomen-desc">섬유(wire) 직경</span><span class="nomen-unit">m</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$d_p$</span><span class="nomen-desc">입자(lint) 직경</span><span class="nomen-unit">m</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$Pe$</span><span class="nomen-desc">Péclet 수 (확산 포집)</span><span class="nomen-unit">—</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$R$</span><span class="nomen-desc">Interception 비 $d_p/d_f$</span><span class="nomen-unit">—</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$Stk$</span><span class="nomen-desc">Stokes 수 (관성 포집)</span><span class="nomen-unit">—</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\mathbf{u}_p$</span><span class="nomen-desc">입자 속도</span><span class="nomen-unit">m/s</span></div>
+      </div>
+      <div class="nomen-group">
+        <div class="nomen-group-title">Greek Symbols</div>
+        <div class="nomen-row"><span class="nomen-sym">$\varepsilon$</span><span class="nomen-desc">공극률 (막힘 시 감소)</span><span class="nomen-unit">—</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\eta_f$</span><span class="nomen-desc">Single-fiber 포집효율</span><span class="nomen-unit">—</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\mu$</span><span class="nomen-desc">공기 점성</span><span class="nomen-unit">Pa·s</span></div>
+      </div>
+      <div class="nomen-group">
+        <div class="nomen-group-title">Subscripts</div>
+        <div class="nomen-row"><span class="nomen-sym">cake</span><span class="nomen-desc">누적 막힘층</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">f</span><span class="nomen-desc">Fiber (섬유)</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">p</span><span class="nomen-desc">Particle (입자)</span><span class="nomen-unit"></span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>구현 로드맵 (제안)</h2>
+    <table class="params">
+      <thead><tr><th>단계</th><th>내용</th><th>난이도</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">M1</td><td>메쉬 micro CFD — clean ΔP (Ergun과 ±)</td><td>중</td></tr>
+        <tr><td class="mono">M2</td><td>Lagrangian 입자 포집 — single-fiber $\eta_f$</td><td>상</td></tr>
+        <tr><td class="mono">M3</td><td>4종 메커니즘 분해 (Stk·R·Pe·정전기)</td><td>중</td></tr>
+        <tr><td class="mono">M4</td><td>막힘 진전 (dendrite, ΔP 상승곡선)</td><td>상</td></tr>
+        <tr><td class="mono">M5</td><td>입경·유속 sweep → On $cf_{ergun}$ + Lint $\eta$·막힘 calibration</td><td>중</td></tr>
+      </tbody>
+    </table>
+    <p style="font-size: 12px; margin-top: 10px;">검증 기준: clean ΔP가 On(Ergun)과 ±10%, 포집효율이 실측 lint 포집률과 정합. $\eta_f(d_p)$·막힘곡선을 Lint Transport에 역주입.</p>
+  </div>
+
+  <div class="doc-section">
+    <h2>현재 모델과의 관계</h2>
+    <p style="font-size: 13px;">On (Ergun)이 clean ΔP를, Lint Transport가 포집효율·막힘을 <b>상관식으로 추정</b> → Future가 <b>메쉬 미세구조에서 직접</b> 해석. pore-scale + 입자 추적이라 런타임 사이클엔 불가 → <b>오프라인 calibration 생성기</b>. Drum Future가 Drum+Lint(생성)를 먹이듯, Filter Future는 <b>Filter(ΔP)+Lint(포집·막힘)를 동시에</b> 먹인다. Compressor θ-PDSim, EEV·Fan·Drum CFD와 같은 "고fidelity가 저fidelity를 캘리브레이션" 패턴.</p>
+  </div>
+</template>
+
 <template id="tpl-lint-off">
   <div class="doc-header">
     <div class="doc-eyebrow">CROSS-CUTTING / Lint Transport</div>
@@ -4476,6 +4940,153 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
   </div>
 </template>
 
+
+<template id="tpl-lint-cfd">
+  <div class="doc-header">
+    <div class="doc-eyebrow">Lint / High-Fidelity (Future)</div>
+    <h1 class="doc-title">
+      Fiber-Scale Lint Generation
+      <span class="doc-title-badge badge-future">FUTURE</span>
+    </h1>
+    <div class="doc-subtitle">섬유 마모(Archard)·피로(S-N)·loose fiber 방출을 직접 푸는 fiber-scale 시뮬 — 생성의 데이터 공백을 메우는 구현 spec</div>
+  </div>
+
+  <div class="doc-section">
+    <h2>개요</h2>
+    <div class="ref-card" style="border-left-color: #7C3AED;">
+      <div class="ref-title" style="color: #7C3AED;">Status — 미구현 (설계 문서)</div>
+      <div class="ref-body">
+        L1/L2가 lint <b>생성</b>을 $c_{gen}$·마모계수·사이클 감쇠로 <b>fit하던 것이 곧 천장</b>이었다 — 운반·포집은 메커니즘이 있는데 <b>생성만 데이터 공백</b>이라 막혀 있었음. Future는 fiber-scale로 섬유 마모·피로·loose fiber 방출을 <b>직접</b> 푼다. Drum Future(텀블링 운반)·Filter Future(포집·막힘)와 합쳐, lint 라이프사이클 전체(<b>생성→운반→포집</b>)를 미시 해석으로 닫는다. 생성을 추측이 아니라 메커니즘으로 푸는 유일한 레벨.
+      </div>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>학계 참고문헌</h2>
+    <div class="ref-card">
+      <div class="ref-title">마모 (Wear)</div>
+      <div class="ref-body">
+        <b>Archard J.F. (1953)</b>: "Contact and rubbing of flat surfaces", <i>J. Appl. Phys.</i> — 마모 부피 ∝ 접촉하중×미끄럼거리. 섬유-섬유·섬유-드럼 마찰 lint의 기반.
+      </div>
+    </div>
+    <div class="ref-card">
+      <div class="ref-title">섬유 피로 / 미세섬유 방출</div>
+      <div class="ref-body">
+        <b>Yu &amp; Ding et al. (2023)</b> — 반복 하중에 의한 섬유 표면 피로·미세섬유 방출. 파단 없이 표면에서 떨어져 나오는 메커니즘.
+      </div>
+    </div>
+    <div class="ref-card">
+      <div class="ref-title">유연 섬유 동역학</div>
+      <div class="ref-body">
+        Flexible fiber / filament DEM — 개별 섬유를 굽힘 가능한 사슬로 모델링. 접촉력·변형·마찰 직접 적분.
+      </div>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>1. 섬유 마모 (Archard, fiber-scale)</h2>
+    <p>섬유-섬유·섬유-드럼 접촉의 마찰이 표면 섬유를 깎아낸다. 마모 부피는 Archard:</p>
+    <div class="eq-block">
+      $$V_{wear} = K_{arch}\,\frac{F_N\, L_{slide}}{H}$$
+    </div>
+    <p style="font-size:13px;color:var(--ink-soft);line-height:1.65;margin:6px 0">접촉하중 $F_N$·미끄럼거리 $L_{slide}$는 텀블링 DEM에서, 경도 $H$는 직물 재질에서. L1이 $c_{gen}$ 상수로 뭉친 것을, 마모 부피를 실제 접촉 통계에서 산출 — "텀블링이 셀수록·거칠수록 lint가 많다"를 메커니즘으로.</p>
+  </div>
+
+  <div class="doc-section">
+    <h2>2. 섬유 피로 (S-N Damage)</h2>
+    <p>반복 텀블링 하중이 섬유 표면에 누적 손상을 쌓아, <b>파단 없이도</b> 표면 섬유가 박리된다 (Miner 누적):</p>
+    <div class="eq-block">
+      $$D = \sum_i \frac{n_i}{N_f(\sigma_i)}, \qquad D \to 1 \Rightarrow \text{표면 박리}$$
+    </div>
+    <p style="font-size:13px;color:var(--ink-soft);line-height:1.65;margin:6px 0">응력 진폭 $\sigma_i$에서 피로수명 $N_f$ (S-N 곡선). 마모(즉각적 깎임)와 달리 피로는 <b>누적 후 방출</b>이라, 사용 사이클이 쌓일수록 방출이 느는 장기 거동의 근원.</p>
+  </div>
+
+  <div class="doc-section">
+    <h2>3. Loose Fiber Reservoir (사이클 고갈)</h2>
+    <p>새 직물은 제조 시 잔류한 loose fiber를 다량 품고 있다가 초기 몇 사이클에 방출한다 (reservoir 고갈):</p>
+    <ul style="color: var(--ink-soft); font-size: 13px; line-height: 1.8;">
+      <li><b>초기 reservoir</b> — 제조 잔류 + 절단 단부 loose fiber (새 옷 보풀 多)</li>
+      <li><b>고갈 (3~5 사이클)</b> — 빠르게 빠져나가며 방출률 급감 → plateau</li>
+      <li><b>정상 생성</b> — 이후엔 마모·피로가 만드는 fiber만 (느린 정상률)</li>
+    </ul>
+    <p style="font-size:13px;color:var(--ink-soft);line-height:1.65;margin:6px 0">L2가 사이클 감쇠 $[\beta+(1-\beta)e^{-n/n_0}]$로 근사한 곡선의 미시 근원 — reservoir 초기량·고갈 시정수 $n_0$를 직접 산출.</p>
+  </div>
+
+  <div class="doc-section">
+    <h2>4. 방출 → 운반 연결 (라이프사이클 닫기)</h2>
+    <p>생성된 입자의 <b>입경 분포</b>가 곧 다음 단계의 입력이 된다:</p>
+    <div class="mini-flow" style="margin:10px 0">
+      <div class="mini-step"><span class="step-num">Lint-F</span>생성 (마모·피로)</div>
+      <div class="mini-arrow">→</div>
+      <div class="mini-step"><span class="step-num">Drum-F</span>운반 (텀블링)</div>
+      <div class="mini-arrow">→</div>
+      <div class="mini-step"><span class="step-num">Filter-F</span>포집·막힘</div>
+    </div>
+    <p style="font-size:13px;color:var(--ink-soft);line-height:1.65;margin:6px 0">Lint Future가 산출한 입경 분포 $d_p$가 Filter Future의 single-fiber 포집($Stk$·$R$·$Pe$)의 입력 — "굵은 보풀 vs 미세 분진"이 생성에서 정해져 포집까지 흐른다. 세 Future가 맞물려 lint 라이프사이클을 미시 수준에서 완결.</p>
+  </div>
+
+  <div class="doc-section">
+    <h2>5. 수치 + 도구</h2>
+    <table class="params">
+      <thead><tr><th>항목</th><th>권장</th><th>비고</th></tr></thead>
+      <tbody>
+        <tr><td>섬유 동역학</td><td class="mono">flexible fiber DEM</td><td>굽힘·접촉·마찰</td></tr>
+        <tr><td>마모</td><td class="mono">Archard (접촉 통계)</td><td>$F_N$·$L_{slide}$ 적분</td></tr>
+        <tr><td>피로</td><td class="mono">S-N + Miner 누적</td><td>장기 방출</td></tr>
+        <tr><td>reservoir</td><td class="mono">고갈 동역학</td><td>초기 plateau</td></tr>
+        <tr><td>출력</td><td class="mono">입경 분포 $d_p$</td><td>→ Filter Future 입력</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="doc-section">
+    <h2>Nomenclature</h2>
+    <div class="nomenclature">
+      <div class="nomen-group">
+        <div class="nomen-group-title">Latin Symbols</div>
+        <div class="nomen-row"><span class="nomen-sym">$D$</span><span class="nomen-desc">누적 손상 (Miner)</span><span class="nomen-unit">—</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$d_p$</span><span class="nomen-desc">생성 입자 직경</span><span class="nomen-unit">m</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$F_N$</span><span class="nomen-desc">접촉 수직하중</span><span class="nomen-unit">N</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$H$</span><span class="nomen-desc">섬유 경도</span><span class="nomen-unit">Pa</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$K_{arch}$</span><span class="nomen-desc">Archard 마모계수</span><span class="nomen-unit">—</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$L_{slide}$</span><span class="nomen-desc">미끄럼 거리</span><span class="nomen-unit">m</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$N_f$</span><span class="nomen-desc">피로 수명 (S-N)</span><span class="nomen-unit">cycles</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$n_0$</span><span class="nomen-desc">reservoir 고갈 시정수</span><span class="nomen-unit">cycles</span></div>
+      </div>
+      <div class="nomen-group">
+        <div class="nomen-group-title">Greek Symbols</div>
+        <div class="nomen-row"><span class="nomen-sym">$\beta$</span><span class="nomen-desc">정상 생성률 비 (감쇠 바닥)</span><span class="nomen-unit">—</span></div>
+        <div class="nomen-row"><span class="nomen-sym">$\sigma_i$</span><span class="nomen-desc">응력 진폭 (피로)</span><span class="nomen-unit">Pa</span></div>
+      </div>
+      <div class="nomen-group">
+        <div class="nomen-group-title">Subscripts</div>
+        <div class="nomen-row"><span class="nomen-sym">arch</span><span class="nomen-desc">Archard (마모)</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">gen</span><span class="nomen-desc">Generation (생성)</span><span class="nomen-unit"></span></div>
+        <div class="nomen-row"><span class="nomen-sym">slide</span><span class="nomen-desc">Sliding (미끄럼)</span><span class="nomen-unit"></span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>구현 로드맵 (제안)</h2>
+    <table class="params">
+      <thead><tr><th>단계</th><th>내용</th><th>난이도</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">M1</td><td>fiber 다발 DEM — 접촉력·미끄럼 통계</td><td>상</td></tr>
+        <tr><td class="mono">M2</td><td>Archard 마모 → 즉각 생성률</td><td>중</td></tr>
+        <tr><td class="mono">M3</td><td>S-N 피로 누적 → 장기 박리</td><td>상</td></tr>
+        <tr><td class="mono">M4</td><td>reservoir 고갈 → 초기 plateau ($n_0$)</td><td>중</td></tr>
+        <tr><td class="mono">M5</td><td>직물·하중 sweep → L1/L2 $c_{gen}$·마모계수·$n_0$ + 입경분포 calibration</td><td>중</td></tr>
+      </tbody>
+    </table>
+    <p style="font-size: 12px; margin-top: 10px;">검증 기준: 누적 lint 질량·사이클 곡선이 실측과 정합. 단 생성은 데이터 공백이 커 <b>실험 검증이 특히 필수</b> (다른 Future보다 불확실).</p>
+  </div>
+
+  <div class="doc-section">
+    <h2>현재 모델과의 관계</h2>
+    <p style="font-size: 13px;">L1/L2가 생성을 $c_{gen}$·마모계수·사이클 감쇠로 <b>fit (천장 = 데이터 공백)</b> → Future가 <b>fiber-scale에서 직접</b> 해석. fiber DEM이라 극도로 무겁고, 생성 메커니즘 자체가 연구 단계라 <b>가장 불확실한 Future</b> — 오프라인 생성기지만 실험 검증이 핵심. Drum Future(운반)·Filter Future(포집)와 맞물려 <b>lint 라이프사이클(생성→운반→포집)을 미시 수준에서 완결</b>한다. Compressor θ-PDSim, EEV·Fan·Drum·Filter CFD와 같은 "고fidelity가 저fidelity를 캘리브레이션" 패턴.</p>
+  </div>
+</template>
 
 <template id="tpl-todo">
   <div class="doc-header">
