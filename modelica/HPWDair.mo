@@ -313,6 +313,102 @@ package HPWDair "HPWD air-side L1 (lumped, 비압축 + dry-air basis)"
 
 
   // =============================================================
+  // Drum_L1: 드럼 L1 (Lewis analogy + constant-rate). 첫 동적 컴포넌트.
+  //   상태 2개: 의류 수분 m_w, 의류 온도 T_cl.
+  //   공기측 quasi-steady·well-mixed (T_air=T_out, W_air=W_out).
+  //   air 네트워크에선 R: dry-air 보존 + ΔP_drum (CRCR 균일규칙).
+  //   증발수는 W로 흡수 → dry-air(m_flow_da)는 보존.
+  //   cloth 열용량은 wet 반영: C = m_cl_dry·c_p_cl + m_w·c_p_w.
+  //   L1 한계: constant-rate only (표면 free water, falling-rate 무시).
+  // =============================================================
+  model Drum_L1
+    "Drum L1 (Lewis + constant-rate; quasi-steady air + cloth dynamics)"
+    AirPort port_a "inlet";
+    AirPort port_b "outlet";
+
+    parameter Modelica.Units.SI.Mass m_cl_dry = 3.0
+      "dry cloth mass (load, kg)";
+    parameter Real c_p_cl = 1500 "dry cloth specific heat (J/kg·K)";
+    parameter Modelica.Units.SI.Area A_eff = 10
+      "effective cloth area, heat/mass transfer (m²)";
+    parameter Real h_a = 50 "air-cloth convective HTC (W/m²·K)";
+    parameter Modelica.Units.SI.Area A_drum = 0.15
+      "drum air-flow cross-section (m²)";
+    parameter Real K_drum = 30 "cloth-bed resistance (Pa·s²/m²)";
+    parameter Real X0 = 0.6 "initial moisture ratio (kg水/kg dry)";
+    parameter Modelica.Units.SI.Temperature Tcl0 = 298.15
+      "initial cloth temp (K)";
+
+    // ── states ──
+    Modelica.Units.SI.Mass m_w(
+      start = X0 * m_cl_dry, fixed = true,
+      stateSelect = StateSelect.prefer) "cloth moisture (state)";
+    Modelica.Units.SI.Temperature T_cl(
+      start = Tcl0, fixed = true,
+      stateSelect = StateSelect.prefer) "cloth temp (state)";
+    Real X "moisture ratio (dry basis)";
+
+    // ── air-side (quasi-steady, well-mixed bulk = outlet) ──
+    Modelica.Units.SI.MassFlowRate m_flow_da(start = 0.05)
+      "dry-air mass flow (a→b +)";
+    Real W_in(unit="kg/kg") "inlet humidity ratio (upstream)";
+    Modelica.Units.SI.SpecificEnthalpy h_in "inlet h_tilde (upstream)";
+    Modelica.Units.SI.Temperature T_in "inlet air temp";
+    Real W_out(unit="kg/kg", start = 0.02) "outlet/bulk humidity ratio";
+    Modelica.Units.SI.SpecificEnthalpy h_out "outlet/bulk h_tilde";
+    Modelica.Units.SI.Temperature T_out(start = 320)
+      "outlet/bulk (well-mixed) air temp";
+    Modelica.Units.SI.MassFlowRate m_evap(start = 5e-4) "evaporation rate";
+    Real W_s(unit="kg/kg") "saturation humidity at cloth surface";
+    Real h_m "mass transfer coeff (Lewis, kg/m²·s)";
+
+    // ── ΔP ──
+    Modelica.Units.SI.Density rho_da "dry-air density (p_ref, inlet)";
+    Modelica.Units.SI.Velocity u "drum-pass air velocity";
+    Modelica.Units.SI.Pressure dp_drum "air-side pressure drop";
+
+  equation
+    // ── dry-air 질량보존 (증발수는 W로; dry air 보존) ──
+    m_flow_da = port_a.m_flow_da;
+    port_a.m_flow_da + port_b.m_flow_da = 0;
+
+    // ── 입구(상류) 상태 ──
+    W_in = inStream(port_a.W_outflow);
+    h_in = inStream(port_a.h_tilde_outflow);
+    T_in = MoistAir.T_from_h(h_in, W_in);
+
+    // ── Lewis analogy + 표면포화 증발 (W_air = W_out) ──
+    W_s = MoistAir.W_sat(T_cl);
+    h_m = h_a / MoistAir.cp_da;
+    m_evap = h_m * A_eff * (W_s - W_out);
+
+    // ── 공기 CV (quasi-steady, well-mixed: T_air=T_out) ──
+    m_flow_da * (W_out - W_in) = m_evap;
+    m_flow_da * (h_out - h_in)
+        = -h_a * A_eff * (T_out - T_cl) + m_evap * MoistAir.h_g(T_cl);
+    T_out = MoistAir.T_from_h(h_out, W_out);
+
+    // ── cloth 동특성 (states) ──
+    X = m_w / m_cl_dry;
+    der(m_w) = -m_evap;
+    (m_cl_dry * c_p_cl + m_w * MoistAir.cp_w) * der(T_cl)
+        = h_a * A_eff * (T_out - T_cl) - m_evap * MoistAir.h_fg(T_cl);
+
+    // ── 공기측 압력강하 (의류 더미 저항, 단일 K) ──
+    rho_da = MoistAir.rho_da_fn(T_in, W_in);
+    u = m_flow_da / (rho_da * A_drum);
+    dp_drum = K_drum * u * abs(u);
+    port_b.p = port_a.p - dp_drum;
+
+    // ── stream: well-mixed (양 포트 outflow = bulk) ──
+    port_a.W_outflow = W_out;
+    port_b.W_outflow = W_out;
+    port_a.h_tilde_outflow = h_out;
+    port_b.h_tilde_outflow = h_out;
+  end Drum_L1;
+
+
+  // =============================================================
   // BoundaryAir_mflow: 유량 지정 경계 (테스트용 flow source/sink).
   //   port.m_flow_da 직접 지정 (음수 = 유출/source, 양수 = 유입/sink).
   //   stream (T,W)는 역류 시 공급될 상류값.

@@ -40,3 +40,20 @@ equation
   connect(filt.port_b, snk.port);
 end TestFanFilterL1;
 
+
+model TestDrumL1
+  "Drum_L1 단독: 60°C 건조공기 → 젖은 드럼(X0=0.6) → sink (건조 트랜지언트)"
+  // flow source: 60°C, W=0.01, 0.05 kg_da/s 공급 (음수=유출)
+  HPWDair.BoundaryAir_mflow src(
+    m_flow_da = -0.05, T = 333.15, W = 0.01);
+  HPWDair.Drum_L1 drum(
+    m_cl_dry = 3.0, c_p_cl = 1500, A_eff = 10, h_a = 50,
+    A_drum = 0.15, K_drum = 30, X0 = 0.6, Tcl0 = 298.15);
+  HPWDair.BoundaryAir_pTW snk(
+    p = HPWDair.MoistAir.p_ref, T = 333.15, W = 0.01);
+equation
+  connect(src.port, drum.port_a);
+  connect(drum.port_b, snk.port);
+end TestDrumL1;
+
+
