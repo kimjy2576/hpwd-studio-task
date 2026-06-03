@@ -71,4 +71,19 @@ equation
 end TestEvapAirL1;
 
 
+model TestCondAirL1
+  "CondAir_L1 단독: 식은 건조공기(14°C,W=0.0105) → 응축기(T_cond=60°C) → sink"
+  HPWDair.BoundaryAir_mflow src(
+    m_flow_da = -0.05, T = 287.15, W = 0.0105);
+  HPWDair.CondAir_L1 cond(
+    T_cond = 333.15, BF = 0.2, A_face = 0.05, K_air = 50);
+  HPWDair.BoundaryAir_pTW snk(
+    p = HPWDair.MoistAir.p_ref, T = 287.15, W = 0.0105);
+equation
+  connect(src.port, cond.port_a);
+  connect(cond.port_b, snk.port);
+end TestCondAirL1;
+
+
+
 
