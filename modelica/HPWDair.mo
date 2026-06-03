@@ -183,4 +183,94 @@ package HPWDair "HPWD air-side L1 (lumped, 비압축 + dry-air basis)"
   end BoundaryAir_pTW;
 
 
+  // =============================================================
+  // Fan_L1: 원심 송풍기 L1 (Euler + Stodola slip, 전곡 시로코).
+  //   R 요소 (압력상승 + dry-air 보존). 기하만으로 fan curve, fitting 없음.
+  //   비압축 규약: ρ는 p_ref·입구상태서 평가, V̇ = ṁ_da(1+W)/ρ.
+  //   L1 가정: 단열 (fan 자체발열 무시), 입구 선회 0.
+  // =============================================================
+  model Fan_L1 "Centrifugal fan L1 (Euler + Stodola slip, forward-curved)"
+    AirPort port_a "inlet";
+    AirPort port_b "outlet";
+
+    parameter Modelica.Units.SI.Diameter D2 = 0.15
+      "impeller outer diameter (m)";
+    parameter Modelica.Units.SI.Length b2 = 0.04
+      "outlet blade width (m)";
+    parameter Integer Z = 40 "blade count";
+    parameter Real beta2 = 150 "blade exit angle (deg, >90 = 전곡)";
+    parameter Real eta_h = 0.78 "hydraulic efficiency (시로코 ≈0.78)";
+    parameter Real eta_mech = 0.95 "mechanical efficiency";
+    parameter Real N = 3000 "rotational speed (rpm)";
+
+    Modelica.Units.SI.MassFlowRate m_flow_da "dry-air mass flow (a→b +)";
+    Modelica.Units.SI.Velocity U2 "blade tip speed";
+    Modelica.Units.SI.Velocity cm2 "outlet meridional velocity";
+    Modelica.Units.SI.Velocity ctheta2 "outlet swirl velocity";
+    Real sigma "Stodola slip factor";
+    Modelica.Units.SI.VolumeFlowRate V_dot "volumetric flow";
+    Modelica.Units.SI.Density rho "moist-air density (p_ref)";
+    Modelica.Units.SI.Pressure dp_t "theoretical total pressure rise";
+    Modelica.Units.SI.Pressure dp "static pressure rise";
+    Modelica.Units.SI.Power W_sh "shaft power";
+
+    Real W_op(unit="kg/kg") "inlet humidity ratio (upstream)";
+    Modelica.Units.SI.SpecificEnthalpy h_op "inlet h_tilde (upstream)";
+    Modelica.Units.SI.Temperature T_op "inlet temperature (upstream)";
+
+  protected
+    parameter Real beta2_rad = beta2 * Modelica.Constants.pi / 180.0;
+
+  equation
+    // ── dry-air 질량보존 (저장 없음) ──
+    m_flow_da = port_a.m_flow_da;
+    port_a.m_flow_da + port_b.m_flow_da = 0;
+
+    // ── 입구(상류) 상태 → 밀도 (정방향 a→b 가정) ──
+    W_op = inStream(port_a.W_outflow);
+    h_op = inStream(port_a.h_tilde_outflow);
+    T_op = MoistAir.T_from_h(h_op, W_op);
+    rho  = MoistAir.rho_da_fn(T_op, W_op) * (1 + W_op);
+
+    // ── 속도삼각형 + Euler + slip ──
+    U2 = Modelica.Constants.pi * D2 * N / 60;
+    V_dot = m_flow_da * (1 + W_op) / rho;
+    cm2 = V_dot / (Modelica.Constants.pi * D2 * b2);
+    sigma = 1 - Modelica.Constants.pi * sin(beta2_rad) / Z;
+    ctheta2 = sigma * U2 - cm2 / tan(beta2_rad);
+    dp_t = rho * U2 * ctheta2;
+    dp = eta_h * dp_t;
+    W_sh = rho * V_dot * U2 * ctheta2 / eta_mech;
+
+    // ── 압력상승 (fan이 dp를 더함) ──
+    port_b.p = port_a.p + dp;
+
+    // ── stream: 단열 pass-through (L1: 자체발열 무시) ──
+    port_a.h_tilde_outflow = inStream(port_b.h_tilde_outflow);
+    port_b.h_tilde_outflow = inStream(port_a.h_tilde_outflow);
+    port_a.W_outflow = inStream(port_b.W_outflow);
+    port_b.W_outflow = inStream(port_a.W_outflow);
+  end Fan_L1;
+
+
+  // =============================================================
+  // BoundaryAir_mflow: 유량 지정 경계 (테스트용 flow source/sink).
+  //   port.m_flow_da 직접 지정 (음수 = 유출/source, 양수 = 유입/sink).
+  //   stream (T,W)는 역류 시 공급될 상류값.
+  // =============================================================
+  model BoundaryAir_mflow "Air boundary: prescribed dry-air mass flow + (T,W)"
+    AirPort port;
+    parameter Modelica.Units.SI.MassFlowRate m_flow_da = -0.05
+      "prescribed dry-air mass flow (음수=유출)";
+    parameter Modelica.Units.SI.Temperature T = 298.15;
+    parameter Real W = 0.01 "humidity ratio (kg/kg_da)";
+  equation
+    port.m_flow_da = m_flow_da;
+    port.h_tilde_outflow =
+        MoistAir.cp_da * (T - MoistAir.T0)
+      + W * (MoistAir.hfg0 + MoistAir.cp_v * (T - MoistAir.T0));
+    port.W_outflow = W;
+  end BoundaryAir_mflow;
+
+
 end HPWDair;
