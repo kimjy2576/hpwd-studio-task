@@ -408,6 +408,9 @@ package HPWDair "HPWD air-side L1 (lumped, 비압축 + dry-air basis)"
     parameter Real X0 = 0.6 "initial moisture ratio (kg水/kg dry)";
     parameter Modelica.Units.SI.Temperature Tcl0 = 298.15
       "initial cloth temp (K)";
+    parameter Real UA_amb = 0.0
+      "cabinet 외기 열손실 UA (W/K); 0=단열(air 링 기본)";
+    parameter Modelica.Units.SI.Temperature T_amb = 298.15 "외기온 (K)";
 
     // ── states ──
     Modelica.Units.SI.Mass m_w(
@@ -431,6 +434,7 @@ package HPWDair "HPWD air-side L1 (lumped, 비압축 + dry-air basis)"
     Modelica.Units.SI.MassFlowRate m_evap(start = 5e-4) "evaporation rate";
     Real W_s(unit="kg/kg") "saturation humidity at cloth surface";
     Real h_m "mass transfer coeff (Lewis, kg/m²·s)";
+    Modelica.Units.SI.Power Q_amb "외기 열손실 (air→ambient)";
 
     // ── ΔP ──
     Modelica.Units.SI.Density rho_da "dry-air density (p_ref, inlet)";
@@ -454,8 +458,9 @@ package HPWDair "HPWD air-side L1 (lumped, 비압축 + dry-air basis)"
 
     // ── 공기 CV (quasi-steady, well-mixed: T_air=T_out) ──
     m_flow_da * (W_out - W_in) = m_evap;
+    Q_amb = UA_amb * (T_out - T_amb);
     m_flow_da * (h_out - h_in)
-        = -h_a * A_eff * (T_out - T_cl) + m_evap * MoistAir.h_g(T_cl);
+        = -h_a * A_eff * (T_out - T_cl) + m_evap * MoistAir.h_g(T_cl) - Q_amb;
     T_out = MoistAir.T_from_h(h_out, W_out);
 
     // ── cloth 동특성 (states) ──
