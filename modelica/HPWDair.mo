@@ -165,6 +165,76 @@ package HPWDair "HPWD air-side L1 (lumped, 비압축 + dry-air basis)"
 
 
   // =============================================================
+  // AirVolumeC: 압축성 공기 volume (T, W, p 상태) — 닫힌 루프 압력 앵커.
+  //   AirVolume과 동일하되 ρ를 *실제 p*로 평가 → mass balance가 der(p)를
+  //   품어 p가 상태가 됨. p 초기값(보통 대기압)이 루프 절대압 레벨을 고정.
+  //   과도 시 net mass imbalance를 p 변동으로 흡수 (volume이 "숨쉼").
+  //   비압축 AirVolume 3개 + 이거 1개로 링 구성 (압력 변동 ~0.1%, ρ 영향 무시).
+  // =============================================================
+  model AirVolumeC
+    "Compressible air volume (T, W, p states) — 닫힌 루프 압력 앵커"
+    AirPort port_a;
+    AirPort port_b;
+    parameter Modelica.Units.SI.Volume V = 0.05 "volume (m³)";
+    parameter Modelica.Units.SI.Temperature T_start = 320 "init temperature (K)";
+    parameter Real W_start = 0.01 "init humidity ratio (kg/kg_da)";
+    parameter Modelica.Units.SI.Pressure p_start = MoistAir.p_ref
+      "init pressure (절대압 레벨 앵커, 보통 대기압)";
+    parameter Boolean fixedState = false "true면 (T,W) start값 고정 초기화";
+    parameter Boolean steadyInit = true "fixedState=false면 steady (der=0) 초기화";
+
+    Modelica.Units.SI.Pressure p(
+      start = p_start, fixed = true,
+      stateSelect = StateSelect.prefer);
+    Modelica.Units.SI.Temperature T(
+      start = T_start, fixed = false,
+      stateSelect = StateSelect.prefer);
+    Real W(
+      start = W_start, fixed = false, unit = "kg/kg",
+      stateSelect = StateSelect.prefer);
+
+    Modelica.Units.SI.Density rho_da;
+    Modelica.Units.SI.Mass m_da;
+    Modelica.Units.SI.SpecificEnthalpy h_tilde;
+
+  equation
+    // ── 매질 식: ρ를 *실제 p*로 평가 (압축성 → p가 상태) ──
+    rho_da = p * MoistAir.eps
+             / ((MoistAir.eps + W) * MoistAir.R_da * T);
+    m_da = rho_da * V;
+    h_tilde = MoistAir.cp_da * (T - MoistAir.T0)
+            + W * (MoistAir.hfg0 + MoistAir.cp_v * (T - MoistAir.T0));
+
+    // ── 포트 식 ──
+    port_a.p = p;
+    port_b.p = p;
+    port_a.h_tilde_outflow = h_tilde;
+    port_b.h_tilde_outflow = h_tilde;
+    port_a.W_outflow = W;
+    port_b.W_outflow = W;
+
+    // ── 보존식 (mass가 der(p) 포함 → p 상태) ──
+    der(m_da) = port_a.m_flow_da + port_b.m_flow_da;
+    m_da * der(W) =
+        port_a.m_flow_da * (actualStream(port_a.W_outflow) - W)
+      + port_b.m_flow_da * (actualStream(port_b.W_outflow) - W);
+    m_da * der(h_tilde) =
+        port_a.m_flow_da * (actualStream(port_a.h_tilde_outflow) - h_tilde)
+      + port_b.m_flow_da * (actualStream(port_b.h_tilde_outflow) - h_tilde);
+
+  initial equation
+    if fixedState then
+      T = T_start;
+      W = W_start;
+    elseif steadyInit then
+      der(T) = 0;
+      der(W) = 0;
+    end if;
+    // p는 fixed=true로 p_start 고정 (절대압 레벨 앵커)
+  end AirVolumeC;
+
+
+  // =============================================================
   // BoundaryAir_pTW: 테스트용 경계조건 (압력·온도·습도 지정).
   //   AirVolume·R 컴포넌트를 양쪽에서 끼워 단독 검증할 때 사용.
   // =============================================================
