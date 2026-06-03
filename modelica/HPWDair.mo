@@ -203,7 +203,8 @@ package HPWDair "HPWD air-side L1 (lumped, 비압축 + dry-air basis)"
     parameter Real eta_mech = 0.95 "mechanical efficiency";
     parameter Real N = 3000 "rotational speed (rpm)";
 
-    Modelica.Units.SI.MassFlowRate m_flow_da "dry-air mass flow (a→b +)";
+    Modelica.Units.SI.MassFlowRate m_flow_da(start = 0.05)
+      "dry-air mass flow (a→b +)";
     Modelica.Units.SI.Velocity U2 "blade tip speed";
     Modelica.Units.SI.Velocity cm2 "outlet meridional velocity";
     Modelica.Units.SI.Velocity ctheta2 "outlet swirl velocity";
@@ -251,6 +252,64 @@ package HPWDair "HPWD air-side L1 (lumped, 비압축 + dry-air basis)"
     port_a.W_outflow = inStream(port_b.W_outflow);
     port_b.W_outflow = inStream(port_a.W_outflow);
   end Fan_L1;
+
+
+  // =============================================================
+  // Filter_L1: lint filter L1 (Darcy-Forchheimer, clean, 순수 R).
+  //   면 기하(면적·주름·경사)→media velocity u, ΔP = K·u|u| (관성지배 단순화).
+  //   clean 상태: 열·물질전달 무시 → 단열 pass-through. 압력 *강하*.
+  //   ※ K는 면적무관 미디어 저항. lint loading K(m_lint)는 L2/SEMI.
+  // =============================================================
+  model Filter_L1 "Lint filter L1 (Darcy-Forchheimer, clean, pure R)"
+    AirPort port_a "inlet";
+    AirPort port_b "outlet";
+
+    parameter Modelica.Units.SI.Area A_face = 0.05 "filter face area (m²)";
+    parameter Real r_pleat = 1.0 "pleat area ratio (≥1, 1=flat)";
+    parameter Real theta_face = 0 "face slope angle (deg)";
+    parameter Real K = 20 "media resistance (Pa·s²/m²)";
+
+    Modelica.Units.SI.MassFlowRate m_flow_da(start = 0.05)
+      "dry-air mass flow (a→b +)";
+    Modelica.Units.SI.Area A_media "effective media area";
+    Modelica.Units.SI.Velocity u "media velocity (부호=유향)";
+    Modelica.Units.SI.VolumeFlowRate V_dot "volumetric flow";
+    Modelica.Units.SI.Density rho "moist-air density (p_ref)";
+    Modelica.Units.SI.Pressure dp "pressure drop";
+
+    Real W_op(unit="kg/kg") "inlet humidity ratio (upstream)";
+    Modelica.Units.SI.SpecificEnthalpy h_op "inlet h_tilde (upstream)";
+    Modelica.Units.SI.Temperature T_op "inlet temperature (upstream)";
+
+  protected
+    parameter Real theta_rad = theta_face * Modelica.Constants.pi / 180.0;
+
+  equation
+    // ── dry-air 질량보존 (저장 없음) ──
+    m_flow_da = port_a.m_flow_da;
+    port_a.m_flow_da + port_b.m_flow_da = 0;
+
+    // ── 입구(상류) 상태 → 밀도 ──
+    W_op = inStream(port_a.W_outflow);
+    h_op = inStream(port_a.h_tilde_outflow);
+    T_op = MoistAir.T_from_h(h_op, W_op);
+    rho  = MoistAir.rho_da_fn(T_op, W_op) * (1 + W_op);
+
+    // ── 면 기하 → media velocity → ΔP (관성지배, C¹) ──
+    A_media = A_face * r_pleat / cos(theta_rad);
+    V_dot = m_flow_da * (1 + W_op) / rho;
+    u = V_dot / A_media;
+    dp = K * u * abs(u);
+
+    // ── 압력강하 (filter가 dp를 뺌) ──
+    port_b.p = port_a.p - dp;
+
+    // ── stream: 단열 pass-through (clean, 열·물질전달 무시) ──
+    port_a.h_tilde_outflow = inStream(port_b.h_tilde_outflow);
+    port_b.h_tilde_outflow = inStream(port_a.h_tilde_outflow);
+    port_a.W_outflow = inStream(port_b.W_outflow);
+    port_b.W_outflow = inStream(port_a.W_outflow);
+  end Filter_L1;
 
 
   // =============================================================
