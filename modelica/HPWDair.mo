@@ -409,6 +409,85 @@ package HPWDair "HPWD air-side L1 (lumped, 비압축 + dry-air basis)"
 
 
   // =============================================================
+  // EvapAir_L1: 증발기 공기측 L1 (냉각 + 제습, bypass-factor).
+  //   air 네트워크에선 R: dry-air 보존 + ΔP_air (핀 마찰).
+  //   코일 표면온도 = T_evap (파라미터, L1: 냉매측 막저항 무시 → 제습 다소 과대).
+  //   표면포화 W_s(T_evap)로 bypass-factor 제습:
+  //     T_out = BF·T_in + (1−BF)·T_evap
+  //     W_out = min(W_in, BF·W_in + (1−BF)·W_s)   (응축 시 감소, dry면 W_in)
+  //   응축수는 배수(stream 밖), Q는 냉매로 (추후 RefPort 커플링용 출력).
+  // =============================================================
+  model EvapAir_L1
+    "Evaporator air-side L1 (cooling + dehumidification, bypass-factor)"
+    AirPort port_a "inlet";
+    AirPort port_b "outlet";
+
+    parameter Modelica.Units.SI.Temperature T_evap = 283.15
+      "evap surface temp (prescribed, L1)";
+    parameter Real BF = 0.2 "bypass factor (0=ideal, ε=1−BF)";
+    parameter Modelica.Units.SI.Area A_face = 0.05 "coil face area (m²)";
+    parameter Real K_air = 50 "air-side fin resistance (Pa·s²/m²)";
+
+    Modelica.Units.SI.MassFlowRate m_flow_da(start = 0.05)
+      "dry-air mass flow (a→b +)";
+    Real W_in(unit="kg/kg") "inlet humidity ratio (upstream)";
+    Real W_out(unit="kg/kg") "outlet humidity ratio";
+    Real W_sat_s(unit="kg/kg") "saturation humidity at coil surface";
+    Modelica.Units.SI.SpecificEnthalpy h_in "inlet h_tilde (upstream)";
+    Modelica.Units.SI.SpecificEnthalpy h_out "outlet h_tilde";
+    Modelica.Units.SI.Temperature T_in "inlet air temp";
+    Modelica.Units.SI.Temperature T_out "outlet air temp";
+    Modelica.Units.SI.MassFlowRate m_cond "condensate rate (drained)";
+    Modelica.Units.SI.Power Q_total "heat to refrigerant";
+    Modelica.Units.SI.Power Q_sensible "sensible part";
+    Modelica.Units.SI.Power Q_latent "latent part (condensation)";
+    Real SHR "sensible heat ratio";
+
+    Modelica.Units.SI.Density rho_da "dry-air density (p_ref, inlet)";
+    Modelica.Units.SI.Velocity u "face velocity";
+    Modelica.Units.SI.VolumeFlowRate V_dot "volumetric flow";
+    Modelica.Units.SI.Pressure dp_air "air-side pressure drop";
+
+  equation
+    // ── dry-air 질량보존 (응축수는 배수; dry air 보존) ──
+    m_flow_da = port_a.m_flow_da;
+    port_a.m_flow_da + port_b.m_flow_da = 0;
+
+    // ── 입구(상류) 상태 ──
+    W_in = inStream(port_a.W_outflow);
+    h_in = inStream(port_a.h_tilde_outflow);
+    T_in = MoistAir.T_from_h(h_in, W_in);
+
+    // ── 표면포화 + bypass-factor 출구상태 ──
+    W_sat_s = MoistAir.W_sat(T_evap);
+    T_out = BF * T_in + (1 - BF) * T_evap;
+    W_out = min(W_in, BF * W_in + (1 - BF) * W_sat_s);
+    h_out = MoistAir.h_da_fn(T_out, W_out);
+
+    // ── 응축수 + 열 분해 (진단 + 추후 냉매 커플링) ──
+    m_cond = m_flow_da * (W_in - W_out);
+    Q_total = m_flow_da * (h_in - h_out)
+              - m_cond * MoistAir.cp_w * (T_out - MoistAir.T0);
+    Q_latent = m_cond * MoistAir.h_fg(T_out);
+    Q_sensible = Q_total - Q_latent;
+    SHR = Q_sensible / max(Q_total, 1e-9);
+
+    // ── 공기측 압력강하 (핀 마찰) ──
+    rho_da = MoistAir.rho_da_fn(T_in, W_in);
+    V_dot = m_flow_da / rho_da;
+    u = V_dot / A_face;
+    dp_air = K_air * u * abs(u);
+    port_b.p = port_a.p - dp_air;
+
+    // ── stream: 출구 처리상태 (양 포트 outflow = outlet) ──
+    port_a.W_outflow = W_out;
+    port_b.W_outflow = W_out;
+    port_a.h_tilde_outflow = h_out;
+    port_b.h_tilde_outflow = h_out;
+  end EvapAir_L1;
+
+
+  // =============================================================
   // BoundaryAir_mflow: 유량 지정 경계 (테스트용 flow source/sink).
   //   port.m_flow_da 직접 지정 (음수 = 유출/source, 양수 = 유입/sink).
   //   stream (T,W)는 역류 시 공급될 상류값.

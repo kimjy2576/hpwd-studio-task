@@ -57,3 +57,18 @@ equation
 end TestDrumL1;
 
 
+model TestEvapAirL1
+  "EvapAir_L1 단독: 습한 더운 공기(30°C,W=0.022) → 증발기(T_evap=10°C) → sink"
+  HPWDair.BoundaryAir_mflow src(
+    m_flow_da = -0.05, T = 303.15, W = 0.022);
+  HPWDair.EvapAir_L1 evap(
+    T_evap = 283.15, BF = 0.2, A_face = 0.05, K_air = 50);
+  HPWDair.BoundaryAir_pTW snk(
+    p = HPWDair.MoistAir.p_ref, T = 303.15, W = 0.022);
+equation
+  connect(src.port, evap.port_a);
+  connect(evap.port_b, snk.port);
+end TestEvapAirL1;
+
+
+
