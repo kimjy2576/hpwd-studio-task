@@ -5658,14 +5658,14 @@ function makeL1TestRing() {
       state: def.stateInit ? JSON.parse(JSON.stringify(def.stateInit)) : {},
     };
   };
-  const comp = mk(0, 'compressor_theoretical', 470, 90,  'Comp · test',
+  const comp = mk(0, 'compressor_theoretical', 180, 120,  'Comp · test',
     { V_disp: 10, eta_vol: 0.85, eta_isen: 0.65 }, { N: 3000 });
-  const cond = mk(1, 'condenser_off_design', 650, 210, 'Cond · test',
+  const cond = mk(1, 'condenser_off_design', 700, 120, 'Cond · test',
     { UA_deSH: 8, UA_2ph: 50, UA_SC: 5, dP_ref: 0.03 },
     { T_air_in: 35, RH_air_in: 50, V_air_CMM: 25.42, P_cond: 19.07, m_dot_ref: 0.00458 });
-  const eev = mk(2, 'eev_off_design', 470, 330, 'EEV · test',
+  const eev = mk(2, 'eev_off_design', 700, 480, 'EEV · test',
     { A_orifice: 0.55, Cv_rated: 0.7, c0: 0, c1: 0.5, c2: 0.3, c3: 0.2 }, { opening: 50 });
-  const evap = mk(3, 'evaporator_off_design', 290, 210, 'Evap · test',
+  const evap = mk(3, 'evaporator_off_design', 180, 480, 'Evap · test',
     { UA_2ph: 25, UA_SH: 4, dP_ref: 0.02 },
     { T_air_in: 50, RH_air_in: 90, V_air_CMM: 2.54, P_evap: 5.51, m_dot_ref: 0.00458 });
   const blocks = [comp, cond, eev, evap];
@@ -5679,10 +5679,10 @@ function makeL1TestRing() {
   });
   // 냉매 흐름 링: Comp→Cond→EEV→Evap→Comp
   const connections = [
-    edge(comp, cond, 'right', 'top'),
-    edge(cond, eev, 'bottom', 'right'),
-    edge(eev, evap, 'left', 'bottom'),
-    edge(evap, comp, 'top', 'left'),
+    edge(comp, cond, 'right', 'left'),
+    edge(cond, eev, 'bottom', 'top'),
+    edge(eev, evap, 'left', 'right'),
+    edge(evap, comp, 'top', 'bottom'),
   ];
   return { blocks, connections };
 }
