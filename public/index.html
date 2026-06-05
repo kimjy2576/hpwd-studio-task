@@ -5811,15 +5811,15 @@ function makeAirTestRing() {
       state: def.stateInit ? JSON.parse(JSON.stringify(def.stateInit)) : {},
     };
   };
-  const drum = mk(0, 'drum', 360, 300, 'Drum · air-test',
+  const drum = mk(0, 'drum', 720, 500, 'Drum · air-test',
     { m_cl_dry: 3.0, c_p_cl: 1500, A_eff: 10, h_a: 50, A_drum: 0.15, K_drum: 30, X0: 0.6, Tcl0: 298.15 });
-  const fan = mk(2, 'fan', 180, 180, 'Fan · air-test',
+  const fan = mk(2, 'fan', 120, 100, 'Fan · air-test',
     { D2: 0.15, b2: 0.04, Z: 40, beta2: 150, eta_h: 0.78, eta_mech: 0.95, N: 3000 });
-  const filt = mk(1, 'filter', 250, 320, 'Filter · air-test',
+  const filt = mk(1, 'filter', 340, 500, 'Filter · air-test',
     { A_face: 0.05, r_pleat: 1.0, theta_face: 0, K: 20 });
-  const evap = mk(3, 'evaporator_off_design', 300, 60, 'Evap · air-test',
+  const evap = mk(3, 'evaporator_off_design', 500, 100, 'Evap · air-test',
     { T_evap_C: 10, BF: 0.2, A_face: 0.05, K_air: 50 });
-  const cond = mk(4, 'condenser_off_design', 580, 130, 'Cond · air-test',
+  const cond = mk(4, 'condenser_off_design', 880, 100, 'Cond · air-test',
     { T_cond_C: 60, BF: 0.2, A_face: 0.05, K_air: 50 });
   const blocks = [drum, filt, fan, evap, cond];
   const edge = (from, to, fside, tside) => ({
