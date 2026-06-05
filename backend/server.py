@@ -67,6 +67,7 @@ try:
                                   run_canvas_cycle as _run_canvas_cycle,
                                   run_air_cycle as _run_air_cycle,
                                   run_coupled_cycle as _run_coupled_cycle, COUPLED_MODELS,
+                                  run_canvas_coupled_cycle as _run_canvas_coupled_cycle,
                                   COMPONENT_REGISTRY, CYCLE_MODELS, HELMHOLTZ_PATH)
     _modelica['imported'] = True
     print(f"[OK]   Modelica bridge imported (components: {list(COMPONENT_REGISTRY)})")
@@ -134,6 +135,13 @@ class CanvasCycleResponse(BaseModel):
     generated_mo: str | None = None     # 생성된 .mo 텍스트 (디버그/표시용)
     stop_time: float = 0.0
     error: str | None = None
+
+
+class CoupledCanvasRequest(BaseModel):
+    # 캔버스에서 추출한 냉매 링 + 공기 링 (evap/cond 공유 = merged HX)
+    ref_topology: dict[str, Any]        # {components:[{id,kind,params}], ring:[id...]} comp→cond→eev→evap
+    air_topology: dict[str, Any]        # {components:[{id,kind,params}], ring:[id...]} drum→[filter]→fan→evap→cond
+    settings: dict[str, Any] = {}       # {stop_time, tolerance, intervals}
 
 
 # ─── Routes ─────────────────────────────────────────────────────────
@@ -333,6 +341,29 @@ def run_coupled_cycle(req: CycleRequest):
                              settled=r['settled'], trajectory=r['trajectory'])
     except Exception as e:
         return CycleResponse(model=model, error=f"{type(e).__name__}: {e}")
+
+
+@app.post("/run_canvas_coupled_cycle", response_model=CanvasCycleResponse)
+def run_canvas_coupled_cycle(req: CoupledCanvasRequest):
+    """캔버스에서 추출한 냉매 링 + 공기 링 → 커플드 .mo 자동생성 → transient 시뮬.
+
+    evap/cond를 양쪽 링이 공유(merged HX). 표준 토폴로지면 고정 모델 Cycle_coupled_closed와
+    동일 결과(SMER~2.44). 냉매+공기 KPI + SMER + 생성된 .mo 반환. omc 필요."""
+    ok, why = _modelica_status()
+    if not ok:
+        return CanvasCycleResponse(error=f"Modelica 엔진 사용 불가: {why}.")
+    st = req.settings or {}
+    try:
+        r = _run_canvas_coupled_cycle(
+            req.ref_topology, req.air_topology, st,
+            stop_time=float(st.get('stop_time', 180.0)),
+            tolerance=float(st.get('tolerance', 1e-6)),
+            intervals=int(st.get('intervals', 300)))
+        return CanvasCycleResponse(settled=r['settled'], trajectory=r['trajectory'],
+                                   meta=r['meta'], generated_mo=r['generated_mo'],
+                                   stop_time=r['stop_time'])
+    except Exception as e:
+        return CanvasCycleResponse(error=f"{type(e).__name__}: {e}")
 
 
 # ─── Server 실행 ────────────────────────────────────────────────────

@@ -899,6 +899,165 @@ def run_coupled_cycle(model='Cycle_coupled_closed', stop_time=180.0, tolerance=1
             'settled': settled, 'trajectory': traj}
 
 
+# ══════════════════════════════════════════════════════════════════
+# 캔버스 토폴로지 → 커플드 .mo 자동생성 (냉매 closed + 공기 closed 결합)
+#   냉매 링(comp→cond→eev→evap)과 공기 링(drum→[filter]→fan→evap→cond)을
+#   각각 추출. evap/cond는 양쪽이 공유하는 merged HX(한 번만 선언, 냉매 chain은
+#   port_a/b · 공기 chain은 air_a/b 참조). 표준 토폴로지면 Cycle_coupled_closed
+#   구조·init·파라미터와 동일 → SMER~2.44 재현. (_parse_coupled_csv가 고정
+#   인스턴스명 comp/cond/evap/drum/fan/eev를 읽으므로 role명으로 emit)
+# ══════════════════════════════════════════════════════════════════
+_COUPLED_ROLE = {'compressor': 'comp', 'condenser': 'cond', 'eev': 'eev',
+                 'evaporator': 'evap', 'drum': 'drum', 'fan': 'fan', 'filter': 'filt'}
+# 냉매 Volume init (선행 컴포넌트 kind 기준 — Cycle_coupled_closed 값)
+_REF_VOL_INIT = {'compressor': (16e5, 665e3), 'condenser': (15.5e5, 345e3),
+                 'eev': (6.5e5, 345e3), 'evaporator': (6.4e5, 595e3)}
+# 공기 Volume init (선행 노드 kind 기준; drum 직후 = AirVolumeC 앵커)
+_AIR_VOL_INIT_C = {'drum': (304.0, 0.018), 'fan': (305.0, 0.018),
+                   'evaporator': (291.0, 0.012), 'condenser': (333.0, 0.012),
+                   'filter': (305.0, 0.018)}
+_COUPLED_K_AIR = 300.0   # merged HX 공기측 핀저항 (검증값; 캔버스 미노출)
+
+
+def _emit_eev_ctrl(inst, raw):
+    """PI 제어 EEV (EEV_Orifice_ctrl) — opening 입력. 캔버스 eev 파라미터 오버레이."""
+    def g(k, d):
+        v = raw.get(k)
+        try:
+            return float(v) if v not in (None, '') else float(d)
+        except (TypeError, ValueError):
+            return float(d)
+    return (f'    HPWDcycle.EEV_Orifice_ctrl {inst}(m_dot(start=0.006), '
+            f'A_orifice={g("A_orifice", 0.55) * 1e-6:.6g}, Cv={g("Cv_rated", 0.7):.6g}, '
+            f'c0={g("c0", 0.0):.6g}, c1={g("c1", 0.5):.6g}, '
+            f'c2={g("c2", 0.3):.6g}, c3={g("c3", 0.2):.6g});\n')
+
+
+def generate_coupled_mo(ref_topology, air_topology, settings=None):
+    """냉매 + 공기 토폴로지 → GenCoupled.Coupled_gen .mo 텍스트.
+
+    ref_topology = {components:[{id,kind,params}], ring:[id...]} (comp→cond→eev→evap)
+    air_topology = {components:[{id,kind,params}], ring:[id...]} (drum→[filter]→fan→evap→cond)
+    evap/cond는 두 링이 공유(merged Evap/Cond_coupled). 반환: (mo_text, meta).
+    """
+    settings = settings or {}
+    rC = {c['id']: c for c in ref_topology['components']}
+    aC = {c['id']: c for c in air_topology['components']}
+    rR, aR = ref_topology['ring'], air_topology['ring']
+    kR = lambda i: rC[i]['kind']
+    kA = lambda i: aC[i]['kind']
+    R = _COUPLED_ROLE
+
+    # 공유 HX 검증: evap/cond가 냉매·공기 링 양쪽에 존재해야 함
+    for k in ('evaporator', 'condenser'):
+        if k not in {kR(c) for c in rR} or k not in {kA(c) for c in aR}:
+            raise ValueError(f"커플드: '{k}'가 냉매·공기 링 양쪽에 있어야 함 (merged HX 공유점)")
+
+    decl = []
+    # ── 냉매 컴포넌트 + 냉매 Volume (cond/evap = merged) ──
+    for i, cid in enumerate(rR):
+        k = kR(cid); inst = R[k]; raw = rC[cid].get('params', {})
+        if k == 'compressor':
+            p = _canvas_to_cycle_params('compressor', raw)
+            decl.append(f'    HPWD.Comp_Theoretical {inst}(V_disp={p["V_disp"]:.6g}, '
+                        f'N={p["N"]:.6g}, eta_vol={p["eta_vol"]:.6g}, eta_isen={p["eta_isen"]:.6g});\n')
+        elif k == 'condenser':
+            decl.append(f'    HPWDcpl.Cond_coupled {inst}(m_dot(start=0.006), K_air={_COUPLED_K_AIR:.6g});\n')
+        elif k == 'evaporator':
+            decl.append(f'    HPWDcpl.Evap_coupled {inst}(m_dot(start=0.006), K_air={_COUPLED_K_AIR:.6g});\n')
+        elif k == 'eev':
+            decl.append(_emit_eev_ctrl(inst, raw))
+        else:
+            raise ValueError(f"커플드 냉매 링 미지원 kind: {k}")
+        p0, h0 = _REF_VOL_INIT.get(k, (9e5, 360e3))
+        decl.append(f'    HPWDcycle.Volume vol{i+1}(p_start={p0:.6g}, h_start={h0:.6g}, fixedState=true);\n')
+    decl.append('    HPWDctrl.PI_Controller ctrl(I(fixed=true));\n')
+
+    # ── 공기 컴포넌트 (evap/cond는 냉매측에서 이미 선언) + 공기 Volume ──
+    for i, cid in enumerate(aR):
+        k = kA(cid); inst = R[k]; raw = aC[cid].get('params', {})
+        if k == 'drum':
+            ap = _canvas_to_air_params('drum', raw)
+            ap['UA_amb'] = 100.0; ap['Tcl0'] = 305.0   # 커플드 고정값 (대기손실 + 초기 의류온도)
+            decl.append(_emit_drum_air(inst, ap))
+        elif k == 'fan':
+            decl.append(_emit_fan_air(inst, _canvas_to_air_params('fan', raw)))
+        elif k == 'filter':
+            decl.append(_emit_filter_air(inst, _canvas_to_air_params('filter', raw)))
+        elif k in ('evaporator', 'condenser'):
+            pass   # merged HX — 냉매측에서 이미 선언됨
+        else:
+            raise ValueError(f"커플드 공기 링 미지원 kind: {k}")
+        T0, W0 = _AIR_VOL_INIT_C.get(k, (305.0, 0.018))
+        if i == 0:   # drum 직후 = 압력 앵커
+            decl.append(f'    HPWDair.AirVolumeC volA{i+1}(V=0.05, p_start=HPWDair.MoistAir.p_ref, '
+                        f'T_start={T0:.6g}, W_start={W0:.6g}, fixedState=true);\n')
+        else:
+            decl.append(f'    HPWDair.AirVolume volA{i+1}(V=0.05, T_start={T0:.6g}, '
+                        f'W_start={W0:.6g}, fixedState=true);\n')
+
+    # ── 연결 ──
+    conn = []
+    nR = len(rR)
+    for i, cid in enumerate(rR):
+        conn.append(f'    connect({R[kR(cid)]}.port_b, vol{i+1}.port_a);\n')
+        conn.append(f'    connect(vol{i+1}.port_b, {R[kR(rR[(i+1) % nR])]}.port_a);\n')
+    conn.append('    connect(evap.SH, ctrl.SH_meas);\n')
+    conn.append('    connect(ctrl.opening, eev.opening);\n')
+    # 공기 chain: merged HX는 air_a/air_b, 나머지는 port_a/port_b
+    a_in = lambda c: f'{R[kA(c)]}.air_a' if kA(c) in ('evaporator', 'condenser') else f'{R[kA(c)]}.port_a'
+    a_out = lambda c: f'{R[kA(c)]}.air_b' if kA(c) in ('evaporator', 'condenser') else f'{R[kA(c)]}.port_b'
+    nA = len(aR)
+    for i, cid in enumerate(aR):
+        conn.append(f'    connect({a_out(cid)}, volA{i+1}.port_a);\n')
+        conn.append(f'    connect(volA{i+1}.port_b, {a_in(aR[(i+1) % nA])});\n')
+
+    mo = (f'within ;\n'
+          f'package GenCoupled "캔버스 토폴로지에서 자동생성된 L1 커플드 사이클"\n'
+          f'  model Coupled_gen\n'
+          f'{"".join(decl)}'
+          f'  equation\n'
+          f'{"".join(conn)}'
+          f'  end Coupled_gen;\n'
+          f'end GenCoupled;\n')
+    meta = {'n_ref_vol': nR, 'n_air_vol': nA,
+            'ref_ring': [kR(c) for c in rR], 'air_ring': [kA(c) for c in aR],
+            'has_filter': any(kA(c) == 'filter' for c in aR), 'K_air': _COUPLED_K_AIR}
+    return mo, meta
+
+
+def run_canvas_coupled_cycle(ref_topology, air_topology, settings=None,
+                             stop_time=180.0, tolerance=1e-6, intervals=300,
+                             n_traj=80, timeout=900):
+    """캔버스 냉매+공기 토폴로지 → 커플드 .mo 생성 → 시뮬 → 냉매·공기 KPI + SMER.
+
+    표준 토폴로지면 고정 모델 Cycle_coupled_closed와 동일 결과(SMER~2.44).
+    """
+    mo, meta = generate_coupled_mo(ref_topology, air_topology, settings or {})
+    wdir = os.path.join(_WORK, 'coupled_canvas')
+    os.makedirs(wdir, exist_ok=True)
+    open(os.path.join(wdir, 'GenCoupled.mo'), 'w').write(mo)
+    loads = "".join(
+        f'loadFile("{_fs(os.path.join(MODELICA_DIR, f))}"); getErrorString();\n'
+        for f in _COUPLED_MO)
+    mos = (f'loadModel(Modelica); getErrorString();\n'
+           f'loadFile("{_fs(HELMHOLTZ_PATH)}"); getErrorString();\n'
+           f'{loads}'
+           f'loadFile("{_fs(os.path.join(wdir, "GenCoupled.mo"))}"); getErrorString();\n'
+           f'simulate(GenCoupled.Coupled_gen, stopTime={float(stop_time):.6g}, '
+           f'numberOfIntervals={int(intervals)}, method="dassl", '
+           f'tolerance={float(tolerance):.3g}, outputFormat="csv"); getErrorString();\n')
+    open(os.path.join(wdir, 'run.mos'), 'w').write(mos)
+    r = subprocess.run([_omc_bin(), "run.mos"], cwd=wdir,
+                       capture_output=True, text=True, timeout=timeout)
+    csv_path = os.path.join(wdir, "GenCoupled.Coupled_gen_res.csv")
+    if not os.path.exists(csv_path):
+        raise RuntimeError(f"커플드 캔버스 실행 실패:\n{(r.stdout + r.stderr)[-1500:]}")
+    settled, traj = _parse_coupled_csv(csv_path, n_traj)
+    return {'settled': settled, 'trajectory': traj, 'meta': meta,
+            'generated_mo': mo, 'stop_time': float(stop_time)}
+
+
 
 # ── 캐시 무효화 (모델/템플릿 수정 후 강제 재빌드용) ──────────────
 def clear_cache():

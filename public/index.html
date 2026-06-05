@@ -6059,14 +6059,18 @@ function AirCycleRunnerBody({ blocks, connections, url, modelica, onLoadAirTestR
 }
 
 
-// CoupledCycleRunnerBody — 냉매-공기 커플드 사이클 (고정 모델 HPWDcpl.Cycle_coupled_*)
+// CoupledCycleRunnerBody — 냉매-공기 커플드 사이클
+//   [고정] HPWDcpl.Cycle_coupled_* 실행  |  [캔버스] 그린 냉매링+공기링 추출 → 커플드 .mo 생성·실행
 //   evap/cond merged HX로 두 링 동시 결합. 냉매+공기 KPI+SMER, CyclePlot(냉매) 재사용.
-function CoupledCycleRunnerBody({ url, modelica }) {
+function CoupledCycleRunnerBody({ url, modelica, blocks, connections }) {
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
+  const [mode, setMode] = useState('canvas');        // 'fixed' | 'canvas'
   const [model, setModel] = useState('Cycle_coupled_closed');
   const [stopTime, setStopTime] = useState('180');
+  const [genMo, setGenMo] = useState(null);
+  const [showMo, setShowMo] = useState(false);
 
   const _fetchErr = async (r, path) => {
     let detail = `HTTP ${r.status}`;
@@ -6076,20 +6080,54 @@ function CoupledCycleRunnerBody({ url, modelica }) {
       : `서버 응답 오류: ${detail}`;
   };
 
-  const runCoupled = async () => {
-    setRunning(true); setError(null); setResult(null);
+  const _consume = async (r, path) => {
+    if (!r.ok) { setError(await _fetchErr(r, path)); return false; }
+    const data = await r.json();
+    if (data.error) { setError(data.error); return false; }
+    if (!data.trajectory || !Array.isArray(data.trajectory.Pc_bar) || !data.trajectory.Pc_bar.length) {
+      setError('결과에 궤적이 없음 — 서버 버전 확인 (git pull 후 python server.py 재시작).'); return false;
+    }
+    setResult({ settled: data.settled || {}, trajectory: data.trajectory, meta: data.meta || {} });
+    if (data.generated_mo) setGenMo(data.generated_mo);
+    return true;
+  };
+
+  // [고정] 검증된 named 모델 실행
+  const runFixed = async () => {
+    setRunning(true); setError(null); setResult(null); setGenMo(null);
     try {
       const r = await fetch(`${url}/run_coupled_cycle`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ model, stop_time: parseFloat(stopTime) || 180, tolerance: 1e-6, intervals: 300 }),
       });
-      if (!r.ok) { setError(await _fetchErr(r, '/run_coupled_cycle')); setRunning(false); return; }
-      const data = await r.json();
-      if (data.error) { setError(data.error); setRunning(false); return; }
-      if (!data.trajectory || !Array.isArray(data.trajectory.Pc_bar) || !data.trajectory.Pc_bar.length) {
-        setError('결과에 궤적이 없음 — 서버 버전 확인 (git pull 후 python server.py 재시작).'); setRunning(false); return;
-      }
-      setResult({ settled: data.settled || {}, trajectory: data.trajectory });
+      await _consume(r, '/run_coupled_cycle');
+    } catch (e) { setError(`요청 실패: ${e.message}`); }
+    setRunning(false);
+  };
+
+  // [캔버스] 냉매 링 + 공기 링 추출 → 공유HX 검증 → 커플드 .mo 생성·실행
+  const runCanvas = async () => {
+    setError(null); setResult(null); setGenMo(null);
+    const refTopo = extractCycleTopology(blocks, connections);
+    if (refTopo.error) { setError('냉매 링 — ' + refTopo.error); return; }
+    const airTopo = extractAirTopology(blocks, connections);
+    if (airTopo.error) { setError('공기 링 — ' + airTopo.error); return; }
+    const rK = new Set(refTopo.components.map(c => c.kind));
+    const aK = new Set(airTopo.components.map(c => c.kind));
+    if (!rK.has('evaporator') || !aK.has('evaporator') || !rK.has('condenser') || !aK.has('condenser')) {
+      setError('Evap·Cond가 냉매 링과 공기 링 양쪽에 연결돼야 함 — 두 링이 공유하는 merged HX임. (증발/응축기에 냉매 연결 + 공기 연결을 모두 그려야 함)');
+      return;
+    }
+    setRunning(true);
+    try {
+      const r = await fetch(`${url}/run_canvas_coupled_cycle`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ref_topology: refTopo, air_topology: airTopo,
+          settings: { stop_time: parseFloat(stopTime) || 180, tolerance: 1e-6, intervals: 300 },
+        }),
+      });
+      await _consume(r, '/run_canvas_coupled_cycle');
     } catch (e) { setError(`요청 실패: ${e.message}`); }
     setRunning(false);
   };
@@ -6130,21 +6168,35 @@ function CoupledCycleRunnerBody({ url, modelica }) {
     );
   }
 
+  const detectedRef = result?.meta?.ref_ring, detectedAir = result?.meta?.air_ring;
+
   return (
     <div className="space-y-4">
+      {/* mode toggle */}
+      <div className="flex border border-slate-200 rounded-lg overflow-hidden bg-slate-50 w-fit">
+        {[['canvas', '캔버스에서 추출', '그린 두 링 → .mo 생성'], ['fixed', '고정 모델', '검증된 named 모델']].map(([m, lbl, sub]) => (
+          <button key={m} onClick={() => { setMode(m); setError(null); }} disabled={running}
+            className={`px-4 py-2 text-sm font-semibold transition text-left ${mode === m ? 'bg-white text-cyan-700 shadow-[inset_0_-2px_0_0_#0891B2]' : 'text-slate-500 hover:text-slate-700'}`}>
+            {lbl}<span className="block font-mono text-[10px] text-slate-400">{sub}</span>
+          </button>
+        ))}
+      </div>
+
       {/* controls */}
       <div className="flex items-end gap-4 flex-wrap">
-        <div className="flex flex-col gap-1.5">
-          <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wide">커플드 모델</label>
-          <div className="flex border border-slate-200 rounded-lg overflow-hidden bg-slate-50">
-            {[['Cycle_coupled_closed', '폐루프', 'drum 건조 + fan 순환'], ['Cycle_coupled_open', 'open', '공기유량 prescribed']].map(([m, lbl, sub]) => (
-              <button key={m} onClick={() => setModel(m)} disabled={running}
-                className={`px-3.5 py-2 text-sm font-semibold transition text-left ${model === m ? 'bg-white text-cyan-700 shadow-[inset_0_-2px_0_0_#0891B2]' : 'text-slate-500 hover:text-slate-700'}`}>
-                {lbl}<span className="block font-mono text-[10px] text-slate-400">{sub}</span>
-              </button>
-            ))}
+        {mode === 'fixed' && (
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wide">커플드 모델</label>
+            <div className="flex border border-slate-200 rounded-lg overflow-hidden bg-slate-50">
+              {[['Cycle_coupled_closed', '폐루프', 'drum 건조 + fan 순환'], ['Cycle_coupled_open', 'open', '공기유량 prescribed']].map(([m, lbl, sub]) => (
+                <button key={m} onClick={() => setModel(m)} disabled={running}
+                  className={`px-3.5 py-2 text-sm font-semibold transition text-left ${model === m ? 'bg-white text-cyan-700 shadow-[inset_0_-2px_0_0_#0891B2]' : 'text-slate-500 hover:text-slate-700'}`}>
+                  {lbl}<span className="block font-mono text-[10px] text-slate-400">{sub}</span>
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
         <div className="flex flex-col gap-1.5">
           <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wide">시뮬 설정</label>
           <div className="flex gap-2 items-end">
@@ -6156,28 +6208,30 @@ function CoupledCycleRunnerBody({ url, modelica }) {
             <span className="bg-slate-100 border border-slate-200 rounded px-2.5 py-2 text-xs font-mono text-slate-600">dassl · tol 1e-6</span>
           </div>
         </div>
-        <button onClick={runCoupled} disabled={running}
+        <button onClick={mode === 'canvas' ? runCanvas : runFixed} disabled={running}
           className="ml-auto inline-flex items-center gap-2 bg-cyan-600 hover:bg-cyan-700 disabled:opacity-60 text-white rounded-xl px-5 py-2.5 font-bold text-sm shadow-lg shadow-cyan-500/25 transition">
-          {running ? (<><span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" /> 실행 중…</>) : '▶ Run 커플드 사이클'}
+          {running ? (<><span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" /> 실행 중…</>)
+            : (mode === 'canvas' ? '▶ 캔버스 추출 + Run' : '▶ Run 커플드 사이클')}
         </button>
       </div>
 
       {/* coupling map: 두 링이 Evap·Cond 공유 */}
       <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 space-y-2">
-        <Loop label="냉매" color="text-blue-600" nodes={['Comp', 'Cond', 'EEV', 'Evap']} />
-        <Loop label="공기" color="text-cyan-600" nodes={['Drum', 'Fan', 'Evap', 'Cond']} />
-        <div className="text-[10px] font-mono text-cyan-600 text-center pt-0.5">↕ Evap · Cond = merged HX (냉매·공기 결합점, 코일온도 상호결정)</div>
+        <Loop label="냉매" color="text-blue-600" nodes={detectedRef ? detectedRef.map(k => ({ compressor: 'Comp', condenser: 'Cond', eev: 'EEV', evaporator: 'Evap' }[k] || k)) : ['Comp', 'Cond', 'EEV', 'Evap']} />
+        <Loop label="공기" color="text-cyan-600" nodes={detectedAir ? detectedAir.map(k => ({ drum: 'Drum', fan: 'Fan', filter: 'Filter', evaporator: 'Evap', condenser: 'Cond' }[k] || k)) : ['Drum', 'Fan', 'Evap', 'Cond']} />
+        <div className="text-[10px] font-mono text-cyan-600 text-center pt-0.5">↕ Evap · Cond = merged HX (냉매·공기 결합점, 코일온도 상호결정){detectedRef ? ' · 캔버스에서 추출됨' : ''}</div>
       </div>
 
       <div className="text-xs text-slate-500 leading-relaxed">
-        냉매 Run(공기입구 고정)·공기 Run(코일온도 고정)과 달리 <b className="text-slate-700">양쪽 모두 안 고정</b> — merged HX에서 냉매·공기가 동시에 풀림.
-        <b className="text-slate-700"> 폐루프</b>는 drum 건조+fan 순환까지 포함한 완전 결합, <b className="text-slate-700">open</b>은 공기유량을 prescribed로 둔 경량판.
+        {mode === 'canvas'
+          ? <>캔버스의 <b className="text-slate-700">냉매 링(Comp→Cond→EEV→Evap)</b>과 <b className="text-slate-700">공기 링(Drum→Fan→Evap→Cond)</b>을 추출해 커플드 .mo를 생성·실행함. <b className="text-cyan-700">Evap·Cond는 두 링이 공유</b>하는 merged HX이므로, 증발/응축기에 냉매 연결과 공기 연결을 모두 그려야 함. (표준 토폴로지면 고정 모델과 동일 결과)</>
+          : <>검증된 고정 모델 실행. <b className="text-slate-700">폐루프</b>는 drum 건조+fan 순환까지 포함한 완전 결합, <b className="text-slate-700">open</b>은 공기유량 prescribed 경량판.</>}
       </div>
 
-      {running && (<div className="text-center text-xs font-mono text-slate-400 py-1">omc 컴파일 + 커플드 적분 중… (stiff, 실제 ~50–70s)</div>)}
+      {running && (<div className="text-center text-xs font-mono text-slate-400 py-1">omc 컴파일 + 커플드 적분 중… (stiff, 실제 ~55–75s)</div>)}
       {error && (<div className="bg-red-50 border border-red-200 text-red-700 text-xs font-mono rounded-lg px-3 py-2 whitespace-pre-wrap">{error}</div>)}
 
-      {/* results: SMER 히어로 + KPI 카드 + 냉매 궤적 */}
+      {/* results */}
       {result && result.trajectory && (
         <>
           <div className="flex items-stretch gap-3 flex-wrap">
@@ -6198,7 +6252,17 @@ function CoupledCycleRunnerBody({ url, modelica }) {
             </div>
           </div>
           <div>
-            <div className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider mb-2">냉매측 기동 과도 → 정착 궤적</div>
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider">냉매측 기동 과도 → 정착 궤적</div>
+              {genMo && (
+                <button onClick={() => setShowMo(v => !v)} className="text-[10px] font-mono text-cyan-600 hover:text-cyan-700 font-bold">
+                  {showMo ? '생성된 .mo 숨기기 ▲' : '생성된 .mo 보기 ▼'}
+                </button>
+              )}
+            </div>
+            {showMo && genMo && (
+              <pre className="bg-slate-900 text-slate-100 text-[10px] font-mono rounded-lg p-3 overflow-auto max-h-52 mb-2 leading-relaxed">{genMo}</pre>
+            )}
             <div className="flex gap-4 flex-wrap mb-1 text-xs font-semibold text-slate-600">
               <span className="inline-flex items-center gap-1.5"><i className="w-3 h-0.5 rounded bg-red-600 inline-block" />Pc (HP)</span>
               <span className="inline-flex items-center gap-1.5"><i className="w-3 h-0.5 rounded bg-blue-600 inline-block" />Pe (LP)</span>
@@ -6211,7 +6275,6 @@ function CoupledCycleRunnerBody({ url, modelica }) {
     </div>
   );
 }
-
 
 // =============================================================
 // CycleRunnerModal — 전체 L1 폐루프를 Modelica로 실행 (/run_cycle)
@@ -6334,7 +6397,7 @@ function CycleRunnerModal({ onClose, blocks, connections, onLoadTestRing, onLoad
               <AirCycleRunnerBody blocks={blocks} connections={connections} url={url}
                 modelica={modelica} onLoadAirTestRing={onLoadAirTestRing} />
             ) : domain === 'coupled' ? (
-              <CoupledCycleRunnerBody url={url} modelica={modelica} />
+              <CoupledCycleRunnerBody url={url} modelica={modelica} blocks={blocks} connections={connections} />
             ) : (<>
             {/* mode toggle */}
             <div className="flex border border-slate-200 rounded-lg overflow-hidden bg-slate-50 w-fit">
