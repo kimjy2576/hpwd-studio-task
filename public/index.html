@@ -348,6 +348,32 @@ const TYPES = {
       };
     },
   },
+  filter: {
+    typeNo: 160, name: 'Filter', category: 'air', color: '#64748b', icon: Wind,
+    desc: '린트 필터 (Darcy-Forchheimer 압력강하, 순수 저항)',
+    parameters: [
+      { key: 'A_face', label: 'A_face', value: 0.05, unit: 'm²' },
+      { key: 'r_pleat', label: 'r_pleat', value: 1.0, unit: '-' },
+      { key: 'theta_face', label: 'θ_face', value: 0, unit: '°' },
+      { key: 'K', label: 'K_media', value: 20, unit: 'Pa·s²/m²' },
+    ],
+    inputs: [
+      { key: 'T_in', label: 'T_air_in', unit: '°C' },
+      { key: 'm_air', label: 'm_air', unit: 'kg/s' },
+    ],
+    outputs: [
+      { key: 'm_air', label: 'm_air', unit: 'kg/s' },
+      { key: 'T_out', label: 'T_air_out', unit: '°C' },
+      { key: 'dP', label: 'ΔP', unit: 'Pa' },
+    ],
+    compute: (inp, par) => {
+      const m_air = inp.m_air ?? 0.05;
+      const rho = 1.2;
+      const A_media = Math.max(par.A_face * par.r_pleat, 1e-6);
+      const u = (m_air / rho) / A_media;
+      return { m_air, T_out: inp.T_in ?? 25, dP: par.K * u * Math.abs(u) };
+    },
+  },
   // ================ 테스트용 신호 생성 ================
   constant: {
     typeNo: 10, name: 'Constant', category: 'source', color: '#6366f1', icon: Hash,
@@ -5712,6 +5738,7 @@ function CyclePlot({ traj }) {
 function airCycleKindOf(type) {
   if (!type) return null;
   if (type.startsWith('drum')) return 'drum';
+  if (type.startsWith('filter')) return 'filter';
   if (type.startsWith('fan')) return 'fan';
   if (type.startsWith('condenser')) return 'condenser';
   if (type.startsWith('evaporator')) return 'evaporator';
@@ -5724,9 +5751,9 @@ function extractAirTopology(blocks, connections) {
   const NEED = ['drum', 'fan', 'evaporator', 'condenser'];
   const present = new Set(airBlocks.map(b => airCycleKindOf(b.type)));
   const missing = NEED.filter(k => !present.has(k));
-  const labelOf = { drum: 'Drum', fan: 'Fan', evaporator: 'Evap', condenser: 'Cond' };
+  const labelOf = { drum: 'Drum', fan: 'Fan', evaporator: 'Evap', condenser: 'Cond', filter: 'Filter' };
   if (missing.length) {
-    return { error: `캔버스에 ${missing.map(k => labelOf[k]).join(', ')} 가 없음. Drum·Fan·Evap·Cond 4개가 공기 연결로 닫힌 링을 이뤄야 함.` };
+    return { error: `캔버스에 ${missing.map(k => labelOf[k]).join(', ')} 가 없음. Drum·Fan·Evap·Cond 4개가 공기 연결로 닫힌 링을 이뤄야 함 (Filter는 선택).` };
   }
   // 공기 연결의 directed adjacency (컴포넌트 간, 첫 연결만)
   const adj = {};
@@ -5746,10 +5773,13 @@ function extractAirTopology(blocks, connections) {
   }
   const closes = cur === drum.id;
   const ringKinds = ring.map(id => airCycleKindOf(byId[id].type));
-  if (ring.length !== 4 || !closes || new Set(ringKinds).size !== 4) {
+  const CORE = ['drum', 'fan', 'evaporator', 'condenser'];
+  const coreOnce = CORE.every(k => ringKinds.filter(x => x === k).length === 1);
+  const allAllowed = ringKinds.every(k => ['drum', 'fan', 'evaporator', 'condenser', 'filter'].includes(k));
+  if (ring.length < 4 || !closes || !coreOnce || !allAllowed) {
     return {
       error: `닫힌 공기 링이 아님 (감지 경로: ${ring.map(id => labelOf[airCycleKindOf(byId[id].type)]).join('→') || '없음'}). `
-        + `Drum→Fan→Evap→Cond→Drum 순서로 공기 연결을 닫아줘 (연결 방향=공기 흐름).`,
+        + `Drum→(Filter)→Fan→Evap→Cond→Drum 순서로 공기 연결을 닫아줘 (연결 방향=공기 흐름, Filter는 선택).`,
     };
   }
   // raw 파라미터 수집: b.params + inputValues(없으면 포트 기본값)
@@ -5783,13 +5813,15 @@ function makeAirTestRing() {
   };
   const drum = mk(0, 'drum', 360, 300, 'Drum · air-test',
     { m_cl_dry: 3.0, c_p_cl: 1500, A_eff: 10, h_a: 50, A_drum: 0.15, K_drum: 30, X0: 0.6, Tcl0: 298.15 });
-  const fan = mk(1, 'fan', 180, 180, 'Fan · air-test',
+  const fan = mk(2, 'fan', 180, 180, 'Fan · air-test',
     { D2: 0.15, b2: 0.04, Z: 40, beta2: 150, eta_h: 0.78, eta_mech: 0.95, N: 3000 });
-  const evap = mk(2, 'evaporator_off_design', 300, 60, 'Evap · air-test',
+  const filt = mk(1, 'filter', 250, 320, 'Filter · air-test',
+    { A_face: 0.05, r_pleat: 1.0, theta_face: 0, K: 20 });
+  const evap = mk(3, 'evaporator_off_design', 300, 60, 'Evap · air-test',
     { T_evap_C: 10, BF: 0.2, A_face: 0.05, K_air: 50 });
-  const cond = mk(3, 'condenser_off_design', 580, 130, 'Cond · air-test',
+  const cond = mk(4, 'condenser_off_design', 580, 130, 'Cond · air-test',
     { T_cond_C: 60, BF: 0.2, A_face: 0.05, K_air: 50 });
-  const blocks = [drum, fan, evap, cond];
+  const blocks = [drum, filt, fan, evap, cond];
   const edge = (from, to, fside, tside) => ({
     from: { blockId: from.id, side: fside, slot: 2 },
     to: { blockId: to.id, side: tside, slot: 2 },
@@ -5798,9 +5830,10 @@ function makeAirTestRing() {
     lineParams: defaultLineParams('air'),
     cornerRadius: 8, routeMode: 'auto',
   });
-  // 공기 흐름 링: Drum→Fan→Evap→Cond→Drum
+  // 공기 흐름 링: Drum→Filter→Fan→Evap→Cond→Drum (필터=린트 필터, 드럼 직후)
   const connections = [
-    edge(drum, fan, 'left', 'left'),
+    edge(drum, filt, 'left', 'right'),
+    edge(filt, fan, 'left', 'left'),
     edge(fan, evap, 'right', 'left'),
     edge(evap, cond, 'right', 'left'),
     edge(cond, drum, 'right', 'right'),
@@ -5903,12 +5936,20 @@ function AirCycleRunnerBody({ blocks, connections, url, modelica, onLoadAirTestR
     { k: 'Q_latent', n: '제습 잠열', u: 'W', d: 0, c: 'text-teal-600' },
   ];
   const s = result?.settled || {};
-  const NODES = [
-    ['🧺', 'Drum', ('X' in s) ? `X ${s.X.toFixed(3)}` : '함수율', 'from-cyan-700 to-cyan-500'],
-    ['🌬', 'Fan', ('fan_dp' in s) ? `${s.fan_dp.toFixed(0)} Pa` : 'Δp', 'from-sky-600 to-sky-400'],
-    ['❄', 'Evap', ('T_evap_out_C' in s) ? `${s.T_evap_out_C.toFixed(1)}°C` : '제습', 'from-blue-600 to-blue-400'],
-    ['♨', 'Cond', ('T_cond_out_C' in s) ? `${s.T_cond_out_C.toFixed(1)}°C` : '열풍', 'from-amber-600 to-amber-400'],
-  ];
+  const valOf = {
+    Drum: ('X' in s) ? `X ${s.X.toFixed(3)}` : '함수율',
+    Filter: ('filter_dp' in s) ? `${s.filter_dp.toFixed(0)} Pa` : '여과',
+    Fan: ('fan_dp' in s) ? `${s.fan_dp.toFixed(0)} Pa` : 'Δp',
+    Evap: ('T_evap_out_C' in s) ? `${s.T_evap_out_C.toFixed(1)}°C` : '제습',
+    Cond: ('T_cond_out_C' in s) ? `${s.T_cond_out_C.toFixed(1)}°C` : '열풍',
+  };
+  const iconOf = { Drum: '🧺', Filter: '🧽', Fan: '🌬', Evap: '❄', Cond: '♨' };
+  const gradOf = {
+    Drum: 'from-cyan-700 to-cyan-500', Filter: 'from-slate-500 to-slate-400',
+    Fan: 'from-sky-600 to-sky-400', Evap: 'from-blue-600 to-blue-400', Cond: 'from-amber-600 to-amber-400',
+  };
+  const ringLabels = (detected && detected.length) ? detected : ['Drum', 'Filter', 'Fan', 'Evap', 'Cond'];
+  const NODES = ringLabels.map(lbl => [iconOf[lbl] || '▪', lbl, valOf[lbl] || '', gradOf[lbl] || 'from-slate-500 to-slate-400']);
 
   if (!modelica.available) {
     return (
@@ -5964,7 +6005,7 @@ function AirCycleRunnerBody({ blocks, connections, url, modelica, onLoadAirTestR
               <div className="text-xs font-bold text-slate-700">{nm}</div>
               <div className="font-mono text-[10px] text-slate-400">{vv}</div>
             </div>
-            {i < 3 && (
+            {i < NODES.length - 1 && (
               <div className="flex-1 min-w-[24px] text-center text-slate-300 self-start mt-2.5">
                 <div className="text-base leading-none">→</div>
                 <div className="text-[8px] font-mono text-slate-400">air{i + 1}</div>
@@ -5972,7 +6013,7 @@ function AirCycleRunnerBody({ blocks, connections, url, modelica, onLoadAirTestR
             )}
           </React.Fragment>
         ))}
-        <div className="w-full text-center text-[10px] font-mono text-cyan-600 font-bold mt-1.5 opacity-80">↑ air4 → Drum (폐루프) · AirVolume 4개(첫째=압력앵커)</div>
+        <div className="w-full text-center text-[10px] font-mono text-cyan-600 font-bold mt-1.5 opacity-80">↑ air{NODES.length} → Drum (폐루프) · AirVolume {NODES.length}개(첫째=압력앵커)</div>
       </div>
 
       {running && (

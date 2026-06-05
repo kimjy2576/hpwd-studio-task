@@ -617,7 +617,11 @@ def run_canvas_cycle(topology, settings, raw_params=True):
 # ══════════════════════════════════════════════════════════════════
 _AIR_CYCLE_MO = ['HPWDair.mo']   # 외부 의존성 없음 (MoistAir 내장, HelmholtzMedia 불필요)
 _AIR_MONITORS = ['X', 'm_evap', 'm_cond', 'mdot_da', 'T_cond_out_C', 'T_evap_out_C',
-                 'T_drum_out_C', 'T_cl_C', 'fan_dp', 'Q_latent', 'Q_cond', 'W_drum_out']
+                 'T_drum_out_C', 'T_cl_C', 'fan_dp', 'Q_latent', 'Q_cond', 'W_drum_out',
+                 'filter_dp']
+# 컴포넌트 직후 AirVolume 초기값 (해당 컴포넌트 kind 기준; fixedState라 init 추정값)
+_AIR_VOL_START = {'drum': (308.15, 0.018), 'filter': (308.15, 0.018), 'fan': (308.15, 0.018),
+                  'evaporator': (288.15, 0.010), 'condenser': (328.15, 0.011)}
 
 def _emit_drum_air(inst, p):
     return (f'    HPWDair.Drum_L1 {inst}(m_cl_dry={p.get("m_cl_dry",3.0):.6g}, '
@@ -639,8 +643,13 @@ def _emit_cond_air(inst, p):
     return (f'    HPWDair.CondAir_L1 {inst}(T_cond={p.get("T_cond",333.15):.6g}, '
             f'BF={p.get("BF",0.2):.6g}, A_face={p.get("A_face",0.05):.6g}, '
             f'K_air={p.get("K_air",50.0):.6g});\n')
+def _emit_filter_air(inst, p):
+    return (f'    HPWDair.Filter_L1 {inst}(A_face={p.get("A_face",0.05):.6g}, '
+            f'r_pleat={p.get("r_pleat",1.0):.6g}, theta_face={p.get("theta_face",0.0):.6g}, '
+            f'K={p.get("K",20.0):.6g});\n')
 _AIR_KIND_EMIT = {'drum': _emit_drum_air, 'fan': _emit_fan_air,
-                  'evaporator': _emit_evap_air, 'condenser': _emit_cond_air}
+                  'evaporator': _emit_evap_air, 'condenser': _emit_cond_air,
+                  'filter': _emit_filter_air}
 
 
 def _canvas_to_air_params(kind, raw):
@@ -688,6 +697,9 @@ def _canvas_to_air_params(kind, raw):
                 T_coil = CP.PropsSI('T', 'P', pick(['P_cond'], 19.07) * 1e5, 'Q', 1.0, 'R290')
             return {'T_cond': T_coil, 'BF': pick(['BF'], 0.2),
                     'A_face': pick(['A_face'], 0.05), 'K_air': pick(['K_air'], 50.0)}
+    if kind == 'filter':
+        return {'A_face': pick(['A_face'], 0.05), 'r_pleat': pick(['r_pleat'], 1.0),
+                'theta_face': pick(['theta_face'], 0.0), 'K': pick(['K'], 20.0)}
     raise ValueError(f"미지원 공기 kind: {kind}")
 
 
@@ -701,9 +713,6 @@ def generate_air_cycle_mo(topology, settings):
     ring = topology['ring']
     n = len(ring)
     vols = topology.get('volumes') or [0.05] * n
-    # vol 초기값 (위치별, TestAirRingL1 검증값): 드럼후/팬후/증발후/응축후
-    vstart = [(308.15, 0.018), (308.15, 0.018), (288.15, 0.010), (328.15, 0.011)]
-
     decl = []
     for i, cid in enumerate(ring):
         c = comps[cid]
@@ -711,7 +720,8 @@ def generate_air_cycle_mo(topology, settings):
         if emit is None:
             raise ValueError(f"미지원 공기 컴포넌트 kind: {c['kind']}")
         decl.append(emit(cid, c.get('params', {})))
-        T0, W0 = vstart[i % len(vstart)]
+        # 직후 vol 초기값 = 이 컴포넌트 kind 기준 (필터 삽입 등 링 변화에 강건)
+        T0, W0 = _AIR_VOL_START.get(c['kind'], (308.15, 0.018))
         if i == 0:   # 드럼 직후 vol = 압력앵커 (AirVolumeC)
             decl.append(f'    HPWDair.AirVolumeC vol{i+1}(V={vols[i]:.6g}, '
                         f'p_start=HPWDair.MoistAir.p_ref, T_start={T0:.6g}, '
@@ -731,29 +741,33 @@ def generate_air_cycle_mo(topology, settings):
     drum_id, fan_id = _id_of('drum'), _id_of('fan')
     evap_id, cond_id = _id_of('evaporator'), _id_of('condenser')
 
+    # 모니터: 항상 12종 + 필터가 링에 있으면 filter_dp 추가
+    mons = [('X', f'{drum_id}.X'), ('m_evap', f'{drum_id}.m_evap'),
+            ('m_cond', f'{evap_id}.m_cond'), ('mdot_da', f'{drum_id}.m_flow_da'),
+            ('T_cond_out_C', f'{cond_id}.T_out - 273.15'),
+            ('T_evap_out_C', f'{evap_id}.T_out - 273.15'),
+            ('T_drum_out_C', f'{drum_id}.T_out - 273.15'),
+            ('T_cl_C', f'{drum_id}.T_cl - 273.15'), ('fan_dp', f'{fan_id}.dp'),
+            ('Q_latent', f'{evap_id}.Q_latent'), ('Q_cond', f'{cond_id}.Q_total'),
+            ('W_drum_out', f'{drum_id}.W_out')]
+    filter_ids = [cid for cid in ring if comps[cid]['kind'] == 'filter']
+    if filter_ids:
+        mons.append(('filter_dp', f'{filter_ids[0]}.dp'))
+    real_decl = '    Real ' + ', '.join(nm for nm, _ in mons) + ';\n'
+    eqs = ''.join(f'    {nm} = {expr};\n' for nm, expr in mons)
+
     mo = (f'within ;\n'
           f'package GenAirCycle "캔버스 토폴로지에서 자동생성된 L1 공기 사이클"\n'
           f'  model AirCycle_gen\n'
           f'{"".join(decl)}'
-          f'    Real X, m_evap, m_cond, mdot_da, T_cond_out_C, T_evap_out_C, '
-          f'T_drum_out_C, T_cl_C, fan_dp, Q_latent, Q_cond, W_drum_out;\n'
+          f'{real_decl}'
           f'  equation\n'
           f'{"".join(conn)}'
-          f'    X = {drum_id}.X;\n'
-          f'    m_evap = {drum_id}.m_evap;\n'
-          f'    m_cond = {evap_id}.m_cond;\n'
-          f'    mdot_da = {drum_id}.m_flow_da;\n'
-          f'    T_cond_out_C = {cond_id}.T_out - 273.15;\n'
-          f'    T_evap_out_C = {evap_id}.T_out - 273.15;\n'
-          f'    T_drum_out_C = {drum_id}.T_out - 273.15;\n'
-          f'    T_cl_C = {drum_id}.T_cl - 273.15;\n'
-          f'    fan_dp = {fan_id}.dp;\n'
-          f'    Q_latent = {evap_id}.Q_latent;\n'
-          f'    Q_cond = {cond_id}.Q_total;\n'
-          f'    W_drum_out = {drum_id}.W_out;\n'
+          f'{eqs}'
           f'  end AirCycle_gen;\n'
           f'end GenAirCycle;\n')
     meta = {'n_volumes': n, 'anchor_vol': 'vol1',
+            'has_filter': bool(filter_ids),
             'ring': [comps[cid]['kind'] for cid in ring]}
     return mo, meta
 
