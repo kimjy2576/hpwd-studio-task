@@ -810,6 +810,95 @@ def run_air_cycle(topology, settings, raw_params=True):
             'generated_mo': mo, 'stop_time': stop}
 
 
+# ══════════════════════════════════════════════════════════════════
+# 냉매-공기 커플드 사이클 Run Cycle (고정 모델)
+#   HPWDcpl.Cycle_coupled_* 를 실행. evap/cond가 merged HX(Evap/Cond_coupled)로
+#   냉매 링과 공기 링을 동시에 결합 — 코일온도가 prescribed가 아니라 상호결정됨.
+#   (냉매 Run=공기입구 고정, 공기 Run=코일온도 고정, 커플드=둘 다 안 고정)
+# ══════════════════════════════════════════════════════════════════
+_COUPLED_MO = ['HPWD.mo', 'EvapUA.mo', 'Control.mo', 'Cycle.mo', 'HPWDair.mo', 'Coupled.mo']
+COUPLED_MODELS = ('Cycle_coupled_closed', 'Cycle_coupled_open')
+
+# 커플드 KPI 매핑: flat 이름 → (CSV 컬럼, 변환). 모델 변수는 component-qualified.
+_COUPLED_MAP = {
+    'Pc_bar':       ('cond.P_cond',   lambda v: v / 1e5),
+    'Pe_bar':       ('evap.P_evap',   lambda v: v / 1e5),
+    'W':            ('comp.W',        lambda v: v),
+    'mdot':         ('comp.m_dot',    lambda v: v),
+    'SH_evap':      ('evap.SH',       lambda v: v),
+    'SC_cond':      ('cond.SC',       lambda v: v),
+    'opening':      ('eev.opening',   lambda v: v),
+    'X':            ('drum.X',        lambda v: v),
+    'm_evap':       ('drum.m_evap',   lambda v: v),
+    'm_cond':       ('evap.m_cond',   lambda v: v),
+    'mdot_da':      ('drum.m_flow_da', lambda v: v),
+    'T_cond_air_C': ('cond.T_air_out', lambda v: v - 273.15),
+    'T_evap_air_C': ('evap.T_air_out', lambda v: v - 273.15),
+    'T_drum_out_C': ('drum.T_out',    lambda v: v - 273.15),
+    'fan_dp':       ('fan.dp',        lambda v: v),
+}
+
+
+def _parse_coupled_csv(csv_path, n_traj=80):
+    """커플드 CSV → flat KPI(settled, traj) + 파생 SMER.
+    SMER [kg/kWh] = m_evap[kg/s] / W[W] × 3.6e6 (단위 제습량/소비전력)."""
+    rows = list(_csv.reader(open(csv_path)))
+    hdr, data = rows[0], rows[1:]
+    col = {h: i for i, h in enumerate(hdr)}
+    present = {flat: (c, fn) for flat, (c, fn) in _COUPLED_MAP.items() if c in col}
+
+    def kpis(row):
+        out = {flat: fn(float(row[col[c]])) for flat, (c, fn) in present.items()}
+        if 'm_evap' in out and out.get('W', 0) > 1e-9:
+            out['SMER'] = out['m_evap'] / out['W'] * 3.6e6
+        return out
+
+    settled = kpis(data[-1])
+    step = max(1, len(data) // n_traj)
+    idx = list(range(0, len(data), step))
+    if idx[-1] != len(data) - 1:
+        idx.append(len(data) - 1)
+    keys = list(present.keys()) + (['SMER'] if 'SMER' in settled else [])
+    traj = {'time': [float(data[i][col['time']]) for i in idx]}
+    for k in keys:
+        traj[k] = []
+    for i in idx:
+        kk = kpis(data[i])
+        for k in keys:
+            traj[k].append(kk.get(k))
+    return settled, traj
+
+
+def run_coupled_cycle(model='Cycle_coupled_closed', stop_time=180.0, tolerance=1e-6,
+                      intervals=300, n_traj=80, timeout=900):
+    """HPWDcpl.<model> 커플드 사이클 transient 시뮬 → 정착값 + 궤적.
+
+    냉매(Pc/Pe/W/SH/opening) + 공기(X/m_evap/열풍/풍량) + 파생 SMER 동시 반환.
+    """
+    if model not in COUPLED_MODELS:
+        raise ValueError(f"미지원 커플드 모델: {model} (지원: {list(COUPLED_MODELS)})")
+    wdir = os.path.join(_WORK, 'coupled_' + model)
+    os.makedirs(wdir, exist_ok=True)
+    loads = "".join(
+        f'loadFile("{_fs(os.path.join(MODELICA_DIR, f))}"); getErrorString();\n'
+        for f in _COUPLED_MO)
+    mos = (f'loadModel(Modelica); getErrorString();\n'
+           f'loadFile("{_fs(HELMHOLTZ_PATH)}"); getErrorString();\n'
+           f'{loads}'
+           f'simulate(HPWDcpl.{model}, stopTime={float(stop_time):.6g}, '
+           f'numberOfIntervals={int(intervals)}, method="dassl", '
+           f'tolerance={float(tolerance):.3g}, outputFormat="csv"); getErrorString();\n')
+    open(os.path.join(wdir, 'run.mos'), 'w').write(mos)
+    r = subprocess.run([_omc_bin(), "run.mos"], cwd=wdir,
+                       capture_output=True, text=True, timeout=timeout)
+    csv_path = os.path.join(wdir, f"HPWDcpl.{model}_res.csv")
+    if not os.path.exists(csv_path):
+        raise RuntimeError(f"커플드 사이클 실행 실패 ({model}):\n{(r.stdout + r.stderr)[-1500:]}")
+    settled, traj = _parse_coupled_csv(csv_path, n_traj)
+    return {'model': model, 'stop_time': float(stop_time),
+            'settled': settled, 'trajectory': traj}
+
+
 
 # ── 캐시 무효화 (모델/템플릿 수정 후 강제 재빌드용) ──────────────
 def clear_cache():

@@ -66,6 +66,7 @@ try:
                                   run_cycle as _run_cycle,
                                   run_canvas_cycle as _run_canvas_cycle,
                                   run_air_cycle as _run_air_cycle,
+                                  run_coupled_cycle as _run_coupled_cycle, COUPLED_MODELS,
                                   COMPONENT_REGISTRY, CYCLE_MODELS, HELMHOLTZ_PATH)
     _modelica['imported'] = True
     print(f"[OK]   Modelica bridge imported (components: {list(COMPONENT_REGISTRY)})")
@@ -313,6 +314,25 @@ def run_air_cycle(req: CanvasCycleRequest):
                                    stop_time=r['stop_time'])
     except Exception as e:
         return CanvasCycleResponse(error=f"{type(e).__name__}: {e}")
+
+
+@app.post("/run_coupled_cycle", response_model=CycleResponse)
+def run_coupled_cycle(req: CycleRequest):
+    """냉매-공기 커플드 사이클 (HPWDcpl.Cycle_coupled_*) transient 시뮬.
+
+    merged HX(Evap/Cond_coupled)로 냉매 링 + 공기 폐루프를 동시에 결합 — 코일온도가
+    prescribed가 아니라 상호결정됨. 냉매(Pc/Pe/W/SH)+공기(X/m_evap/열풍)+SMER 반환. omc 필요."""
+    ok, why = _modelica_status()
+    if not ok:
+        return CycleResponse(model=req.model, error=f"Modelica 엔진 사용 불가: {why}.")
+    model = req.model if req.model in COUPLED_MODELS else 'Cycle_coupled_closed'
+    try:
+        r = _run_coupled_cycle(model=model, stop_time=req.stop_time,
+                               tolerance=req.tolerance, intervals=req.intervals)
+        return CycleResponse(model=r['model'], stop_time=r['stop_time'],
+                             settled=r['settled'], trajectory=r['trajectory'])
+    except Exception as e:
+        return CycleResponse(model=model, error=f"{type(e).__name__}: {e}")
 
 
 # ─── Server 실행 ────────────────────────────────────────────────────
