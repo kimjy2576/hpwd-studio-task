@@ -608,6 +608,194 @@ def run_canvas_cycle(topology, settings, raw_params=True):
     return {'settled': settled, 'trajectory': traj, 'meta': meta, 'generated_mo': mo,
             'stop_time': stop}
 
+# ══════════════════════════════════════════════════════════════════
+# 캔버스 토폴로지 → 공기 사이클 .mo 자동생성 (냉매 Run Cycle의 공기 대칭판)
+#   공기 링(drum→fan→evap→cond→drum)을 받아 AirVolume 노드 자동삽입.
+#   냉매 Run Cycle이 *공기입구 고정*인 것과 대칭으로, 공기 Run Cycle은
+#   *코일온도(T_evap/T_cond) 고정* — EvapAir_L1/CondAir_L1 사용.
+#   첫 vol(드럼 직후)만 AirVolumeC = 폐루프 압력앵커 (비압축이라 절대레벨 자유 DOF).
+# ══════════════════════════════════════════════════════════════════
+_AIR_CYCLE_MO = ['HPWDair.mo']   # 외부 의존성 없음 (MoistAir 내장, HelmholtzMedia 불필요)
+_AIR_MONITORS = ['X', 'm_evap', 'm_cond', 'mdot_da', 'T_cond_out_C', 'T_evap_out_C',
+                 'T_drum_out_C', 'T_cl_C', 'fan_dp', 'Q_latent', 'Q_cond', 'W_drum_out']
+
+def _emit_drum_air(inst, p):
+    return (f'    HPWDair.Drum_L1 {inst}(m_cl_dry={p.get("m_cl_dry",3.0):.6g}, '
+            f'c_p_cl={p.get("c_p_cl",1500.0):.6g}, A_eff={p.get("A_eff",10.0):.6g}, '
+            f'h_a={p.get("h_a",50.0):.6g}, A_drum={p.get("A_drum",0.15):.6g}, '
+            f'K_drum={p.get("K_drum",30.0):.6g}, X0={p.get("X0",0.6):.6g}, '
+            f'Tcl0={p.get("Tcl0",298.15):.6g}, UA_amb={p.get("UA_amb",0.0):.6g}, '
+            f'T_amb={p.get("T_amb",298.15):.6g});\n')
+def _emit_fan_air(inst, p):
+    return (f'    HPWDair.Fan_L1 {inst}(D2={p.get("D2",0.15):.6g}, b2={p.get("b2",0.04):.6g}, '
+            f'Z={int(p.get("Z",40))}, beta2={p.get("beta2",150.0):.6g}, '
+            f'eta_h={p.get("eta_h",0.78):.6g}, eta_mech={p.get("eta_mech",0.95):.6g}, '
+            f'N={p.get("N",3000.0):.6g});\n')
+def _emit_evap_air(inst, p):
+    return (f'    HPWDair.EvapAir_L1 {inst}(T_evap={p.get("T_evap",283.15):.6g}, '
+            f'BF={p.get("BF",0.2):.6g}, A_face={p.get("A_face",0.05):.6g}, '
+            f'K_air={p.get("K_air",50.0):.6g});\n')
+def _emit_cond_air(inst, p):
+    return (f'    HPWDair.CondAir_L1 {inst}(T_cond={p.get("T_cond",333.15):.6g}, '
+            f'BF={p.get("BF",0.2):.6g}, A_face={p.get("A_face",0.05):.6g}, '
+            f'K_air={p.get("K_air",50.0):.6g});\n')
+_AIR_KIND_EMIT = {'drum': _emit_drum_air, 'fan': _emit_fan_air,
+                  'evaporator': _emit_evap_air, 'condenser': _emit_cond_air}
+
+
+def _canvas_to_air_params(kind, raw):
+    """캔버스 raw 파라미터 → SI 공기모델 파라미터.
+
+    drum/fan은 native 키(m_cl_dry,X0,h_a,N..) 우선, 없으면 캔버스 placeholder
+    키(m_fabric,MC_init,hA,RPM)로 폴백. evap/cond의 코일온도는 native T_evap_C/
+    T_cond_C 가 있으면 그걸, 없으면 P_evap/P_cond → R290 포화온도(CoolProp)로 역산.
+    """
+    def pick(keys, d):
+        for k in keys:
+            v = raw.get(k)
+            if v not in (None, ''):
+                try:
+                    return float(v)
+                except (TypeError, ValueError):
+                    pass
+        return float(d)
+
+    if kind == 'drum':
+        return {'m_cl_dry': pick(['m_cl_dry', 'm_fabric'], 3.0),
+                'c_p_cl': pick(['c_p_cl'], 1500.0), 'A_eff': pick(['A_eff'], 10.0),
+                'h_a': pick(['h_a', 'hA'], 50.0), 'A_drum': pick(['A_drum'], 0.15),
+                'K_drum': pick(['K_drum'], 30.0), 'X0': pick(['X0', 'MC_init'], 0.6),
+                'Tcl0': pick(['Tcl0'], 298.15), 'UA_amb': pick(['UA_amb'], 0.0),
+                'T_amb': pick(['T_amb'], 298.15)}
+    if kind == 'fan':
+        return {'D2': pick(['D2'], 0.15), 'b2': pick(['b2'], 0.04),
+                'Z': pick(['Z'], 40.0), 'beta2': pick(['beta2'], 150.0),
+                'eta_h': pick(['eta_h', 'eta'], 0.78), 'eta_mech': pick(['eta_mech'], 0.95),
+                'N': pick(['N', 'RPM'], 3000.0)}
+    if kind in ('evaporator', 'condenser'):
+        import CoolProp.CoolProp as CP
+        if kind == 'evaporator':
+            if raw.get('T_evap_C') not in (None, ''):
+                T_coil = pick(['T_evap_C'], 10.0) + 273.15
+            else:
+                T_coil = CP.PropsSI('T', 'P', pick(['P_evap'], 5.51) * 1e5, 'Q', 0.0, 'R290')
+            return {'T_evap': T_coil, 'BF': pick(['BF'], 0.2),
+                    'A_face': pick(['A_face'], 0.05), 'K_air': pick(['K_air'], 50.0)}
+        else:
+            if raw.get('T_cond_C') not in (None, ''):
+                T_coil = pick(['T_cond_C'], 60.0) + 273.15
+            else:
+                T_coil = CP.PropsSI('T', 'P', pick(['P_cond'], 19.07) * 1e5, 'Q', 1.0, 'R290')
+            return {'T_cond': T_coil, 'BF': pick(['BF'], 0.2),
+                    'A_face': pick(['A_face'], 0.05), 'K_air': pick(['K_air'], 50.0)}
+    raise ValueError(f"미지원 공기 kind: {kind}")
+
+
+def generate_air_cycle_mo(topology, settings):
+    """캔버스 공기 토폴로지 → GenAirCycle.AirCycle_gen .mo 텍스트.
+
+    topology = {components:[{id,kind,params}], ring:[id...], volumes:[V...]}
+    ring 순서는 드럼에서 시작 (drum→fan→evap→cond). 반환: (mo_text, meta)
+    """
+    comps = {c['id']: c for c in topology['components']}
+    ring = topology['ring']
+    n = len(ring)
+    vols = topology.get('volumes') or [0.05] * n
+    # vol 초기값 (위치별, TestAirRingL1 검증값): 드럼후/팬후/증발후/응축후
+    vstart = [(308.15, 0.018), (308.15, 0.018), (288.15, 0.010), (328.15, 0.011)]
+
+    decl = []
+    for i, cid in enumerate(ring):
+        c = comps[cid]
+        emit = _AIR_KIND_EMIT.get(c['kind'])
+        if emit is None:
+            raise ValueError(f"미지원 공기 컴포넌트 kind: {c['kind']}")
+        decl.append(emit(cid, c.get('params', {})))
+        T0, W0 = vstart[i % len(vstart)]
+        if i == 0:   # 드럼 직후 vol = 압력앵커 (AirVolumeC)
+            decl.append(f'    HPWDair.AirVolumeC vol{i+1}(V={vols[i]:.6g}, '
+                        f'p_start=HPWDair.MoistAir.p_ref, T_start={T0:.6g}, '
+                        f'W_start={W0:.6g}, fixedState=true);\n')
+        else:
+            decl.append(f'    HPWDair.AirVolume vol{i+1}(V={vols[i]:.6g}, '
+                        f'T_start={T0:.6g}, W_start={W0:.6g}, fixedState=true);\n')
+
+    conn = []
+    for i, cid in enumerate(ring):
+        nxt = ring[(i + 1) % n]
+        conn.append(f'    connect({cid}.port_b, vol{i+1}.port_a);\n')
+        conn.append(f'    connect(vol{i+1}.port_b, {nxt}.port_a);\n')
+
+    def _id_of(kind):
+        return next(c['id'] for c in topology['components'] if c['kind'] == kind)
+    drum_id, fan_id = _id_of('drum'), _id_of('fan')
+    evap_id, cond_id = _id_of('evaporator'), _id_of('condenser')
+
+    mo = (f'within ;\n'
+          f'package GenAirCycle "캔버스 토폴로지에서 자동생성된 L1 공기 사이클"\n'
+          f'  model AirCycle_gen\n'
+          f'{"".join(decl)}'
+          f'    Real X, m_evap, m_cond, mdot_da, T_cond_out_C, T_evap_out_C, '
+          f'T_drum_out_C, T_cl_C, fan_dp, Q_latent, Q_cond, W_drum_out;\n'
+          f'  equation\n'
+          f'{"".join(conn)}'
+          f'    X = {drum_id}.X;\n'
+          f'    m_evap = {drum_id}.m_evap;\n'
+          f'    m_cond = {evap_id}.m_cond;\n'
+          f'    mdot_da = {drum_id}.m_flow_da;\n'
+          f'    T_cond_out_C = {cond_id}.T_out - 273.15;\n'
+          f'    T_evap_out_C = {evap_id}.T_out - 273.15;\n'
+          f'    T_drum_out_C = {drum_id}.T_out - 273.15;\n'
+          f'    T_cl_C = {drum_id}.T_cl - 273.15;\n'
+          f'    fan_dp = {fan_id}.dp;\n'
+          f'    Q_latent = {evap_id}.Q_latent;\n'
+          f'    Q_cond = {cond_id}.Q_total;\n'
+          f'    W_drum_out = {drum_id}.W_out;\n'
+          f'  end AirCycle_gen;\n'
+          f'end GenAirCycle;\n')
+    meta = {'n_volumes': n, 'anchor_vol': 'vol1',
+            'ring': [comps[cid]['kind'] for cid in ring]}
+    return mo, meta
+
+
+def run_air_cycle(topology, settings, raw_params=True):
+    """캔버스 공기 토폴로지로 .mo 생성 → transient 시뮬 → 정착값+궤적.
+
+    raw_params=True (기본): components[].params 가 캔버스 raw → SI 변환.
+    공기측은 HelmholtzMedia 불필요 (MoistAir 내장) → 로드 빠름.
+    """
+    if raw_params:
+        comps = [{'id': c['id'], 'kind': c['kind'],
+                  'params': _canvas_to_air_params(c['kind'], c.get('params', {}))}
+                 for c in topology['components']]
+        topology = {**topology, 'components': comps}
+    mo, meta = generate_air_cycle_mo(topology, settings)
+    wdir = os.path.join(_WORK, 'air_cycle_gen')
+    os.makedirs(wdir, exist_ok=True)
+    open(os.path.join(wdir, 'GenAirCycle.mo'), 'w').write(mo)
+    loads = "".join(
+        f'loadFile("{_fs(os.path.join(MODELICA_DIR, f))}"); getErrorString();\n'
+        for f in _AIR_CYCLE_MO)
+    stop = float(settings.get('stop_time', 300.0))
+    tol = float(settings.get('tolerance', 1e-6))
+    intervals = int(settings.get('intervals', 300))
+    mos = (f'loadModel(Modelica); getErrorString();\n'
+           f'{loads}'
+           f'loadFile("{_fs(os.path.join(wdir, "GenAirCycle.mo"))}"); getErrorString();\n'
+           f'simulate(GenAirCycle.AirCycle_gen, stopTime={stop:.6g}, '
+           f'numberOfIntervals={intervals}, method="dassl", '
+           f'tolerance={tol:.3g}, outputFormat="csv"); getErrorString();\n')
+    open(os.path.join(wdir, 'run.mos'), 'w').write(mos)
+    r = subprocess.run([_omc_bin(), "run.mos"], cwd=wdir,
+                       capture_output=True, text=True, timeout=900)
+    csv_path = os.path.join(wdir, "GenAirCycle.AirCycle_gen_res.csv")
+    if not os.path.exists(csv_path):
+        raise RuntimeError(f"공기 사이클 실행 실패:\n{(r.stdout + r.stderr)[-1800:]}")
+    settled, traj = _parse_cycle_csv(csv_path, _AIR_MONITORS)
+    return {'settled': settled, 'trajectory': traj, 'meta': meta,
+            'generated_mo': mo, 'stop_time': stop}
+
+
 
 # ── 캐시 무효화 (모델/템플릿 수정 후 강제 재빌드용) ──────────────
 def clear_cache():

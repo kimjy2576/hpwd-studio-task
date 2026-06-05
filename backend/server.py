@@ -65,6 +65,7 @@ try:
     from modelica.bridge import (compute_modelica as _mod_compute,
                                   run_cycle as _run_cycle,
                                   run_canvas_cycle as _run_canvas_cycle,
+                                  run_air_cycle as _run_air_cycle,
                                   COMPONENT_REGISTRY, CYCLE_MODELS, HELMHOLTZ_PATH)
     _modelica['imported'] = True
     print(f"[OK]   Modelica bridge imported (components: {list(COMPONENT_REGISTRY)})")
@@ -282,6 +283,31 @@ def run_canvas_cycle(req: CanvasCycleRequest):
                 error=f"링에 필요한 컴포넌트 부족: {sorted(need - kinds)} 누락 "
                       f"(현재 {sorted(kinds)}). Comp·Cond·EEV·Evap 4개가 닫힌 링이어야 함.")
         r = _run_canvas_cycle(topo, req.settings or {})
+        return CanvasCycleResponse(settled=r['settled'], trajectory=r['trajectory'],
+                                   meta=r['meta'], generated_mo=r['generated_mo'],
+                                   stop_time=r['stop_time'])
+    except Exception as e:
+        return CanvasCycleResponse(error=f"{type(e).__name__}: {e}")
+
+
+@app.post("/run_air_cycle", response_model=CanvasCycleResponse)
+def run_air_cycle(req: CanvasCycleRequest):
+    """캔버스 공기 토폴로지 → 공기 사이클 .mo 자동생성 → 시뮬 → 정착값+궤적.
+
+    냉매 /run_canvas_cycle 의 공기 대칭판. 공기 링(drum→fan→evap→cond→drum)을
+    받아 .mo 생성·실행. 코일온도(T_evap/T_cond)는 고정 경계조건. omc 필요."""
+    ok, why = _modelica_status()
+    if not ok:
+        return CanvasCycleResponse(error=f"Modelica 엔진 사용 불가: {why}.")
+    try:
+        topo = req.topology or {}
+        kinds = {c.get('kind') for c in (topo.get('components') or [])}
+        need = {'drum', 'fan', 'evaporator', 'condenser'}
+        if not need.issubset(kinds):
+            return CanvasCycleResponse(
+                error=f"공기 링에 필요한 컴포넌트 부족: {sorted(need - kinds)} 누락 "
+                      f"(현재 {sorted(kinds)}). Drum·Fan·Evap·Cond 4개가 공기 연결로 닫힌 링이어야 함.")
+        r = _run_air_cycle(topo, req.settings or {})
         return CanvasCycleResponse(settled=r['settled'], trajectory=r['trajectory'],
                                    meta=r['meta'], generated_mo=r['generated_mo'],
                                    stop_time=r['stop_time'])

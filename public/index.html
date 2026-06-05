@@ -5112,7 +5112,8 @@ function HPWDStudio() {
         />
       )}
       {cycleOpen && <CycleRunnerModal onClose={() => setCycleOpen(false)} blocks={blocks} connections={connections}
-        onLoadTestRing={() => { const r = makeL1TestRing(); pushHistory(blocks, connections); setBlocks(r.blocks); setConnections(r.connections); return r; }} />}
+        onLoadTestRing={() => { const r = makeL1TestRing(); pushHistory(blocks, connections); setBlocks(r.blocks); setConnections(r.connections); return r; }}
+        onLoadAirTestRing={() => { const r = makeAirTestRing(); pushHistory(blocks, connections); setBlocks(r.blocks); setConnections(r.connections); return r; }} />}
       <ChatFAB onSend={chatExecuteMock} />
     </div>
   );
@@ -5704,9 +5705,324 @@ function CyclePlot({ traj }) {
 }
 
 // =============================================================
+// 공기 사이클 Run Cycle — 냉매 Run Cycle의 대칭판
+//   캔버스 공기 연결(kind:'air')에서 링(Drum→Fan→Evap→Cond)을 추출,
+//   /run_air_cycle 로 .mo 자동생성·실행. 코일온도(T_evap/T_cond)는 고정 경계.
+// =============================================================
+function airCycleKindOf(type) {
+  if (!type) return null;
+  if (type.startsWith('drum')) return 'drum';
+  if (type.startsWith('fan')) return 'fan';
+  if (type.startsWith('condenser')) return 'condenser';
+  if (type.startsWith('evaporator')) return 'evaporator';
+  return null;
+}
+
+function extractAirTopology(blocks, connections) {
+  const airBlocks = (blocks || []).filter(b => airCycleKindOf(b.type));
+  const byId = Object.fromEntries(airBlocks.map(b => [b.id, b]));
+  const NEED = ['drum', 'fan', 'evaporator', 'condenser'];
+  const present = new Set(airBlocks.map(b => airCycleKindOf(b.type)));
+  const missing = NEED.filter(k => !present.has(k));
+  const labelOf = { drum: 'Drum', fan: 'Fan', evaporator: 'Evap', condenser: 'Cond' };
+  if (missing.length) {
+    return { error: `캔버스에 ${missing.map(k => labelOf[k]).join(', ')} 가 없음. Drum·Fan·Evap·Cond 4개가 공기 연결로 닫힌 링을 이뤄야 함.` };
+  }
+  // 공기 연결의 directed adjacency (컴포넌트 간, 첫 연결만)
+  const adj = {};
+  (connections || []).forEach(c => {
+    if (c.kind !== 'air') return;
+    const f = c.from?.blockId, t = c.to?.blockId;
+    if (byId[f] && byId[t] && f !== t && !(f in adj)) adj[f] = t;
+  });
+  // 드럼에서 from→to 따라 워크 (공기 흐름: drum→fan→evap→cond→drum)
+  const drum = airBlocks.find(b => airCycleKindOf(b.type) === 'drum');
+  const ring = [];
+  const seen = new Set();
+  let cur = drum.id;
+  while (cur && byId[cur] && !seen.has(cur)) {
+    seen.add(cur); ring.push(cur);
+    cur = adj[cur];
+  }
+  const closes = cur === drum.id;
+  const ringKinds = ring.map(id => airCycleKindOf(byId[id].type));
+  if (ring.length !== 4 || !closes || new Set(ringKinds).size !== 4) {
+    return {
+      error: `닫힌 공기 링이 아님 (감지 경로: ${ring.map(id => labelOf[airCycleKindOf(byId[id].type)]).join('→') || '없음'}). `
+        + `Drum→Fan→Evap→Cond→Drum 순서로 공기 연결을 닫아줘 (연결 방향=공기 흐름).`,
+    };
+  }
+  // raw 파라미터 수집: b.params + inputValues(없으면 포트 기본값)
+  const components = ring.map(id => {
+    const b = byId[id];
+    const def = TYPES[b.type] || {};
+    const raw = { ...(b.params || {}) };
+    (def.inputs || []).forEach(inp => {
+      raw[inp.key] = b.inputValues?.[inp.key] ?? inp.value;
+    });
+    return { id: b.id, kind: airCycleKindOf(b.type), params: raw };
+  });
+  const volumes = ring.map(() => 0.05);   // 연결마다 0.05m³ (L1 lumped AirVolume)
+  return { components, ring, volumes, ringLabels: ringKinds.map(k => labelOf[k]) };
+}
+
+// makeAirTestRing — 검증된 레퍼런스 공기 링(TestAirRingL1)을 캔버스로 생성.
+//   drum/fan은 native Fan_L1/Drum_L1 파라미터, evap/cond는 코일온도(°C)를 박아
+//   백엔드가 TestAirRingL1을 그대로 재현 (X 0.6→0.47, ṁ_da 0.156, 열풍 51°C).
+function makeAirTestRing() {
+  const ts = Date.now();
+  const mk = (i, type, x, y, name, params, inputValues) => {
+    const def = TYPES[type] || {};
+    return {
+      id: `air${ts}_${i}`, type, x, y, name,
+      params: { ...Object.fromEntries((def.parameters || []).map(p => [p.key, p.value])), ...params },
+      inputValues: inputValues || {},
+      outputs: {},
+      state: def.stateInit ? JSON.parse(JSON.stringify(def.stateInit)) : {},
+    };
+  };
+  const drum = mk(0, 'drum', 360, 300, 'Drum · air-test',
+    { m_cl_dry: 3.0, c_p_cl: 1500, A_eff: 10, h_a: 50, A_drum: 0.15, K_drum: 30, X0: 0.6, Tcl0: 298.15 });
+  const fan = mk(1, 'fan', 180, 180, 'Fan · air-test',
+    { D2: 0.15, b2: 0.04, Z: 40, beta2: 150, eta_h: 0.78, eta_mech: 0.95, N: 3000 });
+  const evap = mk(2, 'evaporator_off_design', 300, 60, 'Evap · air-test',
+    { T_evap_C: 10, BF: 0.2, A_face: 0.05, K_air: 50 });
+  const cond = mk(3, 'condenser_off_design', 580, 130, 'Cond · air-test',
+    { T_cond_C: 60, BF: 0.2, A_face: 0.05, K_air: 50 });
+  const blocks = [drum, fan, evap, cond];
+  const edge = (from, to, fside, tside) => ({
+    from: { blockId: from.id, side: fside, slot: 2 },
+    to: { blockId: to.id, side: tside, slot: 2 },
+    kind: 'air',
+    signals: autoMapSignals(from, to),
+    lineParams: defaultLineParams('air'),
+    cornerRadius: 8, routeMode: 'auto',
+  });
+  // 공기 흐름 링: Drum→Fan→Evap→Cond→Drum
+  const connections = [
+    edge(drum, fan, 'left', 'left'),
+    edge(fan, evap, 'right', 'left'),
+    edge(evap, cond, 'right', 'left'),
+    edge(cond, drum, 'right', 'right'),
+  ];
+  return { blocks, connections };
+}
+
+function AirCyclePlot({ traj }) {
+  if (!traj || !Array.isArray(traj.time) || !traj.time.length
+      || !Array.isArray(traj.T_cond_out_C) || !Array.isArray(traj.X)) {
+    return <div className="text-xs font-mono text-slate-400 py-4 text-center">궤적 데이터 없음</div>;
+  }
+  const W = 920, H = 280, mL = 44, mR = 42, mT = 12, mB = 28;
+  const x0 = mL, x1 = W - mR, y0 = H - mB, y1 = mT;
+  const tmax = Math.max(...traj.time) || 1;
+  const temps = [...traj.T_cond_out_C, ...(traj.T_drum_out_C || []), ...(traj.T_evap_out_C || [])];
+  const tMax = Math.max(20, Math.ceil(Math.max(...temps) / 10) * 10);
+  const xMax = Math.max(0.1, Math.ceil(Math.max(...traj.X) * 10) / 10);
+  const sx = v => x0 + (v / tmax) * (x1 - x0);
+  const syT = v => y0 - (v / tMax) * (y0 - y1);
+  const syX = v => y0 - (v / xMax) * (y0 - y1);
+  const mkPath = (arr, sy) => arr.map((v, i) => (i ? 'L' : 'M') + sx(traj.time[i]).toFixed(1) + ' ' + sy(v).toFixed(1)).join(' ');
+  const tTicks = [], xTicks = [], xtTicks = [];
+  const tStep = Math.max(10, Math.round(tMax / 6 / 10) * 10);
+  for (let p = 0; p <= tMax + 1e-9; p += tStep) tTicks.push(p);
+  for (let k = 0; k <= 5; k++) xTicks.push((xMax / 5) * k);
+  for (let k = 0; k <= 6; k++) xtTicks.push((tmax / 6) * k);
+  const TK = { fontSize: 9, fill: '#94A3B8', fontFamily: 'JetBrains Mono, monospace' };
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto' }}>
+      {tTicks.map(p => (
+        <g key={'t' + p}>
+          <line x1={x0} y1={syT(p)} x2={x1} y2={syT(p)} stroke="#EEF2F6" strokeWidth="1" />
+          <text x={x0 - 6} y={syT(p) + 3} textAnchor="end" {...TK}>{p}</text>
+        </g>
+      ))}
+      {xTicks.map((k, i) => (<text key={'x' + i} x={x1 + 6} y={syX(k) + 3} textAnchor="start" {...TK}>{k.toFixed(2)}</text>))}
+      {xtTicks.map((sv, i) => (<text key={'xt' + i} x={sx(sv)} y={y0 + 14} textAnchor="middle" {...TK}>{sv.toFixed(0)}</text>))}
+      <line x1={x0} y1={y0} x2={x1} y2={y0} stroke="#E2E8F0" />
+      <line x1={x0} y1={y1} x2={x0} y2={y0} stroke="#E2E8F0" />
+      <line x1={x1} y1={y1} x2={x1} y2={y0} stroke="#E2E8F0" />
+      <text x={x0 - 30} y={(y0 + y1) / 2} textAnchor="middle" transform={`rotate(-90 ${x0 - 30} ${(y0 + y1) / 2})`} style={{ fontSize: 10, fontWeight: 600, fill: '#475569', fontFamily: 'JetBrains Mono, monospace' }}>°C</text>
+      <text x={x1 + 24} y={(y0 + y1) / 2} textAnchor="middle" transform={`rotate(90 ${x1 + 24} ${(y0 + y1) / 2})`} style={{ fontSize: 10, fontWeight: 600, fill: '#0891B2', fontFamily: 'JetBrains Mono, monospace' }}>X</text>
+      <text x={(x0 + x1) / 2} y={H - 1} textAnchor="middle" {...TK}>time [s]</text>
+      {Array.isArray(traj.T_drum_out_C) && <path d={mkPath(traj.T_drum_out_C, syT)} fill="none" stroke="#64748B" strokeWidth="2" strokeLinejoin="round" />}
+      {Array.isArray(traj.T_evap_out_C) && <path d={mkPath(traj.T_evap_out_C, syT)} fill="none" stroke="#2563EB" strokeWidth="2" strokeLinejoin="round" />}
+      <path d={mkPath(traj.T_cond_out_C, syT)} fill="none" stroke="#DC2626" strokeWidth="2.2" strokeLinejoin="round" />
+      <path d={mkPath(traj.X, syX)} fill="none" stroke="#0891B2" strokeWidth="2.2" strokeDasharray="5 3" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+// AirCycleRunnerBody — 공기 링 추출·실행·결과 (CycleRunnerModal 안에서 domain='air'일 때)
+function AirCycleRunnerBody({ blocks, connections, url, modelica, onLoadAirTestRing }) {
+  const [running, setRunning] = useState(false);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState(null);
+  const [detected, setDetected] = useState(null);
+  const [stopTime, setStopTime] = useState('300');
+
+  const _fetchErr = async (r, path) => {
+    let detail = `HTTP ${r.status}`;
+    try { const j = await r.json(); detail = j.detail || j.error || detail; } catch (e) {}
+    return r.status === 404
+      ? `로컬 서버에 ${path} 가 없음 (${detail}). git pull 후 python server.py 재시작 필요.`
+      : `서버 응답 오류: ${detail}`;
+  };
+
+  const runAir = async (blk, conn) => {
+    const useBlocks = blk || blocks;
+    const useConns = conn || connections;
+    setRunning(true); setError(null); setResult(null); setDetected(null);
+    const topo = extractAirTopology(useBlocks, useConns);
+    if (topo.error) { setError(topo.error); setRunning(false); return; }
+    setDetected(topo.ringLabels);
+    try {
+      const r = await fetch(`${url}/run_air_cycle`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ topology: topo, settings: { stop_time: parseFloat(stopTime) || 300, tolerance: 1e-6, intervals: 300 } }),
+      });
+      if (!r.ok) { setError(await _fetchErr(r, '/run_air_cycle')); setRunning(false); return; }
+      const data = await r.json();
+      if (data.error) { setError(data.error); setRunning(false); return; }
+      if (!data.trajectory || !Array.isArray(data.trajectory.X) || !data.trajectory.X.length) {
+        setError('결과에 궤적이 없음 — 서버 버전 확인 (git pull 후 python server.py 재시작).'); setRunning(false); return;
+      }
+      setResult({ settled: data.settled || {}, trajectory: data.trajectory });
+    } catch (e) { setError(`요청 실패: ${e.message}`); }
+    setRunning(false);
+  };
+
+  const AIR_CARDS = [
+    { k: 'X', n: '함수율 X', u: 'kg/kg', d: 3, c: 'text-cyan-700' },
+    { k: 'm_evap', n: 'ṁ 증발(드럼)', u: 'g/s', d: 2, c: 'text-blue-600', scale: 1000 },
+    { k: 'm_cond', n: 'ṁ 제습(증발기)', u: 'g/s', d: 2, c: 'text-teal-600', scale: 1000 },
+    { k: 'mdot_da', n: '건조공기 풍량', u: 'kg/s', d: 3, c: 'text-violet-600' },
+    { k: 'T_cond_out_C', n: '열풍(드럼입구)', u: '°C', d: 1, c: 'text-red-600' },
+    { k: 'T_evap_out_C', n: '증발기출구', u: '°C', d: 1, c: 'text-sky-600' },
+    { k: 'fan_dp', n: '팬 정압상승', u: 'Pa', d: 0, c: 'text-amber-600' },
+    { k: 'Q_latent', n: '제습 잠열', u: 'W', d: 0, c: 'text-teal-600' },
+  ];
+  const s = result?.settled || {};
+  const NODES = [
+    ['🧺', 'Drum', ('X' in s) ? `X ${s.X.toFixed(3)}` : '함수율', 'from-cyan-700 to-cyan-500'],
+    ['🌬', 'Fan', ('fan_dp' in s) ? `${s.fan_dp.toFixed(0)} Pa` : 'Δp', 'from-sky-600 to-sky-400'],
+    ['❄', 'Evap', ('T_evap_out_C' in s) ? `${s.T_evap_out_C.toFixed(1)}°C` : '제습', 'from-blue-600 to-blue-400'],
+    ['♨', 'Cond', ('T_cond_out_C' in s) ? `${s.T_cond_out_C.toFixed(1)}°C` : '열풍', 'from-amber-600 to-amber-400'],
+  ];
+
+  if (!modelica.available) {
+    return (
+      <div className="p-6 text-center text-slate-500 text-sm">
+        <div className="text-2xl mb-2">⚠️</div>
+        <div className="font-mono text-xs text-slate-400">{modelica.reason || 'Local 백엔드(omc) 연결 필요'}</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* controls */}
+      <div className="flex items-end gap-4 flex-wrap">
+        <div className="flex flex-col gap-1.5">
+          <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wide">시뮬 설정</label>
+          <div className="flex gap-2 items-end">
+            <label className="flex flex-col gap-1">
+              <span className="font-mono text-[10px] text-slate-400">stop [s]</span>
+              <input type="number" value={stopTime} disabled={running} onChange={(e) => setStopTime(e.target.value)}
+                className="w-24 bg-white border border-slate-200 rounded px-2 py-1.5 text-sm font-mono text-slate-700 focus:border-cyan-400 outline-none" />
+            </label>
+            <span className="bg-slate-100 border border-slate-200 rounded px-2.5 py-2 text-xs font-mono text-slate-600">dassl · tol 1e-6</span>
+          </div>
+        </div>
+        <div className="ml-auto flex items-center gap-2">
+          {onLoadAirTestRing && (
+            <button
+              onClick={() => { const r = onLoadAirTestRing(); runAir(r.blocks, r.connections); }}
+              disabled={running} title="검증된 공기 링(TestAirRingL1)을 캔버스에 자동 구성하고 바로 실행"
+              className="inline-flex items-center gap-2 bg-white border border-cyan-300 text-cyan-700 hover:bg-cyan-50 disabled:opacity-60 rounded-xl px-4 py-2.5 font-bold text-sm transition">
+              🧪 테스트 링 구축 & 실행
+            </button>
+          )}
+          <button onClick={() => runAir()} disabled={running}
+            className="inline-flex items-center gap-2 bg-cyan-600 hover:bg-cyan-700 disabled:opacity-60 text-white rounded-xl px-5 py-2.5 font-bold text-sm shadow-lg shadow-cyan-500/25 transition">
+            {running ? (<><span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" /> 실행 중…</>) : '▶ 캔버스에서 추출 & 실행'}
+          </button>
+        </div>
+      </div>
+      <div className="text-xs text-slate-500 leading-relaxed">
+        캔버스의 <b className="text-slate-700">공기 연결</b>에서 링(Drum→Fan→Evap→Cond)을 추출해 .mo 자동생성·실행.
+        냉매 Run Cycle이 <i>공기입구 고정</i>인 것과 대칭으로, 공기측은 <b className="text-slate-700">코일온도(T_evap/T_cond) 고정</b> — 증발/응축기 블록의 P_evap/P_cond에서 R290 포화온도로 역산.
+        {detected && (<span className="block mt-0.5 font-mono text-cyan-600">감지: {detected.join(' → ')} → {detected[0]}</span>)}
+      </div>
+
+      {/* loop schematic */}
+      <div className="flex items-center gap-1 flex-wrap bg-slate-50 border border-slate-200 rounded-xl px-4 py-3">
+        {NODES.map(([ic, nm, vv, grad], i) => (
+          <React.Fragment key={nm}>
+            <div className="flex flex-col items-center gap-1 min-w-[76px]">
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg text-white bg-gradient-to-br ${grad} shadow`}>{ic}</div>
+              <div className="text-xs font-bold text-slate-700">{nm}</div>
+              <div className="font-mono text-[10px] text-slate-400">{vv}</div>
+            </div>
+            {i < 3 && (
+              <div className="flex-1 min-w-[24px] text-center text-slate-300 self-start mt-2.5">
+                <div className="text-base leading-none">→</div>
+                <div className="text-[8px] font-mono text-slate-400">air{i + 1}</div>
+              </div>
+            )}
+          </React.Fragment>
+        ))}
+        <div className="w-full text-center text-[10px] font-mono text-cyan-600 font-bold mt-1.5 opacity-80">↑ air4 → Drum (폐루프) · AirVolume 4개(첫째=압력앵커)</div>
+      </div>
+
+      {running && (
+        <div className="text-center text-xs font-mono text-slate-400 py-1">omc 컴파일 + 적분 중… (공기측은 HelmholtzMedia 불필요라 빠름)</div>
+      )}
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 text-xs font-mono rounded-lg px-3 py-2 whitespace-pre-wrap">{error}</div>
+      )}
+
+      {/* results */}
+      {result && result.trajectory && (
+        <>
+          <div>
+            <div className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider mb-2.5">
+              정착값 <span className="font-mono text-cyan-600 normal-case">공기 링</span> · t={(result.trajectory.time && result.trajectory.time.length) ? result.trajectory.time[result.trajectory.time.length - 1].toFixed(0) : ''}s
+            </div>
+            <div className="grid grid-cols-4 gap-2.5">
+              {AIR_CARDS.filter(c => c.k in s).map(c => (
+                <div key={c.k} className="border border-slate-100 rounded-xl px-3 py-2.5 bg-slate-50/60">
+                  <div className="text-[11px] font-medium text-slate-400 mb-1">{c.n}</div>
+                  <div className={`font-mono text-xl font-bold leading-none ${c.c}`}>
+                    {(s[c.k] * (c.scale || 1)).toFixed(c.d)}
+                    <span className="font-mono text-[11px] text-slate-400 ml-0.5 font-medium">{c.u}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div>
+            <div className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider mb-2">공기 온도 프로파일 → 정착 · 함수율 추이</div>
+            <div className="flex gap-4 flex-wrap mb-1 text-xs font-semibold text-slate-600">
+              <span className="inline-flex items-center gap-1.5"><i className="w-3 h-0.5 rounded bg-red-600 inline-block" />열풍(Cond out)</span>
+              <span className="inline-flex items-center gap-1.5"><i className="w-3 h-0.5 rounded bg-slate-500 inline-block" />Drum out</span>
+              <span className="inline-flex items-center gap-1.5"><i className="w-3 h-0.5 rounded bg-blue-600 inline-block" />Evap out</span>
+              <span className="inline-flex items-center gap-1.5 text-cyan-600"><i className="w-3 h-0.5 rounded bg-cyan-600 inline-block" />함수율 X</span>
+            </div>
+            <AirCyclePlot traj={result.trajectory} />
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+
+// =============================================================
 // CycleRunnerModal — 전체 L1 폐루프를 Modelica로 실행 (/run_cycle)
 // =============================================================
-function CycleRunnerModal({ onClose, blocks, connections, onLoadTestRing }) {
+function CycleRunnerModal({ onClose, blocks, connections, onLoadTestRing, onLoadAirTestRing }) {
+  const [domain, setDomain] = useState('refrigerant'); // 'refrigerant' | 'air'
   const [mode, setMode] = useState('fixed');          // 'fixed' | 'canvas'
   const [model, setModel] = useState('Cycle_L1_ramp');
   const [running, setRunning] = useState(false);
@@ -5810,6 +6126,19 @@ function CycleRunnerModal({ onClose, blocks, connections, onLoadTestRing }) {
           </div>
         ) : (
           <div className="p-5 space-y-4">
+            {/* 사이클 도메인 토글: 냉매 / 공기 */}
+            <div className="flex border border-slate-200 rounded-lg overflow-hidden bg-slate-50 w-fit">
+              {[['refrigerant', '냉매 사이클', 'Comp·Cond·EEV·Evap'], ['air', '공기 사이클', 'Drum·Fan·Evap·Cond']].map(([d, lbl, sub]) => (
+                <button key={d} onClick={() => { setDomain(d); setError(null); }} disabled={running}
+                  className={`px-4 py-2 text-sm font-bold transition text-left ${domain === d ? 'bg-white text-cyan-700 shadow-[inset_0_-2px_0_0_#0891B2]' : 'text-slate-500 hover:text-slate-700'}`}>
+                  {lbl}<span className="block font-mono text-[10px] text-slate-400">{sub}</span>
+                </button>
+              ))}
+            </div>
+            {domain === 'air' ? (
+              <AirCycleRunnerBody blocks={blocks} connections={connections} url={url}
+                modelica={modelica} onLoadAirTestRing={onLoadAirTestRing} />
+            ) : (<>
             {/* mode toggle */}
             <div className="flex border border-slate-200 rounded-lg overflow-hidden bg-slate-50 w-fit">
               {[['fixed', '고정 모델', '레퍼런스 .mo'], ['canvas', '캔버스 토폴로지', '내가 그린 링']].map(([m, lbl, sub]) => (
@@ -5944,6 +6273,7 @@ function CycleRunnerModal({ onClose, blocks, connections, onLoadTestRing }) {
                 </div>
               </>
             )}
+            </>)}
           </div>
         )}
       </div>
