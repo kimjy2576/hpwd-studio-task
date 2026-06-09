@@ -978,7 +978,10 @@ def generate_coupled_mo(ref_topology, air_topology, settings=None):
         k = kA(cid); inst = R[k]; raw = aC[cid].get('params', {})
         if k == 'drum':
             ap = _canvas_to_air_params('drum', raw)
-            ap['UA_amb'] = 100.0; ap['Tcl0'] = 305.0   # 커플드 고정값 (대기손실 + 초기 의류온도)
+            # 커플드 검증 기본값 (캔버스 미설정 시): 대기 열손실 100 W/K, 초기 의류온도 305 K
+            ap['UA_amb'] = float(raw.get('UA_amb', 100.0))
+            if raw.get('Tcl0') in (None, ''):
+                ap['Tcl0'] = 305.0
             decl.append(_emit_drum_air(inst, ap))
         elif k == 'fan':
             decl.append(_emit_fan_air(inst, _canvas_to_air_params('fan', raw)))
