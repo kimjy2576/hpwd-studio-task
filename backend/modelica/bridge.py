@@ -624,14 +624,12 @@ _AIR_VOL_START = {'drum': (308.15, 0.018), 'filter': (308.15, 0.018), 'fan': (30
                   'evaporator': (288.15, 0.010), 'condenser': (328.15, 0.011)}
 
 def _emit_drum_air(inst, p):
-    h_corr = 'true' if float(p.get("h_corr", 0.0)) > 0.5 else 'false'
     return (f'    HPWDair.Drum_L1 {inst}(m_cl_dry={p.get("m_cl_dry",3.0):.6g}, '
             f'c_p_cl={p.get("c_p_cl",1500.0):.6g}, A_eff={p.get("A_eff",10.0):.6g}, '
             f'h_a={p.get("h_a",50.0):.6g}, A_drum={p.get("A_drum",0.15):.6g}, '
             f'K_drum={p.get("K_drum",30.0):.6g}, X0={p.get("X0",0.6):.6g}, '
             f'Tcl0={p.get("Tcl0",298.15):.6g}, UA_amb={p.get("UA_amb",0.0):.6g}, '
-            f'T_amb={p.get("T_amb",298.15):.6g}, '
-            f'h_corr={h_corr}, u_nom={p.get("u_nom",0.33):.6g}, m_Nu={p.get("m_Nu",0.8):.6g});\n')
+            f'T_amb={p.get("T_amb",298.15):.6g});\n')
 def _emit_fan_air(inst, p):
     return (f'    HPWDair.Fan_L1 {inst}(D2={p.get("D2",0.15):.6g}, b2={p.get("b2",0.04):.6g}, '
             f'Z={int(p.get("Z",40))}, beta2={p.get("beta2",150.0):.6g}, '
@@ -677,9 +675,7 @@ def _canvas_to_air_params(kind, raw):
                 'h_a': pick(['h_a', 'hA'], 50.0), 'A_drum': pick(['A_drum'], 0.15),
                 'K_drum': pick(['K_drum'], 30.0), 'X0': pick(['X0', 'MC_init'], 0.6),
                 'Tcl0': pick(['Tcl0'], 298.15), 'UA_amb': pick(['UA_amb'], 0.0),
-                'T_amb': pick(['T_amb'], 298.15),
-                'h_corr': pick(['h_corr'], 0.0), 'u_nom': pick(['u_nom'], 0.33),
-                'm_Nu': pick(['m_Nu'], 0.8)}
+                'T_amb': pick(['T_amb'], 298.15)}
     if kind == 'fan':
         return {'D2': pick(['D2'], 0.15), 'b2': pick(['b2'], 0.04),
                 'Z': pick(['Z'], 40.0), 'beta2': pick(['beta2'], 150.0),
