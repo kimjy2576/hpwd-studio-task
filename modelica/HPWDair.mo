@@ -402,6 +402,12 @@ package HPWDair "HPWD air-side L1 (lumped, 비압축 + dry-air basis)"
     parameter Modelica.Units.SI.Area A_eff = 10
       "effective cloth area, heat/mass transfer (m²)";
     parameter Real h_a = 50 "air-cloth convective HTC (W/m²·K)";
+    // ── L2: 풍속 상관식으로 h_a 자동계산 (Nu~Re^m, 정격 앵커링) ──
+    parameter Boolean h_corr = false
+      "true: h_a를 드럼 풍속 상관식으로 (L2); false: 고정값 h_a (L1)";
+    parameter Modelica.Units.SI.Velocity u_nom = 0.33
+      "정격 드럼 풍속 (anchoring 기준점, m/s)";
+    parameter Real m_Nu = 0.8 "Nu~Re^m 지수 (난류 강제대류 ≈0.8)";
     parameter Modelica.Units.SI.Area A_drum = 0.15
       "drum air-flow cross-section (m²)";
     parameter Real K_drum = 30 "cloth-bed resistance (Pa·s²/m²)";
@@ -434,6 +440,7 @@ package HPWDair "HPWD air-side L1 (lumped, 비압축 + dry-air basis)"
     Modelica.Units.SI.MassFlowRate m_evap(start = 5e-4) "evaporation rate";
     Real W_s(unit="kg/kg") "saturation humidity at cloth surface";
     Real h_m "mass transfer coeff (Lewis, kg/m²·s)";
+    Real h_a_act "유효 대류계수 (L1=h_a 고정, L2=Nu 상관식, W/m²·K)";
     Modelica.Units.SI.Power Q_amb "외기 열손실 (air→ambient)";
 
     // ── ΔP ──
@@ -453,25 +460,28 @@ package HPWDair "HPWD air-side L1 (lumped, 비압축 + dry-air basis)"
 
     // ── Lewis analogy + 표면포화 증발 (W_air = W_out) ──
     W_s = MoistAir.W_sat(T_cl);
-    h_m = h_a / MoistAir.cp_da;
+    h_m = h_a_act / MoistAir.cp_da;
     m_evap = h_m * A_eff * (W_s - W_out);
 
     // ── 공기 CV (quasi-steady, well-mixed: T_air=T_out) ──
     m_flow_da * (W_out - W_in) = m_evap;
     Q_amb = UA_amb * (T_out - T_amb);
     m_flow_da * (h_out - h_in)
-        = -h_a * A_eff * (T_out - T_cl) + m_evap * MoistAir.h_g(T_cl) - Q_amb;
+        = -h_a_act * A_eff * (T_out - T_cl) + m_evap * MoistAir.h_g(T_cl) - Q_amb;
     T_out = MoistAir.T_from_h(h_out, W_out);
 
     // ── cloth 동특성 (states) ──
     X = m_w / m_cl_dry;
     der(m_w) = -m_evap;
     (m_cl_dry * c_p_cl + m_w * MoistAir.cp_w) * der(T_cl)
-        = h_a * A_eff * (T_out - T_cl) - m_evap * MoistAir.h_fg(T_cl);
+        = h_a_act * A_eff * (T_out - T_cl) - m_evap * MoistAir.h_fg(T_cl);
 
     // ── 공기측 압력강하 (의류 더미 저항, 단일 K) ──
     rho_da = MoistAir.rho_da_fn(T_in, W_in);
     u = m_flow_da / (rho_da * A_drum);
+    // L2 상관식: Nu∝Re^m, Re∝u (고정 형상·물성) → h_a∝u^m, 정격점에서 h_a로 앵커링.
+    // h_corr=false면 h_a_act=h_a (L1과 동일). max()로 기동 시 u→0 보호.
+    h_a_act = if h_corr then h_a * (max(u, 1e-4) / u_nom) ^ m_Nu else h_a;
     dp_drum = K_drum * u * abs(u);
     port_b.p = port_a.p - dp_drum;
 

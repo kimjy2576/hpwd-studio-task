@@ -317,7 +317,10 @@ const TYPES = {
       { key: 'm_fabric', label: 'Fabric Mass', value: 5.0, unit: 'kg' },
       { key: 'MC_init', label: 'MC_init', value: 0.8, unit: '-' },
       { key: 'Tcl0', label: '초기 의류온도', value: 305, unit: 'K' },
-      { key: 'hA', label: 'hA', value: 50, unit: 'W/K' },
+      { key: 'hA', label: 'hA (h_a, L1 고정값)', value: 50, unit: 'W/m²K' },
+      { key: 'h_corr', label: 'h_a 상관식 (0=L1고정 · 1=L2풍속)', value: 0, unit: '-' },
+      { key: 'u_nom', label: '정격 풍속 (L2 앵커링)', value: 0.33, unit: 'm/s' },
+      { key: 'm_Nu', label: 'Nu~Re^m 지수 (L2)', value: 0.8, unit: '-' },
       { key: 'dP_drum', label: 'ΔP_drum', value: 100, unit: 'Pa' },
     ],
     inputs: [
@@ -5843,9 +5846,9 @@ function makeAirTestRing() {
   return { blocks, connections };
 }
 
-// makeCoupledTestRing — 냉매 closed + 공기 closed 결합 테스트 링.
-//   evap/cond = 공유 merged HX (냉매 연결 slot 0 + 공기 연결 slot 2 양쪽 참조).
-//   drum은 검증값(m_cl_dry=3, X0=0.6, Tcl0=305) → 표준 토폴로지 SMER 2.435 재현.
+// makeCoupledTestRing — 냉매 closed + 공기 closed 결합 테스트 링 (현실 배치).
+//   냉매 링: Comp→Cond→EEV→Evap→Comp (slot 0).  공기 링: Drum→Filter→Evap→Cond→Fan→Drum (slot 2).
+//   Evap·Cond = 공유 merged HX (냉매=상/하 포트, 공기=좌/우 포트). drum 검증값 → SMER ~2.435.
 function makeCoupledTestRing() {
   const ts = Date.now();
   const mk = (i, type, x, y, name, params, inputValues) => {
@@ -5858,24 +5861,25 @@ function makeCoupledTestRing() {
       state: def.stateInit ? JSON.parse(JSON.stringify(def.stateInit)) : {},
     };
   };
-  // 냉매 전용
-  const comp = mk(0, 'compressor_theoretical', 160, 160, 'Comp · cpl',
-    { V_disp: 10, eta_vol: 0.85, eta_isen: 0.65 }, { N: 3000 });
-  const eev = mk(1, 'eev_off_design', 160, 460, 'EEV · cpl',
+  // 냉매 전용 (EEV 위 중앙, Compressor 아래 중앙)
+  const eev = mk(0, 'eev_off_design', 580, 120, 'EEV',
     { A_orifice: 0.55, Cv_rated: 0.7, c0: 0, c1: 0.5, c2: 0.3, c3: 0.2 }, { opening: 50 });
+  const comp = mk(1, 'compressor_theoretical', 580, 600, 'Compressor',
+    { V_disp: 10, eta_vol: 0.85, eta_isen: 0.65 }, { N: 3000 });
   // 공유 merged HX (냉매+공기 파라미터 둘 다 — 커플드 생성기는 K_air=300 고정 사용)
-  const cond = mk(2, 'condenser_off_design', 500, 160, 'Cond · merged',
-    { UA_deSH: 8, UA_2ph: 50, UA_SC: 5, dP_ref: 0.03, BF: 0.2, A_face: 0.05, K_air: 50, T_cond_C: 60 },
-    { T_air_in: 35, RH_air_in: 50, V_air_CMM: 25.42, P_cond: 19.07, m_dot_ref: 0.00458 });
-  const evap = mk(3, 'evaporator_off_design', 500, 460, 'Evap · merged',
+  const evap = mk(2, 'evaporator_off_design', 400, 360, 'Evaporator',
     { UA_2ph: 25, UA_SH: 4, dP_ref: 0.02, BF: 0.2, A_face: 0.05, K_air: 50, T_evap_C: 10 },
     { T_air_in: 50, RH_air_in: 90, V_air_CMM: 2.54, P_evap: 5.51, m_dot_ref: 0.00458 });
-  // 공기 전용 (drum = 검증값)
-  const fan = mk(4, 'fan', 840, 160, 'Fan · cpl',
+  const cond = mk(3, 'condenser_off_design', 760, 360, 'Condenser',
+    { UA_deSH: 8, UA_2ph: 50, UA_SC: 5, dP_ref: 0.03, BF: 0.2, A_face: 0.05, K_air: 50, T_cond_C: 60 },
+    { T_air_in: 35, RH_air_in: 50, V_air_CMM: 25.42, P_cond: 19.07, m_dot_ref: 0.00458 });
+  // 공기 전용 (Filter 좌단, Fan 우단, Drum 하단 중앙)
+  const filt = mk(4, 'filter', 100, 360, 'Filter', { A_face: 0.05, r_pleat: 1.0, theta_face: 0, K: 20 });
+  const fan = mk(5, 'fan', 1060, 360, 'Fan',
     { D2: 0.15, b2: 0.04, Z: 40, beta2: 150, eta_h: 0.78, eta_mech: 0.95, N: 3000 });
-  const drum = mk(5, 'drum', 840, 460, 'Drum · cpl',
+  const drum = mk(6, 'drum', 580, 820, 'Drum',
     { m_cl_dry: 3.0, c_p_cl: 1500, A_eff: 10, h_a: 50, A_drum: 0.15, K_drum: 30, X0: 0.6, Tcl0: 305.0 });
-  const blocks = [comp, eev, cond, evap, fan, drum];
+  const blocks = [eev, comp, evap, cond, filt, fan, drum];
   const redge = (from, to, fs, ts2) => ({
     from: { blockId: from.id, side: fs, slot: 0 }, to: { blockId: to.id, side: ts2, slot: 0 },
     kind: 'refrigerant', signals: autoMapSignals(from, to), lineParams: defaultLineParams('refrigerant'),
@@ -5887,20 +5891,20 @@ function makeCoupledTestRing() {
     cornerRadius: 8, routeMode: 'auto',
   });
   const connections = [
-    // 냉매 링: Comp→Cond→EEV→Evap→Comp
-    redge(comp, cond, 'right', 'left'),
-    redge(cond, eev, 'bottom', 'top'),
-    redge(eev, evap, 'right', 'left'),
-    redge(evap, comp, 'top', 'bottom'),
-    // 공기 링: Drum→Fan→Evap→Cond→Drum (Evap·Cond 공유)
-    aedge(drum, fan, 'top', 'bottom'),
-    aedge(fan, evap, 'bottom', 'top'),
-    aedge(evap, cond, 'right', 'right'),
-    aedge(cond, drum, 'bottom', 'top'),
+    // 냉매 링: Comp→Cond→EEV→Evap→Comp (HX는 상/하 포트)
+    redge(comp, cond, 'right', 'bottom'),
+    redge(cond, eev, 'top', 'right'),
+    redge(eev, evap, 'left', 'top'),
+    redge(evap, comp, 'bottom', 'left'),
+    // 공기 링: Drum→Filter→Evap→Cond→Fan→Drum (HX는 좌/우 포트, Evap·Cond 공유)
+    aedge(drum, filt, 'left', 'bottom'),
+    aedge(filt, evap, 'right', 'left'),
+    aedge(evap, cond, 'right', 'left'),
+    aedge(cond, fan, 'right', 'left'),
+    aedge(fan, drum, 'bottom', 'right'),
   ];
   return { blocks, connections };
 }
-
 function AirCyclePlot({ traj }) {
   if (!traj || !Array.isArray(traj.time) || !traj.time.length
       || !Array.isArray(traj.T_cond_out_C) || !Array.isArray(traj.X)) {
