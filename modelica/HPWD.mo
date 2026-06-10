@@ -107,6 +107,94 @@ package HPWD "HPWD 냉매 사이클 컴포넌트 (L1)"
     port_a.h_outflow = port_b.h_outflow;
   end Comp_Theoretical;
 
+  model Comp_Winandy "압축기 Winandy 반경험 (L2) — 흡입가열·ηv(rp)·over/under-comp·열손실"
+    // Winandy E., Saavedra C., Lebrun J. (2002), Int. J. Thermal Sciences 41(2).
+    // Python 원본 backend/components/compressor_winandy.py와 동일 식. T_wall fixed-point
+    // iteration → Modelica 비인과 방정식(벽 에너지 균형) 1개로, 솔버가 동시해.
+    package M = HelmholtzMedia.HelmholtzFluids.Propane;
+    RefPort port_a "흡입 (저압)";
+    RefPort port_b "토출 (고압)";
+    // ── 기하/운전 ──
+    parameter Real V_disp = 10e-6 "행정체적 [m³/rev]";
+    parameter Real N = 3000.0 "회전수 [rpm]";
+    parameter Real V_se = 0.95 "swept volume 효율 (ηv 식 절편)";
+    parameter Real rv_in = 2.5 "built-in 체적비 (over/under-comp)";
+    parameter Real clearance_factor = 0.05 "ηv clearance 항 가중";
+    parameter Real over_comp_factor = 0.5 "over-comp 손실 계수";
+    // ── 열/손실 (semi-empirical fit, R290 ~10cc) ──
+    parameter Real AU_su = 3.0 "흡입 가열 UA [W/K]";
+    parameter Real AU_loss = 5.0 "외부 열손실 UA [W/K]";
+    parameter Real dP_su = 0.05 "흡입 압력손실 비율 [-]";
+    parameter Real W_loss0 = 30.0 "정수 기계손실 [W]";
+    parameter Real alpha_loss = 0.1 "비례 기계손실 [-]";
+    parameter Real eta_motor = 0.92 "모터 효율";
+    parameter Modelica.Units.SI.Temperature T_amb = 308.15 "shell 주위 온도 [K]";
+    parameter Real t_ramp = 0.0 "기동 ramp [s] (0=N 고정 단독검증)";
+    // ── 변수 ──
+    Real N_eff;
+    Modelica.Units.SI.AbsolutePressure P_su2;
+    Real h_su1, cp_su1;
+    Modelica.Units.SI.Temperature T_su1, T_su2, T_w(start = 333.15) "외벽 온도";
+    Real eps_su, h_su2, s_su2, rho_su2, v_su2, gamma, rp, clearance_term, eta_v;
+    Real m_dot(start = 0.005), h_dis_is, w_is, P_internal, w_extra_raw, w_extra, w_actual, h_dis;
+    Real W_shaft(start = 450), W_loss_mech, W_elec, Q_loss;
+    Modelica.Units.SI.Temperature T_dis "토출 온도 [K]";
+    M.ThermodynamicState st_su2;
+  equation
+    N_eff = if t_ramp > 0.0 then N*min(1.0, time/t_ramp) else N;
+    // 1. 흡입 압력손실
+    P_su2 = port_a.p*(1.0 - dP_su);
+    // 2. 흡입 shell 입구 (inStream → T_su1)
+    h_su1 = inStream(port_a.h_outflow);
+    T_su1 = M.temperature(M.setState_ph(port_a.p, h_su1));
+    cp_su1 = M.specificHeatCapacityCp(M.setState_ph(port_a.p, h_su1));
+    // 3a. 흡입 가열 (ε-NTU: 뜨거운 벽 → 가스)
+    eps_su = 1.0 - exp(-AU_su/(m_dot*cp_su1));
+    T_su2 = T_su1 + eps_su*(T_w - T_su1);
+    st_su2 = M.setState_pT(P_su2, T_su2);
+    h_su2 = M.specificEnthalpy(st_su2);
+    s_su2 = M.specificEntropy(st_su2);
+    rho_su2 = M.density(st_su2);
+    v_su2 = 1.0/rho_su2;
+    // 3b. 체적효율 (clearance 재팽창, ηv = V_se - c·(rp^(1/γ)-1))
+    gamma = M.specificHeatCapacityCp(st_su2)/M.specificHeatCapacityCv(st_su2);
+    rp = port_b.p/port_a.p;
+    clearance_term = max(0.0, rp^(1.0/gamma) - 1.0);
+    eta_v = max(0.05, V_se - clearance_factor*clearance_term);
+    // 3c. 질량유량
+    m_dot = eta_v*V_disp*(N_eff/60.0)*rho_su2;
+    // 3d. 등엔트로피 토출 + over/under-compression (built-in rv)
+    h_dis_is = M.specificEnthalpy(M.setState_ps(port_b.p, s_su2));
+    w_is = h_dis_is - h_su2;
+    P_internal = P_su2*(rv_in^gamma);
+    w_extra_raw = v_su2*(port_b.p - P_internal);
+    w_extra = if w_extra_raw < 0.0 then over_comp_factor*(-w_extra_raw) else w_extra_raw;
+    w_actual = w_is + w_extra;
+    h_dis = h_su2 + w_actual;
+    // 3e. shaft work → 기계손실 → 벽 에너지 균형(정상상태)으로 T_w 해
+    W_shaft = m_dot*w_actual;
+    W_loss_mech = W_loss0 + alpha_loss*W_shaft;
+    AU_loss*(T_w - T_amb) + AU_su*(T_w - T_su1) = W_loss_mech;
+    // 4-5. 전기입력 + 외부 열손실
+    W_elec = (W_shaft + W_loss_mech)/eta_motor;
+    Q_loss = AU_loss*(T_w - T_amb);
+    T_dis = M.temperature(M.setState_ph(port_b.p, h_dis));
+    // 포트 balance (acausal stream)
+    port_a.m_flow = m_dot;
+    port_a.m_flow + port_b.m_flow = 0;
+    port_b.h_outflow = h_dis;
+    port_a.h_outflow = port_b.h_outflow;
+  end Comp_Winandy;
+
+  model CompWinandyCircuit "흡입 → Winandy 압축기 → 토출 (단독 검증)"
+    Source src(p = 5.51e5, h = 589.2518e3);
+    Comp_Winandy comp;
+    Sink snk(p = 19.07e5);
+  equation
+    connect(src.port, comp.port_a);
+    connect(comp.port_b, snk.port);
+  end CompWinandyCircuit;
+
   model CompCircuit "흡입 → 압축기 → 토출 (검증)"
     Source src(p=5.51e5, h=589.2518e3);
     Comp_AHRI comp;
