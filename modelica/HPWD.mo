@@ -149,7 +149,7 @@ package HPWD "HPWD 냉매 사이클 컴포넌트 (L1)"
     T_su1 = M.temperature(M.setState_ph(port_a.p, h_su1));
     cp_su1 = M.specificHeatCapacityCp(M.setState_ph(port_a.p, h_su1));
     // 3a. 흡입 가열 (ε-NTU: 뜨거운 벽 → 가스)
-    eps_su = 1.0 - exp(-AU_su/(m_dot*cp_su1));
+    eps_su = 1.0 - exp(-AU_su/max(m_dot*cp_su1, 1e-6));
     T_su2 = T_su1 + eps_su*(T_w - T_su1);
     st_su2 = M.setState_pT(P_su2, T_su2);
     h_su2 = M.specificEnthalpy(st_su2);
