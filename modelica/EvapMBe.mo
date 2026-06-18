@@ -15,6 +15,8 @@ package EvapMBe "방정식형 이동경계 증발기 (L2) — dry, v2(HXCorr Che
     parameter Real FPI = 12.0, k_fin = 200.0, A_o_face = 0.05;
     // ── 공기 (dry: W=0) ──
     parameter Real T_air_in_C = 45.0 "공기 입구 [°C]";
+    parameter Real RH_in = 0.85 "입구 상대습도 0~1";
+    parameter Boolean is_wet = true "습표면(제습) 여부";
     parameter Real V_air_CMM = 2.54;
     // ── 벽 열용량 [J/K] ──
     parameter Real C_w1 = 300.0, C_w2 = 150.0;
@@ -35,8 +37,11 @@ package EvapMBe "방정식형 이동경계 증발기 (L2) — dry, v2(HXCorr Che
     final parameter Real sig_c = max((P_t - Dc)*gap/(P_t*P_fin), 0.1);
     final parameter Real A_c = sig_c*A_o_face;
     final parameter Real T_air_in = T_air_in_C + 273.15;
-    final parameter Real m_dot_air = HXCorr.rho_humid_air(T_air_in_C, 0.0, 101325.0)*(V_air_CMM/60.0);
-    final parameter Real C_air = m_dot_air*HXCorr.cp_ha_moist(0.0);
+    final parameter Real W_in = HXCorr.W_humid(T_air_in_C, RH_in, 101325.0);
+    final parameter Real h_air_in = HXCorr.h_moist(T_air_in_C, W_in);
+    final parameter Real T_dp_in = HXCorr.Tdew(T_air_in_C, RH_in, 101325.0);
+    final parameter Real m_dot_air = HXCorr.rho_humid_air(T_air_in_C, W_in, 101325.0)*(V_air_CMM/60.0);
+    final parameter Real C_air = m_dot_air*HXCorr.cp_ha_moist(W_in);
     // ── 상태 ──
     Real zeta(start = 0.8, fixed = true) "2상 zone 분율";
     Modelica.Units.SI.AbsolutePressure P_e(start = 5.5e5, fixed = true);
@@ -46,6 +51,7 @@ package EvapMBe "방정식형 이동경계 증발기 (L2) — dry, v2(HXCorr Che
     // ── 관측/대수 ──
     Real mdot_in, mdot_out, h_in, mdot_b, x_in, SH_out, Q_total, Q1, Q2, T_sat_C;
     Real Q1_air, Q2_air, T_air_mid, T_air_out;
+    Real h_air_mid, h_air_out, UA_air_2ph, BF, h_app, W_sat_surf, W_air_out, condensate, Q_latent, T_surf_C;
     Real UA_ref_2ph, UA_ref_SH, UA_ser_2ph, UA_ser_SH, Cmin_SH, Cr_SH, NTU_SH, eps_SH;
     Real alpha_2ph, alpha_SH, alpha_air, eta_fin, eta_overall;
   protected
@@ -83,8 +89,30 @@ package EvapMBe "방정식형 이동경계 증발기 (L2) — dry, v2(HXCorr Che
     eps_SH = (1.0 - exp(-NTU_SH*(1.0 - Cr_SH)))/(1.0 - Cr_SH*exp(-NTU_SH*(1.0 - Cr_SH)) + 1e-12);
     Q2_air = eps_SH*Cmin_SH*(T_air_in - Tsat);
     T_air_mid = T_air_in - Q2_air/C_air;
-    Q1_air = (1.0 - exp(-UA_ser_2ph/C_air))*C_air*(T_air_mid - Tsat);
-    T_air_out = T_air_mid - Q1_air/C_air;
+    h_air_mid = h_air_in - Q2_air/m_dot_air;
+    UA_air_2ph = alpha_air*A_o*eta_overall*zeta;
+    if is_wet then
+      T_surf_C = T_w1 - 273.15;
+      h_app = HXCorr.h_air_sat(T_surf_C, 101325.0);
+      Q1_air = m_dot_air*(1.0 - exp(-UA_air_2ph/C_air))*(h_air_mid - h_app);
+      h_air_out = h_air_mid - Q1_air/m_dot_air;
+      BF = max(0.0, min(1.0, (h_air_out - h_app)/max(h_air_mid - h_app, 1e-6)));
+      W_sat_surf = HXCorr.W_sat(T_surf_C, 101325.0);
+      W_air_out = min(W_in, max(W_sat_surf, BF*W_in + (1.0 - BF)*W_sat_surf));
+      condensate = m_dot_air*(W_in - W_air_out);
+      Q_latent = max(0.0, condensate*(2501e3 - 2.4*T_surf_C));
+    else
+      T_surf_C = T_w1 - 273.15;
+      h_app = 0.0;
+      Q1_air = (1.0 - exp(-UA_ser_2ph/C_air))*C_air*(T_air_mid - Tsat);
+      h_air_out = h_air_mid - Q1_air/m_dot_air;
+      BF = 1.0;
+      W_sat_surf = W_in;
+      W_air_out = W_in;
+      condensate = 0.0;
+      Q_latent = 0.0;
+    end if;
+    T_air_out = HXCorr.T_moist_from_h(h_air_out, W_air_out) + 273.15;
     // ── 벽: 공기측 직렬열 수신 − 냉매측 배출. 정상서 Q=Q_air=알고리즘 직렬열 → ζ 일치
     C_w1*der(T_w1) = Q1_air - Q1;
     C_w2*der(T_w2) = Q2_air - Q2;
