@@ -5,6 +5,50 @@ package CondMBe "방정식형 응축기 (L2 정상상태) — 3-zone(deSH+2상+S
   //   2상 Shah / deSH·SC Gnielinski / 공기 Wang, 직렬 UA, 공기 counter(SC→2상→deSH).
   package M = HelmholtzMedia.HelmholtzFluids.Propane;
 
+  function tempPH "(p,h) -> T[K] (record 격리)"
+    input Real p, h;
+    output Real T;
+  protected
+    M.ThermodynamicState st;
+  algorithm
+    st := M.setState_ph(p, h);
+    T := M.temperature(st);
+  end tempPH;
+
+  function propsCond "P_c[Pa], h_in[J/kg] -> 응축기 스칼라 물성 (record 격리)"
+    input Real p, h_in;
+    output Real Tcond, Trefin, h_l, h_v, rho_l, rho_v, mu_l, k_l, Pr_l, cpl_sat, cpv_mean, mu_v5, k_v5, Pr_v5, mu_l5, k_l5, Pr_l5, Pcrit;
+  protected
+    M.SaturationProperties sat;
+    M.ThermodynamicState st_in, st_l, st_lq, st_cpv, st_v5, st_l5;
+  algorithm
+    sat := M.setSat_p(p);
+    Tcond := M.saturationTemperature(p);
+    h_l := M.bubbleEnthalpy(sat);
+    h_v := M.dewEnthalpy(sat);
+    rho_l := M.bubbleDensity(sat);
+    rho_v := M.dewDensity(sat);
+    Pcrit := M.fluidConstants[1].criticalPressure;
+    st_in := M.setState_ph(p, h_in);
+    Trefin := M.temperature(st_in);
+    st_l := M.setState_px(p, 0.0);
+    mu_l := M.dynamicViscosity(st_l);
+    st_lq := M.setState_pT(p, Tcond - 0.1);
+    k_l := M.thermalConductivity(st_lq);
+    cpl_sat := M.specificHeatCapacityCp(st_lq);
+    Pr_l := cpl_sat*mu_l/k_l;
+    st_cpv := M.setState_pT(p, if Trefin > Tcond + 0.2 then 0.5*(Trefin + Tcond) else Tcond + 0.5);
+    cpv_mean := M.specificHeatCapacityCp(st_cpv);
+    st_v5 := M.setState_pT(p, Tcond + 5.0);
+    mu_v5 := M.dynamicViscosity(st_v5);
+    k_v5 := M.thermalConductivity(st_v5);
+    Pr_v5 := M.specificHeatCapacityCp(st_v5)*mu_v5/k_v5;
+    st_l5 := M.setState_pT(p, Tcond - 5.0);
+    mu_l5 := M.dynamicViscosity(st_l5);
+    k_l5 := M.thermalConductivity(st_l5);
+    Pr_l5 := M.specificHeatCapacityCp(st_l5)*mu_l5/k_l5;
+  end propsCond;
+
   model CondenserSS "정상상태 방정식형 응축기 (RefPort TwoPort)"
     HPWD.RefPort port_a "입구 (과열증기)";
     HPWD.RefPort port_b "출구 (과냉액)";
@@ -41,10 +85,8 @@ package CondMBe "방정식형 응축기 (L2 정상상태) — 3-zone(deSH+2상+S
     Real Cmin_deSH, Cr_deSH, eps_deSH, Cmin_SC, Cr_SC, eps_SC, eps_2ph, NTU_d, NTU_2, NTU_s;
     Real alpha_2ph, alpha_deSH, alpha_SC, alpha_air, eta_fin, eta_overall;
   protected
-    M.SaturationProperties sat;
-    M.ThermodynamicState st_l, st_lq, st_v5, st_l5, st_cpv, st_in;
     Real h_l, h_v, Tcond, rho_l, rho_v, Trefin;
-    Real mu_l, k_l, Pr_l, sig, Pcrit, cpl_sat, cpv_mean, mu_v5, k_v5, Pr_v5, mu_l5, k_l5, Pr_l5;
+    Real mu_l, k_l, Pr_l, Pcrit, cpl_sat, cpv_mean, mu_v5, k_v5, Pr_v5, mu_l5, k_l5, Pr_l5;
     Real G_2ph, Re_deSH, Re_SC, T_air_avg, mu_a, Pr_a, G_air, Re_Dc, j_air;
   equation
     // ── 포트 (정상상태: 압력은 상류서 결정, 응축기는 zone/열/출구만 계산) ──
@@ -56,6 +98,23 @@ package CondMBe "방정식형 응축기 (L2 정상상태) — 3-zone(deSH+2상+S
     port_b.h_outflow = h_out;
     port_a.h_outflow = h_v;
     zeta_sc = 1.0 - zeta_d - zeta_2;
+    // ── 물성 (record 격리 함수) + 알파 (equation화) ──
+    (Tcond, Trefin, h_l, h_v, rho_l, rho_v, mu_l, k_l, Pr_l, cpl_sat, cpv_mean, mu_v5, k_v5, Pr_v5, mu_l5, k_l5, Pr_l5, Pcrit) = CondMBe.propsCond(P_c, h_in);
+    G_2ph = (mdot/n_circuits)/A_cross;
+    alpha_2ph = HXCorr.h_cond_shah1979(0.5, G_2ph, D_i, mu_l, k_l, Pr_l, P_c/Pcrit);
+    Re_deSH = G_2ph*D_i/mu_v5;
+    alpha_deSH = HXCorr.gnielinski(Re_deSH, Pr_v5, k_v5, D_i);
+    Re_SC = G_2ph*D_i/mu_l5;
+    alpha_SC = HXCorr.gnielinski(Re_SC, Pr_l5, k_l5, D_i);
+    T_air_avg = 0.5*(T_air_in + Tcond);
+    mu_a = HXCorr.mu_air(T_air_avg);
+    Pr_a = HXCorr.Pr_air(T_air_avg);
+    G_air = m_dot_air/A_c;
+    Re_Dc = G_air*Dc/mu_a;
+    j_air = HXCorr.j_wang2000_plain(Re_Dc, N_rows, Dc, P_t, P_l, FPI, t_fin);
+    alpha_air = j_air*G_air*1006.0/Pr_a^(2.0/3.0);
+    eta_fin = HXCorr.schmidt_fin(D_o, P_t, P_l, t_fin, k_fin, alpha_air, "staggered");
+    eta_overall = (A_tube_outer + A_fin_total*eta_fin)/A_o;
     // ── 냉매측 UA (zeta 의존) + 직렬 UA ──
     UA_ref_deSH = alpha_deSH*A_i*zeta_d;
     UA_ref_2ph = alpha_2ph*A_i*zeta_2;
@@ -89,49 +148,9 @@ package CondMBe "방정식형 응축기 (L2 정상상태) — 3-zone(deSH+2상+S
     Q_total = Qd + Q2 + Qsc;
     T_cond_C = Tcond - 273.15;
     T_ref_in_C = Trefin - 273.15;
-    T_ref_out_C = M.temperature(M.setState_ph(P_c, h_out)) - 273.15;
+    T_ref_out_C = CondMBe.tempPH(P_c, h_out) - 273.15;
     SC_out = T_cond_C - T_ref_out_C;
     quality_out = (h_out - h_l)/(h_v - h_l);
-  algorithm
-    sat := M.setSat_p(P_c);
-    Tcond := M.saturationTemperature(P_c);
-    h_l := M.bubbleEnthalpy(sat);
-    h_v := M.dewEnthalpy(sat);
-    rho_l := M.bubbleDensity(sat);
-    rho_v := M.dewDensity(sat);
-    st_in := M.setState_ph(P_c, h_in);
-    Trefin := M.temperature(st_in);
-    st_l := M.setState_px(P_c, 0.0);
-    mu_l := M.dynamicViscosity(st_l);
-    st_lq := M.setState_pT(P_c, Tcond - 0.1);
-    k_l := M.thermalConductivity(st_lq);
-    Pr_l := M.specificHeatCapacityCp(st_lq)*mu_l/k_l;
-    sig := M.surfaceTension(sat);
-    Pcrit := M.fluidConstants[1].criticalPressure;
-    cpl_sat := M.specificHeatCapacityCp(st_lq);
-    st_cpv := M.setState_pT(P_c, if Trefin > Tcond + 0.2 then 0.5*(Trefin + Tcond) else Tcond + 0.5);
-    cpv_mean := M.specificHeatCapacityCp(st_cpv);
-    st_v5 := M.setState_pT(P_c, Tcond + 5.0);
-    mu_v5 := M.dynamicViscosity(st_v5); k_v5 := M.thermalConductivity(st_v5);
-    Pr_v5 := M.specificHeatCapacityCp(st_v5)*mu_v5/k_v5;
-    st_l5 := M.setState_pT(P_c, Tcond - 5.0);
-    mu_l5 := M.dynamicViscosity(st_l5); k_l5 := M.thermalConductivity(st_l5);
-    Pr_l5 := M.specificHeatCapacityCp(st_l5)*mu_l5/k_l5;
-    G_2ph := (mdot/n_circuits)/A_cross;
-    alpha_2ph := HXCorr.h_cond_shah1979(0.5, G_2ph, D_i, mu_l, k_l, Pr_l, P_c/Pcrit);
-    Re_deSH := G_2ph*D_i/mu_v5;
-    alpha_deSH := HXCorr.gnielinski(Re_deSH, Pr_v5, k_v5, D_i);
-    Re_SC := G_2ph*D_i/mu_l5;
-    alpha_SC := HXCorr.gnielinski(Re_SC, Pr_l5, k_l5, D_i);
-    T_air_avg := 0.5*(T_air_in + Tcond);
-    mu_a := HXCorr.mu_air(T_air_avg);
-    Pr_a := HXCorr.Pr_air(T_air_avg);
-    G_air := m_dot_air/A_c;
-    Re_Dc := G_air*Dc/mu_a;
-    j_air := HXCorr.j_wang2000_plain(Re_Dc, N_rows, Dc, P_t, P_l, FPI, t_fin);
-    alpha_air := j_air*G_air*1006.0/Pr_a^(2.0/3.0);
-    eta_fin := HXCorr.schmidt_fin(D_o, P_t, P_l, t_fin, k_fin, alpha_air, "staggered");
-    eta_overall := (A_tube_outer + A_fin_total*eta_fin)/A_o;
   end CondenserSS;
 
   model CondSS_test "FlowSource(과열증기) → 응축기SS → 개방 싱크"

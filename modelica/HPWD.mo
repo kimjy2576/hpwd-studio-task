@@ -45,7 +45,7 @@ package HPWD "HPWD 냉매 사이클 컴포넌트 (L1)"
     phi = c0 + c1*op + c2*op^2 + c3*op^3;
     h_in = inStream(port_a.h_outflow);
     rho_in = M.density(M.setState_ph(port_a.p, h_in));
-    port_a.m_flow = Cv_rated*A_orifice*phi*sqrt(2.0*rho_in*(port_a.p - port_b.p));
+    port_a.m_flow = Cv_rated*A_orifice*phi*sqrt(max(1.0, 2.0*rho_in*(port_a.p - port_b.p)));
     port_a.m_flow + port_b.m_flow = 0;
     port_b.h_outflow = h_in;
     port_a.h_outflow = port_b.h_outflow;
