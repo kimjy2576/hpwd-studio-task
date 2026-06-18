@@ -5,45 +5,50 @@ package CondMBe "방정식형 응축기 (L2 정상상태) — 3-zone(deSH+2상+S
   //   2상 Shah / deSH·SC Gnielinski / 공기 Wang, 직렬 UA, 공기 counter(SC→2상→deSH).
   package M = HelmholtzMedia.HelmholtzFluids.Propane;
 
-  function tempPH "(p,h) -> T[K] (record 격리)"
+  function tempPH "(p,h) -> T[K] (record 격리 + p clamp)"
     input Real p, h;
     output Real T;
   protected
     M.ThermodynamicState st;
+    Real pp;
   algorithm
-    st := M.setState_ph(p, h);
+    pp := max(1.5e5, min(p, 35e5));
+    st := M.setState_ph(pp, h);
     T := M.temperature(st);
   end tempPH;
 
-  function propsCond "P_c[Pa], h_in[J/kg] -> 응축기 스칼라 물성 (record 격리)"
+  function propsCond "P_c[Pa], h_in[J/kg] -> 응축기 스칼라 물성 (record 격리 + clamp)"
     input Real p, h_in;
     output Real Tcond, Trefin, h_l, h_v, rho_l, rho_v, mu_l, k_l, Pr_l, cpl_sat, cpv_mean, mu_v5, k_v5, Pr_v5, mu_l5, k_l5, Pr_l5, Pcrit;
   protected
     M.SaturationProperties sat;
     M.ThermodynamicState st_in, st_l, st_lq, st_cpv, st_v5, st_l5;
+    Real pp, Tcpv;
   algorithm
-    sat := M.setSat_p(p);
-    Tcond := M.saturationTemperature(p);
+    pp := max(1.5e5, min(p, 35e5));
+    sat := M.setSat_p(pp);
+    Tcond := M.saturationTemperature(pp);
     h_l := M.bubbleEnthalpy(sat);
     h_v := M.dewEnthalpy(sat);
     rho_l := M.bubbleDensity(sat);
     rho_v := M.dewDensity(sat);
     Pcrit := M.fluidConstants[1].criticalPressure;
-    st_in := M.setState_ph(p, h_in);
+    st_in := M.setState_ph(pp, h_in);
     Trefin := M.temperature(st_in);
-    st_l := M.setState_px(p, 0.0);
+    st_l := M.setState_px(pp, 0.0);
     mu_l := M.dynamicViscosity(st_l);
-    st_lq := M.setState_pT(p, Tcond - 0.1);
+    st_lq := M.setState_pT(pp, Tcond - 0.1);
     k_l := M.thermalConductivity(st_lq);
     cpl_sat := M.specificHeatCapacityCp(st_lq);
     Pr_l := cpl_sat*mu_l/k_l;
-    st_cpv := M.setState_pT(p, if Trefin > Tcond + 0.2 then 0.5*(Trefin + Tcond) else Tcond + 0.5);
+    Tcpv := min(Tcond + 50.0, if Trefin > Tcond + 0.2 then 0.5*(Trefin + Tcond) else Tcond + 0.5);
+    st_cpv := M.setState_pT(pp, Tcpv);
     cpv_mean := M.specificHeatCapacityCp(st_cpv);
-    st_v5 := M.setState_pT(p, Tcond + 5.0);
+    st_v5 := M.setState_pT(pp, Tcond + 5.0);
     mu_v5 := M.dynamicViscosity(st_v5);
     k_v5 := M.thermalConductivity(st_v5);
     Pr_v5 := M.specificHeatCapacityCp(st_v5)*mu_v5/k_v5;
-    st_l5 := M.setState_pT(p, Tcond - 5.0);
+    st_l5 := M.setState_pT(pp, Tcond - 5.0);
     mu_l5 := M.dynamicViscosity(st_l5);
     k_l5 := M.thermalConductivity(st_l5);
     Pr_l5 := M.specificHeatCapacityCp(st_l5)*mu_l5/k_l5;

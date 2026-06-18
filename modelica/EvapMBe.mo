@@ -55,6 +55,7 @@ package EvapMBe "방정식형 이동경계 증발기 (L2) — dry, v2(HXCorr Che
     Real UA_ref_2ph, UA_ref_SH, UA_ser_2ph, UA_ser_SH, Cmin_SH, Cr_SH, NTU_SH, eps_SH;
     Real alpha_2ph, alpha_SH, alpha_air, eta_fin, eta_overall;
   protected
+    Real P_ec "물성조회용 clamp 압력";
     M.SaturationProperties sat, satP;
     M.ThermodynamicState st_l, st_v, st_lq, st_vq, st10;
     Real h_l, h_v, Tsat, rho_l, rho_v, gamma, rho1, hbar1, rho2, hbar2, Tref2;
@@ -120,13 +121,14 @@ package EvapMBe "방정식형 이동경계 증발기 (L2) — dry, v2(HXCorr Che
     Q2 = UA_ref_SH*(T_w2 - Tref2);
     // ── 관측
     Q_total = Q1 + Q2;
-    SH_out = M.temperature(M.setState_ph(P_e, h_out)) - Tsat;
+    SH_out = M.temperature(M.setState_ph(P_ec, h_out)) - Tsat;
     T_sat_C = Tsat - 273.15;
     x_in = (h_in - h_l)/(h_v - h_l);
   algorithm
+    P_ec := max(1.5e5, min(P_e, 35e5));
     // ── 포화 + 열역학 (FD 계수용; v1과 동일) ──
-    sat := M.setSat_p(P_e);
-    Tsat := M.saturationTemperature(P_e);
+    sat := M.setSat_p(P_ec);
+    Tsat := M.saturationTemperature(P_ec);
     h_l := M.bubbleEnthalpy(sat);
     h_v := M.dewEnthalpy(sat);
     rho_l := M.bubbleDensity(sat);
@@ -136,9 +138,9 @@ package EvapMBe "방정식형 이동경계 증발기 (L2) — dry, v2(HXCorr Che
     rho1 := rho_l*(1.0 - gamma) + rho_v*gamma;
     hbar1 := 0.5*(h_in + h_v);
     hbar2 := 0.5*(h_v + h_out);
-    rho2 := M.density(M.setState_ph(P_e, hbar2));
-    Tref2 := M.temperature(M.setState_ph(P_e, hbar2));
-    satP := M.setSat_p(P_e + dP);
+    rho2 := M.density(M.setState_ph(P_ec, hbar2));
+    Tref2 := M.temperature(M.setState_ph(P_ec, hbar2));
+    satP := M.setSat_p(P_ec + dP);
     h_lP := M.bubbleEnthalpy(satP);
     h_vP := M.dewEnthalpy(satP);
     rho_lP := M.bubbleDensity(satP);
@@ -147,32 +149,32 @@ package EvapMBe "방정식형 이동경계 증발기 (L2) — dry, v2(HXCorr Che
     gammaP := 1.0/(1.0 + (1.0 - xmP)/xmP*rho_vP/rho_lP);
     rho1P := rho_lP*(1.0 - gammaP) + rho_vP*gammaP;
     hbar2P := 0.5*(h_vP + h_out);
-    rho2P := M.density(M.setState_ph(P_e + dP, hbar2P));
+    rho2P := M.density(M.setState_ph(P_ec + dP, hbar2P));
     hbar2h := 0.5*(h_v + (h_out + dh));
-    rho2h := M.density(M.setState_ph(P_e, hbar2h));
+    rho2h := M.density(M.setState_ph(P_ec, hbar2h));
     dhv_dP := (h_vP - h_v)/dP;
     drho1_dP := (rho1P - rho1)/dP;
     drho2_dP := (rho2P - rho2)/dP;
     drho2_dh := (rho2h - rho2)/dh;
-    ru1 := rho1*hbar1 - P_e;
-    ru2 := rho2*hbar2 - P_e;
+    ru1 := rho1*hbar1 - P_ec;
+    ru2 := rho2*hbar2 - P_ec;
     CE1P := drho1_dP*hbar1 + rho1*(dhv_dP/2.0) - 1.0;
     CE2P := drho2_dP*hbar2 + rho2*(dhv_dP/2.0) - 1.0;
     CE2h := drho2_dh*hbar2 + rho2*0.5;
     // ── 전달물성 (알고리즘 EvapMB 레시피: 포화 ρ·μ, cp/k는 ±0.1K off-sat) ──
-    st_l := M.setState_px(P_e, 0.0);
-    st_v := M.setState_px(P_e, 1.0);
+    st_l := M.setState_px(P_ec, 0.0);
+    st_v := M.setState_px(P_ec, 1.0);
     mu_l := M.dynamicViscosity(st_l);
     mu_v := M.dynamicViscosity(st_v);
-    st_lq := M.setState_pT(P_e, Tsat - 0.1);
+    st_lq := M.setState_pT(P_ec, Tsat - 0.1);
     k_l := M.thermalConductivity(st_lq);
     cp_l := M.specificHeatCapacityCp(st_lq);
     Pr_l := cp_l*mu_l/k_l;
-    st10 := M.setState_pT(P_e, Tsat + 10.0);
+    st10 := M.setState_pT(P_ec, Tsat + 10.0);
     mu10 := M.dynamicViscosity(st10);
     k10 := M.thermalConductivity(st10);
     cp10 := M.specificHeatCapacityCp(st10);
-    st_vq := M.setState_pT(P_e, Tsat + 0.1);
+    st_vq := M.setState_pT(P_ec, Tsat + 0.1);
     cp_vs := M.specificHeatCapacityCp(st_vq);
     Pcrit := M.fluidConstants[1].criticalPressure;
     Mmol := M.fluidConstants[1].molarMass*1000.0;
@@ -180,7 +182,7 @@ package EvapMBe "방정식형 이동경계 증발기 (L2) — dry, v2(HXCorr Che
     x_avg_2ph := 0.5*((h_in - h_l)/(h_v - h_l) + 1.0);
     q_flux := mdot_in*(h_v - h_in)/A_i;
     G_2ph := (mdot_in/n_circuits)/A_cross;
-    alpha_2ph := HXCorr.h_evap_chen1966(x_avg_2ph, G_2ph, D_i, q_flux, mu_l, k_l, Pr_l, rho_l, rho_v, mu_v, P_e/Pcrit, Mmol);
+    alpha_2ph := HXCorr.h_evap_chen1966(x_avg_2ph, G_2ph, D_i, q_flux, mu_l, k_l, Pr_l, rho_l, rho_v, mu_v, P_ec/Pcrit, Mmol);
     alpha_SH := HXCorr.dittus_boelter(mu10, k10, cp10, mdot_in/n_circuits, D_i, true);
     // ── 공기측 α (Wang j + Schmidt 핀) ──
     T_air_avg := 0.5*(T_air_in + Tsat);

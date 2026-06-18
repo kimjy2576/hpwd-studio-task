@@ -2,29 +2,31 @@ within ;
 package CycleMBe "방정식형 MB 사이클: EvaporatorSS + Comp_Winandy + CondenserSS + EEV → 폐루프 (정상상태 대수해)"
   import Modelica.Constants.pi;
 
-  function propsEvap "P_e[Pa] → 포화·과열 스칼라 물성 (HelmholtzMedia record는 함수 내부 격리)"
+  function propsEvap "P_e[Pa] -> 포화·과열 스칼라 물성 (record 격리 + 압력 clamp robustness)"
     input Real p "[Pa]";
     output Real Tevap, h_l, h_v, rho_l, rho_v, mu_l, k_l, Pr_l, mu_v, mu_sh, k_sh, cp_sh, Pcrit;
   protected
     package M = HelmholtzMedia.HelmholtzFluids.Propane;
     M.SaturationProperties sat;
     M.ThermodynamicState st_l, st_lq, st_v, st_sh;
+    Real pp;
   algorithm
-    sat := M.setSat_p(p);
-    Tevap := M.saturationTemperature(p);
+    pp := max(1.5e5, min(p, 35e5));
+    sat := M.setSat_p(pp);
+    Tevap := M.saturationTemperature(pp);
     h_l := M.bubbleEnthalpy(sat);
     h_v := M.dewEnthalpy(sat);
     rho_l := M.bubbleDensity(sat);
     rho_v := M.dewDensity(sat);
     Pcrit := M.fluidConstants[1].criticalPressure;
-    st_l := M.setState_px(p, 0.0);
+    st_l := M.setState_px(pp, 0.0);
     mu_l := M.dynamicViscosity(st_l);
-    st_lq := M.setState_pT(p, Tevap - 0.1);
+    st_lq := M.setState_pT(pp, Tevap - 0.1);
     k_l := M.thermalConductivity(st_lq);
     Pr_l := M.specificHeatCapacityCp(st_lq)*mu_l/k_l;
-    st_v := M.setState_px(p, 1.0);
+    st_v := M.setState_px(pp, 1.0);
     mu_v := M.dynamicViscosity(st_v);
-    st_sh := M.setState_pT(p, Tevap + 5.0);
+    st_sh := M.setState_pT(pp, Tevap + 5.0);
     mu_sh := M.dynamicViscosity(st_sh);
     k_sh := M.thermalConductivity(st_sh);
     cp_sh := M.specificHeatCapacityCp(st_sh);
