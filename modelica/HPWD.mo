@@ -44,7 +44,7 @@ package HPWD "HPWD 냉매 사이클 컴포넌트 (L1)"
     op = max(opening_min, min(100.0, opening))/100.0;
     phi = c0 + c1*op + c2*op^2 + c3*op^3;
     h_in = inStream(port_a.h_outflow);
-    rho_in = M.density(M.setState_ph(port_a.p, h_in));
+    rho_in = R290Tab.rho_ph(port_a.p, h_in);
     port_a.m_flow = Cv_rated*A_orifice*phi*sqrt(max(1.0, 2.0*rho_in*(port_a.p - port_b.p)));
     port_a.m_flow + port_b.m_flow = 0;
     port_b.h_outflow = h_in;
@@ -139,32 +139,30 @@ package HPWD "HPWD 냉매 사이클 컴포넌트 (L1)"
     Real m_dot(start = 0.005), h_dis_is, w_is, P_internal, w_extra_raw, w_extra, w_actual, h_dis;
     Real W_shaft(start = 450), W_loss_mech, W_elec, Q_loss;
     Modelica.Units.SI.Temperature T_dis "토출 온도 [K]";
-    M.ThermodynamicState st_su2;
   equation
     N_eff = if t_ramp > 0.0 then N*min(1.0, time/t_ramp) else N;
     // 1. 흡입 압력손실
     P_su2 = port_a.p*(1.0 - dP_su);
     // 2. 흡입 shell 입구 (inStream → T_su1)
     h_su1 = inStream(port_a.h_outflow);
-    T_su1 = M.temperature(M.setState_ph(port_a.p, h_su1));
-    cp_su1 = M.specificHeatCapacityCp(M.setState_ph(port_a.p, h_su1));
+    T_su1 = R290Tab.T_ph(port_a.p, h_su1);
+    cp_su1 = R290Tab.cp_ph(port_a.p, h_su1);
     // 3a. 흡입 가열 (ε-NTU: 뜨거운 벽 → 가스)
     eps_su = 1.0 - exp(-AU_su/max(m_dot*cp_su1, 1e-6));
-    T_su2 = T_su1 + eps_su*(T_w - T_su1);
-    st_su2 = M.setState_pT(min(35e5, max(1.5e5, P_su2)), max(T_su2, M.saturationTemperature(min(35e5, max(1.5e5, P_su2))) + 0.5));
-    h_su2 = M.specificEnthalpy(st_su2);
-    s_su2 = M.specificEntropy(st_su2);
-    rho_su2 = M.density(st_su2);
+    h_su2 = h_su1 + eps_su*cp_su1*(T_w - T_su1);
+    T_su2 = R290Tab.T_ph(P_su2, h_su2);
+    s_su2 = R290Tab.s_ph(P_su2, h_su2);
+    rho_su2 = R290Tab.rho_ph(P_su2, h_su2);
     v_su2 = 1.0/rho_su2;
     // 3b. 체적효율 (clearance 재팽창, ηv = V_se - c·(rp^(1/γ)-1))
-    gamma = M.specificHeatCapacityCp(st_su2)/M.specificHeatCapacityCv(st_su2);
+    gamma = R290Tab.gamma_ph(P_su2, h_su2);
     rp = port_b.p/port_a.p;
     clearance_term = max(0.0, rp^(1.0/gamma) - 1.0);
     eta_v = max(0.05, V_se - clearance_factor*clearance_term);
     // 3c. 질량유량
     m_dot = eta_v*V_disp*(N_eff/60.0)*rho_su2;
     // 3d. 등엔트로피 토출 + over/under-compression (built-in rv)
-    h_dis_is = M.specificEnthalpy(M.setState_ps(port_b.p, s_su2));
+    h_dis_is = R290Tab.h_ps(port_b.p, s_su2);
     w_is = h_dis_is - h_su2;
     P_internal = P_su2*(rv_in^gamma);
     w_extra_raw = v_su2*(port_b.p - P_internal);
@@ -178,7 +176,7 @@ package HPWD "HPWD 냉매 사이클 컴포넌트 (L1)"
     // 4-5. 전기입력 + 외부 열손실
     W_elec = (W_shaft + W_loss_mech)/eta_motor;
     Q_loss = AU_loss*(T_w - T_amb);
-    T_dis = M.temperature(M.setState_ph(port_b.p, h_dis));
+    T_dis = R290Tab.T_ph(port_b.p, h_dis);
     // 포트 balance (acausal stream)
     port_a.m_flow = m_dot;
     port_a.m_flow + port_b.m_flow = 0;

@@ -132,6 +132,47 @@ funcs = r'''
     elseif h<=hL then cp:=bilinC(TBLcp,SATcpl,1,p,h);
     else cp:=bilinC(TBLcp,SATcpv,2,p,h); end if;
   end cp_ph;
+
+  // ===== 엔트로피 / cv / gamma / 등엔트로피 (컴프용) =====
+  function s_ph "엔트로피 s(p,h) [J/kgK] — 영역인지"
+    input Real p; input Real h; output Real s;
+  protected
+    Real hL,hV,x;
+  algorithm
+    hL:=lin1(SAThl,p); hV:=lin1(SAThv,p);
+    if h>hL and h<hV then x:=(h-hL)/(hV-hL); s:=(1-x)*lin1(SATsl,p)+x*lin1(SATsv,p);
+    elseif h<=hL then s:=bilinC(TBLs,SATsl,1,p,h);
+    else s:=bilinC(TBLs,SATsv,2,p,h); end if;
+  end s_ph;
+
+  function cv_ph "정적비열 cv(p,h) — 영역인지"
+    input Real p; input Real h; output Real cv;
+  protected
+    Real hL,hV,x;
+  algorithm
+    hL:=lin1(SAThl,p); hV:=lin1(SAThv,p);
+    if h>hL and h<hV then x:=(h-hL)/(hV-hL); cv:=(1-x)*lin1(SATcvl,p)+x*lin1(SATcvv,p);
+    elseif h<=hL then cv:=bilinC(TBLcv,SATcvl,1,p,h);
+    else cv:=bilinC(TBLcv,SATcvv,2,p,h); end if;
+  end cv_ph;
+
+  function gamma_ph "비열비 cp/cv"
+    input Real p; input Real h; output Real g;
+  algorithm
+    g:=cp_ph(p,h)/cv_ph(p,h);
+  end gamma_ph;
+
+  function h_ps "등엔트로피: (p, s_target) -> h. s_ph에 Newton 역산 (ds=dh/T)"
+    input Real p; input Real s_target; output Real h;
+  protected
+    Real sN,T; Integer it;
+  algorithm
+    h := lin1(SAThv,p) + lin1(SATTsat,p)*(s_target - lin1(SATsv,p));
+    for it in 1:8 loop
+      sN := s_ph(p,h); T := T_ph(p,h);
+      h := h + (s_target - sN)*T;
+    end for;
+  end h_ps;
 '''
 
 consts = f'''  constant Integer nP={nP};
@@ -158,6 +199,10 @@ consts = f'''  constant Integer nP={nP};
   constant Real SATmuv[nP]={a1(d['sat_muv'])};
   constant Real SATkv[nP]={a1(d['sat_kv'])};
   constant Real SATcpv[nP]={a1(d['sat_cpv'])};
+  constant Real SATsl[nP]={a1(d['sat_sl'])};
+  constant Real SATsv[nP]={a1(d['sat_sv'])};
+  constant Real SATcvl[nP]={a1(d['sat_cvl'])};
+  constant Real SATcvv[nP]={a1(d['sat_cvv'])};
   constant Real TBLT[nP,nH]={a2(d['T'])};
   constant Real TBLrho[nP,nH]={a2(d['rho'])};
   constant Real TBLdrdp[nP,nH]={a2(d['drdp'])};
@@ -167,6 +212,8 @@ consts = f'''  constant Integer nP={nP};
   constant Real TBLmu[nP,nH]={a2(d['mu'])};
   constant Real TBLk[nP,nH]={a2(d['k'])};
   constant Real TBLcp[nP,nH]={a2(d['cp'])};
+  constant Real TBLs[nP,nH]={a2(d['s'])};
+  constant Real TBLcv[nP,nH]={a2(d['cv'])};
   constant Integer PHg[nP,nH]={a2i(d['phase'])};
 '''
 mo=f'''within ;
