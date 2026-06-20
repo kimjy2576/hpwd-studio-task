@@ -3,7 +3,6 @@ package EvapMBe "방정식형 이동경계 증발기 (L2) — dry, v2(HXCorr Che
   // 열전달: 2상 Chen / 과열 Dittus-Boelter / 공기 Wang j (+ Schmidt 핀). 알고리즘 EvapMB와 동일.
   // 공기: counter 누적 (SH zone 먼저 → 2상 zone, 직렬 C_air). dry(잠열 없음).
   // 포화선 도함수는 FD(상태에 선형). 전달물성은 alpha에만(대수) → der 계수 무관.
-  package M = HelmholtzMedia.HelmholtzFluids.Propane;
 
   model EvaporatorMBdyn
     HPWD.RefPort port_a "입구 (2상, EEV측)";
@@ -56,8 +55,6 @@ package EvapMBe "방정식형 이동경계 증발기 (L2) — dry, v2(HXCorr Che
     Real alpha_2ph, alpha_SH, alpha_air, eta_fin, eta_overall;
   protected
     Real P_ec "물성조회용 clamp 압력";
-    M.SaturationProperties sat, satP;
-    M.ThermodynamicState st_l, st_v, st_lq, st_vq, st10;
     Real h_l, h_v, Tsat, rho_l, rho_v, gamma, rho1, hbar1, rho2, hbar2, Tref2;
     Real h_lP, h_vP, rho_lP, rho_vP, gammaP, rho1P, rho2P, hbar2P, hbar2h, rho2h;
     Real dhv_dP, drho1_dP, drho2_dP, drho2_dh, ru1, ru2, CE1P, CE2P, CE2h, xm, xmP;
@@ -121,37 +118,35 @@ package EvapMBe "방정식형 이동경계 증발기 (L2) — dry, v2(HXCorr Che
     Q2 = UA_ref_SH*(T_w2 - Tref2);
     // ── 관측
     Q_total = Q1 + Q2;
-    SH_out = M.temperature(M.setState_ph(P_ec, h_out)) - Tsat;
+    SH_out = R290Tab.T_ph(P_ec, h_out) - Tsat;
     T_sat_C = Tsat - 273.15;
     x_in = (h_in - h_l)/(h_v - h_l);
   algorithm
     P_ec := max(1.5e5, min(P_e, 35e5));
     // ── 포화 + 열역학 (FD 계수용; v1과 동일) ──
-    sat := M.setSat_p(P_ec);
-    Tsat := M.saturationTemperature(P_ec);
-    h_l := M.bubbleEnthalpy(sat);
-    h_v := M.dewEnthalpy(sat);
-    rho_l := M.bubbleDensity(sat);
-    rho_v := M.dewDensity(sat);
+    Tsat := R290Tab.Tsat(P_ec);
+    h_l := R290Tab.hl(P_ec);
+    h_v := R290Tab.hv(P_ec);
+    rho_l := R290Tab.rhol(P_ec);
+    rho_v := R290Tab.rhov(P_ec);
     xm := 0.5*((h_in - h_l)/(h_v - h_l) + 1.0);
     gamma := 1.0/(1.0 + (1.0 - xm)/xm*rho_v/rho_l);
     rho1 := rho_l*(1.0 - gamma) + rho_v*gamma;
     hbar1 := 0.5*(h_in + h_v);
     hbar2 := 0.5*(h_v + h_out);
-    rho2 := M.density(M.setState_ph(P_ec, hbar2));
-    Tref2 := M.temperature(M.setState_ph(P_ec, hbar2));
-    satP := M.setSat_p(P_ec + dP);
-    h_lP := M.bubbleEnthalpy(satP);
-    h_vP := M.dewEnthalpy(satP);
-    rho_lP := M.bubbleDensity(satP);
-    rho_vP := M.dewDensity(satP);
+    rho2 := R290Tab.rho_ph(P_ec, hbar2);
+    Tref2 := R290Tab.T_ph(P_ec, hbar2);
+    h_lP := R290Tab.hl(P_ec + dP);
+    h_vP := R290Tab.hv(P_ec + dP);
+    rho_lP := R290Tab.rhol(P_ec + dP);
+    rho_vP := R290Tab.rhov(P_ec + dP);
     xmP := 0.5*((h_in - h_lP)/(h_vP - h_lP) + 1.0);
     gammaP := 1.0/(1.0 + (1.0 - xmP)/xmP*rho_vP/rho_lP);
     rho1P := rho_lP*(1.0 - gammaP) + rho_vP*gammaP;
     hbar2P := 0.5*(h_vP + h_out);
-    rho2P := M.density(M.setState_ph(P_ec + dP, hbar2P));
+    rho2P := R290Tab.rho_ph(P_ec + dP, hbar2P);
     hbar2h := 0.5*(h_v + (h_out + dh));
-    rho2h := M.density(M.setState_ph(P_ec, hbar2h));
+    rho2h := R290Tab.rho_ph(P_ec, hbar2h);
     dhv_dP := (h_vP - h_v)/dP;
     drho1_dP := (rho1P - rho1)/dP;
     drho2_dP := (rho2P - rho2)/dP;
@@ -162,22 +157,17 @@ package EvapMBe "방정식형 이동경계 증발기 (L2) — dry, v2(HXCorr Che
     CE2P := drho2_dP*hbar2 + rho2*(dhv_dP/2.0) - 1.0;
     CE2h := drho2_dh*hbar2 + rho2*0.5;
     // ── 전달물성 (알고리즘 EvapMB 레시피: 포화 ρ·μ, cp/k는 ±0.1K off-sat) ──
-    st_l := M.setState_px(P_ec, 0.0);
-    st_v := M.setState_px(P_ec, 1.0);
-    mu_l := M.dynamicViscosity(st_l);
-    mu_v := M.dynamicViscosity(st_v);
-    st_lq := M.setState_pT(P_ec, Tsat - 0.1);
-    k_l := M.thermalConductivity(st_lq);
-    cp_l := M.specificHeatCapacityCp(st_lq);
+    mu_l := R290Tab.mul(P_ec);
+    mu_v := R290Tab.muv(P_ec);
+    k_l := R290Tab.kl(P_ec);
+    cp_l := R290Tab.cpl(P_ec);
     Pr_l := cp_l*mu_l/k_l;
-    st10 := M.setState_pT(P_ec, Tsat + 10.0);
-    mu10 := M.dynamicViscosity(st10);
-    k10 := M.thermalConductivity(st10);
-    cp10 := M.specificHeatCapacityCp(st10);
-    st_vq := M.setState_pT(P_ec, Tsat + 0.1);
-    cp_vs := M.specificHeatCapacityCp(st_vq);
-    Pcrit := M.fluidConstants[1].criticalPressure;
-    Mmol := M.fluidConstants[1].molarMass*1000.0;
+    mu10 := R290Tab.mu_ph(P_ec, h_v + R290Tab.cpv(P_ec)*10.0);
+    k10 := R290Tab.k_ph(P_ec, h_v + R290Tab.cpv(P_ec)*10.0);
+    cp10 := R290Tab.cp_ph(P_ec, h_v + R290Tab.cpv(P_ec)*10.0);
+    cp_vs := R290Tab.cpv(P_ec);
+    Pcrit := 42.512e5;
+    Mmol := 44.096;
     // ── 냉매측 α ──
     x_avg_2ph := 0.5*((h_in - h_l)/(h_v - h_l) + 1.0);
     q_flux := mdot_in*(h_v - h_in)/A_i;
