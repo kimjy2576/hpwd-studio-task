@@ -95,9 +95,9 @@ package HPWD "HPWD 냉매 사이클 컴포넌트 (L1)"
   equation
     N_eff = if t_ramp > 0.0 then N*min(1.0, time/t_ramp) else N;    // 정지(N=0)에서 운전점으로 단계 기동
     h_suc = inStream(port_a.h_outflow);
-    rho_suc = M.density(M.setState_ph(port_a.p, h_suc));
-    s_suc = M.specificEntropy(M.setState_ph(port_a.p, h_suc));
-    h_dis_s = M.specificEnthalpy(M.setState_ps(port_b.p, s_suc));   // 등엔트로피 토출
+    rho_suc = R290Tab.rho_ph(port_a.p, h_suc);
+    s_suc = R290Tab.s_ph(port_a.p, h_suc);
+    h_dis_s = R290Tab.h_ps(port_b.p, s_suc);   // 등엔트로피 토출
     m_dot = eta_vol*V_disp*(N_eff/60.0)*rho_suc;                    // ṁ = ηv·Vd·(N_eff/60)·ρ_suc
     W = m_dot*(h_dis_s - h_suc)/eta_isen;                           // 소요 동력
     h_dis = h_suc + (h_dis_s - h_suc)/eta_isen;                     // 실제 토출 엔탈피

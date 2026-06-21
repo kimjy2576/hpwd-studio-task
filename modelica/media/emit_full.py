@@ -80,8 +80,19 @@ funcs = r'''
   end rho_ph;
   function rho_ph_d
     input Real p; input Real h; input Real dp; input Real dh; output Real drho;
+  protected
+    Real hL,hV,rL,rV,x,rho,dvdh,dvdp,dxdp;
   algorithm
-    drho:=bilin(TBLdrdp,p,h)*dp+bilin(TBLdrdh,p,h)*dh;
+    hL:=lin1(SAThl,p); hV:=lin1(SAThv,p);
+    if h>hL and h<hV then
+      rL:=lin1(SATrhol,p); rV:=lin1(SATrhov,p); x:=(h-hL)/(hV-hL); rho:=1.0/((1.0-x)/rL+x/rV);
+      dvdh:=(1.0/rV-1.0/rL)/(hV-hL);
+      dxdp:=(-lin1(SATdhldp,p)*(hV-hL)-(h-hL)*(lin1(SATdhvdp,p)-lin1(SATdhldp,p)))/((hV-hL)*(hV-hL));
+      dvdp:=dxdp*(1.0/rV-1.0/rL)-(1.0-x)/(rL*rL)*lin1(SATdrholdp,p)-x/(rV*rV)*lin1(SATdrhovdp,p);
+      drho:=-rho*rho*(dvdh*dh+dvdp*dp);
+    else
+      drho:=bilin(TBLdrdp,p,h)*dp+bilin(TBLdrdh,p,h)*dh;
+    end if;
   end rho_ph_d;
 
   function T_ph
@@ -97,8 +108,15 @@ funcs = r'''
   end T_ph;
   function T_ph_d
     input Real p; input Real h; input Real dp; input Real dh; output Real dT;
+  protected
+    Real hL,hV;
   algorithm
-    dT:=bilin(TBLdTdp,p,h)*dp+bilin(TBLdTdh,p,h)*dh;
+    hL:=lin1(SAThl,p); hV:=lin1(SAThv,p);
+    if h>hL and h<hV then
+      dT:=lin1(SATdTsdp,p)*dp;
+    else
+      dT:=bilin(TBLdTdp,p,h)*dp+bilin(TBLdTdh,p,h)*dh;
+    end if;
   end T_ph_d;
 
   // ===== 단일상 수송물성 (영역인지, 값) =====

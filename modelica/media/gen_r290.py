@@ -1,7 +1,7 @@
 import numpy as np, CoolProp.CoolProp as CP
 from CoolProp.CoolProp import AbstractState
 import CoolProp.constants as K
-P = np.linspace(1.5e5, 35e5, 60); H = np.linspace(120e3, 720e3, 140)
+P = np.linspace(1.5e5, 35e5, 60); H = np.linspace(120e3, 800e3, 160)
 nP, nH = len(P), len(H); AS = AbstractState("HEOS", "Propane")
 satk=['Tsat','hl','hv','rhol','rhov','mul','kl','cpl','muv','kv','cpv','sl','sv','cvl','cvv',
       'dTs_dp','dhl_dp','dhv_dp','drhol_dp','drhov_dp']

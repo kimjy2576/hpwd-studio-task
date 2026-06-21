@@ -24,18 +24,14 @@ package HPWDhx "UA 모델 HX connector"
     P_Pa := 10.0^(A - B/(T_C + C)) * 133.322;
   end pSatWater;
 
-  function satProps "포화 물성 추출 (SaturationProperties record를 scalar로)"
+  function satProps "포화 물성 (R290Tab)"
     input Real P;
     output Real hl, hv, cp_dew, cp_bub;
-  protected
-    package R = HelmholtzMedia.HelmholtzFluids.Propane;
-    R.SaturationProperties sat;
   algorithm
-    sat := R.setSat_p(P);
-    hl := R.bubbleEnthalpy(sat);
-    hv := R.dewEnthalpy(sat);
-    cp_dew := R.specificHeatCapacityCp(R.setDewState(sat));
-    cp_bub := R.specificHeatCapacityCp(R.setBubbleState(sat));
+    hl := R290Tab.hl(P);
+    hv := R290Tab.hv(P);
+    cp_dew := R290Tab.cpv(P);
+    cp_bub := R290Tab.cpl(P);
   end satProps;
 
   function airProps "습공기 물성 추출 (ThermodynamicState record를 scalar로)"
