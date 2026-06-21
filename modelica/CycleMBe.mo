@@ -155,6 +155,10 @@ package CycleMBe "방정식형 MB 사이클: EvaporatorSS + Comp_Winandy + Conde
     eev.opening = opening_pct;
   end CycleDyn;
 
+  model CycleDynWet "습윤코일(제습) 사이클 — HPWD 건조모드. CycleDyn + evap 습표면"
+    extends CycleDyn(evap(is_wet = true));
+  end CycleDynWet;
+
   model CycleSH "전SS 정상상태 사이클: 과열제어 closure (개도 free, SH=SH_set). 절대제약으로 압력레벨 핀"
     HPWD.Comp_Winandy comp(N = 3000.0);
     CondMBe.CondenserSS cond(P_c(start = 16e5));
