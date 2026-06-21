@@ -323,6 +323,85 @@ package HPWDair "HPWD air-side L1 (lumped, 비압축 + dry-air basis)"
     port_b.W_outflow = inStream(port_a.W_outflow);
   end Fan_L1;
 
+  model Fan_L2
+    "Centrifugal fan L2 (SEMI: 손실분해 — Euler − Incidence − Friction). 상수효율 대신 유량의존 손실."
+    AirPort port_a "inlet";
+    AirPort port_b "outlet";
+
+    parameter Modelica.Units.SI.Diameter D2 = 0.15 "impeller outer diameter (m)";
+    parameter Modelica.Units.SI.Length b2 = 0.04 "outlet blade width (m)";
+    parameter Modelica.Units.SI.Diameter D1 = 0.075 "impeller eye(inlet) diameter (m)";
+    parameter Modelica.Units.SI.Length b1 = 0.045 "inlet blade width (m)";
+    parameter Integer Z = 40 "blade count";
+    parameter Real beta2 = 150 "blade exit angle (deg, >90 = 전곡)";
+    parameter Real beta1 = 35 "blade inlet angle (deg)";
+    parameter Real f_inc = 0.6 "incidence loss coefficient";
+    parameter Real f_fric = 0.8 "friction loss coefficient (C_f·L/D_h lumped)";
+    parameter Real eta_mech = 0.95 "mechanical efficiency";
+    parameter Real N = 3000 "rotational speed (rpm)";
+
+    Modelica.Units.SI.MassFlowRate m_flow_da(start = 0.05) "dry-air mass flow (a→b +)";
+    Modelica.Units.SI.Velocity U2 "blade tip speed";
+    Modelica.Units.SI.Velocity U1 "inlet blade speed";
+    Modelica.Units.SI.Velocity cm2 "outlet meridional velocity";
+    Modelica.Units.SI.Velocity cm1 "inlet meridional velocity";
+    Modelica.Units.SI.Velocity ctheta2 "outlet swirl velocity";
+    Modelica.Units.SI.Velocity w2 "outlet relative velocity";
+    Real sigma "Stodola slip factor";
+    Modelica.Units.SI.VolumeFlowRate V_dot "volumetric flow";
+    Modelica.Units.SI.Density rho "moist-air density (p_ref)";
+    Modelica.Units.SI.Pressure dp_euler "Euler ideal total pressure rise";
+    Modelica.Units.SI.Pressure dp_inc "incidence (shock) loss";
+    Modelica.Units.SI.Pressure dp_fric "friction loss";
+    Modelica.Units.SI.Pressure dp "net static pressure rise";
+    Real eta_h "hydraulic efficiency (계산값 dp/dp_euler, 유량의존)";
+    Modelica.Units.SI.Power W_sh "shaft power";
+
+    Real W_op(unit="kg/kg") "inlet humidity ratio (upstream)";
+    Modelica.Units.SI.SpecificEnthalpy h_op "inlet h_tilde (upstream)";
+    Modelica.Units.SI.Temperature T_op "inlet temperature (upstream)";
+
+  protected
+    parameter Real beta2_rad = beta2 * Modelica.Constants.pi / 180.0;
+    parameter Real beta1_rad = beta1 * Modelica.Constants.pi / 180.0;
+
+  equation
+    m_flow_da = port_a.m_flow_da;
+    port_a.m_flow_da + port_b.m_flow_da = 0;
+
+    W_op = inStream(port_a.W_outflow);
+    h_op = inStream(port_a.h_tilde_outflow);
+    T_op = MoistAir.T_from_h(h_op, W_op);
+    rho  = MoistAir.rho_da_fn(T_op, W_op) * (1 + W_op);
+
+    // ── 속도삼각형 (입구 station 1 + 출구 station 2) ──
+    U2 = Modelica.Constants.pi * D2 * N / 60;
+    U1 = Modelica.Constants.pi * D1 * N / 60;
+    V_dot = m_flow_da * (1 + W_op) / rho;
+    cm2 = V_dot / (Modelica.Constants.pi * D2 * b2);
+    cm1 = V_dot / (Modelica.Constants.pi * D1 * b1);
+    sigma = 1 - Modelica.Constants.pi * sin(beta2_rad) / Z;
+    ctheta2 = sigma * U2 - cm2 / tan(beta2_rad);
+    w2 = sqrt(cm2^2 + (U2 - ctheta2)^2);
+
+    // ── 손실 분해: Euler − Incidence − Friction (상수효율 대체) ──
+    dp_euler = rho * U2 * ctheta2;
+    dp_inc = 0.5 * rho * f_inc * (U1 - cm1 / tan(beta1_rad))^2;   // 설계유량서 0
+    dp_fric = 0.5 * rho * f_fric * w2^2;                          // 통로 마찰 ∝ w2²
+    dp = dp_euler - dp_inc - dp_fric;
+    eta_h = dp / dp_euler;
+    W_sh = rho * V_dot * U2 * ctheta2 / eta_mech;
+
+    port_b.p = port_a.p + dp;
+
+    // ── stream: 손실열 자체발열 (forward a→b, Δh=손실/rho) ──
+    port_a.h_tilde_outflow = inStream(port_b.h_tilde_outflow);
+    port_b.h_tilde_outflow = inStream(port_a.h_tilde_outflow) + (dp_inc + dp_fric) / rho;
+    port_a.W_outflow = inStream(port_b.W_outflow);
+    port_b.W_outflow = inStream(port_a.W_outflow);
+  end Fan_L2;
+
+
 
   // =============================================================
   // Filter_L1: lint filter L1 (Darcy-Forchheimer, clean, 순수 R).
@@ -481,6 +560,98 @@ package HPWDair "HPWD air-side L1 (lumped, 비압축 + dry-air basis)"
     port_a.h_tilde_outflow = h_out;
     port_b.h_tilde_outflow = h_out;
   end Drum_L1;
+
+  model Drum_L2
+    "Drum L2 (SEMI: Falling-rate + Sorption). Drum_L1 + 감률건조(임계함수율 X_cr) + 흡착평형 X_eq(RH)."
+    AirPort port_a "inlet";
+    AirPort port_b "outlet";
+
+    parameter Modelica.Units.SI.Mass m_cl_dry = 3.0 "dry cloth mass (load, kg)";
+    parameter Real c_p_cl = 1500 "dry cloth specific heat (J/kg·K)";
+    parameter Modelica.Units.SI.Area A_eff = 10 "effective cloth area (m²)";
+    parameter Real h_a = 50 "air-cloth convective HTC (W/m²·K)";
+    parameter Modelica.Units.SI.Area A_drum = 0.15 "drum air-flow cross-section (m²)";
+    parameter Real K_drum = 30 "cloth-bed resistance (Pa·s²/m²)";
+    parameter Real X0 = 0.6 "initial moisture ratio (kg水/kg dry)";
+    parameter Modelica.Units.SI.Temperature Tcl0 = 298.15 "initial cloth temp (K)";
+    parameter Real UA_amb = 0.0 "cabinet 외기 열손실 UA (W/K)";
+    parameter Modelica.Units.SI.Temperature T_amb = 298.15 "외기온 (K)";
+    // ── L2 추가 파라미터 (감률 + 흡착) ──
+    parameter Real X_cr = 0.2 "critical moisture (항률→감률 전이, dry basis)";
+    parameter Real a_sorp = 0.25 "sorption isotherm 계수 (X_eq = a·RH^n)";
+    parameter Real n_sorp = 2.0 "sorption isotherm 지수 (cotton ~2)";
+
+    Modelica.Units.SI.Mass m_w(
+      start = X0 * m_cl_dry, fixed = true,
+      stateSelect = StateSelect.prefer) "cloth moisture (state)";
+    Modelica.Units.SI.Temperature T_cl(
+      start = Tcl0, fixed = true,
+      stateSelect = StateSelect.prefer) "cloth temp (state)";
+    Real X "moisture ratio (dry basis)";
+    Real X_eq "equilibrium moisture (sorption, 평형함수율)";
+    Real RH_air "bulk air relative humidity";
+    Real f_dry "drying-rate factor (1=항률, 0=평형도달)";
+
+    Modelica.Units.SI.MassFlowRate m_flow_da(start = 0.05) "dry-air mass flow (a→b +)";
+    Real W_in(unit="kg/kg") "inlet humidity ratio (upstream)";
+    Modelica.Units.SI.SpecificEnthalpy h_in "inlet h_tilde (upstream)";
+    Modelica.Units.SI.Temperature T_in "inlet air temp";
+    Real W_out(unit="kg/kg", start = 0.02) "outlet/bulk humidity ratio";
+    Modelica.Units.SI.SpecificEnthalpy h_out "outlet/bulk h_tilde";
+    Modelica.Units.SI.Temperature T_out(start = 320) "outlet/bulk air temp";
+    Modelica.Units.SI.MassFlowRate m_evap(start = 5e-4) "evaporation rate";
+    Real W_s(unit="kg/kg") "saturation humidity at cloth surface";
+    Real h_m "mass transfer coeff (Lewis)";
+    Modelica.Units.SI.Power Q_amb "외기 열손실";
+
+    Modelica.Units.SI.Density rho_da "dry-air density (inlet)";
+    Modelica.Units.SI.Velocity u "drum-pass air velocity";
+    Modelica.Units.SI.Pressure dp_drum "air-side pressure drop";
+
+  equation
+    m_flow_da = port_a.m_flow_da;
+    port_a.m_flow_da + port_b.m_flow_da = 0;
+
+    W_in = inStream(port_a.W_outflow);
+    h_in = inStream(port_a.h_tilde_outflow);
+    T_in = MoistAir.T_from_h(h_in, W_in);
+
+    // ── 흡착 평형함수율 (cotton isotherm) + 감률 인자 ──
+    RH_air = W_out / MoistAir.W_sat(T_out);
+    X_eq = min(a_sorp * RH_air^n_sorp, 0.9 * X_cr);   // 평형함수율 (감률밴드 유효 보장)
+    f_dry = max(0.0, min(1.0, (X - X_eq) / (X_cr - X_eq)));
+
+    // ── Lewis analogy + 감률 보정 증발 (X<X_cr면 표면 부분습윤) ──
+    W_s = MoistAir.W_sat(T_cl);
+    h_m = h_a / MoistAir.cp_da;
+    m_evap = f_dry * h_m * A_eff * (W_s - W_out);
+
+    // ── 공기 CV (quasi-steady, well-mixed) ──
+    m_flow_da * (W_out - W_in) = m_evap;
+    Q_amb = UA_amb * (T_out - T_amb);
+    m_flow_da * (h_out - h_in)
+        = -h_a * A_eff * (T_out - T_cl) + m_evap * MoistAir.h_g(T_cl) - Q_amb;
+    T_out = MoistAir.T_from_h(h_out, W_out);
+
+    // ── cloth 동특성 ──
+    X = m_w / m_cl_dry;
+    der(m_w) = -m_evap;
+    (m_cl_dry * c_p_cl + m_w * MoistAir.cp_w) * der(T_cl)
+        = h_a * A_eff * (T_out - T_cl) - m_evap * MoistAir.h_fg(T_cl);
+
+    // ── 공기측 압력강하 ──
+    rho_da = MoistAir.rho_da_fn(T_in, W_in);
+    u = m_flow_da / (rho_da * A_drum);
+    dp_drum = K_drum * u * abs(u);
+    port_b.p = port_a.p - dp_drum;
+
+    // ── stream: well-mixed ──
+    port_a.W_outflow = W_out;
+    port_b.W_outflow = W_out;
+    port_a.h_tilde_outflow = h_out;
+    port_b.h_tilde_outflow = h_out;
+  end Drum_L2;
+
 
 
   // =============================================================
