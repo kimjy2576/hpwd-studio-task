@@ -155,6 +155,19 @@ package CycleMBe "방정식형 MB 사이클: EvaporatorSS + Comp_Winandy + Conde
     eev.opening = opening_pct;
   end CycleDyn;
 
+  model CycleDynL2 "순수 L2 MB 사이클: Comp_Winandy + CondenserSS + EEV_MB(L2 SEMI) + EvaporatorMBdyn. 전 컴포넌트 SEMI."
+    HPWD.Comp_Winandy comp(N = 3000.0);
+    CondMBe.CondenserSS cond(P_c(start = 15e5));
+    EevMB.EEV_MB eev(opening_pct = opening_pct);
+    EvapMBe.EvaporatorMBdyn evap(is_wet = false);
+    parameter Real opening_pct = 12.0 "EEV 개도 [%]";
+  equation
+    connect(comp.port_b, cond.port_a);
+    connect(cond.port_b, eev.port_a);
+    connect(eev.port_b, evap.port_a);
+    connect(evap.port_b, comp.port_a);
+  end CycleDynL2;
+
   model CycleDynWet "습윤코일(제습) 사이클 — HPWD 건조모드. CycleDyn + evap 습표면"
     extends CycleDyn(evap(is_wet = true));
   end CycleDynWet;

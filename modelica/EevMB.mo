@@ -2,7 +2,7 @@ within ;
 package EevMB
   "EEV Moving-Boundary (model-docs SEMI) 조립. eev_moving_boundary.py step() 충실 포팅.
    오리피스 유량: ṁ = Cd_eff·A_eff·√(2ρ·ΔP_eff). Cd 보정(f_Re·f_sub·f_op) + choke. 등엔탈피.
-   신규 상관식 없음(대수식). 냉매물성은 model이 HelmholtzMedia로 전달."
+   신규 상관식 없음(대수식). 냉매물성은 model이 R290Tab으로 전달."
 
   function eev_Cd_corr "방출계수 보정 Cd_eff = Cd_0·f_Re·f_sub·f_op. eev_moving_boundary.py _Cd_corrections."
     input Real Cd_0, Re, T_sub_K, op_frac, Re_c, k_sub, k_op;
@@ -21,7 +21,7 @@ package EevMB
     input Real A_orifice_mm2, opening_min, Cd_0, Re_c, k_sub, k_op, Y_crit, cf_A;
     input Boolean use_choke = true, mode_control = true;
     input Real P_in_bar, h_in_kjkg, P_out_bar, opening_pct, m_dot_meas;
-    input Real rho_in, mu_in, T_sub_K "냉매물성 (model이 HelmholtzMedia로 전달)";
+    input Real rho_in, mu_in, T_sub_K "냉매물성 (model이 R290Tab으로 전달)";
     output Real m_dot_ref, opening_calc, Cd_eff, Re, dP_eff_bar, is_choked;
   protected
     Real A_orifice, P_in_Pa, P_out_Pa, dP_actual, pr, dP_eff;
@@ -89,8 +89,7 @@ package EevMB
   end eevMB;
 
   // ════════════════════ Acausal TwoPort 모델 ════════════════════
-  model EEV_MB "EEV MB (L2 SEMI). RefPort TwoPort. 등엔탈피 팽창. 냉매물성 HelmholtzMedia."
-    package M = HelmholtzMedia.HelmholtzFluids.Propane;
+  model EEV_MB "EEV MB (L2 SEMI). RefPort TwoPort. 등엔탈피 팽창. 냉매물성 R290Tab."
     HPWD.RefPort port_a "입구 (고압 과냉액)";
     HPWD.RefPort port_b "출구 (저압 2상)";
     parameter Real A_orifice_mm2 = 3.14, opening_min = 0.0, Cd_0 = 0.72;
@@ -101,7 +100,6 @@ package EevMB
     Real T_sub, x_out, T_out_C;
     Real m_dot, P_in, P_out, h_in;
   protected
-    M.ThermodynamicState st_in, st_out;
     Real rho_in, mu_in, Tsat_in_K, h_l_in, T_in_K, h_l_out, h_v_out;
     Real mdr, opc, cde, re_l, dpe, isc;
   equation
@@ -114,13 +112,12 @@ package EevMB
     port_b.h_outflow = h_in;
     port_a.h_outflow = inStream(port_b.h_outflow);
   algorithm
-    // 입구 냉매물성 (HelmholtzMedia)
-    st_in := M.setState_ph(P_in, h_in);
-    rho_in := M.density(st_in);
-    mu_in := M.dynamicViscosity(st_in);
-    Tsat_in_K := M.saturationTemperature(P_in);
-    h_l_in := M.bubbleEnthalpy(M.setSat_p(P_in));
-    T_in_K := M.temperature(st_in);
+    // 입구 냉매물성 (R290Tab)
+    rho_in := R290Tab.rho_ph(P_in, h_in);
+    mu_in := R290Tab.mu_ph(P_in, h_in);
+    Tsat_in_K := R290Tab.Tsat(P_in);
+    h_l_in := R290Tab.hl(P_in);
+    T_in_K := R290Tab.T_ph(P_in, h_in);
     T_sub := if h_in < h_l_in then Tsat_in_K - T_in_K else 0.0;
     // EEV 계산 (control mode)
     (mdr, opc, cde, re_l, dpe, isc) := eevMB(
@@ -129,10 +126,9 @@ package EevMB
       rho_in, mu_in, T_sub);
     m_dot_ref := mdr; opening_calc := opc; Cd_eff := cde; Re := re_l; dP_eff_bar := dpe; is_choked := isc;
     // 출구상태 (등엔탈피, h_out=h_in @ P_out)
-    h_l_out := M.bubbleEnthalpy(M.setSat_p(P_out));
-    h_v_out := M.dewEnthalpy(M.setSat_p(P_out));
-    st_out := M.setState_ph(P_out, h_in);
-    T_out_C := M.temperature(st_out) - 273.15;
+    h_l_out := R290Tab.hl(P_out);
+    h_v_out := R290Tab.hv(P_out);
+    T_out_C := R290Tab.T_ph(P_out, h_in) - 273.15;
     if h_in <= h_l_out then
       x_out := 0.0;
     elseif h_in >= h_v_out then
