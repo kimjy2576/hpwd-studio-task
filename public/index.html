@@ -2035,6 +2035,7 @@ function HPWDStudio() {
   const [slotModal, setSlotModal] = useState(null);
   const [slotList, setSlotList] = useState([]);  // 슬롯 메타데이터 목록
   const [cycleOpen, setCycleOpen] = useState(false);  // Cycle Runner(Modelica) 모달
+  const [cycleL2Open, setCycleL2Open] = useState(false);  // L2(SEMI) Cycle Runner 모달
 
   // 편의를 위해 단일 선택 API를 다중으로 어댑트
   const selected = selectedIds.length > 0 ? selectedIds[selectedIds.length - 1] : null;
@@ -3447,6 +3448,8 @@ function HPWDStudio() {
         <div className="w-px h-5 bg-slate-200 mx-1.5" />
         <ToolBtn onClick={() => setCycleOpen(true)} icon={Activity} label="Run Cycle"
                  color="text-violet-600 hover:bg-violet-50" title="전체 L1 폐루프를 Modelica로 실행 (정착값 + 궤적)" />
+        <ToolBtn onClick={() => setCycleL2Open(true)} icon={Activity} label="Run Cycle L2"
+                 color="text-indigo-600 hover:bg-indigo-50" title="전체 L2(SEMI) 폐루프를 Modelica로 실행 (정착값 + 궤적 + SMER)" />
         <div className="w-px h-5 bg-slate-200 mx-1.5" />
         <ToolBtn onClick={exportAllCsv} icon={Download} label="Export CSV"
                  disabled={simState.history.length === 0}
@@ -5142,6 +5145,7 @@ function HPWDStudio() {
         onLoadTestRing={() => { const r = makeL1TestRing(); pushHistory(blocks, connections); setBlocks(r.blocks); setConnections(r.connections); return r; }}
         onLoadAirTestRing={() => { const r = makeAirTestRing(); pushHistory(blocks, connections); setBlocks(r.blocks); setConnections(r.connections); return r; }}
         onLoadCoupledTestRing={() => { const r = makeCoupledTestRing(); pushHistory(blocks, connections); setBlocks(r.blocks); setConnections(r.connections); return r; }} />}
+      {cycleL2Open && <CycleRunnerModalL2 onClose={() => setCycleL2Open(false)} />}
       <ChatFAB onSend={chatExecuteMock} />
     </div>
   );
@@ -6607,6 +6611,259 @@ function CycleRunnerModal({ onClose, blocks, connections, onLoadTestRing, onLoad
               </>
             )}
             </>)}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// =============================================================
+// CyclePlotL2 — L2 궤적 차트 (Pc/Pe[bar] + SH[K]); tmax는 데이터서 도출
+//   L1 CyclePlot은 tmax=120 + ramp선 하드코딩 → L2 커플드(300s)용으로 분리.
+// =============================================================
+function CyclePlotL2({ traj }) {
+  if (!traj || !Array.isArray(traj.Pc_bar) || !traj.Pc_bar.length
+      || !Array.isArray(traj.Pe_bar) || !Array.isArray(traj.SH_evap) || !Array.isArray(traj.time)) {
+    return <div className="text-xs font-mono text-slate-400 py-4 text-center">궤적 데이터 없음</div>;
+  }
+  const W = 920, H = 280, mL = 44, mR = 42, mT = 12, mB = 28;
+  const x0 = mL, x1 = W - mR, y0 = H - mB, y1 = mT;
+  const tmax = Math.max(...traj.time) || 1;
+  const pAll = [...traj.Pc_bar, ...traj.Pe_bar];
+  const pMax = Math.max(5, Math.ceil(Math.max(...pAll) / 5) * 5);
+  const shMax = Math.max(10, Math.ceil(Math.max(...traj.SH_evap) / 10) * 10);
+  const sx = v => x0 + (v / tmax) * (x1 - x0);
+  const syP = v => y0 - (v / pMax) * (y0 - y1);
+  const syS = v => y0 - (v / shMax) * (y0 - y1);
+  const mkPath = (arr, sy) => arr.map((v, i) => (i ? 'L' : 'M') + sx(traj.time[i]).toFixed(1) + ' ' + sy(v).toFixed(1)).join(' ');
+  const pTicks = [], shTicks = [], xTicks = [];
+  for (let p = 0; p <= pMax; p += 5) pTicks.push(p);
+  for (let k = 0; k <= shMax; k += 10) shTicks.push(k);
+  const xstep = tmax <= 130 ? 20 : (tmax <= 400 ? 60 : 120);
+  for (let sct = 0; sct <= tmax + 0.5; sct += xstep) xTicks.push(Math.round(sct));
+  const TK = { fontSize: 9, fill: '#94A3B8', fontFamily: 'JetBrains Mono, monospace' };
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto' }}>
+      {pTicks.map(p => (
+        <g key={'p' + p}>
+          <line x1={x0} y1={syP(p)} x2={x1} y2={syP(p)} stroke="#EEF2F6" strokeWidth="1" />
+          <text x={x0 - 6} y={syP(p) + 3} textAnchor="end" {...TK}>{p}</text>
+        </g>
+      ))}
+      {shTicks.map(k => (<text key={'s' + k} x={x1 + 6} y={syS(k) + 3} textAnchor="start" {...TK}>{k}</text>))}
+      {xTicks.map(sct => (<text key={'x' + sct} x={sx(sct)} y={y0 + 14} textAnchor="middle" {...TK}>{sct}</text>))}
+      <line x1={x0} y1={y0} x2={x1} y2={y0} stroke="#E2E8F0" />
+      <line x1={x0} y1={y1} x2={x0} y2={y0} stroke="#E2E8F0" />
+      <line x1={x1} y1={y1} x2={x1} y2={y0} stroke="#E2E8F0" />
+      <text x={x0 - 30} y={(y0 + y1) / 2} textAnchor="middle" transform={`rotate(-90 ${x0 - 30} ${(y0 + y1) / 2})`} style={{ fontSize: 10, fontWeight: 600, fill: '#475569', fontFamily: 'JetBrains Mono, monospace' }}>bar</text>
+      <text x={x1 + 24} y={(y0 + y1) / 2} textAnchor="middle" transform={`rotate(90 ${x1 + 24} ${(y0 + y1) / 2})`} style={{ fontSize: 10, fontWeight: 600, fill: '#0D9488', fontFamily: 'JetBrains Mono, monospace' }}>K (SH)</text>
+      <text x={(x0 + x1) / 2} y={H - 1} textAnchor="middle" {...TK}>time [s]</text>
+      <path d={mkPath(traj.Pc_bar, syP)} fill="none" stroke="#DC2626" strokeWidth="2.2" strokeLinejoin="round" />
+      <path d={mkPath(traj.Pe_bar, syP)} fill="none" stroke="#2563EB" strokeWidth="2.2" strokeLinejoin="round" />
+      <path d={mkPath(traj.SH_evap, syS)} fill="none" stroke="#0D9488" strokeWidth="2.2" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+// =============================================================
+// CycleRunnerModalL2 — 전체 L2(SEMI) 폐루프 실행 (/run_cycle_l2)
+//   L1 CycleRunnerModal의 L2판. 냉매(CycleDynL2)·커플드(Cycle_SEMI_full /
+//   Cycle_coupled_closed_L2air). 전 컴포넌트 SEMI MB HX. 고정 레퍼런스 모델만
+//   (L2는 캔버스 추출/standalone 공기 없음 — 공기루프는 커플드에 내장).
+// =============================================================
+const L2_CYCLE_MODELS = {
+  refrigerant: [
+    { m: 'CycleDynL2', lbl: '순수 냉매 SEMI', stop: 120,
+      desc: '전 컴포넌트 SEMI MB (Comp_Winandy + CondenserSS + EEV_MB + EvaporatorMBdyn). 공기 입구 고정 경계 → 순수 냉매 동작점.' },
+  ],
+  coupled: [
+    { m: 'Cycle_SEMI_full', lbl: '풀 SEMI', stop: 300,
+      desc: '냉매·공기 전 SEMI. 코일온도 상호결정 + Drum_L2 제습 → SMER. (CondenserSS_cpl + EvaporatorMBdyn_cpl + Fan_L2 + Drum_L2 폐공기루프)' },
+    { m: 'Cycle_coupled_closed_L2air', lbl: 'L1냉매 + L2공기', stop: 180,
+      desc: 'L1 냉매커플 HX (Cond/Evap_coupled) + L2 공기루프 (Fan_L2 손실분해 + Drum_L2 감률·흡착) + PI SH제어.' },
+  ],
+};
+
+function CycleRunnerModalL2({ onClose }) {
+  const [domain, setDomain] = useState('refrigerant'); // 'refrigerant' | 'coupled'
+  const [model, setModel] = useState('CycleDynL2');
+  const [running, setRunning] = useState(false);
+  const [result, setResult] = useState(null);     // {settled, trajectory, model, stop_time}
+  const [error, setError] = useState(null);
+
+  const status = window.HPWD_BACKEND || {};
+  const modelica = status.modelica || { available: false, reason: null };
+  const url = status.url || '';
+
+  const curList = L2_CYCLE_MODELS[domain];
+  const cur = curList.find(x => x.m === model) || curList[0];
+
+  const _fetchErr = async (r, path) => {
+    let detail = `HTTP ${r.status}`;
+    try { const j = await r.json(); detail = j.detail || j.error || detail; } catch (e) {}
+    return r.status === 404
+      ? `로컬 서버에 ${path} 가 없음 (${detail}). git pull 후 python server.py 재시작 필요.`
+      : `서버 응답 오류: ${detail}`;
+  };
+
+  const runCycle = async () => {
+    setRunning(true); setError(null); setResult(null);
+    try {
+      const r = await fetch(`${url}/run_cycle_l2`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: cur.m, stop_time: cur.stop, tolerance: 1e-6, intervals: null }),
+      });
+      if (!r.ok) { setError(await _fetchErr(r, '/run_cycle_l2')); setRunning(false); return; }
+      const data = await r.json();
+      if (data.error) { setError(data.error); setRunning(false); return; }
+      if (!data.trajectory || !Array.isArray(data.trajectory.Pc_bar) || !data.trajectory.Pc_bar.length) {
+        setError('결과에 궤적이 없음 — 서버 버전 확인 (git pull 후 python server.py 재시작).'); setRunning(false); return;
+      }
+      setResult({ settled: data.settled || {}, trajectory: data.trajectory, model: data.model, stop_time: data.stop_time });
+    } catch (e) { setError(`요청 실패: ${e.message}`); }
+    setRunning(false);
+  };
+
+  const L2_CARDS = [
+    { k: 'Pc_bar', n: 'Pc (응축)', u: 'bar', d: 2, c: 'text-red-600' },
+    { k: 'Pe_bar', n: 'Pe (증발)', u: 'bar', d: 2, c: 'text-blue-600' },
+    { k: 'mdot', n: 'ṁ 압축기', u: 'g/s', d: 2, c: 'text-violet-600', scale: 1000 },
+    { k: 'SH_evap', n: 'SH 과열도', u: 'K', d: 2, c: 'text-teal-600' },
+    { k: 'W', n: 'W 소요동력', u: 'W', d: 1, c: 'text-amber-600' },
+    { k: 'SMER', n: 'SMER', u: 'kg/kWh', d: 2, c: 'text-emerald-600' },
+    { k: 'condensate', n: '응축수율', u: 'g/s', d: 2, c: 'text-cyan-600', scale: 1000 },
+    { k: 'X', n: '의류 함수율', u: '', d: 3, c: 'text-sky-600' },
+    { k: 'Q_cond', n: 'Q 응축', u: 'W', d: 0, c: 'text-orange-600' },
+    { k: 'Q_evap', n: 'Q 증발', u: 'W', d: 0, c: 'text-indigo-600' },
+    { k: 'T_cond_air_C', n: '열풍(응축후)', u: '°C', d: 1, c: 'text-rose-600' },
+    { k: 'opening', n: 'EEV 개도', u: '%', d: 0, c: 'text-slate-600' },
+  ];
+  const s = result?.settled || {};
+  const isCoupled = domain === 'coupled';
+  const NODES = [
+    ['🌀', 'Compressor', running ? '…' : 'Winandy', 'from-blue-600 to-blue-400'],
+    ['♨', 'Condenser', ('Pc_bar' in s) ? `${s.Pc_bar.toFixed(2)} bar` : '— bar', 'from-amber-600 to-amber-400'],
+    ['🔻', 'EEV', ('opening' in s) ? `${s.opening.toFixed(0)}% 개도` : '개도', 'from-red-600 to-red-400'],
+    ['❄', 'Evaporator', ('Pe_bar' in s) ? `${s.Pe_bar.toFixed(2)} bar` : '— bar', 'from-teal-600 to-teal-400'],
+  ];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4" onMouseDown={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[92vh] overflow-y-auto" onMouseDown={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-200 sticky top-0 bg-white z-10">
+          <div className="flex items-center gap-2.5">
+            <div className="w-2.5 h-2.5 rounded bg-indigo-500" />
+            <span className="font-bold text-slate-800">Cycle Runner <span className="text-slate-400 font-medium text-sm">· 전체 L2 폐루프 · SEMI (Modelica)</span></span>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-700 text-2xl leading-none px-2">×</button>
+        </div>
+
+        {!modelica.available ? (
+          <div className="p-10 text-center text-slate-500 text-sm">
+            <div className="text-3xl mb-3">⚠️</div>
+            <div className="font-semibold text-slate-700 mb-1.5">Modelica 엔진이 필요합니다</div>
+            <div className="font-mono text-xs text-slate-400">{modelica.reason || 'Local 백엔드(omc) 연결 필요'}</div>
+          </div>
+        ) : (
+          <div className="p-5 space-y-4">
+            {/* 도메인 토글: 냉매 / 커플드 */}
+            <div className="flex border border-slate-200 rounded-lg overflow-hidden bg-slate-50 w-fit">
+              {[['refrigerant', '냉매 사이클', 'Comp·Cond·EEV·Evap'], ['coupled', '커플드', '냉매 ⟷ 공기 + SMER']].map(([d, lbl, sub]) => (
+                <button key={d} onClick={() => { setDomain(d); setModel(L2_CYCLE_MODELS[d][0].m); setResult(null); setError(null); }} disabled={running}
+                  className={`px-4 py-2 text-sm font-bold transition text-left ${domain === d ? 'bg-white text-indigo-700 shadow-[inset_0_-2px_0_0_#4F46E5]' : 'text-slate-500 hover:text-slate-700'}`}>
+                  {lbl}<span className="block font-mono text-[10px] text-slate-400">{sub}</span>
+                </button>
+              ))}
+            </div>
+
+            {/* 모델 선택 + 시뮬 설정 + Run */}
+            <div className="flex items-end gap-4 flex-wrap">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wide">사이클 모델</label>
+                <div className="flex border border-slate-200 rounded-lg overflow-hidden bg-slate-50">
+                  {curList.map(({ m, lbl }) => (
+                    <button key={m} onClick={() => { setModel(m); setResult(null); }} disabled={running}
+                      className={`px-3.5 py-2 text-sm font-semibold transition text-left ${model === m ? 'bg-white text-slate-800 shadow-[inset_0_-2px_0_0_#4F46E5]' : 'text-slate-500 hover:text-slate-700'}`}>
+                      {lbl}<span className="block font-mono text-[10px] text-slate-400">{m}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wide">시뮬 설정</label>
+                <div className="flex gap-2 text-xs font-mono text-slate-600">
+                  <span className="bg-slate-100 border border-slate-200 rounded px-2.5 py-2">stop <b className="text-slate-800">{cur.stop}</b>s</span>
+                  <span className="bg-slate-100 border border-slate-200 rounded px-2.5 py-2">dassl</span>
+                  <span className="bg-slate-100 border border-slate-200 rounded px-2.5 py-2">1s 스텝</span>
+                  <span className="bg-slate-100 border border-slate-200 rounded px-2.5 py-2">tol <b className="text-slate-800">1e-6</b></span>
+                </div>
+              </div>
+              <button onClick={runCycle} disabled={running}
+                className="ml-auto inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white rounded-xl px-5 py-2.5 font-bold text-sm shadow-lg shadow-indigo-500/25 transition">
+                {running ? (<><span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" /> 실행 중…</>) : '▶ Run Cycle'}
+              </button>
+            </div>
+            <div className="text-xs text-slate-500 leading-relaxed">{cur.desc}</div>
+
+            {/* loop schematic */}
+            <div className="flex items-center gap-1 flex-wrap bg-slate-50 border border-slate-200 rounded-xl px-4 py-3">
+              {NODES.map(([ic, nm, vv, grad], i) => (
+                <React.Fragment key={nm}>
+                  <div className="flex flex-col items-center gap-1 min-w-[76px]">
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg text-white bg-gradient-to-br ${grad} shadow`}>{ic}</div>
+                    <div className="text-xs font-bold text-slate-700">{nm}</div>
+                    <div className="font-mono text-[10px] text-slate-400">{vv}</div>
+                  </div>
+                  {i < 3 && (
+                    <div className="flex-1 min-w-[24px] text-center text-slate-300 self-start mt-2.5">
+                      <div className="text-base leading-none">→</div>
+                    </div>
+                  )}
+                </React.Fragment>
+              ))}
+              <div className="w-full text-center text-[10px] font-mono text-indigo-600 font-bold mt-1.5 opacity-80">
+                {isCoupled ? '냉매 폐루프 + 공기 폐루프(Drum→Fan→Evap→Cond) 동시 결합 · 코일온도 상호결정' : '냉매 폐루프 · 공기측 고정 경계 (전 컴포넌트 SEMI)'}
+              </div>
+            </div>
+
+            {running && (
+              <div className="text-center text-xs font-mono text-slate-400 py-1">omc 컴파일 + {cur.stop}s 적분 중… ({isCoupled ? '커플드 stiff, 수십초~' : '~10–15s'})</div>
+            )}
+            {error && (
+              <div className="bg-red-50 border border-red-200 text-red-700 text-xs font-mono rounded-lg px-3 py-2 whitespace-pre-wrap">{error}</div>
+            )}
+
+            {/* results */}
+            {result && result.trajectory && (
+              <>
+                <div>
+                  <div className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider mb-2.5">
+                    정착값 <span className="font-mono text-indigo-600 normal-case">{result.model}</span> · t={result.stop_time}s
+                  </div>
+                  <div className="grid grid-cols-4 gap-2.5">
+                    {L2_CARDS.filter(c => c.k in s).map(c => (
+                      <div key={c.k} className="border border-slate-100 rounded-xl px-3 py-2.5 bg-slate-50/60">
+                        <div className="text-[11px] font-medium text-slate-400 mb-1">{c.n}</div>
+                        <div className={`font-mono text-xl font-bold leading-none ${c.c}`}>
+                          {(s[c.k] * (c.scale || 1)).toFixed(c.d)}
+                          <span className="font-mono text-[11px] text-slate-400 ml-0.5 font-medium">{c.u}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider mb-2">기동 과도 → 정착 궤적</div>
+                  <div className="flex gap-4 flex-wrap mb-1 text-xs font-semibold text-slate-600">
+                    <span className="inline-flex items-center gap-1.5"><i className="w-3 h-0.5 rounded bg-red-600 inline-block" />Pc (HP)</span>
+                    <span className="inline-flex items-center gap-1.5"><i className="w-3 h-0.5 rounded bg-blue-600 inline-block" />Pe (LP)</span>
+                    <span className="inline-flex items-center gap-1.5"><i className="w-3 h-0.5 rounded bg-teal-600 inline-block" />SH</span>
+                  </div>
+                  <CyclePlotL2 traj={result.trajectory} />
+                </div>
+              </>
+            )}
           </div>
         )}
       </div>

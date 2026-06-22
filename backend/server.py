@@ -68,6 +68,8 @@ try:
                                   run_air_cycle as _run_air_cycle,
                                   run_coupled_cycle as _run_coupled_cycle, COUPLED_MODELS,
                                   run_canvas_coupled_cycle as _run_canvas_coupled_cycle,
+                                  run_cycle_l2 as _run_cycle_l2, ALL_L2_MODELS,
+                                  CYCLE_MODELS_L2, COUPLED_MODELS_L2,
                                   COMPONENT_REGISTRY, CYCLE_MODELS, HELMHOLTZ_PATH)
     _modelica['imported'] = True
     print(f"[OK]   Modelica bridge imported (components: {list(COMPONENT_REGISTRY)})")
@@ -162,6 +164,7 @@ def health():
             "reason": m_why,
             "components": list(COMPONENT_REGISTRY) if _modelica['imported'] else [],
             "cycles": list(CYCLE_MODELS) if _modelica['imported'] else [],
+            "cycles_l2": list(ALL_L2_MODELS) if _modelica['imported'] else [],
         },
     }
 
@@ -341,6 +344,36 @@ def run_coupled_cycle(req: CycleRequest):
                              settled=r['settled'], trajectory=r['trajectory'])
     except Exception as e:
         return CycleResponse(model=model, error=f"{type(e).__name__}: {e}")
+
+
+class CycleL2Request(BaseModel):
+    model: str = "CycleDynL2"    # CycleDynL2 | Cycle_SEMI_full | Cycle_coupled_closed_L2air
+    stop_time: float = 120.0
+    tolerance: float = 1e-6
+    intervals: int | None = None   # None → stopTime(1s 스텝): 풀SEMI init 안정화
+
+
+@app.post("/run_cycle_l2", response_model=CycleResponse)
+def run_cycle_l2_endpoint(req: CycleL2Request):
+    """L2 SEMI 사이클(냉매 CycleDynL2 / 커플드 Cycle_SEMI_full·_L2air) transient 시뮬.
+
+    L1 /run_cycle·/run_coupled_cycle의 L2판 — 전 컴포넌트 SEMI MB HX. 냉매(Pc/Pe/
+    SH/W)+커플드(X/응축수/SMER) 통합 반환. 모델별 패키지·로드파일은 bridge
+    레지스트리(ALL_L2_MODELS)가 조회. omc 필요(컴파일 포함 수십초~수분).
+    """
+    ok, why = _modelica_status()
+    if not ok:
+        return CycleResponse(model=req.model, error=f"Modelica 엔진 사용 불가: {why}.")
+    if req.model not in ALL_L2_MODELS:
+        return CycleResponse(model=req.model,
+                             error=f"미지원 L2 사이클 모델: '{req.model}'. 지원: {list(ALL_L2_MODELS)}")
+    try:
+        r = _run_cycle_l2(model=req.model, stop_time=req.stop_time,
+                          tolerance=req.tolerance, intervals=req.intervals)
+        return CycleResponse(model=r['model'], stop_time=r['stop_time'],
+                             settled=r['settled'], trajectory=r['trajectory'])
+    except Exception as e:
+        return CycleResponse(model=req.model, error=f"{type(e).__name__}: {e}")
 
 
 @app.post("/run_canvas_coupled_cycle", response_model=CanvasCycleResponse)

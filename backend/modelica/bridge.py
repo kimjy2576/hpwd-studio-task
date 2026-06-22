@@ -900,6 +900,144 @@ def run_coupled_cycle(model='Cycle_coupled_closed', stop_time=180.0, tolerance=1
 
 
 # ══════════════════════════════════════════════════════════════════
+# L2 (SEMI) 사이클 실행 — 전 컴포넌트 SEMI MB HX 기반
+#   L1 run_cycle/run_coupled_cycle의 L2(SEMI) 통합판. 차이 3가지:
+#   (1) 모델마다 패키지 prefix·로드파일 다름 → 레지스트리(ALL_L2_MODELS)로 조회
+#   (2) 탑레벨 모니터 변수 없음 → 컴포넌트 변수(comp./cond./evap./drum.)로 추출
+#   (3) SEMI evap/cond 변수명이 L1커플드와 다름(P_c vs P_cond, W_elec vs W,
+#       SH_out vs SH 등) → 통합 후보맵(_L2_KPI)이 첫 존재 컬럼을 채택해 흡수
+# ══════════════════════════════════════════════════════════════════
+_L2_BASE_MO = ['R290Tab.mo', 'HPWDair.mo', 'HPWD.mo', 'HXCorr.mo', 'EvapUA.mo',
+               'EevMB.mo', 'CondMBe.mo', 'EvapMBe.mo', 'CycleMBe.mo']
+
+# flat KPI → (후보 CSV 컬럼들[첫 존재 채택], 변환). SEMI/L1커플드 명명 모두 흡수.
+_L2_KPI = {
+    'Pc_bar':       (['cond.P_c', 'cond.P_cond'],         lambda v: v / 1e5),
+    'Pe_bar':       (['evap.P_e', 'evap.P_evap'],         lambda v: v / 1e5),
+    'mdot':         (['comp.m_dot'],                      lambda v: v),
+    'W':            (['comp.W_elec', 'comp.W'],           lambda v: v),
+    'SH_evap':      (['evap.SH_out', 'evap.SH'],          lambda v: v),
+    'SC_cond':      (['cond.SC_out', 'cond.SC'],          lambda v: v),
+    'opening':      (['eev.opening_calc', 'eev.opening'], lambda v: v),
+    'Q_cond':       (['cond.Q_total'],                    lambda v: v),
+    'Q_evap':       (['evap.Q_total'],                    lambda v: v),
+    'condensate':   (['evap.condensate', 'evap.m_cond'],  lambda v: v),
+    'X':            (['drum.X'],                           lambda v: v),
+    'f_dry':        (['drum.f_dry'],                       lambda v: v),
+    'T_cond_air_C': (['cond.T_air_out'],                  lambda v: v - 273.15),
+    'T_evap_air_C': (['evap.T_air_out'],                  lambda v: v - 273.15),
+    'fan_dp':       (['fan.dp'],                           lambda v: v),
+}
+
+# L2 사이클 레지스트리: 패키지 prefix + 로드파일 + 공기루프 여부 + 라벨
+CYCLE_MODELS_L2 = {
+    'CycleDynL2': {
+        'pkg': 'CycleMBe', 'files': _L2_BASE_MO, 'air': False,
+        'label': '순수 L2 냉매 (전 SEMI, 공기경계 고정)'},
+}
+COUPLED_MODELS_L2 = {
+    'Cycle_SEMI_full': {
+        'pkg': 'CplSEMI', 'files': _L2_BASE_MO + ['Coupled.mo', 'CoupledSEMI.mo'],
+        'air': True, 'label': '전체 SEMI 시스템 (냉매·공기 전 SEMI)'},
+    'Cycle_coupled_closed_L2air': {
+        'pkg': 'HPWDcpl', 'files': ['R290Tab.mo', 'HPWD.mo', 'EvapUA.mo',
+                                    'Control.mo', 'Cycle.mo', 'HPWDair.mo', 'Coupled.mo'],
+        'air': True, 'label': 'L1 냉매커플 + L2 공기 폐루프'},
+}
+ALL_L2_MODELS = {**CYCLE_MODELS_L2, **COUPLED_MODELS_L2}
+
+
+def _parse_l2_csv(csv_path, n_traj=80):
+    """L2 CSV → flat KPI(settled, traj) + 파생 SMER.
+
+    _L2_KPI 후보맵으로 모델 무관하게 존재 컬럼만 추출. SMER[kg/kWh]는 적분:
+    응축수율(evap.condensate) 적분 가능 → ∫condensate dt / (∫W dt /3.6e6);
+    아니면 drum 제습량(m_cl_dry·ΔX, m_cl_dry=3.0 고정) 기반.
+    """
+    rows = list(_csv.reader(open(csv_path)))
+    hdr, data = rows[0], rows[1:]
+    col = {h: i for i, h in enumerate(hdr)}
+    sel = {}                                   # flat → (col_idx, fn)
+    for flat, (cands, fn) in _L2_KPI.items():
+        for c in cands:
+            if c in col:
+                sel[flat] = (col[c], fn); break
+
+    def kpis(row):
+        return {flat: fn(float(row[ci])) for flat, (ci, fn) in sel.items()}
+
+    t = [float(r[col['time']]) for r in data]
+
+    def integ(vals):                           # 사다리꼴 적분
+        return sum((vals[i] + vals[i - 1]) * (t[i] - t[i - 1]) / 2.0
+                   for i in range(1, len(vals)))
+
+    settled = kpis(data[-1])
+    # 파생 SMER (적분 기반)
+    Wcol = sel.get('W', (None,))[0]
+    if Wcol is not None:
+        E = integ([float(r[Wcol]) for r in data])          # 압축기 일 [J]
+        water = None
+        if 'evap.condensate' in col:                       # 응축수율 적분 [kg]
+            water = integ([float(r[col['evap.condensate']]) for r in data])
+        elif 'drum.X' in col:                              # drum 제습량 [kg]
+            X = [float(r[col['drum.X']]) for r in data]
+            water = 3.0 * (X[0] - X[-1])
+        if water and water > 1e-9 and E > 1e-6:
+            settled['E_comp_kWh'] = E / 3.6e6
+            settled['water_kg'] = water
+            settled['SMER'] = water / (E / 3.6e6)          # kg/kWh
+
+    step = max(1, len(data) // n_traj)
+    idx = list(range(0, len(data), step))
+    if idx[-1] != len(data) - 1:
+        idx.append(len(data) - 1)
+    traj = {'time': [t[i] for i in idx]}
+    for k in sel:
+        traj[k] = [kpis(data[i]).get(k) for i in idx]
+    return settled, traj
+
+
+def run_cycle_l2(model='CycleDynL2', stop_time=120.0, tolerance=1e-6,
+                 intervals=None, n_traj=80, timeout=1800):
+    """L2 SEMI 사이클(냉매 또는 커플드)을 transient 시뮬 → 정착값 + 궤적.
+
+    L1 run_cycle/run_coupled_cycle의 통합 L2판. 모델별 패키지·로드파일·모니터를
+    레지스트리(ALL_L2_MODELS)에서 조회해 단일 경로로 처리.
+    intervals 미지정 시 stopTime(=1s 스텝) — 풀 SEMI init 안정화 트릭(DASSL
+    max-step 작게 묶여 t=0 init/첫스텝 수렴). omc 필요, 컴파일 포함 수십초~수분.
+
+    반환: {model, package, has_air, stop_time, settled{...,SMER}, trajectory{...}}
+    """
+    cfg = ALL_L2_MODELS.get(model)
+    if cfg is None:
+        raise ValueError(f"미지원 L2 모델: {model} (지원: {list(ALL_L2_MODELS)})")
+    if intervals is None:
+        intervals = max(1, int(round(stop_time)))          # 1s 스텝
+    pkg = cfg['pkg']
+    wdir = os.path.join(_WORK, 'l2_' + model)
+    os.makedirs(wdir, exist_ok=True)
+    loads = "".join(
+        f'loadFile("{_fs(os.path.join(MODELICA_DIR, f))}"); getErrorString();\n'
+        for f in cfg['files'])
+    mos = (f'loadModel(Modelica); getErrorString();\n'
+           f'loadFile("{_fs(HELMHOLTZ_PATH)}"); getErrorString();\n'
+           f'{loads}'
+           f'simulate({pkg}.{model}, stopTime={float(stop_time):.6g}, '
+           f'numberOfIntervals={int(intervals)}, method="dassl", '
+           f'tolerance={float(tolerance):.3g}, outputFormat="csv"); getErrorString();\n')
+    open(os.path.join(wdir, 'run.mos'), 'w').write(mos)
+    r = subprocess.run([_omc_bin(), "run.mos"], cwd=wdir,
+                       capture_output=True, text=True, timeout=timeout)
+    csv_path = os.path.join(wdir, f"{pkg}.{model}_res.csv")
+    if not os.path.exists(csv_path):
+        raise RuntimeError(f"L2 사이클 실행 실패 ({model}):\n{(r.stdout + r.stderr)[-1500:]}")
+    settled, traj = _parse_l2_csv(csv_path, n_traj)
+    return {'model': model, 'package': pkg, 'has_air': cfg['air'],
+            'stop_time': float(stop_time), 'settled': settled, 'trajectory': traj}
+
+
+# ══════════════════════════════════════════════════════════════════
 # 캔버스 토폴로지 → 커플드 .mo 자동생성 (냉매 closed + 공기 closed 결합)
 #   냉매 링(comp→cond→eev→evap)과 공기 링(drum→[filter]→fan→evap→cond)을
 #   각각 추출. evap/cond는 양쪽이 공유하는 merged HX(한 번만 선언, 냉매 chain은
