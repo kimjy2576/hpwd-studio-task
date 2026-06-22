@@ -277,13 +277,14 @@ def _ensure_built(comp, timeout=240):
     os.makedirs(bdir, exist_ok=True)
     # 기본값으로 .mo 생성 (런타임에 -override로 바꿀 것)
     mo = spec['template'](dict(spec['param_defaults']), dict(spec['build_bc']))
-    open(os.path.join(bdir, "CanvasGen.mo"), "w").write(mo)
+    open(os.path.join(bdir, "CanvasGen.mo"), "w", encoding="utf-8").write(mo)
     # 추가 .mo 의존 (예: HX는 EvapUA.mo) — HPWD.mo 뒤, CanvasGen.mo 앞에 로드
     extra_loads = "".join(
         f'loadFile("{_fs(os.path.join(MODELICA_DIR, f))}"); getErrorString();\n'
         for f in spec.get('extra_mo', []))
     mos = (f'loadModel(Modelica); getErrorString();\n'
            f'loadFile("{_fs(HELMHOLTZ_PATH)}"); getErrorString();\n'
+           f'loadFile("{_fs(os.path.join(MODELICA_DIR, "R290Tab.mo"))}"); getErrorString();\n'
            f'loadFile("{_fs(os.path.join(MODELICA_DIR, "HPWD.mo"))}"); getErrorString();\n'
            f'{extra_loads}'
            f'loadFile("{_fs(os.path.join(bdir, "CanvasGen.mo"))}"); getErrorString();\n'
@@ -362,7 +363,7 @@ CYCLE_MODELS = {
     'Cycle_L1_ramp_PI': {'has_opening': True},    # PI(SH 제어) — 현재 메인
     'Cycle_L1_dyn':     {'has_opening': False},   # 구버전
 }
-_CYCLE_MO = ['HPWD.mo', 'EvapUA.mo', 'Control.mo', 'Cycle.mo']
+_CYCLE_MO = ['R290Tab.mo', 'HPWD.mo', 'EvapUA.mo', 'Control.mo', 'Cycle.mo']
 _CYCLE_MONITORS = ['Pc_bar', 'Pe_bar', 'mdot_comp', 'SH_evap', 'SC_cond',
                    'charge', 'opening', 'comp.W']
 
@@ -584,7 +585,7 @@ def run_canvas_cycle(topology, settings, raw_params=True):
     mo, meta = generate_cycle_mo(topology, settings)
     wdir = os.path.join(_WORK, 'cycle_gen')
     os.makedirs(wdir, exist_ok=True)
-    open(os.path.join(wdir, 'GenCycle.mo'), 'w').write(mo)
+    open(os.path.join(wdir, 'GenCycle.mo'), 'w', encoding='utf-8').write(mo)
     loads = "".join(
         f'loadFile("{_fs(os.path.join(MODELICA_DIR, f))}"); getErrorString();\n'
         for f in _CYCLE_MO)
@@ -786,7 +787,7 @@ def run_air_cycle(topology, settings, raw_params=True):
     mo, meta = generate_air_cycle_mo(topology, settings)
     wdir = os.path.join(_WORK, 'air_cycle_gen')
     os.makedirs(wdir, exist_ok=True)
-    open(os.path.join(wdir, 'GenAirCycle.mo'), 'w').write(mo)
+    open(os.path.join(wdir, 'GenAirCycle.mo'), 'w', encoding='utf-8').write(mo)
     loads = "".join(
         f'loadFile("{_fs(os.path.join(MODELICA_DIR, f))}"); getErrorString();\n'
         for f in _AIR_CYCLE_MO)
@@ -816,7 +817,7 @@ def run_air_cycle(topology, settings, raw_params=True):
 #   냉매 링과 공기 링을 동시에 결합 — 코일온도가 prescribed가 아니라 상호결정됨.
 #   (냉매 Run=공기입구 고정, 공기 Run=코일온도 고정, 커플드=둘 다 안 고정)
 # ══════════════════════════════════════════════════════════════════
-_COUPLED_MO = ['HPWD.mo', 'EvapUA.mo', 'Control.mo', 'Cycle.mo', 'HPWDair.mo', 'Coupled.mo']
+_COUPLED_MO = ['R290Tab.mo', 'HPWD.mo', 'EvapUA.mo', 'Control.mo', 'Cycle.mo', 'HPWDair.mo', 'Coupled.mo']
 COUPLED_MODELS = ('Cycle_coupled_closed', 'Cycle_coupled_open')
 
 # 커플드 KPI 매핑: flat 이름 → (CSV 컬럼, 변환). 모델 변수는 component-qualified.
@@ -1187,7 +1188,7 @@ def run_canvas_coupled_cycle(ref_topology, air_topology, settings=None,
     mo, meta = generate_coupled_mo(ref_topology, air_topology, settings or {})
     wdir = os.path.join(_WORK, 'coupled_canvas')
     os.makedirs(wdir, exist_ok=True)
-    open(os.path.join(wdir, 'GenCoupled.mo'), 'w').write(mo)
+    open(os.path.join(wdir, 'GenCoupled.mo'), 'w', encoding='utf-8').write(mo)
     loads = "".join(
         f'loadFile("{_fs(os.path.join(MODELICA_DIR, f))}"); getErrorString();\n'
         for f in _COUPLED_MO)
