@@ -714,6 +714,11 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
       <div class="sidebar-group-header"><span class="sidebar-group-icon">M</span> Moist Air</div>
       <div class="sidebar-item" data-model="moistair-direct"><span class="fidelity-badge badge-direct">DIRECT</span> ASHRAE 정형식</div>
     </div>
+     <div class="sidebar-group">
+      <div class="sidebar-group-header"><span class="sidebar-group-icon">∂</span> 수치·수렴</div>
+      <div class="sidebar-item" data-model="numerics-r290tab"><span class="fidelity-badge badge-direct">ENABLER</span> R290Tab (p,h) 물성층</div>
+    </div>
+
 
     <div class="sidebar-section">Cross-cutting Phenomena</div>
 
@@ -5108,7 +5113,125 @@ table.params td.num { text-align: right; font-family: 'JetBrains Mono', monospac
   </div>
 </template>
 
-<template id="tpl-todo">
+<template id="tpl-numerics-r290tab">
+  <div class="doc-header">
+    <div class="doc-eyebrow">NUMERICS / Refrigerant Property Layer</div>
+    <h1 class="doc-title">R290Tab — (p,h) Tabulated Media<span class="doc-title-badge badge-direct">ENABLER</span></h1>
+    <div class="doc-subtitle">물리 모델이 아니라 <b>수치 enabler</b>. CoolProp 프로판 실기체를 미분가능 (p,h) 테이블로 감싸 — HelmholtzMedia 직접호출의 폐루프 init·Jacobian 실패를 해결. 모든 L2 사이클 수렴의 근본.</div>
+  </div>
+
+  <div class="doc-section">
+    <h2>모델 성격 (중요) — 물리 ≠ 수치</h2>
+    <p style="font-size:13px;color:var(--ink-soft);line-height:1.65;margin:6px 0">이 페이지는 fidelity ladder가 <b>아닙니다</b>. 냉매물성의 <b>물리</b>는 CoolProp(R290 실기체 EoS)로 고정 — R290Tab은 그 물리를 <b>OpenModelica 솔버가 폐루프에서 풀 수 있는 형태</b>로 감싼 수치층입니다. OFF/SEMI/ON 전 레벨이 공유하는 공통 인프라.</p>
+    <div class="nomenclature">
+      <div class="nomen-group">
+        <div class="nomen-group-title">물리 (불변)</div>
+        <div class="nomen-row"><span class="nomen-desc">프로판 실기체 상태방정식 — CoolProp (Span-Wagner류 HEOS)</span></div>
+        <div class="nomen-row"><span class="nomen-desc">포화선·2상·과열·과냉 전 영역 물성</span></div>
+      </div>
+      <div class="nomen-group">
+        <div class="nomen-group-title">수치 (R290Tab이 더하는 것)</div>
+        <div class="nomen-row"><span class="nomen-desc">(p,h) 직접 기저 — 역변환 제거</span></div>
+        <div class="nomen-row"><span class="nomen-desc">Pre-tabulated + 미분가능 — 외부호출·finite-diff 제거</span></div>
+        <div class="nomen-row"><span class="nomen-desc">Region-aware 2φ 해석 도함수 — 포화 경계 안정</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>왜 필요한가 — HelmholtzMedia 직접호출의 두 실패</h2>
+    <div class="ref-card">
+      <div class="ref-title">실패 ① (p,T)↔(p,h) 역변환 bracketing</div>
+      <div class="ref-body">압축기 흡입가열·HX 2상 경계서 <code>setState_phX</code> 내부 Newton/bracketing이 폐루프 <b>init</b>(rest 상태)에서 발산 → 시뮬레이션 hang. 사이클은 (p,h)로 작동하는데 EoS는 (p,T) 기저라 매 평가가 역변환을 요구.</div>
+    </div>
+    <div class="ref-card">
+      <div class="ref-title">실패 ② Numeric Jacobian 비용·불안정</div>
+      <div class="ref-body">외부 EoS 함수를 finite-difference로 미분하면 (1) 매 Jacobian 평가가 비싸고, (2) 2상 경계서 도함수에 수치 노이즈·불연속 → 강결합 비선형계 솔버 실패. 결합사이클일수록 심화.</div>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>해법 — 4가지 수치 장치</h2>
+    <h3>① (p,h) 직접 기저</h3>
+    <p style="font-size:13px;color:var(--ink-soft);line-height:1.6;margin:6px 0">60×160 (p,h) 격자. <code>T_ph</code>·<code>rho_ph</code> 등이 (p,h)를 직접 입력받아 보간 → <b>역변환 0</b>. 사이클이 자연히 (p,h)로 작동(엔탈피 보존·압축기/EEV가 h 전달)이라 native 정합.</p>
+    <h3>② Pre-tabulated CoolProp</h3>
+    <p style="font-size:13px;color:var(--ink-soft);line-height:1.6;margin:6px 0">포화선 <code>SAT*</code>[60] + 2D <code>TBL*</code>[60×160] 상수 테이블. <code>media/emit_full.py</code>가 CoolProp에서 생성. <b>런타임 외부호출 0</b> — 순수 Modelica 상수 + 보간.</p>
+    <h3>③ 해석 도함수 (핵심)</h3>
+    <p style="font-size:13px;color:var(--ink-soft);line-height:1.6;margin:6px 0">각 물성함수에 <code>annotation(derivative=X_d)</code>. 도함수 <b>자체도 pre-tabulated</b> — <code>TBLdrdp</code>(∂ρ/∂p|h), <code>TBLdrdh</code>(∂ρ/∂h|p), <code>TBLdTdp</code>, <code>TBLdTdh</code>. 솔버 Jacobian이 이 테이블을 직접 사용 → <b>finite-diff 0</b>.</p>
+    <h3>④ Region-aware 2φ (#294 fix)</h3>
+    <p style="font-size:13px;color:var(--ink-soft);line-height:1.6;margin:6px 0"><code>PHg</code> 상영역 정수 플래그(액/2상/증기) + 포화선 도함수(<code>SATdhldp</code>·<code>SATdrholdp</code> 등)로 <b>2상 경계서 도함수 불연속·발산 제거</b>. 이게 결합모델이 rest에서 0 conv failure로 수렴하는 결정타.</p>
+  </div>
+
+  <div class="doc-section">
+    <h2>수학 — (p,h) 보간 + 해석 도함수</h2>
+    <h3>2D bilinear 보간</h3>
+    <div class="eq-block">$$\phi(p,h) = \mathrm{bilin}\!\left(\Phi_{ij};\ \tfrac{p-p_i}{\Delta p},\ \tfrac{h-h_j}{\Delta h}\right), \quad i=\mathrm{idxP}(p),\ j=\mathrm{idxH}(h)$$</div>
+    <h3>해석 도함수 (테이블 직접)</h3>
+    <div class="eq-block">$$\left.\frac{\partial \rho}{\partial p}\right|_h = \mathrm{bilin}(\mathrm{TBLdrdp}), \qquad \left.\frac{\partial \rho}{\partial h}\right|_p = \mathrm{bilin}(\mathrm{TBLdrdh})$$</div>
+    <p style="font-size:13px;color:var(--ink-soft);line-height:1.6;margin:6px 0">유량·에너지식의 <code>der(ρ)</code>는 체인룰: $\dot\rho = (\partial\rho/\partial p)_h\,\dot p + (\partial\rho/\partial h)_p\,\dot h$ — 두 편미분 모두 테이블에서 직접. 솔버가 finite-diff 안 함.</p>
+    <h3>포화선 (1D)</h3>
+    <div class="eq-block">$$T_{sat}(p)=\mathrm{lin1}(\mathrm{SATTsat}), \qquad \frac{dT_{sat}}{dp}=\mathrm{lin1}(\mathrm{SATdTsdp})$$</div>
+  </div>
+
+  <div class="doc-section">
+    <h2>인터페이스 (함수 API)</h2>
+    <div class="nomenclature">
+      <div class="nomen-group">
+        <div class="nomen-group-title">포화선 (p)</div>
+        <div class="nomen-row"><span class="nomen-sym">Tsat, hl, hv</span><span class="nomen-desc">포화온도·포화액/증기 엔탈피</span><span class="nomen-unit">K, J/kg</span></div>
+        <div class="nomen-row"><span class="nomen-sym">rhol, rhov</span><span class="nomen-desc">포화 액/증기 밀도</span><span class="nomen-unit">kg/m³</span></div>
+        <div class="nomen-row"><span class="nomen-sym">mul·muv·kl·kv·cpl·cpv</span><span class="nomen-desc">포화 전달물성</span><span class="nomen-unit">SI</span></div>
+      </div>
+      <div class="nomen-group">
+        <div class="nomen-group-title">(p,h) 2D</div>
+        <div class="nomen-row"><span class="nomen-sym">T_ph, rho_ph</span><span class="nomen-desc">온도·밀도</span><span class="nomen-unit">K, kg/m³</span></div>
+        <div class="nomen-row"><span class="nomen-sym">mu_ph·k_ph·cp_ph</span><span class="nomen-desc">전달물성</span><span class="nomen-unit">SI</span></div>
+        <div class="nomen-row"><span class="nomen-desc">전 함수에 <code>_d</code> 해석 도함수 companion</span></div>
+      </div>
+    </div>
+    <p style="font-size:13px;color:var(--ink-soft);line-height:1.6;margin:8px 0">※ scalar 다중추출은 <code>HPWDhx.satProps(p)</code>가 (h_l, h_v, cp_dew, cp_bub)를 record 회피 형태로 묶어 반환.</p>
+  </div>
+
+  <div class="doc-section">
+    <h2>Code Mapping</h2>
+    <div class="code-map">
+<span class="file">modelica/R290Tab.mo → package R290Tab</span><br>
+├─ <span class="func">상수 nP=60, nH=160</span>      <span class="desc">— (p,h) 격자 (P 1.5–35 bar, h 120–800 kJ/kg)</span><br>
+├─ <span class="func">SAT*[60]</span>              <span class="desc">— 포화선 (Tsat/hl/hv/rho·전달·도함수)</span><br>
+├─ <span class="func">TBL*[60×160]</span>         <span class="desc">— 2D (T/rho/mu/k/cp + drdp/drdh/dTdp/dTdh)</span><br>
+├─ <span class="func">PHg[60×160]</span>          <span class="desc">— 상영역 플래그 (액/2상/증기)</span><br>
+├─ <span class="func">idxP, idxH, lin1, bilin, bilinC</span> <span class="desc">— 인덱스 + 보간</span><br>
+├─ <span class="func">Tsat .. rho_ph ..</span>     <span class="desc">— 물성함수 + annotation(derivative=X_d)</span><br>
+└─ <span class="func">Tsat_d .. rho_ph_d ..</span> <span class="desc">— 해석 도함수 (도함수 테이블 보간)</span><br>
+<br>
+<span class="file">media/emit_full.py</span>           <span class="desc">— CoolProp → 테이블 생성기 (재생성: python3 emit_full.py)</span>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>검증 상태</h2>
+    <div class="val-grid">
+      <div class="val-card"><div class="val-label">결합사이클 수렴</div><div class="val-value">0 fail<span class="val-unit">rest서 init, homotopy 불필요</span></div></div>
+      <div class="val-card"><div class="val-label">2φ #294 fix</div><div class="val-value">해결<span class="val-unit">region-aware 해석 도함수</span></div></div>
+      <div class="val-card"><div class="val-label">vs HelmholtzMedia</div><div class="val-value">hang 제거<span class="val-unit">폐루프 init/Jacobian</span></div></div>
+      <div class="val-card"><div class="val-label">Modelica 구현</div><div class="val-value">완료<span class="val-unit">R290Tab.mo (937줄), commit a69239e</span></div></div>
+    </div>
+  </div>
+
+  <div class="doc-section">
+    <h2>적용 범위 + 한계</h2>
+    <p><b>✅ 적용 가능</b>: HPWD R290 사이클 전 운전점 (P 1.5–35 bar, h 120–800 kJ/kg). 압축기·HX·EEV 결합 동특성.</p>
+    <p><b>⚠️ 한계</b>:</p>
+    <ul style="color: var(--ink-soft); font-size: 13px; line-height: 1.8;">
+      <li><b>격자 범위 밖</b> — clamp 필요 (<code>P_ec = max(1.5e5, min(P, 35e5))</code>). 컴포넌트가 물성조회 전 clamp.</li>
+      <li><b>R290 전용</b> — 다른 냉매는 emit_full.py로 테이블 재생성.</li>
+      <li><b>보간 오차</b> — bilinear → 60×160 격자 내. 격자 세분으로 제어, 격자점은 CoolProp 정확.</li>
+      <li><b>정적 테이블</b> — CoolProp 버전/물성 갱신 시 재생성 의무.</li>
+    </ul>
+  </div>
+</template>
+
+  <template id="tpl-todo">
   <div class="doc-header">
     <div class="doc-eyebrow" id="todo-eyebrow"></div>
     <h1 class="doc-title" id="todo-title"></h1>
