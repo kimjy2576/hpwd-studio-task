@@ -2034,8 +2034,7 @@ function HPWDStudio() {
   // Save/Load 슬롯 모달: 'save' | 'load' | null
   const [slotModal, setSlotModal] = useState(null);
   const [slotList, setSlotList] = useState([]);  // 슬롯 메타데이터 목록
-  const [cycleOpen, setCycleOpen] = useState(false);  // Cycle Runner(Modelica) 모달
-  const [cycleL2Open, setCycleL2Open] = useState(false);  // L2(SEMI) Cycle Runner 모달
+  const [cycleOpen, setCycleOpen] = useState(false);  // Cycle Runner(Modelica) 통합 L1/L2 모달
 
   // 편의를 위해 단일 선택 API를 다중으로 어댑트
   const selected = selectedIds.length > 0 ? selectedIds[selectedIds.length - 1] : null;
@@ -3447,9 +3446,7 @@ function HPWDStudio() {
         <ToolBtn onClick={resetSim} icon={RotateCcw} label="Reset" color="text-amber-600 hover:bg-amber-50" />
         <div className="w-px h-5 bg-slate-200 mx-1.5" />
         <ToolBtn onClick={() => setCycleOpen(true)} icon={Activity} label="Run Cycle"
-                 color="text-violet-600 hover:bg-violet-50" title="전체 L1 폐루프를 Modelica로 실행 (정착값 + 궤적)" />
-        <ToolBtn onClick={() => setCycleL2Open(true)} icon={Activity} label="Run Cycle L2"
-                 color="text-indigo-600 hover:bg-indigo-50" title="전체 L2(SEMI) 폐루프를 Modelica로 실행 (정착값 + 궤적 + SMER)" />
+                 color="text-violet-600 hover:bg-violet-50" title="L1/L2 통합 사이클 러너 — 냉매·공기·커플드 테스트 링 구축 & 실행" />
         <div className="w-px h-5 bg-slate-200 mx-1.5" />
         <ToolBtn onClick={exportAllCsv} icon={Download} label="Export CSV"
                  disabled={simState.history.length === 0}
@@ -5141,11 +5138,10 @@ function HPWDStudio() {
           currentConnectionCount={connections.length}
         />
       )}
-      {cycleOpen && <CycleRunnerModal onClose={() => setCycleOpen(false)} blocks={blocks} connections={connections}
+      {cycleOpen && <UnifiedCycleRunnerModal onClose={() => setCycleOpen(false)} blocks={blocks} connections={connections}
         onLoadTestRing={() => { const r = makeL1TestRing(); pushHistory(blocks, connections); setBlocks(r.blocks); setConnections(r.connections); return r; }}
         onLoadAirTestRing={() => { const r = makeAirTestRing(); pushHistory(blocks, connections); setBlocks(r.blocks); setConnections(r.connections); return r; }}
         onLoadCoupledTestRing={() => { const r = makeCoupledTestRing(); pushHistory(blocks, connections); setBlocks(r.blocks); setConnections(r.connections); return r; }} />}
-      {cycleL2Open && <CycleRunnerModalL2 onClose={() => setCycleL2Open(false)} />}
       <ChatFAB onSend={chatExecuteMock} />
     </div>
   );
@@ -6861,6 +6857,296 @@ function CycleRunnerModalL2({ onClose }) {
                     <span className="inline-flex items-center gap-1.5"><i className="w-3 h-0.5 rounded bg-teal-600 inline-block" />SH</span>
                   </div>
                   <CyclePlotL2 traj={result.trajectory} />
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// =============================================================
+// AirPlotFlex — 공기 사이클 궤적 (X[함수율] 좌축 + 공기온도 우축); tmax 데이터유도,
+//   키 유연(L1: T_*_out_C / L2: T_*_air_C 모두 수용)
+// =============================================================
+function AirPlotFlex({ traj }) {
+  if (!traj || !Array.isArray(traj.X) || !traj.X.length || !Array.isArray(traj.time)) {
+    return <div className="text-xs font-mono text-slate-400 py-4 text-center">궤적 데이터 없음</div>;
+  }
+  const pick = (cands) => { for (const c of cands) if (Array.isArray(traj[c]) && traj[c].length) return traj[c]; return null; };
+  const tC = pick(['T_cond_air_C', 'T_cond_out_C']);
+  const tE = pick(['T_evap_air_C', 'T_evap_out_C']);
+  const tD = pick(['T_drum_out_C']);
+  const W = 920, H = 280, mL = 44, mR = 46, mT = 12, mB = 28;
+  const x0 = mL, x1 = W - mR, y0 = H - mB, y1 = mT;
+  const tmax = Math.max(...traj.time) || 1;
+  const temps = [tC, tE, tD].filter(Boolean).reduce((a, b) => a.concat(b), []);
+  const tMax = temps.length ? Math.max(60, Math.ceil(Math.max(...temps) / 10) * 10) : 60;
+  const xMax = Math.max(0.6, Math.ceil(Math.max(...traj.X) * 10) / 10);
+  const sx = v => x0 + (v / tmax) * (x1 - x0);
+  const syX = v => y0 - (v / xMax) * (y0 - y1);
+  const syT = v => y0 - (v / tMax) * (y0 - y1);
+  const mk = (arr, sy) => arr.map((v, i) => (i ? 'L' : 'M') + sx(traj.time[i]).toFixed(1) + ' ' + sy(v).toFixed(1)).join(' ');
+  const TK = { fontSize: 9, fill: '#94A3B8', fontFamily: 'JetBrains Mono, monospace' };
+  const xstep = tmax <= 130 ? 20 : (tmax <= 400 ? 60 : 120);
+  const xticks = []; for (let sct = 0; sct <= tmax + 0.5; sct += xstep) xticks.push(Math.round(sct));
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto' }}>
+      {xticks.map(sct => (<text key={'x' + sct} x={sx(sct)} y={y0 + 14} textAnchor="middle" {...TK}>{sct}</text>))}
+      <line x1={x0} y1={y0} x2={x1} y2={y0} stroke="#E2E8F0" />
+      <line x1={x0} y1={y1} x2={x0} y2={y0} stroke="#E2E8F0" />
+      <line x1={x1} y1={y1} x2={x1} y2={y0} stroke="#E2E8F0" />
+      <text x={x0 - 30} y={(y0 + y1) / 2} textAnchor="middle" transform={`rotate(-90 ${x0 - 30} ${(y0 + y1) / 2})`} style={{ fontSize: 10, fontWeight: 600, fill: '#0891B2', fontFamily: 'JetBrains Mono, monospace' }}>X</text>
+      <text x={x1 + 26} y={(y0 + y1) / 2} textAnchor="middle" transform={`rotate(90 ${x1 + 26} ${(y0 + y1) / 2})`} style={{ fontSize: 10, fontWeight: 600, fill: '#DC2626', fontFamily: 'JetBrains Mono, monospace' }}>°C</text>
+      <text x={(x0 + x1) / 2} y={H - 1} textAnchor="middle" {...TK}>time [s]</text>
+      {tC && <path d={mk(tC, syT)} fill="none" stroke="#DC2626" strokeWidth="2" strokeLinejoin="round" />}
+      {tD && <path d={mk(tD, syT)} fill="none" stroke="#64748B" strokeWidth="2" strokeLinejoin="round" />}
+      {tE && <path d={mk(tE, syT)} fill="none" stroke="#2563EB" strokeWidth="2" strokeLinejoin="round" />}
+      <path d={mk(traj.X, syX)} fill="none" stroke="#0891B2" strokeWidth="2.6" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+// =============================================================
+// UnifiedCycleRunnerModal — L1/L2 통합 사이클 러너 (하나의 버튼)
+//   피델리티 토글(L1/L2) × 도메인 탭(냉매/공기/커플드) = 6셀.
+//   모든 셀 단일 버튼 "🧪 테스트 링 구축 & 실행":
+//     L1 → 검증된 테스트 링을 캔버스에 구축 후 추출·실행 (canvas 엔드포인트)
+//     L2 → 고정 레퍼런스 SEMI 모델 실행 (/run_cycle_l2)
+//   결과는 키-인식 어댑티브(후보키 해석 → 6셀 이질 키 흡수) + kind별 플롯.
+// =============================================================
+const UNIFIED_CARD_DEFS = [
+  { keys: ['Pc_bar'], n: 'Pc 응축', u: 'bar', d: 2, c: 'text-red-600' },
+  { keys: ['Pe_bar'], n: 'Pe 증발', u: 'bar', d: 2, c: 'text-blue-600' },
+  { keys: ['mdot', 'mdot_comp'], n: 'ṁ 압축기', u: 'g/s', d: 2, c: 'text-violet-600', scale: 1000 },
+  { keys: ['SH_evap'], n: 'SH 과열도', u: 'K', d: 2, c: 'text-teal-600' },
+  { keys: ['SC_cond'], n: 'SC 과냉도', u: 'K', d: 2, c: 'text-amber-700' },
+  { keys: ['W'], n: 'W 소요동력', u: 'W', d: 1, c: 'text-amber-600' },
+  { keys: ['SMER'], n: 'SMER', u: 'kg/kWh', d: 2, c: 'text-emerald-600' },
+  { keys: ['charge'], n: '충전량', u: 'g', d: 1, c: 'text-emerald-700', scale: 1000 },
+  { keys: ['opening'], n: 'EEV 개도', u: '%', d: 0, c: 'text-slate-600' },
+  { keys: ['X'], n: '함수율 X', u: '', d: 3, c: 'text-cyan-700' },
+  { keys: ['condensate', 'm_cond', 'm_evap'], n: '제습율', u: 'g/s', d: 2, c: 'text-blue-600', scale: 1000 },
+  { keys: ['mdot_da'], n: '풍량', u: 'kg/s', d: 3, c: 'text-violet-600' },
+  { keys: ['T_cond_air_C', 'T_cond_out_C'], n: '열풍(응축후)', u: '°C', d: 1, c: 'text-rose-600' },
+  { keys: ['T_evap_air_C', 'T_evap_out_C'], n: '증발기후', u: '°C', d: 1, c: 'text-sky-600' },
+  { keys: ['T_drum_out_C'], n: '드럼출구', u: '°C', d: 1, c: 'text-slate-500' },
+  { keys: ['fan_dp'], n: '팬 정압', u: 'Pa', d: 0, c: 'text-amber-600' },
+  { keys: ['fan_W'], n: '팬 동력', u: 'W', d: 0, c: 'text-orange-600' },
+  { keys: ['Q_cond'], n: 'Q 응축', u: 'W', d: 0, c: 'text-orange-700' },
+  { keys: ['Q_evap', 'Q_latent'], n: 'Q 증발', u: 'W', d: 0, c: 'text-indigo-600' },
+];
+
+function UnifiedCycleRunnerModal({ onClose, blocks, connections, onLoadTestRing, onLoadAirTestRing, onLoadCoupledTestRing }) {
+  const [fidelity, setFidelity] = useState('L1');       // 'L1' | 'L2'
+  const [domain, setDomain] = useState('refrigerant');  // 'refrigerant' | 'air' | 'coupled'
+  const [running, setRunning] = useState(false);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState(null);
+  const [detected, setDetected] = useState(null);
+
+  const status = window.HPWD_BACKEND || {};
+  const modelica = status.modelica || { available: false, reason: null };
+  const url = status.url || '';
+  const isAir = domain === 'air';
+  const isL2 = fidelity === 'L2';
+
+  // 동적 Tailwind 클래스 함정 회피 — 리터럴 조건부
+  const btnCls = isL2
+    ? 'bg-indigo-600 hover:bg-indigo-700 shadow-lg shadow-indigo-500/25'
+    : 'bg-violet-600 hover:bg-violet-700 shadow-lg shadow-violet-500/25';
+  const dotCls = isL2 ? 'bg-indigo-500' : 'bg-violet-500';
+  const accentText = isL2 ? 'text-indigo-600' : 'text-violet-600';
+
+  const _fetchErr = async (r, path) => {
+    let detail = `HTTP ${r.status}`;
+    try { const j = await r.json(); detail = j.detail || j.error || detail; } catch (e) {}
+    return r.status === 404
+      ? `로컬 서버에 ${path} 가 없음 (${detail}). git pull 후 python server.py 재시작 필요.`
+      : `서버 응답 오류: ${detail}`;
+  };
+  const _post = async (path, body, trajKey) => {
+    const r = await fetch(`${url}${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (!r.ok) { setError(await _fetchErr(r, path)); return null; }
+    const data = await r.json();
+    if (data.error) { setError(data.error); return null; }
+    if (!data.trajectory || !Array.isArray(data.trajectory[trajKey]) || !data.trajectory[trajKey].length) {
+      setError('결과에 궤적이 없음 — 서버 버전 확인 (git pull 후 python server.py 재시작).'); return null;
+    }
+    return data;
+  };
+
+  const runCell = async () => {
+    setRunning(true); setError(null); setResult(null); setDetected(null);
+    try {
+      let data = null;
+      if (isL2) {
+        const M = { refrigerant: ['CycleDynL2', 120], air: ['AirRingL2', 300], coupled: ['Cycle_SEMI_full', 300] }[domain];
+        data = await _post('/run_cycle_l2', { model: M[0], stop_time: M[1], tolerance: 1e-6, intervals: null }, isAir ? 'X' : 'Pc_bar');
+      } else if (domain === 'refrigerant') {
+        const r = onLoadTestRing();
+        const topo = extractCycleTopology(r.blocks, r.connections);
+        if (topo.error) { setError(topo.error); setRunning(false); return; }
+        setDetected(topo.ringLabels);
+        data = await _post('/run_canvas_cycle', { topology: topo, settings: { charge_g: 89, p_rest_bar: 9, t_ramp: 20, stop_time: 120, tolerance: 1e-6, intervals: 240 } }, 'Pc_bar');
+      } else if (domain === 'air') {
+        const r = onLoadAirTestRing();
+        const topo = extractAirTopology(r.blocks, r.connections);
+        if (topo.error) { setError(topo.error); setRunning(false); return; }
+        setDetected(topo.ringLabels);
+        data = await _post('/run_air_cycle', { topology: topo, settings: { stop_time: 300, tolerance: 1e-6, intervals: 300 } }, 'X');
+      } else { // coupled
+        const r = onLoadCoupledTestRing();
+        const refTopo = extractCycleTopology(r.blocks, r.connections);
+        const airTopo = extractAirTopology(r.blocks, r.connections);
+        if (refTopo.error || airTopo.error) { setError('토폴로지 추출 실패: ' + (refTopo.error || airTopo.error)); setRunning(false); return; }
+        data = await _post('/run_canvas_coupled_cycle', { ref_topology: refTopo, air_topology: airTopo, settings: { stop_time: 180, tolerance: 1e-6, intervals: 300 } }, 'Pc_bar');
+      }
+      if (data) setResult({ settled: data.settled || {}, trajectory: data.trajectory, model: data.model, stop_time: data.stop_time });
+    } catch (e) { setError(`요청 실패: ${e.message}`); }
+    setRunning(false);
+  };
+
+  const s = result?.settled || {};
+  const cardVal = (def) => { for (const k of def.keys) if (k in s && s[k] != null) return s[k] * (def.scale || 1); return null; };
+  const visCards = UNIFIED_CARD_DEFS.map(def => ({ def, v: cardVal(def) })).filter(x => x.v != null);
+
+  const refNodes = [
+    ['🌀', 'Comp', isL2 ? 'Winandy' : '이론'],
+    ['♨', 'Cond', ('Pc_bar' in s) ? `${s.Pc_bar.toFixed(1)}bar` : '—'],
+    ['🔻', 'EEV', ('opening' in s) ? `${s.opening.toFixed(0)}%` : '개도'],
+    ['❄', 'Evap', ('Pe_bar' in s) ? `${s.Pe_bar.toFixed(1)}bar` : '—'],
+  ];
+  const airNodes = [
+    ['🧺', 'Drum', ('X' in s) ? `X ${s.X.toFixed(3)}` : '함수율'],
+    ['🌬', 'Fan', ('fan_dp' in s) ? `${s.fan_dp.toFixed(0)}Pa` : 'Δp'],
+    ['❄', 'Evap', (('T_evap_air_C' in s) || ('T_evap_out_C' in s)) ? `${(s.T_evap_air_C ?? s.T_evap_out_C).toFixed(1)}°C` : '제습'],
+    ['♨', 'Cond', (('T_cond_air_C' in s) || ('T_cond_out_C' in s)) ? `${(s.T_cond_air_C ?? s.T_cond_out_C).toFixed(1)}°C` : '열풍'],
+  ];
+  const refGrads = ['from-blue-600 to-blue-400', 'from-amber-600 to-amber-400', 'from-red-600 to-red-400', 'from-teal-600 to-teal-400'];
+  const airGrads = ['from-cyan-700 to-cyan-500', 'from-sky-600 to-sky-400', 'from-blue-600 to-blue-400', 'from-amber-600 to-amber-400'];
+  const nodes = isAir ? airNodes : refNodes;
+  const grads = isAir ? airGrads : refGrads;
+
+  const DESC = {
+    L1: {
+      refrigerant: 'L1 냉매 링 (Comp→Cond→EEV→Evap). 검증된 테스트 링을 캔버스에 구축 후 추출·실행 (/run_canvas_cycle). 공기입구 고정.',
+      air: 'L1 공기 링 (Drum→Fan→Evap→Cond). 코일온도 고정 경계. 테스트 링 구축 후 추출·실행 (/run_air_cycle).',
+      coupled: 'L1 커플드 (냉매 링 + 공기 링, Evap·Cond 공유 merged HX). 테스트 링 구축 후 추출·실행 (/run_canvas_coupled_cycle).',
+    },
+    L2: {
+      refrigerant: 'L2 냉매 (CycleDynL2 — 전 컴포넌트 SEMI MB). 레퍼런스 모델 실행 (/run_cycle_l2). 공기경계 고정.',
+      air: 'L2 공기 (AirRingL2 — Drum_L2 감률·흡착 + Fan_L2 손실분해, 코일 고정온도). 레퍼런스 모델 실행 (/run_cycle_l2).',
+      coupled: 'L2 커플드 (Cycle_SEMI_full — 냉매·공기 전 SEMI, 코일온도 상호결정 + SMER). 레퍼런스 모델 실행 (/run_cycle_l2).',
+    },
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4" onMouseDown={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[92vh] overflow-y-auto" onMouseDown={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-200 sticky top-0 bg-white z-10">
+          <div className="flex items-center gap-2.5">
+            <div className={`w-2.5 h-2.5 rounded ${dotCls}`} />
+            <span className="font-bold text-slate-800">Cycle Runner <span className="text-slate-400 font-medium text-sm">· L1/L2 통합 폐루프 (Modelica)</span></span>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-700 text-2xl leading-none px-2">×</button>
+        </div>
+
+        {!modelica.available ? (
+          <div className="p-10 text-center text-slate-500 text-sm">
+            <div className="text-3xl mb-3">⚠️</div>
+            <div className="font-semibold text-slate-700 mb-1.5">Modelica 엔진이 필요합니다</div>
+            <div className="font-mono text-xs text-slate-400">{modelica.reason || 'Local 백엔드(omc) 연결 필요'}</div>
+          </div>
+        ) : (
+          <div className="p-5 space-y-4">
+            {/* 피델리티(L1/L2) + 도메인(냉매/공기/커플드) 탭 */}
+            <div className="flex items-center gap-3 flex-wrap">
+              <div className="flex border border-slate-200 rounded-lg overflow-hidden bg-slate-50">
+                {[['L1', 'L1', 'UA·이론'], ['L2', 'L2', 'SEMI MB']].map(([f, lbl, sub]) => (
+                  <button key={f} onClick={() => { setFidelity(f); setResult(null); setError(null); setDetected(null); }} disabled={running}
+                    className={`px-5 py-2 text-sm font-bold transition text-left ${fidelity === f ? (f === 'L2' ? 'bg-white text-indigo-700 shadow-[inset_0_-2px_0_0_#4F46E5]' : 'bg-white text-violet-700 shadow-[inset_0_-2px_0_0_#7C3AED]') : 'text-slate-500 hover:text-slate-700'}`}>
+                    {lbl}<span className="block font-mono text-[10px] text-slate-400">{sub}</span>
+                  </button>
+                ))}
+              </div>
+              <div className="flex border border-slate-200 rounded-lg overflow-hidden bg-slate-50">
+                {[['refrigerant', '냉매', 'Comp·Cond·EEV·Evap'], ['air', '공기', 'Drum·Fan·Evap·Cond'], ['coupled', '커플드', '냉매 ⟷ 공기']].map(([d, lbl, sub]) => (
+                  <button key={d} onClick={() => { setDomain(d); setResult(null); setError(null); setDetected(null); }} disabled={running}
+                    className={`px-4 py-2 text-sm font-bold transition text-left ${domain === d ? 'bg-white text-cyan-700 shadow-[inset_0_-2px_0_0_#0891B2]' : 'text-slate-500 hover:text-slate-700'}`}>
+                    {lbl}<span className="block font-mono text-[10px] text-slate-400">{sub}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* 설명 + 단일 실행 버튼 */}
+            <div className="flex items-start gap-4 flex-wrap">
+              <div className="text-xs text-slate-500 leading-relaxed flex-1 min-w-[300px]">
+                {DESC[fidelity][domain]}
+                {detected && (<span className={`block mt-0.5 font-mono text-cyan-600`}>감지: {detected.join(' → ')} → {detected[0]}</span>)}
+              </div>
+              <button onClick={runCell} disabled={running}
+                className={`inline-flex items-center gap-2 ${btnCls} disabled:opacity-60 text-white rounded-xl px-5 py-2.5 font-bold text-sm transition`}>
+                {running ? (<><span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" /> 실행 중…</>) : '🧪 테스트 링 구축 & 실행'}
+              </button>
+            </div>
+
+            {/* 스키매틱 */}
+            <div className="flex items-center gap-1 flex-wrap bg-slate-50 border border-slate-200 rounded-xl px-4 py-3">
+              {nodes.map(([ic, nm, vv], i) => (
+                <React.Fragment key={nm + i}>
+                  <div className="flex flex-col items-center gap-1 min-w-[76px]">
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg text-white bg-gradient-to-br ${grads[i]} shadow`}>{ic}</div>
+                    <div className="text-xs font-bold text-slate-700">{nm}</div>
+                    <div className="font-mono text-[10px] text-slate-400">{vv}</div>
+                  </div>
+                  {i < nodes.length - 1 && (<div className="flex-1 min-w-[20px] text-center text-slate-300 self-start mt-2.5"><div className="text-base leading-none">→</div></div>)}
+                </React.Fragment>
+              ))}
+              <div className={`w-full text-center text-[10px] font-mono ${accentText} font-bold mt-1.5 opacity-80`}>
+                {isAir ? '공기 폐루프 (volRef = 압력앵커)' : (domain === 'coupled' ? '냉매 + 공기 폐루프 동시결합 (Evap·Cond 공유 HX)' : '냉매 폐루프 (vol4 → Comp)')}
+              </div>
+            </div>
+
+            {running && (<div className="text-center text-xs font-mono text-slate-400 py-1">omc 컴파일 + 적분 중… {isAir ? '(공기측 빠름)' : (isL2 && domain === 'coupled' ? '(커플드 stiff, 수십초~)' : '')}</div>)}
+            {error && (<div className="bg-red-50 border border-red-200 text-red-700 text-xs font-mono rounded-lg px-3 py-2 whitespace-pre-wrap">{error}</div>)}
+
+            {/* 결과 */}
+            {result && result.trajectory && (
+              <>
+                <div>
+                  <div className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider mb-2.5">
+                    정착값 <span className={`font-mono ${accentText} normal-case`}>{result.model || `${fidelity} · ${domain}`}</span>
+                    {(result.trajectory.time && result.trajectory.time.length) ? ` · t=${result.trajectory.time[result.trajectory.time.length - 1].toFixed(0)}s` : ''}
+                  </div>
+                  <div className="grid grid-cols-4 gap-2.5">
+                    {visCards.map(({ def, v }) => (
+                      <div key={def.n} className="border border-slate-100 rounded-xl px-3 py-2.5 bg-slate-50/60">
+                        <div className="text-[11px] font-medium text-slate-400 mb-1">{def.n}</div>
+                        <div className={`font-mono text-xl font-bold leading-none ${def.c}`}>
+                          {v.toFixed(def.d)}<span className="font-mono text-[11px] text-slate-400 ml-0.5 font-medium">{def.u}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider mb-2">{isAir ? '함수율 + 공기온도 궤적' : '기동 과도 → 정착 궤적'}</div>
+                  <div className="flex gap-4 flex-wrap mb-1 text-xs font-semibold text-slate-600">
+                    {isAir ? (<>
+                      <span className="inline-flex items-center gap-1.5 text-cyan-600"><i className="w-3 h-0.5 rounded bg-cyan-600 inline-block" />함수율 X</span>
+                      <span className="inline-flex items-center gap-1.5"><i className="w-3 h-0.5 rounded bg-red-600 inline-block" />열풍</span>
+                      <span className="inline-flex items-center gap-1.5"><i className="w-3 h-0.5 rounded bg-blue-600 inline-block" />증발기후</span>
+                    </>) : (<>
+                      <span className="inline-flex items-center gap-1.5"><i className="w-3 h-0.5 rounded bg-red-600 inline-block" />Pc (HP)</span>
+                      <span className="inline-flex items-center gap-1.5"><i className="w-3 h-0.5 rounded bg-blue-600 inline-block" />Pe (LP)</span>
+                      <span className="inline-flex items-center gap-1.5"><i className="w-3 h-0.5 rounded bg-teal-600 inline-block" />SH</span>
+                    </>)}
+                  </div>
+                  {isAir ? <AirPlotFlex traj={result.trajectory} /> : <CyclePlotL2 traj={result.trajectory} />}
                 </div>
               </>
             )}
