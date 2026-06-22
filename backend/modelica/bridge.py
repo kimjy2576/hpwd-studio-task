@@ -921,30 +921,38 @@ _L2_KPI = {
     'opening':      (['eev.opening_calc', 'eev.opening'], lambda v: v),
     'Q_cond':       (['cond.Q_total'],                    lambda v: v),
     'Q_evap':       (['evap.Q_total'],                    lambda v: v),
-    'condensate':   (['evap.condensate', 'evap.m_cond'],  lambda v: v),
+    'condensate':   (['evap.condensate', 'evap.m_cond', 'drum.m_evap'], lambda v: v),
     'X':            (['drum.X'],                           lambda v: v),
     'f_dry':        (['drum.f_dry'],                       lambda v: v),
-    'T_cond_air_C': (['cond.T_air_out'],                  lambda v: v - 273.15),
-    'T_evap_air_C': (['evap.T_air_out'],                  lambda v: v - 273.15),
     'fan_dp':       (['fan.dp'],                           lambda v: v),
+    'fan_W':        (['fan.W_sh', 'fan.W_op'],            lambda v: v),
+    'T_cond_air_C': (['cond.T_air_out', 'cond.T_out'],   lambda v: v - 273.15),
+    'T_evap_air_C': (['evap.T_air_out', 'evap.T_out'],   lambda v: v - 273.15),
+    'T_drum_out_C': (['drum.T_out'],                      lambda v: v - 273.15),
+    'T_cl_C':       (['drum.T_cl'],                        lambda v: v - 273.15),
 }
 
 # L2 사이클 레지스트리: 패키지 prefix + 로드파일 + 공기루프 여부 + 라벨
 CYCLE_MODELS_L2 = {
     'CycleDynL2': {
-        'pkg': 'CycleMBe', 'files': _L2_BASE_MO, 'air': False,
+        'pkg': 'CycleMBe', 'files': _L2_BASE_MO, 'air': False, 'kind': 'refrigerant',
         'label': '순수 L2 냉매 (전 SEMI, 공기경계 고정)'},
+}
+AIR_MODELS_L2 = {
+    'AirRingL2': {
+        'pkg': '', 'files': ['HPWDair.mo', 'TestAir.mo'], 'air': True, 'kind': 'air',
+        'label': 'L2 공기 링 (Drum_L2 감률·흡착 + Fan_L2 손실분해, 코일 고정온도)'},
 }
 COUPLED_MODELS_L2 = {
     'Cycle_SEMI_full': {
         'pkg': 'CplSEMI', 'files': _L2_BASE_MO + ['Coupled.mo', 'CoupledSEMI.mo'],
-        'air': True, 'label': '전체 SEMI 시스템 (냉매·공기 전 SEMI)'},
+        'air': True, 'kind': 'coupled', 'label': '전체 SEMI 시스템 (냉매·공기 전 SEMI)'},
     'Cycle_coupled_closed_L2air': {
         'pkg': 'HPWDcpl', 'files': ['R290Tab.mo', 'HPWD.mo', 'EvapUA.mo',
                                     'Control.mo', 'Cycle.mo', 'HPWDair.mo', 'Coupled.mo'],
-        'air': True, 'label': 'L1 냉매커플 + L2 공기 폐루프'},
+        'air': True, 'kind': 'coupled', 'label': 'L1 냉매커플 + L2 공기 폐루프'},
 }
-ALL_L2_MODELS = {**CYCLE_MODELS_L2, **COUPLED_MODELS_L2}
+ALL_L2_MODELS = {**CYCLE_MODELS_L2, **AIR_MODELS_L2, **COUPLED_MODELS_L2}
 
 
 def _parse_l2_csv(csv_path, n_traj=80):
@@ -1015,6 +1023,7 @@ def run_cycle_l2(model='CycleDynL2', stop_time=120.0, tolerance=1e-6,
     if intervals is None:
         intervals = max(1, int(round(stop_time)))          # 1s 스텝
     pkg = cfg['pkg']
+    target = f"{pkg}.{model}" if pkg else model   # pkg='' → top-level 모델(AirRingL2)
     wdir = os.path.join(_WORK, 'l2_' + model)
     os.makedirs(wdir, exist_ok=True)
     loads = "".join(
@@ -1023,17 +1032,18 @@ def run_cycle_l2(model='CycleDynL2', stop_time=120.0, tolerance=1e-6,
     mos = (f'loadModel(Modelica); getErrorString();\n'
            f'loadFile("{_fs(HELMHOLTZ_PATH)}"); getErrorString();\n'
            f'{loads}'
-           f'simulate({pkg}.{model}, stopTime={float(stop_time):.6g}, '
+           f'simulate({target}, stopTime={float(stop_time):.6g}, '
            f'numberOfIntervals={int(intervals)}, method="dassl", '
            f'tolerance={float(tolerance):.3g}, outputFormat="csv"); getErrorString();\n')
     open(os.path.join(wdir, 'run.mos'), 'w').write(mos)
     r = subprocess.run([_omc_bin(), "run.mos"], cwd=wdir,
                        capture_output=True, text=True, timeout=timeout)
-    csv_path = os.path.join(wdir, f"{pkg}.{model}_res.csv")
+    csv_path = os.path.join(wdir, f"{target}_res.csv")
     if not os.path.exists(csv_path):
         raise RuntimeError(f"L2 사이클 실행 실패 ({model}):\n{(r.stdout + r.stderr)[-1500:]}")
     settled, traj = _parse_l2_csv(csv_path, n_traj)
     return {'model': model, 'package': pkg, 'has_air': cfg['air'],
+            'kind': cfg.get('kind', 'refrigerant'),
             'stop_time': float(stop_time), 'settled': settled, 'trajectory': traj}
 
 
