@@ -197,4 +197,46 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     connect(comp.port_b, snk.port);
   end TestCompChamber;
 
+  // ── FinTube 기하 계산 검증 (spec → 면적), Python FinTubeGeo 대조 ──
+  model TestGeoFT "FinTube 파생 기하 (Dc/A_total/A_i/A_c/...) — spec에서 계산"
+    // ─ spec (물리 치수) ─
+    parameter Modelica.Units.SI.Length Do = 0.00952 "튜브 외경";
+    parameter Modelica.Units.SI.Length Di = 0.00822 "튜브 내경";
+    parameter Modelica.Units.SI.Length Pt = 0.0254 "transverse pitch";
+    parameter Modelica.Units.SI.Length Pl = 0.022 "longitudinal pitch";
+    parameter Integer Nr = 4 "row 수 (공기방향)";
+    parameter Integer Nt = 12 "row당 튜브 수";
+    parameter Real FPI = 14.0 "fins per inch";
+    parameter Modelica.Units.SI.Length fin_thickness = 0.00012;
+    parameter Modelica.Units.SI.Length W = 0.5 "폭 (튜브길이방향)";
+    parameter Modelica.Units.SI.Length H = 0.3 "높이 (전면)";
+    parameter Modelica.Units.SI.Length D = 0.08 "깊이 (공기방향)";
+    parameter Integer N_seg = 10;
+    parameter Boolean staggered = true;
+    constant Real pi = Modelica.Constants.pi;
+    // ─ 파생 기하 (FinTubeGeo.from_spec 이식) ─
+    final parameter Real Dc = Do + 2.0*fin_thickness "collar 직경";
+    final parameter Real fin_pitch = 0.0254/FPI;
+    final parameter Integer N_fins = integer(floor(W/fin_pitch + 0.5));
+    final parameter Real gap = fin_pitch - fin_thickness;
+    final parameter Real A_fr = H*W "전면적";
+    final parameter Real Xm = Pt/2.0;
+    final parameter Real XL = if staggered then sqrt((Pt/2.0)^2 + Pl^2)/2.0 else Pl/2.0;
+    final parameter Real A_plate = H*D;
+    final parameter Real tube_hole = Nr*Nt*pi*Dc^2/4.0;
+    final parameter Real A_one_fin = 2.0*(A_plate - tube_hole);
+    final parameter Real A_fin = N_fins*A_one_fin "핀 면적";
+    final parameter Real A_tube_ext = Nr*Nt*pi*Dc*N_fins*gap "핀사이 튜브외면";
+    final parameter Real A_total = A_fin + A_tube_ext "공기측 전열면적";
+    final parameter Real A_i = pi*Di*W*Nr*Nt "냉매측 내면적";
+    final parameter Real sigma = max((Pt - Dc)*gap/(Pt*fin_pitch), 0.1) "자유유동비";
+    final parameter Real A_c = sigma*A_fr "최소 자유유동면적";
+    final parameter Real Dh = 4.0*A_c*D/A_total "공기측 수력직경";
+    final parameter Real L_seg = W/N_seg "세그먼트당 튜브길이";
+    final parameter Real A_i_seg = pi*Di*L_seg "세그먼트당 내면적";
+    Real probe;  // 시뮬용 더미 (파라미터 평가 강제)
+  equation
+    probe = A_total + A_i_seg;
+  end TestGeoFT;
+
 end HPWDon;
