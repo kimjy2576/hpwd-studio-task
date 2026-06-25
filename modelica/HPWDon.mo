@@ -476,4 +476,68 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     SH_out=T_out - T_sat;
   end TestMarchSpan;
 
+  // ── 습표면(wet coil) 보조 함수 ──
+  function hfgWater "물 증발잠열 [J/kg] (T_C); CoolProp 근사 2501e3-2361·T_C"
+    input Real T_C;
+    output Real h_fg;
+  algorithm
+    h_fg := 2501000.0 - 2361.0*T_C;
+  end hfgWater;
+
+  function dWsdT "포화습도비 기울기 dWs/dT [1/K] (Magnus 중앙차분)"
+    input Real T_C;
+    input Real P_atm=101325.0;
+    output Real dWdT;
+  algorithm
+    dWdT := (HXCorr.W_sat(T_C + 0.5, P_atm) - HXCorr.W_sat(T_C - 0.5, P_atm))/1.0;
+  end dWsdT;
+
+  function finEffWet "습표면 핀효율 (Schmidt + b factor: m_wet=√(2·h_o·b/(k·t)))"
+    input Real h_o, b, Dc, Xm, XL, k_fin, fin_t, A_fin_ratio;
+    output Real eta_o_wet;
+  protected
+    Real r_i, rr, phi, m, mrp, ef;
+  algorithm
+    r_i := Dc/2.0;
+    rr := max(1.27*(Xm/r_i)*sqrt(XL/Xm - 0.3), 1.0);
+    phi := (rr - 1.0)*(1.0 + 0.35*log(max(rr, 1.001)));
+    m := sqrt(2.0*h_o*b/(k_fin*fin_t));
+    mrp := m*r_i*phi;
+    ef := if mrp > 0.01 then tanh(mrp)/mrp else 1.0;
+    eta_o_wet := 1.0 - A_fin_ratio*(1.0 - ef);
+  end finEffWet;
+
+  model TestWetSeg "단일 습세그먼트: 엔탈피포텐셜 + b factor + T_w 음함수 solve"
+    parameter Real P=5.8e5, Di=8.22e-3, G_ref=200.0, x=0.5;
+    parameter Real T_air=35.0, RH=0.5 "degC, frac";
+    parameter Real h_o=104.81;
+    parameter Real A_i_seg=0.0012911946, A_o_seg=0.0083013422;
+    parameter Real Dc=0.00976, Xm=0.0127, XL=0.01270128, k_fin=200.0, fin_t=0.12e-3;
+    parameter Real A_fin_ratio=0.9424260735;
+    parameter Real Patm=101325.0, Pcrit=4.2512e6, M_mol=44.0956;
+    Real T_sat_C, mu_l, k_l, cp_l, Pr_l, rho_l, rho_v, mu_v, P_r, muv, kv, cpv, Prv, h_v_gni;
+    Real Wa, cp_a, h_air;
+    Real T_w(start=10.0), T_fin(start=22.0), b(start=3.0), eta_o_wet(start=0.5);
+    Real h_i(start=4600.0), q_flux_est, Q_total, Q_air, Q_lat;
+  equation
+    T_sat_C=R290Tab.Tsat(P) - 273.15;
+    mu_l=R290Tab.mul(P); k_l=R290Tab.kl(P); cp_l=R290Tab.cpl(P); Pr_l=cp_l*mu_l/k_l;
+    rho_l=R290Tab.rhol(P); rho_v=R290Tab.rhov(P); mu_v=R290Tab.muv(P); P_r=P/Pcrit;
+    muv=R290Tab.muv(P); kv=R290Tab.kv(P); cpv=R290Tab.cpv(P); Prv=cpv*muv/kv;
+    h_v_gni=HXCorr.gnielinski(G_ref*Di/muv, Prv, kv, Di);
+    Wa=HXCorr.W_humid(T_air, RH, Patm);
+    cp_a=HXCorr.cp_air_moist(Wa);
+    h_air=HXCorr.h_moist(T_air, Wa);
+    q_flux_est=(T_air - T_w)*h_o;
+    h_i=hi_dispatch_evap(x, G_ref, Di, q_flux_est,
+                         mu_l, k_l, Pr_l, rho_l, rho_v, mu_v, P_r, M_mol, h_v_gni);
+    T_fin=T_air - eta_o_wet*(T_air - T_w);
+    b=max(1.0 + hfgWater(T_fin)*dWsdT(T_fin, Patm)/cp_a, 1.0);
+    eta_o_wet=finEffWet(h_o, b, Dc, Xm, XL, k_fin, fin_t, A_fin_ratio);
+    Q_total=eta_o_wet*h_o*A_o_seg/cp_a*(h_air - HXCorr.h_air_sat(T_w, Patm));
+    T_w=T_sat_C + Q_total/(h_i*A_i_seg);
+    Q_air=eta_o_wet*h_o*A_o_seg*(T_air - T_w);
+    Q_lat=Q_total - Q_air;
+  end TestWetSeg;
+
 end HPWDon;
