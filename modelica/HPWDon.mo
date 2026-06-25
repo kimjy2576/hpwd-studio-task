@@ -540,4 +540,52 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     Q_lat=Q_total - Q_air;
   end TestWetSeg;
 
+  model TestWetDryMarch "습/건 전환 enthalpy march (is_wet 세그먼트별 1회 결정)"
+    parameter Real P=5.8e5, Di=8.22e-3, G_ref=150.0, x_in=0.2;
+    parameter Real T_air=35.0, RH=0.5 "degC, frac";
+    parameter Real h_o=104.81;
+    parameter Real A_i_seg=0.0012911946;
+    parameter Real Dc=0.00976, Xm=0.0127, XL=0.01270128, k_fin=200.0, fin_t=0.12e-3;
+    parameter Real A_fin_ratio=0.9424260735;
+    parameter Real Patm=101325.0, Pcrit=4.2512e6, M_mol=44.0956;
+    parameter Integer N=20;
+    parameter Real A_o_seg=11.95393279/(48*N);
+    parameter Real A_cs=Modelica.Constants.pi*Di^2/4.0;
+    parameter Real m_dot=G_ref*A_cs;
+    // 냉매 포화 + props
+    Real T_satC, hl, hv, h_fg, mu_l, k_l, cp_l, Pr_l, rho_l, rho_v, mu_v, P_r, muv, kv, cpv, Prv, h_v_gni;
+    Real Wa, cp_a, h_air, eta_o_dry, Pv_dp, ln_dp, T_dp;
+    // march 배열
+    Real h_ref[N+1], x[N], T_ref_g[N], T_w[N](each start=11.0), T_fin[N], b[N], eta_o[N];
+    Real h_i[N], q_flux[N], Q[N], Q_lat[N];
+    Boolean is_wet[N];
+    Real Q_total, Q_lat_total, x_out;
+  equation
+    T_satC=R290Tab.Tsat(P) - 273.15; hl=R290Tab.hl(P); hv=R290Tab.hv(P); h_fg=hv - hl;
+    mu_l=R290Tab.mul(P); k_l=R290Tab.kl(P); cp_l=R290Tab.cpl(P); Pr_l=cp_l*mu_l/k_l;
+    rho_l=R290Tab.rhol(P); rho_v=R290Tab.rhov(P); mu_v=R290Tab.muv(P); P_r=P/Pcrit;
+    muv=R290Tab.muv(P); kv=R290Tab.kv(P); cpv=R290Tab.cpv(P); Prv=cpv*muv/kv;
+    h_v_gni=HXCorr.gnielinski(G_ref*Di/muv, Prv, kv, Di);
+    Wa=HXCorr.W_humid(T_air, RH, Patm); cp_a=HXCorr.cp_air_moist(Wa); h_air=HXCorr.h_moist(T_air, Wa);
+    eta_o_dry=finEffWet(h_o, 1.0, Dc, Xm, XL, k_fin, fin_t, A_fin_ratio);
+    Pv_dp=Wa*Patm/(0.622 + Wa); ln_dp=log(Pv_dp/611.2); T_dp=243.12*ln_dp/(17.62 - ln_dp);
+    h_ref[1]=hl + x_in*h_fg;
+    for i in 1:N loop
+      x[i]=(h_ref[i] - hl)/h_fg;
+      T_ref_g[i]=if x[i] < 1.0 then T_satC else R290Tab.T_ph(P, h_ref[i]) - 273.15;
+      is_wet[i]=((T_air + T_ref_g[i])/2.0) < T_dp;
+      q_flux[i]=(T_air - T_w[i])*h_o;
+      h_i[i]=hi_dispatch_evap(x[i], G_ref, Di, q_flux[i], mu_l, k_l, Pr_l, rho_l, rho_v, mu_v, P_r, M_mol, h_v_gni);
+      T_fin[i]=T_air - eta_o[i]*(T_air - T_w[i]);
+      b[i]=if is_wet[i] then max(1.0 + hfgWater(T_fin[i])*dWsdT(T_fin[i], Patm)/cp_a, 1.0) else 1.0;
+      eta_o[i]=if is_wet[i] then finEffWet(h_o, b[i], Dc, Xm, XL, k_fin, fin_t, A_fin_ratio) else eta_o_dry;
+      Q[i]=if is_wet[i] then eta_o[i]*h_o*A_o_seg/cp_a*(h_air - HXCorr.h_air_sat(T_w[i], Patm))
+           else (1.0/(1.0/(eta_o[i]*h_o*A_o_seg) + 1.0/(h_i[i]*A_i_seg)))*(T_air - T_ref_g[i]);
+      T_w[i]=T_ref_g[i] + Q[i]/(h_i[i]*A_i_seg);
+      Q_lat[i]=if is_wet[i] then max(Q[i] - eta_o[i]*h_o*A_o_seg*(T_air - T_w[i]), 0.0) else 0.0;
+      h_ref[i+1]=h_ref[i] + Q[i]/m_dot;
+    end for;
+    Q_total=sum(Q); Q_lat_total=sum(Q_lat); x_out=(h_ref[N+1] - hl)/h_fg;
+  end TestWetDryMarch;
+
 end HPWDon;
