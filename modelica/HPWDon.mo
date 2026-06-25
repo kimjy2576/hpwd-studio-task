@@ -290,4 +290,30 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     eta_o      = 1.0 - (A_fin/A_total)*(1.0 - eta_fin);
   end TestAirHo;
 
+  // ── 냉매측 h_i: 2상 Chen + 단상 Gnielinski 검증 ──
+  model TestHi "냉매 HTC h_i — Chen(2상)/Gnielinski(단상), Python h_with_transition 대조"
+    parameter Real P = 5.8e5 "압력 [Pa]";
+    parameter Real x = 0.5 "quality";
+    parameter Real G = 200.0 "질량유속 [kg/m2.s]";
+    parameter Real Di = 8.22e-3 "내경 [m]";
+    parameter Real q_flux = 5000.0 "열유속 [W/m2]";
+    parameter Real Pcrit = 4.2512e6 "R290 임계압 [Pa]";
+    parameter Real M_mol = 44.0956 "R290 몰질량 [g/mol]";
+    // 포화물성 (Chen 입력) — R290Tab
+    Real mu_l, k_l, cp_l, Pr_l, rho_l, rho_v, mu_v, P_r;
+    Real h_chen "2상 Chen HTC";
+    Real h_gni "단상 Gnielinski HTC (Re=50000,Pr=0.85,k=0.018)";
+  equation
+    mu_l  = R290Tab.mul(P);
+    k_l   = R290Tab.kl(P);
+    cp_l  = R290Tab.cpl(P);
+    rho_l = R290Tab.rhol(P);
+    rho_v = R290Tab.rhov(P);
+    mu_v  = R290Tab.muv(P);
+    Pr_l  = cp_l*mu_l/k_l;
+    P_r   = P/Pcrit;
+    h_chen = HXCorr.h_evap_chen1966(x, G, Di, q_flux, mu_l, k_l, Pr_l, rho_l, rho_v, mu_v, P_r, M_mol);
+    h_gni  = HXCorr.gnielinski(50000.0, 0.85, 0.018, Di);
+  end TestHi;
+
 end HPWDon;
