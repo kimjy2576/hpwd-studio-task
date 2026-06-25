@@ -239,4 +239,55 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     probe = A_total + A_i_seg;
   end TestGeoFT;
 
+  // ── 공기측 h_o (Wang j → Colburn) + 핀효율(Schmidt) 검증 ──
+  model TestAirHo "공기측 HTC h_o + 핀효율 eta_o — Python _compute_h_o/fin_efficiency_schmidt 대조"
+    // 기하 spec
+    parameter Real Do = 0.00952, Di = 0.00822, Pt = 0.0254, Pl = 0.022;
+    parameter Integer Nr = 4, Nt = 12;
+    parameter Real FPI = 14.0, fin_thickness = 0.00012;
+    parameter Real W = 0.5, H = 0.3, D = 0.08, k_fin = 200.0;
+    parameter Boolean staggered = true;
+    // 공기 조건
+    parameter Real T_air_C = 35.0, RH = 0.60, V_air = 2.0, P_atm = 101325.0;
+    constant Real pi = Modelica.Constants.pi;
+    // 파생 기하 (FinTubeGeo)
+    final parameter Real Dc = Do + 2.0*fin_thickness;
+    final parameter Real fin_pitch = 0.0254/FPI;
+    final parameter Integer N_fins = integer(floor(W/fin_pitch + 0.5));
+    final parameter Real gap = fin_pitch - fin_thickness;
+    final parameter Real A_fr = H*W;
+    final parameter Real Xm = Pt/2.0;
+    final parameter Real XL = if staggered then sqrt((Pt/2.0)^2 + Pl^2)/2.0 else Pl/2.0;
+    final parameter Real A_one_fin = 2.0*(H*D - Nr*Nt*pi*Dc^2/4.0);
+    final parameter Real A_fin = N_fins*A_one_fin;
+    final parameter Real A_tube_ext = Nr*Nt*pi*Dc*N_fins*gap;
+    final parameter Real A_total = A_fin + A_tube_ext;
+    final parameter Real sigma = max((Pt - Dc)*gap/(Pt*fin_pitch), 0.1);
+    final parameter Real A_c = sigma*A_fr;
+    // 공기물성 + h_o 체인
+    Real T_K, W_in, rho_air, mu, Pr, cp, m_air, G_air, Re_Dc, j, h_o;
+    // 핀효율 (Schmidt)
+    Real r_i, r_eq_ratio, phi, m_fin, mr_phi, eta_fin, eta_o;
+  equation
+    T_K     = T_air_C + 273.15;
+    W_in    = HXCorr.W_humid(T_air_C, RH, P_atm);
+    rho_air = P_atm/(287.055*T_K)*(1.0 + W_in)/(1.0 + 1.6078*W_in);
+    mu      = HXCorr.mu_air(T_K);
+    Pr      = HXCorr.Pr_air(T_K);
+    cp      = HXCorr.cp_air_moist(0.0);
+    m_air   = rho_air*V_air*A_fr;
+    G_air   = m_air/A_c;
+    Re_Dc   = G_air*Dc/mu;
+    j       = HXCorr.j_wang2000_plain(Re_Dc, Nr, Dc, Pt, Pl, FPI, fin_thickness);
+    h_o     = j*G_air*cp/Pr^(2.0/3.0);
+    // Schmidt 핀효율
+    r_i        = Dc/2.0;
+    r_eq_ratio = max(1.27*(Xm/r_i)*sqrt(XL/Xm - 0.3), 1.0);
+    phi        = (r_eq_ratio - 1.0)*(1.0 + 0.35*log(max(r_eq_ratio, 1.001)));
+    m_fin      = sqrt(2.0*h_o/(k_fin*fin_thickness));
+    mr_phi     = m_fin*r_i*phi;
+    eta_fin    = tanh(mr_phi)/mr_phi;
+    eta_o      = 1.0 - (A_fin/A_total)*(1.0 - eta_fin);
+  end TestAirHo;
+
 end HPWDon;
