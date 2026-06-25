@@ -383,4 +383,61 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     x_out=x[N+1];
   end TestMarchDry;
 
+  // ── 위상 디스패치 (Chen + dryout ↔ Gnielinski증기 블렌딩) ──
+  function compute_h_evap_dryout "Chen + Wojtan2005 dryout (x>x_di서 vapor HTC로 전이)"
+    input Real x, G, Di, q_flux;
+    input Real mu_l, k_l, Pr_l, rho_l, rho_v, mu_v, P_r, M_mol;
+    input Real h_v "포화증기 Gnielinski HTC";
+    output Real h;
+  protected
+    Real h_raw, x_di, x_de, factor;
+  algorithm
+    h_raw := HXCorr.h_evap_chen1966(min(x, 0.999), G, Di, q_flux,
+                                    mu_l, k_l, Pr_l, rho_l, rho_v, mu_v, P_r, M_mol);
+    if x > 0.5 then
+      x_di := max(0.5, min(0.80 + 0.15*tanh((G - 300.0)/200.0), 0.95));
+      x_de := min(x_di + 0.10, 0.99);
+      factor := if x <= x_di then 1.0
+                elseif x >= x_de then 0.0
+                else 1.0 - (x - x_di)/(x_de - x_di);
+    else
+      factor := 1.0;
+    end if;
+    h := max(factor*h_raw + (1.0 - factor)*h_v, 50.0);
+  end compute_h_evap_dryout;
+
+  function hi_dispatch_evap "증발 h_i 디스패치: 0<x<0.9 (Chen+dryout) / 0.9~1.05 블렌딩 / >1.05 증기"
+    input Real x, G, Di, q_flux;
+    input Real mu_l, k_l, Pr_l, rho_l, rho_v, mu_v, P_r, M_mol;
+    input Real h_v "포화증기 Gnielinski HTC";
+    output Real h_i;
+  protected
+    Real h_2ph, w;
+  algorithm
+    h_2ph := compute_h_evap_dryout(min(x, 0.999), G, Di, q_flux,
+                                   mu_l, k_l, Pr_l, rho_l, rho_v, mu_v, P_r, M_mol, h_v);
+    w := max(0.0, min((x - 0.90)/0.15, 1.0));
+    h_i := if x < 0.90 then compute_h_evap_dryout(x, G, Di, q_flux,
+                                                  mu_l, k_l, Pr_l, rho_l, rho_v, mu_v, P_r, M_mol, h_v)
+           elseif x <= 1.05 then (1.0 - w)*h_2ph + w*h_v
+           else h_v;
+  end hi_dispatch_evap;
+
+  model TestDispatch "위상 디스패치 h_i(x) 스윕 — Python 대조"
+    parameter Real P=5.8e5, G=200.0, Di=8.22e-3, q_flux=5000.0, Pcrit=4.2512e6, M_mol=44.0956;
+    parameter Integer Nx=6;
+    parameter Real xarr[Nx]={0.5, 0.85, 0.95, 1.0, 1.05, 1.2};
+    Real mu_l, k_l, cp_l, Pr_l, rho_l, rho_v, mu_v, P_r;
+    Real muv, kv, cpv, Prv, Rev, h_gni;
+    Real h_i[Nx];
+  equation
+    mu_l=R290Tab.mul(P); k_l=R290Tab.kl(P); cp_l=R290Tab.cpl(P); Pr_l=cp_l*mu_l/k_l;
+    rho_l=R290Tab.rhol(P); rho_v=R290Tab.rhov(P); mu_v=R290Tab.muv(P); P_r=P/Pcrit;
+    muv=R290Tab.muv(P); kv=R290Tab.kv(P); cpv=R290Tab.cpv(P); Prv=cpv*muv/kv; Rev=G*Di/muv;
+    h_gni=HXCorr.gnielinski(Rev, Prv, kv, Di);
+    for i in 1:Nx loop
+      h_i[i]=hi_dispatch_evap(xarr[i], G, Di, q_flux, mu_l, k_l, Pr_l, rho_l, rho_v, mu_v, P_r, M_mol, h_gni);
+    end for;
+  end TestDispatch;
+
 end HPWDon;
