@@ -81,6 +81,25 @@ run.bat
 
 > **사내 서버에 상시 공유**하려면: 사내 PC/서버에서 위 명령으로 띄우고(방화벽에서 해당 포트 허용), 동료에게 `http://<서버IP>:8000` 공유. 백그라운드 상시 구동은 `nohup ./run.sh &`(Linux) 또는 작업 스케줄러/서비스 등록.
 
+### 업데이트 (레포가 바뀌었을 때)
+
+이미 clone 받아둔 PC에서 최신 변경을 반영하려면:
+
+```bash
+cd <레포 경로>          # 예: cd ~/hpwd-studio-task
+git pull                # 최신 코드 받기 (백엔드·프론트 모두 갱신됨)
+# (서버가 떠 있으면) Ctrl+C 로 종료 후 다시:
+./run.sh                # Windows: run.bat
+```
+
+- **브라우저는 하드리프레시**(Ctrl+Shift+R) — 프론트(public/)가 바뀐 경우 캐시 때문에 그냥 새로고침은 반영 안 될 수 있음.
+- `requirements.txt`가 바뀐 PR을 받았으면 의존성도 갱신 필요(`backend/venv` 재사용 시 자동 설치 안 됨):
+  ```bash
+  cd backend && source venv/bin/activate && pip install -r requirements.txt   # Windows: venv\Scripts\activate
+  ```
+  (또는 `backend/venv` 폴더를 지우고 `./run.sh` → 최초 설치 로직이 다시 도는 방식도 가능)
+- **사내 서버**라면: 위를 서버 PC에서 하고 서버 재시작하면 접속자 전원에게 최신본이 반영됨(각자 브라우저 하드리프레시).
+
 ---
 
 ## 3. Modelica 엔진 셋업 (OpenModelica)
@@ -378,6 +397,6 @@ Get-Process -Id (Get-NetTCPConnection -LocalPort 8010 -State Listen -EA Silently
 
 **새 PC:** Git → Python(3.11+) → (Modelica 쓸 거면) OpenModelica 설치 → repo clone → `./run.sh`(최초 venv 자동) → 브라우저 `http://localhost:8000` → (Modelica면 `HELMHOLTZ_PATH` 설정 후 재기동) → 엔진 선택 → 테스트.  사내 공유는 `http://<서버IP>:8000`.
 
-**원래 PC:** (필요시 `git pull`) → 포트 확인 → `HELMHOLTZ_PATH`·`PORT` 설정 → `python server.py` → `/health` 확인 → 캔버스 자동 재연결 확인.
+**원래 PC (업데이트):** `git pull` → (서버 떠 있으면 Ctrl+C) → `./run.sh`(Windows: `run.bat`) → 브라우저 하드리프레시(Ctrl+Shift+R) → `/health` 확인.  `requirements.txt` 바뀌었으면 venv에 `pip install -r backend/requirements.txt`. (Modelica는 `HELMHOLTZ_PATH` 재설정)
 
 **모델 직접 실행(개발):** §4 로드 순서대로 `loadFile` → `simulate(모델, stopTime=N, numberOfIntervals=N)` → `.mat`를 OMEdit/Python으로 읽기.
