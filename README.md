@@ -48,12 +48,13 @@ HPWD Studio는 세 부분으로 구성됩니다.
 
 | 방식 | 설명 | 설치 |
 |---|---|---|
-| (A) 캔버스 | 컴포넌트 단위 계산, 가장 쉬움 | Modelica 엔진 쓰려면 로컬 백엔드 필요(§3). Python 엔진만이면 불필요 |
+| (A) 캔버스 (로컬 단일 서버) | `./run.sh` → `http://localhost:8000`. 컴포넌트 단위 계산, 가장 쉬움 | Python 엔진은 바로. Modelica 엔진은 omc 설치(§3) |
 | (B) Modelica 직접 실행 | 사이클/시스템 통합, 개발용(§4) | omc + HelmholtzMedia + R290Tab (로컬) |
-| (C) 모델 문서 열람 | 물리·수치 레퍼런스(§5) | 불필요 (브라우저) |
+| (C) 모델 문서 열람 | 물리·수치 레퍼런스(§5) | 불필요 (`/model-docs/`) |
 
-> **Python 엔진**만 쓸 거면 로컬 서버 없이 Cloud(Railway)로 충분.
-> **Modelica 엔진**(Off=L1 컴포넌트 + 전체 사이클)은 로컬 PC에서만 동작 → §3 셋업 필요.
+> **Python 엔진**만 쓸 거면 `./run.sh`로 띄우고 바로 사용(omc 불필요).
+> **Modelica 엔진**(Off=L1 컴포넌트 + 전체 사이클)은 그 서버 PC에 omc 설치 시 자동 사용 → §3 셋업.
+> **사내 공유**는 같은 서버를 `http://<서버IP>:8000`으로 동료가 접속(별도 설정 없음).
 > 현재 Modelica로 도는 컴포넌트의 **Off=L1** fidelity: Compressor(이론)·EEV·Evaporator·Condenser. Semi/On은 Python 엔진.
 
 ---
@@ -138,8 +139,8 @@ python server.py
 ```
 
 - ⚠️ `HELMHOLTZ_PATH`는 **슬래시 `/`** 여야 함(역슬래시 쓰면 Modelica 문자열 깨짐). 위 `.Replace('\','/')`가 현재 계정 홈을 자동으로 슬래시 경로로 바꿔줌 → 계정명 달라도 그대로 동작.
-- ⚠️ `PORT=8010` — 8000은 Docker·다른 LLM 서버가 자주 잡아 충돌. 8010 권장.
-- 성공 로그: `Uvicorn running on http://0.0.0.0:8010` + `Modelica bridge imported (components: [...])`
+- ⚠️ `PORT` — 단일 서버 기본은 8000(`./run.sh`). 8000을 Docker·LLM 서버가 잡으면 `PORT=8010` 등으로 변경(아래 예시는 8010 기준).
+- 성공 로그: `Uvicorn running on http://0.0.0.0:8010` + `Frontend(public/) mounted at /` + `Modelica bridge imported (components: [...])`. 이 포트로 브라우저 접속 시 UI·API가 same-origin이라 Backend URL 설정 불필요.
 - ⚠️ **이 창을 닫거나 Ctrl+C 하면 서버가 즉시 죽음.** 캔버스 쓰는 내내 열어둘 것. 다른 명령은 **새 창**에서.
 - 💡 omc PATH 충돌이 잦으면 → `$env:OMC_BIN="C:\...\omc.exe"`로 PATH 우회 가능(아래 **빠른 복붙 B** / 트러블슈팅 **해결 3**).
 
@@ -152,7 +153,9 @@ Invoke-RestMethod http://localhost:8010/health
 - `status: ok`, `modelica_engine: available=True` → OK
 - `available=False`면 `reason` 확인(대개 HELMHOLTZ_PATH 문제 → D 다시)
 
-#### F. 캔버스 연결 → §2 빠른 시작 참고
+#### F. 브라우저 접속
+
+띄운 포트로 접속하면 됨 — 예: `http://localhost:8010`. 프론트가 same-origin으로 API를 자동 인식(별도 Backend URL 설정 없음). 사내 공유는 `http://<서버IP>:8010`.
 
 ### 버전 2 — 원래 작업하던 컴퓨터 (설치됨, 재부팅/재설정만)
 
@@ -176,8 +179,8 @@ python server.py
 Invoke-RestMethod http://localhost:8010/health
 ```
 
-- 백엔드 바뀜 → 서버 재시작. 프론트엔드 바뀜 → Railway 자동 재배포 후 캔버스 하드리프레시(Ctrl+Shift+R).
-- 캔버스 Backend 설정은 localStorage에 저장돼 보통 자동 재연결. 안 되면 Backend 뱃지 → Custom URL `http://localhost:8010` → SET.
+- 백엔드·프론트 모두 같은 서버라 **코드 바뀌면 서버 재시작 + 브라우저 하드리프레시(Ctrl+Shift+R)**.
+- 프론트는 same-origin으로 API 자동 인식. 다른 호스트의 백엔드를 쓰려면 Backend 뱃지 → Custom URL 또는 `?backend=<url>`.
 
 ### 빠른 복붙 (원래 PC, 한 줄)
 
@@ -266,7 +269,7 @@ omc 실행: `omc run.mos`
 
 컴포넌트 × fidelity(OFF/SEMI/ON/FUTURE) **물리·수치 레퍼런스**. 각 모델의 수학적 정의·Nomenclature·Code Mapping·검증·한계.
 
-- **온라인**: https://hpwd-studio-task-production.up.railway.app/model-docs/
+- **서버**: 단일 서버 실행 후 `http://localhost:8000/model-docs/` (사내: `http://<서버IP>:8000/model-docs/`)
 - **로컬**: `public/model-docs/index.html`를 브라우저로 직접 열어도 됨(설치 불필요).
 - 사이드바: Compressor / Evaporator / Condenser / EEV / Fan / Drum / Filter / Moist Air / **수치·수렴** / Lint Transport. **수치·수렴** 트랙은 물리와 분리된 수렴 테크닉(R290Tab 물성층 등).
 
@@ -292,8 +295,9 @@ python emit_full.py    # r290_table.npz → ../R290Tab.mo
 ```
 hpwd-studio-task/
 ├─ README.md                  ← 이 파일
-├─ server.py                  Railway 정적 서버 (public/ 서빙)
-├─ Procfile, railway.json     Railway 배포 설정
+├─ run.sh / run.bat           로컬 단일 서버 실행 (UI+API)
+├─ server.py                  (legacy) Railway 정적 서버 — 로컬에선 불필요
+├─ Procfile, railway.json     (legacy) Railway 배포 설정
 ├─ public/
 │  ├─ index.html              캔버스 UI (프론트엔드)
 │  └─ model-docs/index.html   모델 문서 (fidelity ladder)
@@ -366,13 +370,13 @@ Get-Process -Id (Get-NetTCPConnection -LocalPort 8010 -State Listen -EA Silently
 - 서버는 띄운 창에 붙어 있음 → **그 창 닫으면 서버 죽음.** 서버 창과 작업 명령 창 분리.
 - 터미널 붙여넣기: **Ctrl+Shift+V** 또는 **Shift+Insert**.
 - 첫 Modelica 호출만 느림(omc 빌드) → 타입별 1회 빌드 후 캐시.
-- 캔버스가 https(Railway)에서 http://localhost 백엔드를 부르는 구조(Chrome은 localhost mixed‑content 허용). 사내망/프록시에서 막히면 clone한 `public/index.html`을 로컬에서 직접 열어도 됨.
+- UI·API가 same-origin 단일 서버라 mixed-content·CORS 이슈 없음. 사내 공유 시 방화벽에서 해당 포트(기본 8000) 허용 필요.
 
 ---
 
 ## 9. 한눈 체크리스트
 
-**새 PC:** Git → Python(3.11+) → OpenModelica 설치 → repo 2개 clone → `pip install -r backend/requirements.txt` → `HELMHOLTZ_PATH`·`PORT` 설정 → `python server.py` → `/health` 확인 → 캔버스 Custom URL `http://localhost:8010` SET → Modelica 선택 → 테스트.
+**새 PC:** Git → Python(3.11+) → (Modelica 쓸 거면) OpenModelica 설치 → repo clone → `./run.sh`(최초 venv 자동) → 브라우저 `http://localhost:8000` → (Modelica면 `HELMHOLTZ_PATH` 설정 후 재기동) → 엔진 선택 → 테스트.  사내 공유는 `http://<서버IP>:8000`.
 
 **원래 PC:** (필요시 `git pull`) → 포트 확인 → `HELMHOLTZ_PATH`·`PORT` 설정 → `python server.py` → `/health` 확인 → 캔버스 자동 재연결 확인.
 
