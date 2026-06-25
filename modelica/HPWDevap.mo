@@ -108,4 +108,101 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     x_out=(hpath[M + 1] - hl)/h_fg;
     T_air_out=sum(T_aen[Nr + 1,s] for s in 1:Nseg)/Nseg;
   end Evap_On_Column;
+  model Evap_On "L3 증발기 — RefPort 음함수 컴포넌트 (1컬럼×Nt, 공기 경계)"
+    HPWD.RefPort port_a "냉매 입구";
+    HPWD.RefPort port_b "냉매 출구";
+    parameter Real T_air_in=35.0 "공기 입구온도 [degC]";
+    parameter Real RH_in=0.5;
+    parameter Real m_air_seg=0.00286454 "(col,seg)당 공기유량 [kg/s]";
+    parameter Real h_o=105.98144 "공기측 HTC [W/m2K]";
+    parameter Integer Nr=4, Nseg=10, Nt=12;
+    parameter Real Di=0.00822;
+    parameter Real A_i_seg=0.0012911946, A_o_seg=0.0249040267;
+    parameter Real Dc=0.00976, Xm=0.0127, XL=0.01270128, k_fin=200.0, fin_t=0.12e-3;
+    parameter Real A_fin_ratio=0.9424260735;
+    parameter Real Patm=101325.0, Pcrit=4.2512e6, M_mol=44.0956;
+    parameter Real A_cs=Modelica.Constants.pi*Di^2/4.0;
+    parameter Real Wi=HXCorr.W_humid(T_air_in, RH_in, Patm);
+    parameter Real T_dp=HXCorr.Tdp_corr(Wi, Patm);
+    parameter Real eta_o_dry=HPWDon.finEffWet(h_o, 1.0, Dc, Xm, XL, k_fin, fin_t, A_fin_ratio);
+    parameter Integer M=Nr*Nseg;
+    parameter Integer rowOf[M]={pathRow(k - 1, Nr, Nseg) for k in 1:M};
+    parameter Integer segOf[M]={pathSeg(k - 1, Nr, Nseg) for k in 1:M};
+    parameter Integer kOf[Nr,Nseg]={{cellK(p, s, Nr, Nseg) for s in 1:Nseg} for p in 1:Nr};
+    Real P, m_ref_col, G_ref, h_in;
+    Real T_satC, hl, hv, h_fg, mu_l, k_l, cp_l, Pr_l, rho_l, rho_v, mu_v, P_r;
+    Real muv, kv, cpv, Prv, h_v_gni, h_max;
+    Real hpath[M + 1];
+    Real Q[Nr,Nseg], Q_lat[Nr,Nseg], T_w[Nr,Nseg](each start=15.0), h_i[Nr,Nseg];
+    Real eta_o[Nr,Nseg], b[Nr,Nseg], T_fin[Nr,Nseg];
+    Real xq[Nr,Nseg], T_ref_g[Nr,Nseg], cp_a[Nr,Nseg], h_air_c[Nr,Nseg], h_ref_c[Nr,Nseg];
+    Boolean is_wet[Nr,Nseg];
+    Real T_aen[Nr + 1,Nseg](each start=30.0), W_aen[Nr + 1,Nseg](each start=0.017);
+    Real Q_total, Q_lat_total, x_out, T_air_out, h_out;
+  equation
+    P=port_a.p;
+    port_a.m_flow + port_b.m_flow=0;
+    m_ref_col=port_a.m_flow/Nt;
+    G_ref=m_ref_col/A_cs;
+    h_in=inStream(port_a.h_outflow);
+    T_satC=R290Tab.Tsat(P) - 273.15; hl=R290Tab.hl(P); hv=R290Tab.hv(P); h_fg=hv - hl;
+    mu_l=R290Tab.mul(P); k_l=R290Tab.kl(P); cp_l=R290Tab.cpl(P); Pr_l=cp_l*mu_l/k_l;
+    rho_l=R290Tab.rhol(P); rho_v=R290Tab.rhov(P); mu_v=R290Tab.muv(P); P_r=P/Pcrit;
+    muv=R290Tab.muv(P); kv=R290Tab.kv(P); cpv=R290Tab.cpv(P); Prv=cpv*muv/kv;
+    h_v_gni=HXCorr.gnielinski(G_ref*Di/muv, Prv, kv, Di);
+    h_max=hv + cpv*(T_air_in - T_satC);
+    hpath[1]=h_in;
+    for k in 1:M loop
+      hpath[k + 1]=min(hpath[k] + Q[rowOf[k], segOf[k]]/m_ref_col, h_max);
+    end for;
+    for s in 1:Nseg loop
+      T_aen[1,s]=T_air_in; W_aen[1,s]=Wi;
+    end for;
+    for p in 1:Nr loop
+      for s in 1:Nseg loop
+        h_ref_c[p,s]=hpath[kOf[p,s] + 1];
+        xq[p,s]=(h_ref_c[p,s] - hl)/h_fg;
+        T_ref_g[p,s]=if xq[p,s] < 1.0 then T_satC else min(R290Tab.T_ph(P, h_ref_c[p,s]) - 273.15, T_aen[p,s]);
+        is_wet[p,s]=T_w[p,s] < T_dp;
+        cp_a[p,s]=HXCorr.cp_air_moist(W_aen[p,s]);
+        h_air_c[p,s]=HXCorr.h_moist(T_aen[p,s], W_aen[p,s]);
+        h_i[p,s]=HPWDon.hi_dispatch_evap(xq[p,s], G_ref, Di, abs(T_aen[p,s] - T_w[p,s])*h_o,
+                                         mu_l, k_l, Pr_l, rho_l, rho_v, mu_v, P_r, M_mol, h_v_gni);
+        T_fin[p,s]=T_aen[p,s] - eta_o[p,s]*(T_aen[p,s] - T_w[p,s]);
+        b[p,s]=if is_wet[p,s] then max(1.0 + HPWDon.hfgWater(T_fin[p,s])*HPWDon.dWsdT(T_fin[p,s], Patm)/cp_a[p,s], 1.0) else 1.0;
+        eta_o[p,s]=if is_wet[p,s] then HPWDon.finEffWet(h_o, b[p,s], Dc, Xm, XL, k_fin, fin_t, A_fin_ratio) else eta_o_dry;
+        Q[p,s]=if is_wet[p,s] then eta_o[p,s]*h_o*A_o_seg/cp_a[p,s]*(h_air_c[p,s] - HXCorr.h_air_sat(T_w[p,s], Patm))
+               else (1.0/(1.0/(eta_o[p,s]*h_o*A_o_seg) + 1.0/(h_i[p,s]*A_i_seg)))*(T_aen[p,s] - T_ref_g[p,s]);
+        T_w[p,s]=T_ref_g[p,s] + Q[p,s]/(h_i[p,s]*A_i_seg);
+        Q_lat[p,s]=if is_wet[p,s] then max(Q[p,s] - eta_o[p,s]*h_o*A_o_seg*(T_aen[p,s] - T_w[p,s]), 0.0) else 0.0;
+        W_aen[p + 1,s]=max(W_aen[p,s] - Q_lat[p,s]/(m_air_seg*HPWDon.hfgWater(T_aen[p,s])), 0.0);
+        T_aen[p + 1,s]=(h_air_c[p,s] - Q[p,s]/m_air_seg - W_aen[p + 1,s]*2501e3)/(1006.0 + 1860.0*W_aen[p + 1,s]);
+      end for;
+    end for;
+    Q_total=Nt*sum(Q); Q_lat_total=Nt*sum(Q_lat);
+    h_out=hpath[M + 1];
+    x_out=(h_out - hl)/h_fg;
+    T_air_out=sum(T_aen[Nr + 1,s] for s in 1:Nseg)/Nseg;
+    port_b.p=P;
+    port_b.h_outflow=h_out;
+    port_a.h_outflow=h_in;
+  end Evap_On;
+
+  model FlowSource "유량+엔탈피 지정 소스"
+    HPWD.RefPort port;
+    parameter Real m_dot=0.02, h=290.0e3;
+  equation
+    port.m_flow=-m_dot;
+    port.h_outflow=h;
+  end FlowSource;
+
+  model TestEvapOn "Evap_On RefPort 컴포넌트 검증 (컬럼 결과 재현)"
+    FlowSource src(m_dot=0.02, h=290651.6);
+    Evap_On evap;
+    HPWD.Sink snk(p=584218.0, h=400.0e3);
+  equation
+    connect(src.port, evap.port_a);
+    connect(evap.port_b, snk.port);
+  end TestEvapOn;
+
 end HPWDevap;
