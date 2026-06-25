@@ -316,4 +316,71 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     h_gni  = HXCorr.gnielinski(50000.0, 0.85, 0.018, Di);
   end TestHi;
 
+  // ── 냉매 N-세그먼트 all-2상 dry march 검증 ──
+  model TestMarchDry "냉매 FV march (all-2상, dry, 고정P) — Python 레퍼런스 march 대조"
+    parameter Integer N = 10;
+    parameter Real P = 5.8e5, x_in = 0.2, G_ref = 200.0;
+    parameter Real T_air_C = 20.0, V_air = 2.0, P_atm = 101325.0;
+    // 기하 spec
+    parameter Real Do=0.00952, Di=0.00822, Pt=0.0254, Pl=0.022;
+    parameter Integer Nr=4, Nt=12;
+    parameter Real FPI=14.0, fin_thickness=0.00012, W=0.5, H=0.3, D=0.08, k_fin=200.0;
+    parameter Boolean staggered=true;
+    parameter Real Pcrit=4.2512e6, M_mol=44.0956;
+    constant Real pi=Modelica.Constants.pi;
+    // 파생 기하 (FinTubeGeo)
+    final parameter Real Dc=Do+2.0*fin_thickness;
+    final parameter Real fin_pitch=0.0254/FPI;
+    final parameter Integer N_fins=integer(floor(W/fin_pitch+0.5));
+    final parameter Real gap=fin_pitch-fin_thickness;
+    final parameter Real A_fr=H*W;
+    final parameter Real Xm=Pt/2.0;
+    final parameter Real XL=if staggered then sqrt((Pt/2.0)^2+Pl^2)/2.0 else Pl/2.0;
+    final parameter Real A_fin=N_fins*2.0*(H*D-Nr*Nt*pi*Dc^2/4.0);
+    final parameter Real A_tube_ext=Nr*Nt*pi*Dc*N_fins*gap;
+    final parameter Real A_total=A_fin+A_tube_ext;
+    final parameter Real sigma=max((Pt-Dc)*gap/(Pt*fin_pitch),0.1);
+    final parameter Real A_c=sigma*A_fr;
+    final parameter Real L_seg=W/N;
+    final parameter Real A_i_seg=pi*Di*L_seg;
+    final parameter Real A_o_seg=A_total/(Nr*Nt*N);
+    final parameter Real A_cs=pi*Di^2/4.0;
+    final parameter Real m_dot=G_ref*A_cs;
+    // 공기측 h_o, eta_o (dry)
+    Real T_K, rho_air, mu_a, Pr_a, cp_a, m_air, G_air, Re_Dc, j, h_o;
+    Real r_i, r_eq_ratio, phi_f, m_fin, mr_phi, eta_fin, eta_o;
+    // 냉매 포화물성 @P
+    Real T_sat, h_fg, mu_l, k_l, cp_l, Pr_l, rho_l, rho_v, mu_v, P_r;
+    // march
+    Real x[N+1], h_i[N], UA[N], Q[N], q_flux[N];
+    Real Q_total, x_out;
+  equation
+    // 공기측 (dry: W=0)
+    T_K=T_air_C+273.15;
+    rho_air=P_atm/(287.055*T_K);
+    mu_a=HXCorr.mu_air(T_K); Pr_a=HXCorr.Pr_air(T_K); cp_a=HXCorr.cp_air_moist(0.0);
+    m_air=rho_air*V_air*A_fr; G_air=m_air/A_c; Re_Dc=G_air*Dc/mu_a;
+    j=HXCorr.j_wang2000_plain(Re_Dc,Nr,Dc,Pt,Pl,FPI,fin_thickness);
+    h_o=j*G_air*cp_a/Pr_a^(2.0/3.0);
+    r_i=Dc/2.0; r_eq_ratio=max(1.27*(Xm/r_i)*sqrt(XL/Xm-0.3),1.0);
+    phi_f=(r_eq_ratio-1.0)*(1.0+0.35*log(max(r_eq_ratio,1.001)));
+    m_fin=sqrt(2.0*h_o/(k_fin*fin_thickness)); mr_phi=m_fin*r_i*phi_f;
+    eta_fin=tanh(mr_phi)/mr_phi; eta_o=1.0-(A_fin/A_total)*(1.0-eta_fin);
+    // 냉매 포화물성
+    T_sat=R290Tab.Tsat(P); h_fg=R290Tab.hv(P)-R290Tab.hl(P);
+    mu_l=R290Tab.mul(P); k_l=R290Tab.kl(P); cp_l=R290Tab.cpl(P); Pr_l=cp_l*mu_l/k_l;
+    rho_l=R290Tab.rhol(P); rho_v=R290Tab.rhov(P); mu_v=R290Tab.muv(P); P_r=P/Pcrit;
+    // FV march (각 세그먼트: q_flux↔h_i↔Q 비선형, OM이 풂)
+    x[1]=x_in;
+    for i in 1:N loop
+      h_i[i]=HXCorr.h_evap_chen1966(x[i],G_ref,Di,q_flux[i],mu_l,k_l,Pr_l,rho_l,rho_v,mu_v,P_r,M_mol);
+      UA[i]=1.0/(1.0/(eta_o*h_o*A_o_seg)+1.0/(h_i[i]*A_i_seg));
+      Q[i]=UA[i]*(T_K-T_sat);
+      q_flux[i]=Q[i]/A_i_seg;
+      x[i+1]=x[i]+Q[i]/(m_dot*h_fg);
+    end for;
+    Q_total=sum(Q);
+    x_out=x[N+1];
+  end TestMarchDry;
+
 end HPWDon;
