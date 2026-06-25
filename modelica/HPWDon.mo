@@ -492,6 +492,26 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     dWdT := (HXCorr.W_sat(T_C + 0.5, P_atm) - HXCorr.W_sat(T_C - 0.5, P_atm))/1.0;
   end dWsdT;
 
+  function hi_dispatch_cond "응축 h_i 디스패치: x>1 증기Gn / 0.05<x<1 Shah / 0~0.05 블렌딩 / x<0 액Gn (dryout無)"
+    input Real x, G, Di, mu_l, k_l, Pr_l, mu_v, k_v, Pr_v, P_r;
+    output Real h;
+  protected
+    Real h_2ph, h_sub, w;
+  algorithm
+    if x > 1.0 then
+      h := HXCorr.gnielinski(G*Di/mu_v, Pr_v, k_v, Di);
+    elseif x >= 0.05 then
+      h := HXCorr.h_cond_shah1979(min(x, 0.999), G, Di, mu_l, k_l, Pr_l, P_r);
+    elseif x >= 0.0 then
+      h_2ph := HXCorr.h_cond_shah1979(max(x, 0.001), G, Di, mu_l, k_l, Pr_l, P_r);
+      h_sub := HXCorr.gnielinski(G*Di/mu_l, Pr_l, k_l, Di);
+      w := (0.05 - x)/0.05;
+      h := (1.0 - w)*h_2ph + w*h_sub;
+    else
+      h := HXCorr.gnielinski(G*Di/mu_l, Pr_l, k_l, Di);
+    end if;
+  end hi_dispatch_cond;
+
   function finEffWet "습표면 핀효율 (Schmidt + b factor: m_wet=√(2·h_o·b/(k·t)))"
     input Real h_o, b, Dc, Xm, XL, k_fin, fin_t, A_fin_ratio;
     output Real eta_o_wet;
