@@ -19,11 +19,7 @@ fi
 
 echo "[3/3] 서버 시작 중..."
 echo ""
-echo "═══════════════════════════════════════════════════════════"
-echo "  HPWD Backend on http://localhost:8000"
-echo "  Health check: http://localhost:8000/health"
-echo "  서버 종료: Ctrl+C"
-echo "═══════════════════════════════════════════════════════════"
+echo "  HPWD-Studio (UI+API) 시작 — 아래 URL로 접속"
 echo ""
 
 python server.py

@@ -112,11 +112,13 @@ function resolveBackendUrl() {
     const stored = localStorage.getItem('hpwd_backend_url');
     if (stored) return stored;
   } catch (e) {}
-  const host = window.location.hostname;
-  if (host === 'localhost' || host === '127.0.0.1' || host === '' || host === 'file') {
+  // 기본: 현재 페이지와 같은 origin (백엔드가 프론트도 서빙 → same-origin).
+  // 로컬(localhost:PORT)·사내서버(host:PORT) 어디서 열든 자동으로 맞춤.
+  // file://로 직접 열면 로컬 백엔드로. cloud는 토글/?backend=로만.
+  if (window.location.protocol === 'file:' || !window.location.host) {
     return DEFAULT_BACKENDS.local;
   }
-  return DEFAULT_BACKENDS.cloud;
+  return window.location.origin;
 }
 
 let CURRENT_BACKEND = resolveBackendUrl();

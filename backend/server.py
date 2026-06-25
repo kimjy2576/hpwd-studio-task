@@ -399,15 +399,43 @@ def run_canvas_coupled_cycle(req: CoupledCanvasRequest):
         return CanvasCycleResponse(error=f"{type(e).__name__}: {e}")
 
 
+# ─── 프론트엔드(public/) 정적 서빙 — 단일 서버로 UI+API 통합 ──────────
+# 반드시 모든 API 라우트/라우터 등록 이후(여기)에 마운트 → "/" catch-all.
+# 로컬/사내서버 공유 시 프론트·API가 same-origin → URL 분기·CORS 불필요.
+from fastapi.staticfiles import StaticFiles
+_PUBLIC_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "public"))
+if os.path.isdir(_PUBLIC_DIR):
+    app.mount("/", StaticFiles(directory=_PUBLIC_DIR, html=True), name="frontend")
+    print(f"[OK]   Frontend(public/) mounted at / — {_PUBLIC_DIR}")
+else:
+    print(f"[WARN] public/ 없음: {_PUBLIC_DIR} (API 전용 모드)")
+
+
 # ─── Server 실행 ────────────────────────────────────────────────────
 if __name__ == "__main__":
     import uvicorn
 
     port = int(os.environ.get("PORT", 8000))
+    host = os.environ.get("HOST", "0.0.0.0")
     print(f"\nLoaded components: {list_components()}\n")
+    # 사내 공유용 LAN IP 안내
+    try:
+        import socket
+        _s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        _s.connect(("8.8.8.8", 80)); _lan_ip = _s.getsockname()[0]; _s.close()
+    except Exception:
+        _lan_ip = None
+    print("═══════════════════════════════════════════════════════════")
+    print("  HPWD-Studio — UI + API 단일 서버")
+    print(f"  로컬:      http://localhost:{port}")
+    if _lan_ip:
+        print(f"  사내 공유: http://{_lan_ip}:{port}   (같은 망에서 접속)")
+    print(f"  Health:    http://localhost:{port}/health")
+    print("  종료: Ctrl+C")
+    print("═══════════════════════════════════════════════════════════\n")
     uvicorn.run(
         "server:app",
-        host="0.0.0.0",
+        host=host,
         port=port,
         reload=False,
         log_level="info",

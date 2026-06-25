@@ -2,9 +2,11 @@
 
 R290(프로판) 히트펌프 세탁건조기(HPWD) **사이클 설계 지원 도구**. 스키매틱 캔버스 UI + 듀얼 컴퓨트 엔진(Python·Modelica) + fidelity‑ladder Modelica 모델 + 인터랙티브 모델 문서.
 
-- **캔버스 (항상 이 주소로 접속):** https://hpwd-studio-task-production.up.railway.app
-- **모델 문서:** 위 주소 + `/model-docs/` — 컴포넌트 × fidelity(OFF/SEMI/ON/FUTURE) 물리·수치 레퍼런스
+- **실행 방식: 로컬 단일 서버 (UI+API).** 레포 루트에서 `./run.sh` (Mac/Linux) 또는 `run.bat` (Windows) → 브라우저에서 `http://localhost:8000`
+- **사내 공유:** 같은 서버가 `0.0.0.0`로 바인딩 → 같은 망의 동료는 `http://<서버IP>:8000` 으로 접속 (기동 시 콘솔에 IP 안내)
+- **모델 문서:** `http://localhost:8000/model-docs/` — 컴포넌트 × fidelity(OFF/SEMI/ON/FUTURE) 물리·수치 레퍼런스
 - 냉매: **R290(Propane) 전용**
+- (legacy) Railway 클라우드 배포도 가능하나 기본 경로는 로컬 서버로 전환됨
 
 ---
 
@@ -27,18 +29,20 @@ R290(프로판) 히트펌프 세탁건조기(HPWD) **사이클 설계 지원 도
 HPWD Studio는 세 부분으로 구성됩니다.
 
 ```
- 브라우저 ──▶ 캔버스 (Railway 정적 서빙, public/index.html)
-                  │  Backend URL 지정 (Custom URL)
+ 브라우저 ──▶ http://localhost:8000  (또는 사내 http://<서버IP>:8000)
+                  │
                   ▼
-          로컬 백엔드 (backend/server.py · FastAPI · :8010)
-            ├─ Python 엔진 (CoolProp)  ── Semi/On fidelity, 클라우드만으로도 가능
+          단일 서버 (backend/server.py · FastAPI · :8000)
+            ├─ 프론트엔드(public/) 정적 서빙 — same-origin (URL 분기·CORS 불필요)
+            ├─ Python 엔진 (CoolProp)  ── Semi/On fidelity
             └─ Modelica 엔진 (omc)     ── Off=L1 컴포넌트 + 전체 사이클 통합
                                           └─ HelmholtzMedia + R290Tab + modelica/*.mo
 ```
 
-- **프론트엔드 (캔버스)** — `public/index.html`. 냉동사이클(압축기·응축기·EEV·증발기) + 공기사이클(드럼·필터·증발기·응축기·팬) 스키매틱, 클릭 기반 파라미터 편집, LLM 어시스턴트. **Railway에 배포**돼 있어 브라우저로 바로 접속(설치 X). 루트 `server.py`가 `public/`를 정적 서빙.
-- **백엔드 (컴퓨트)** — `backend/server.py`(FastAPI). 엔드포인트: `/health`, `/components`, `/compute`, `/compute_modelica`, `/run_cycle`, `/run_air_cycle`, `/run_coupled_cycle` 등. Python·Modelica 두 엔진.
-- **Modelica 모델** — `modelica/*.mo`. fidelity ladder(컴포넌트별 OFF/SEMI/ON) + 사이클/시스템 통합 모델. omc로 실행.
+- **단일 서버** — `backend/server.py`(FastAPI)가 **UI(public/)와 API를 한 포트(:8000)에서 동시 서빙**. 프론트는 same-origin(`window.location.origin`)으로 API 호출 → 로컬·사내서버 어디서 열든 자동으로 맞음. `0.0.0.0` 바인딩이라 같은 망에서 IP로 공유 가능.
+- **프론트엔드 (캔버스)** — `public/index.html` 외 `on-design-studio` / `calibration-studio` / `component-studio` / `model-docs`. 냉동·공기 사이클 스키매틱, 파라미터 편집, LLM 어시스턴트.
+- **백엔드 (컴퓨트)** — 엔드포인트: `/health`, `/components`, `/compute`, `/compute_modelica`, `/run_cycle`, `/run_air_cycle`, `/run_coupled_cycle` 등. Python·Modelica 두 엔진.
+- **Modelica 모델** — `modelica/*.mo`. fidelity ladder + 사이클/시스템 통합 모델. omc로 실행.
 
 **세 가지 사용 방식**
 
@@ -54,26 +58,36 @@ HPWD Studio는 세 부분으로 구성됩니다.
 
 ---
 
-## 2. 빠른 시작 (캔버스)
+## 2. 빠른 시작
 
-로컬 백엔드가 떠 있다고 가정(§3). Python 엔진만 쓸 거면 백엔드 없이 바로 (1)만 하면 됩니다.
+**로컬 단일 서버 (UI+API)** — 레포 루트에서:
 
-1. 브라우저에서 https://hpwd-studio-task-production.up.railway.app 접속
-2. 우상단 **Backend 뱃지** 클릭 → **Custom URL** 칸에 `http://localhost:8010` 입력 → **SET**
-3. **Status → Connected**, Components 16 확인
-4. **Compute Engine → Modelica** 클릭 (한 번 설정하면 브라우저 localStorage에 저장 → 이후 자동 유지)
-5. 왼쪽 라이브러리에서 **Compressor**(또는 Evaporator/Condenser/EEV) 드래그 → 입력값 자동 채워짐 → **Run**
-   - 첫 Modelica 호출은 모델 빌드(~10–30초), 이후 캐시로 즉시. Python 엔진 결과와 거의 동일하면 정상.
+```bash
+# Mac/Linux
+./run.sh                 # 포트 변경: PORT=9000 ./run.sh
+
+# Windows
+run.bat
+```
+
+- 최초 실행 시 `backend/venv` 생성 + 의존성 설치(CoolProp/scipy 등, 수 분). 이후엔 바로 기동.
+- 콘솔에 접속 URL이 출력됨:
+  - **로컬:** `http://localhost:8000`
+  - **사내 공유:** `http://<서버IP>:8000` (같은 망의 동료가 접속)
+- 브라우저로 접속하면 캔버스가 뜨고, **API는 자동으로 같은 서버**를 가리킴(별도 Backend URL 설정 불필요).
+- **Modelica 엔진**을 쓰려면 그 서버 PC에 OpenModelica(omc) 설치 필요(§3). 없으면 Python 엔진으로 자동 동작.
+- 우상단 **Backend 뱃지**에서 상태/엔진(Python·Modelica) 토글. cloud(Railway)나 커스텀 URL이 필요하면 `?backend=<url>` 또는 뱃지에서 지정 가능.
+
+> **사내 서버에 상시 공유**하려면: 사내 PC/서버에서 위 명령으로 띄우고(방화벽에서 해당 포트 허용), 동료에게 `http://<서버IP>:8000` 공유. 백그라운드 상시 구동은 `nohup ./run.sh &`(Linux) 또는 작업 스케줄러/서비스 등록.
 
 ---
 
-## 3. 로컬 백엔드 셋업 (Modelica 엔진)
+## 3. Modelica 엔진 셋업 (OpenModelica)
 
-> 캔버스(프론트엔드)는 Railway 배포라 브라우저로 바로 접속. **Modelica 엔진은 로컬 PC에서만 동작**(OpenModelica + HelmholtzMedia 필요). 로컬에 백엔드 서버를 띄우고 캔버스가 그 로컬 서버를 가리키게 하는 게 핵심.
+> §2 단일 서버는 omc가 있으면 Modelica 엔진을, 없으면 Python 엔진을 자동 사용. **Modelica 엔진(Off=L1 + 전체 사이클)을 쓰려면** 서버 PC에 OpenModelica + HelmholtzMedia 설치가 필요. 아래는 그 셋업.
 
 **구성**
-- 프론트엔드 → Railway 배포 (브라우저)
-- 로컬 백엔드 → `python server.py` (FastAPI, Python·Modelica 두 엔진)
+- 단일 서버 → `./run.sh` (UI+API, FastAPI, Python·Modelica 두 엔진)
 - Modelica 엔진 → OpenModelica(omc) + HelmholtzMedia(R290) + repo 안의 `.mo` 모델
 
 ### 버전 1 — 새 컴퓨터 (아무것도 안 깔림)
