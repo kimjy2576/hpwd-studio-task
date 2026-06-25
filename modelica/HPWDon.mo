@@ -440,4 +440,40 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     end for;
   end TestDispatch;
 
+  model TestMarchSpan "enthalpy 마스터 march: 2상→과열 span (디스패치 통합)"
+    parameter Real P=5.8e5, Di=8.22e-3, G_ref=15.0;
+    parameter Real T_air=328.15 "55 degC";
+    parameter Real h_o=101.1756, eta_o=0.752039 "공기측 (별도 검증)";
+    parameter Real A_i_seg=0.0012911946, A_o_seg=0.0083013422;
+    parameter Real Pcrit=4.2512e6, M_mol=44.0956, x_in=0.4;
+    parameter Integer N=30;
+    parameter Real A_cs=Modelica.Constants.pi*Di^2/4.0;
+    parameter Real m_dot=G_ref*A_cs;
+    Real T_sat, hl, hv, h_fg, mu_l, k_l, cp_l, Pr_l, rho_l, rho_v, mu_v, P_r;
+    Real muv, kv, cpv, Prv, Rev, h_v_gni;
+    Real h_ref[N+1], x[N], T_ref[N], h_i[N], UA[N], Q[N], q_flux[N];
+    Real Q_total, x_out, T_out, SH_out;
+  equation
+    T_sat=R290Tab.Tsat(P); hl=R290Tab.hl(P); hv=R290Tab.hv(P); h_fg=hv-hl;
+    mu_l=R290Tab.mul(P); k_l=R290Tab.kl(P); cp_l=R290Tab.cpl(P); Pr_l=cp_l*mu_l/k_l;
+    rho_l=R290Tab.rhol(P); rho_v=R290Tab.rhov(P); mu_v=R290Tab.muv(P); P_r=P/Pcrit;
+    muv=R290Tab.muv(P); kv=R290Tab.kv(P); cpv=R290Tab.cpv(P); Prv=cpv*muv/kv; Rev=G_ref*Di/muv;
+    h_v_gni=HXCorr.gnielinski(Rev, Prv, kv, Di);
+    h_ref[1]=hl + x_in*h_fg;
+    for i in 1:N loop
+      x[i]=(h_ref[i] - hl)/h_fg;
+      T_ref[i]=if x[i] < 1.0 then T_sat else R290Tab.T_ph(P, h_ref[i]);
+      q_flux[i]=Q[i]/A_i_seg;
+      h_i[i]=hi_dispatch_evap(x[i], G_ref, Di, q_flux[i],
+                              mu_l, k_l, Pr_l, rho_l, rho_v, mu_v, P_r, M_mol, h_v_gni);
+      UA[i]=1.0/(1.0/(eta_o*h_o*A_o_seg) + 1.0/(h_i[i]*A_i_seg));
+      Q[i]=UA[i]*(T_air - T_ref[i]);
+      h_ref[i+1]=h_ref[i] + Q[i]/m_dot;
+    end for;
+    Q_total=sum(Q);
+    x_out=(h_ref[N+1] - hl)/h_fg;
+    T_out=R290Tab.T_ph(P, h_ref[N+1]);
+    SH_out=T_out - T_sat;
+  end TestMarchSpan;
+
 end HPWDon;
