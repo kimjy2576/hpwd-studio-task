@@ -28,17 +28,46 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     end if;
   end Volume_L3;
 
+  model Cycle_L3_guess "warm-start guess: 4컴포넌트를 healthy 경계로 독립 솔브 (각=검증된 standalone)"
+    // 동일 인스턴스명(comp/cond/eev/evap) → .mat가 폐루프 Cycle에 -iif로 매핑됨
+    HPWDon.Comp_Chamber comp(V_disp_cm3=10.0);
+    HPWD.Source src_c(p=6e5, h=623127.0);
+    HPWD.Sink snk_c(p=19e5);
+    Modelica.Blocks.Sources.Constant Nsig(k=3000.0);
+    HPWDevap.Cond_On cond;
+    HPWDevap.FlowSource src_cond(m_dot=0.005366, h=693465.0, p=19e5);
+    HPWDevap.OpenSink snk_cond(h=312428.0);
+    HPWDon.EEV_On eev(D_seat=2.0e-3, stroke_max=1.0e-3);
+    HPWD.Source src_e(p=19e5, h=312428.0);
+    HPWD.Sink snk_e(p=6e5);
+    Modelica.Blocks.Sources.Constant opsig(k=8.0);
+    HPWDevap.Evap_On evap;
+    HPWDevap.FlowSource src_evap(m_dot=0.005366, h=312428.0, p=6e5);
+    HPWDevap.OpenSink snk_evap(h=623127.0);
+  equation
+    connect(src_c.port, comp.port_a);
+    connect(comp.port_b, snk_c.port);
+    connect(Nsig.y, comp.N);
+    connect(src_cond.port, cond.port_a);
+    connect(cond.port_b, snk_cond.port);
+    connect(src_e.port, eev.port_a);
+    connect(eev.port_b, snk_e.port);
+    connect(opsig.y, eev.opening);
+    connect(src_evap.port, evap.port_a);
+    connect(evap.port_b, snk_evap.port);
+  end Cycle_L3_guess;
+
   model Cycle_L3_steady "L3 정상상태 사이클 (N·opening 고정, 운전점 솔브)"
     parameter Real N_comp=3000.0 "압축기 회전수 [rpm]";
-    parameter Real eev_opening=40.0 "EEV 개도 [%]";
+    parameter Real eev_opening=8.0 "EEV 개도 [%]";
     HPWDon.Comp_Chamber comp(V_disp_cm3=10.0);
-    Volume_L3 vol1(p_start=19e5, h_start=620e3) "토출 (Pc, 과열증기)";
+    Volume_L3 vol1(p_start=19e5, h_start=693e3) "토출 (Pc, 과열증기)";
     HPWDevap.Cond_On cond;
-    Volume_L3 vol2(p_start=19e5, h_start=360e3) "응축출구 (Pc, 액)";
+    Volume_L3 vol2(p_start=19e5, h_start=312e3) "응축출구 (Pc, 과냉액)";
     HPWDon.EEV_On eev(D_seat=2.0e-3, stroke_max=1.0e-3);
-    Volume_L3 vol3(p_start=6e5, h_start=350e3) "팽창후 (Pe, 2상)";
+    Volume_L3 vol3(p_start=6e5, h_start=312e3) "팽창후 (Pe, 2상)";
     HPWDevap.Evap_On evap;
-    Volume_L3 vol4(p_start=6e5, h_start=580e3) "흡입 (Pe, 과열증기)";
+    Volume_L3 vol4(p_start=6e5, h_start=623e3) "흡입 (Pe, 과열증기)";
     Modelica.Blocks.Sources.Constant Nsig(k=N_comp);
     Modelica.Blocks.Sources.Constant opsig(k=eev_opening);
     Real Pc_bar, Pe_bar, mdot, SH, x_evap_in, Q_evap, Q_cond, W_comp;
