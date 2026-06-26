@@ -394,7 +394,14 @@ Get-Process -Id (Get-NetTCPConnection -LocalPort 8010 -State Listen -EA Silently
 
 진단 — 서버 띄운 바로 그 창에서 `omc --version` 실패하면 그 창 PATH에 omc 없음(원인 확정).
 
-- **해결 1 (즉시)** — 서버 창에서 omc bin을 PATH 앞에 끼우고 띄움:
+**STEP 0 — 내 omc.exe 실제 경로부터 찾기** (버전 폴더명이 사람마다 다름: `1.26.3`/`1.25.x`/`1.24.x`…). 아래 한 줄이면 설치된 omc.exe 전체 경로가 그대로 나옴:
+```powershell
+Get-ChildItem "C:\Program Files\OpenModelica*\bin\omc.exe" | Select-Object -ExpandProperty FullName
+```
+- 출력 예: `C:\Program Files\OpenModelica1.26.3-64bit\bin\omc.exe` ← **이 경로를 아래 해결책의 `1.26.x`/`1.26.3` 자리에 그대로 붙여넣기.**
+- 아무것도 안 나오면 omc가 그 위치에 없음 → 설치 자체를 다시 확인(또는 다른 드라이브에 깔았으면 `C:\` 를 그 경로로 바꿔 검색).
+
+- **해결 1 (즉시)** — 서버 창에서 omc bin을 PATH 앞에 끼우고 띄움 (STEP 0 경로에서 `\omc.exe` 뺀 bin 폴더):
   ```powershell
   $env:PATH = "C:\Program Files\OpenModelica1.26.x-64bit\bin;" + $env:PATH
   ```
@@ -402,10 +409,13 @@ Get-Process -Id (Get-NetTCPConnection -LocalPort 8010 -State Listen -EA Silently
   ```powershell
   [Environment]::SetEnvironmentVariable("Path", $env:Path + ";C:\Program Files\OpenModelica1.26.x-64bit\bin", "User")
   ```
-- **해결 3 (PATH 완전 우회, 권장)** — `OMC_BIN`으로 omc.exe 경로 직접 지정(백엔드가 PATH보다 우선):
+- **해결 3 (PATH 완전 우회, 권장)** — `OMC_BIN`에 STEP 0에서 찾은 omc.exe **전체 경로**를 그대로 지정(백엔드가 PATH보다 우선):
   ```powershell
-  $env:OMC_BIN = "C:\Program Files\OpenModelica1.26.3-64bit\bin\omc.exe"
+  $env:OMC_BIN = "C:\Program Files\OpenModelica1.26.3-64bit\bin\omc.exe"   # ← STEP 0 출력 그대로
+  cd $HOME\hpwd-studio-task; .\run.bat                                      # 같은 창에서 바로
   ```
+  - ⚠️ **omc.exe 파일까지** 지정해야 함. bin 폴더만 주면 `"OMC_BIN 경로에 파일 없음"`으로 또 실패.
+  - 영구화: `[Environment]::SetEnvironmentVariable("OMC_BIN", "C:\...\bin\omc.exe", "User")` → 새 창부터 OMC_BIN 줄 생략 가능.
 
 **알아두면 좋은 것**
 - 환경변수(`$env:...`)는 **PowerShell 창마다 따로**. 새 창 열면 다시 설정.
