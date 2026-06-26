@@ -3449,7 +3449,7 @@ function HPWDStudio() {
         <ToolBtn onClick={resetSim} icon={RotateCcw} label="Reset" color="text-amber-600 hover:bg-amber-50" />
         <div className="w-px h-5 bg-slate-200 mx-1.5" />
         <ToolBtn onClick={() => setCycleOpen(true)} icon={Activity} label="Run Cycle"
-                 color="text-violet-600 hover:bg-violet-50" title="L1/L2 통합 사이클 러너 — 냉매·공기·커플드 테스트 링 구축 & 실행" />
+                 color="text-violet-600 hover:bg-violet-50" title="L1/L2/L3 통합 사이클 러너 — 냉매·공기·커플드 테스트 링 구축 & 실행" />
         <div className="w-px h-5 bg-slate-200 mx-1.5" />
         <ToolBtn onClick={exportAllCsv} icon={Download} label="Export CSV"
                  disabled={simState.history.length === 0}
@@ -5144,6 +5144,7 @@ function HPWDStudio() {
       {cycleOpen && <UnifiedCycleRunnerModal onClose={() => setCycleOpen(false)} blocks={blocks} connections={connections}
         onLoadTestRing={() => { const r = makeL1TestRing(); pushHistory(blocks, connections); setBlocks(r.blocks); setConnections(r.connections); setZoom(0.5); return r; }}
         onLoadL2TestRing={() => { const r = makeL2TestRing(); pushHistory(blocks, connections); setBlocks(r.blocks); setConnections(r.connections); setZoom(0.5); return r; }}
+        onLoadL3TestRing={() => { const r = makeL3TestRing(); pushHistory(blocks, connections); setBlocks(r.blocks); setConnections(r.connections); setZoom(0.5); return r; }}
         onLoadAirTestRing={() => { const r = makeAirTestRing(); pushHistory(blocks, connections); setBlocks(r.blocks); setConnections(r.connections); setZoom(0.5); return r; }}
         onLoadCoupledTestRing={() => { const r = makeCoupledTestRing(); pushHistory(blocks, connections); setBlocks(r.blocks); setConnections(r.connections); setZoom(0.5); return r; }} />}
       <ChatFAB onSend={chatExecuteMock} />
@@ -5715,6 +5716,42 @@ function makeL2TestRing() {
     {}, { P_in: 19.07, h_in: 312, P_out: 5.51, opening: 50, m_dot_meas: 0.00458 });
   const evap = mk(3, 'evaporator_moving_boundary', 180, 480, 'Evap · L2-test',
     {}, { P_evap: 5.51, h_in: 312, m_dot_ref: 0.00458, T_air_in: 50, RH_air_in: 90, V_air_CMM: 2.54 });
+  const blocks = [comp, cond, eev, evap];
+  const edge = (from, to, fside, tside) => ({
+    from: { blockId: from.id, side: fside, slot: 0 },
+    to: { blockId: to.id, side: tside, slot: 0 },
+    kind: 'refrigerant',
+    signals: autoMapSignals(from, to),
+    lineParams: defaultLineParams('refrigerant'),
+    cornerRadius: 8, routeMode: 'auto',
+  });
+  const connections = [
+    edge(comp, cond, 'right', 'left'),
+    edge(cond, eev, 'bottom', 'top'),
+    edge(eev, evap, 'left', 'right'),
+    edge(evap, comp, 'top', 'bottom'),
+  ];
+  return { blocks, connections };
+}
+
+// makeL3TestRing — L3(on-design) 냉매 링을 캔버스 블록+연결로 생성 (makeL1/L2TestRing의 L3판)
+//   on-design 타입(Comp_Chamber·Cond/Evap_On·EEV_On). 실행은 레퍼런스 Cycle_L3_steady
+//   (/run_cycle_l3, warm-start)이고 캔버스는 시각 패리티 — 파라미터는 타입 기본값.
+function makeL3TestRing() {
+  const ts = Date.now();
+  const mk = (i, type, x, y, name) => {
+    const def = TYPES[type] || {};
+    return {
+      id: `l3t${ts}_${i}`, type, x, y, name,
+      params: Object.fromEntries((def.parameters || []).map(p => [p.key, p.value])),
+      inputValues: {}, outputs: {},
+      state: def.stateInit ? JSON.parse(JSON.stringify(def.stateInit)) : {},
+    };
+  };
+  const comp = mk(0, 'compressor_chamber', 180, 120, 'Comp · L3-test');
+  const cond = mk(1, 'condenser_on_design', 700, 120, 'Cond · L3-test');
+  const eev = mk(2, 'eev_on_design', 700, 480, 'EEV · L3-test');
+  const evap = mk(3, 'evaporator_on_design', 180, 480, 'Evap · L3-test');
   const blocks = [comp, cond, eev, evap];
   const edge = (from, to, fside, tside) => ({
     from: { blockId: from.id, side: fside, slot: 0 },
@@ -6954,7 +6991,7 @@ function AirPlotFlex({ traj }) {
 }
 
 // =============================================================
-// UnifiedCycleRunnerModal — L1/L2 통합 사이클 러너 (하나의 버튼)
+// UnifiedCycleRunnerModal — L1/L2/L3 통합 사이클 러너 (하나의 버튼)
 //   피델리티 토글(L1/L2) × 도메인 탭(냉매/공기/커플드) = 6셀.
 //   모든 셀 단일 버튼 "🧪 테스트 링 구축 & 실행":
 //     L1 → 검증된 테스트 링을 캔버스에 구축 후 추출·실행 (canvas 엔드포인트)
@@ -6983,8 +7020,8 @@ const UNIFIED_CARD_DEFS = [
   { keys: ['Q_evap', 'Q_latent'], n: 'Q 증발', u: 'W', d: 0, c: 'text-indigo-600' },
 ];
 
-function UnifiedCycleRunnerModal({ onClose, blocks, connections, onLoadTestRing, onLoadL2TestRing, onLoadAirTestRing, onLoadCoupledTestRing }) {
-  const [fidelity, setFidelity] = useState('L1');       // 'L1' | 'L2'
+function UnifiedCycleRunnerModal({ onClose, blocks, connections, onLoadTestRing, onLoadL2TestRing, onLoadL3TestRing, onLoadAirTestRing, onLoadCoupledTestRing }) {
+  const [fidelity, setFidelity] = useState('L1');       // 'L1' | 'L2' | 'L3'
   const [domain, setDomain] = useState('refrigerant');  // 'refrigerant' | 'air' | 'coupled'
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState(null);
@@ -6996,13 +7033,16 @@ function UnifiedCycleRunnerModal({ onClose, blocks, connections, onLoadTestRing,
   const url = status.url || '';
   const isAir = domain === 'air';
   const isL2 = fidelity === 'L2';
+  const isL3 = fidelity === 'L3';
 
   // 동적 Tailwind 클래스 함정 회피 — 리터럴 조건부
-  const btnCls = isL2
+  const btnCls = isL3
+    ? 'bg-emerald-600 hover:bg-emerald-700 shadow-lg shadow-emerald-500/25'
+    : isL2
     ? 'bg-indigo-600 hover:bg-indigo-700 shadow-lg shadow-indigo-500/25'
     : 'bg-violet-600 hover:bg-violet-700 shadow-lg shadow-violet-500/25';
-  const dotCls = isL2 ? 'bg-indigo-500' : 'bg-violet-500';
-  const accentText = isL2 ? 'text-indigo-600' : 'text-violet-600';
+  const dotCls = isL3 ? 'bg-emerald-500' : isL2 ? 'bg-indigo-500' : 'bg-violet-500';
+  const accentText = isL3 ? 'text-emerald-600' : isL2 ? 'text-indigo-600' : 'text-violet-600';
 
   const _fetchErr = async (r, path) => {
     let detail = `HTTP ${r.status}`;
@@ -7026,7 +7066,12 @@ function UnifiedCycleRunnerModal({ onClose, blocks, connections, onLoadTestRing,
     setRunning(true); setError(null); setResult(null); setDetected(null);
     try {
       let data = null;
-      if (isL2) {
+      if (isL3) {
+        // L3 on-design 폐루프: 캔버스에 L3 테스트 링 구축(시각화) → warm-start 레퍼런스 솔브
+        onLoadL3TestRing();
+        setDetected(['Comp', 'Cond', 'EEV', 'Evap']);
+        data = await _post('/run_cycle_l3', { stop_time: 2, tolerance: 1e-6, intervals: null }, 'Pc_bar');
+      } else if (isL2) {
         // L1과 동일하게: 먼저 캔버스에 L2 테스트 링을 구축(시각화) → 레퍼런스 SEMI 모델 실행
         const builder = { refrigerant: onLoadL2TestRing, air: onLoadAirTestRing, coupled: onLoadCoupledTestRing }[domain];
         if (builder) builder();
@@ -7063,7 +7108,7 @@ function UnifiedCycleRunnerModal({ onClose, blocks, connections, onLoadTestRing,
   const visCards = UNIFIED_CARD_DEFS.map(def => ({ def, v: cardVal(def) })).filter(x => x.v != null);
 
   const refNodes = [
-    ['🌀', 'Comp', isL2 ? 'Winandy' : '이론'],
+    ['🌀', 'Comp', isL3 ? 'Chamber' : isL2 ? 'Winandy' : '이론'],
     ['♨', 'Cond', ('Pc_bar' in s) ? `${s.Pc_bar.toFixed(1)}bar` : '—'],
     ['🔻', 'EEV', ('opening' in s) ? `${s.opening.toFixed(0)}%` : '개도'],
     ['❄', 'Evap', ('Pe_bar' in s) ? `${s.Pe_bar.toFixed(1)}bar` : '—'],
@@ -7090,6 +7135,11 @@ function UnifiedCycleRunnerModal({ onClose, blocks, connections, onLoadTestRing,
       air: 'L2 공기 (AirRingL2 — Drum_L2 감률·흡착 + Fan_L2 손실분해, 코일 고정온도). 캔버스에 공기 링 구축 후 레퍼런스 모델 실행 (/run_cycle_l2).',
       coupled: 'L2 커플드 (Cycle_SEMI_full — 냉매·공기 전 SEMI, 코일온도 상호결정 + SMER). 캔버스에 커플드 링 구축 후 레퍼런스 모델 실행 (/run_cycle_l2).',
     },
+    L3: {
+      refrigerant: 'L3 on-design 냉매 폐루프 (Comp_Chamber·Cond_On·EEV_On·Evap_On + Volume_L3 4노드). 캔버스에 L3 테스트 링 구축 후 warm-start 솔브 (guess→steady -iif, /run_cycle_l3) → Pc≈19/Pe≈6 운전점.',
+      air: 'L3 공기는 아직 미지원 — 냉매 폐루프만. (L3 탭은 냉매 고정)',
+      coupled: 'L3 커플드는 아직 미지원 — 냉매 폐루프만. (L3 탭은 냉매 고정)',
+    },
   };
 
   return (
@@ -7098,7 +7148,7 @@ function UnifiedCycleRunnerModal({ onClose, blocks, connections, onLoadTestRing,
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-200 sticky top-0 bg-white z-10">
           <div className="flex items-center gap-2.5">
             <div className={`w-2.5 h-2.5 rounded ${dotCls}`} />
-            <span className="font-bold text-slate-800">Cycle Runner <span className="text-slate-400 font-medium text-sm">· L1/L2 통합 폐루프 (Modelica)</span></span>
+            <span className="font-bold text-slate-800">Cycle Runner <span className="text-slate-400 font-medium text-sm">· L1/L2/L3 통합 폐루프 (Modelica)</span></span>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-700 text-2xl leading-none px-2">×</button>
         </div>
@@ -7114,17 +7164,17 @@ function UnifiedCycleRunnerModal({ onClose, blocks, connections, onLoadTestRing,
             {/* 피델리티(L1/L2) + 도메인(냉매/공기/커플드) 탭 */}
             <div className="flex items-center gap-3 flex-wrap">
               <div className="flex border border-slate-200 rounded-lg overflow-hidden bg-slate-50">
-                {[['L1', 'L1', 'UA·이론'], ['L2', 'L2', 'SEMI MB']].map(([f, lbl, sub]) => (
-                  <button key={f} onClick={() => { setFidelity(f); setResult(null); setError(null); setDetected(null); }} disabled={running}
-                    className={`px-5 py-2 text-sm font-bold transition text-left ${fidelity === f ? (f === 'L2' ? 'bg-white text-indigo-700 shadow-[inset_0_-2px_0_0_#4F46E5]' : 'bg-white text-violet-700 shadow-[inset_0_-2px_0_0_#7C3AED]') : 'text-slate-500 hover:text-slate-700'}`}>
+                {[['L1', 'L1', 'UA·이론'], ['L2', 'L2', 'SEMI MB'], ['L3', 'L3', 'on-design']].map(([f, lbl, sub]) => (
+                  <button key={f} onClick={() => { setFidelity(f); if (f === 'L3') setDomain('refrigerant'); setResult(null); setError(null); setDetected(null); }} disabled={running}
+                    className={`px-5 py-2 text-sm font-bold transition text-left ${fidelity === f ? (f === 'L3' ? 'bg-white text-emerald-700 shadow-[inset_0_-2px_0_0_#059669]' : f === 'L2' ? 'bg-white text-indigo-700 shadow-[inset_0_-2px_0_0_#4F46E5]' : 'bg-white text-violet-700 shadow-[inset_0_-2px_0_0_#7C3AED]') : 'text-slate-500 hover:text-slate-700'}`}>
                     {lbl}<span className="block font-mono text-[10px] text-slate-400">{sub}</span>
                   </button>
                 ))}
               </div>
               <div className="flex border border-slate-200 rounded-lg overflow-hidden bg-slate-50">
                 {[['refrigerant', '냉매', 'Comp·Cond·EEV·Evap'], ['air', '공기', 'Drum·Fan·Evap·Cond'], ['coupled', '커플드', '냉매 ⟷ 공기']].map(([d, lbl, sub]) => (
-                  <button key={d} onClick={() => { setDomain(d); setResult(null); setError(null); setDetected(null); }} disabled={running}
-                    className={`px-4 py-2 text-sm font-bold transition text-left ${domain === d ? 'bg-white text-cyan-700 shadow-[inset_0_-2px_0_0_#0891B2]' : 'text-slate-500 hover:text-slate-700'}`}>
+                  <button key={d} onClick={() => { setDomain(d); setResult(null); setError(null); setDetected(null); }} disabled={running || (isL3 && d !== 'refrigerant')}
+                    className={`px-4 py-2 text-sm font-bold transition text-left ${domain === d ? 'bg-white text-cyan-700 shadow-[inset_0_-2px_0_0_#0891B2]' : 'text-slate-500 hover:text-slate-700'} ${(isL3 && d !== 'refrigerant') ? 'opacity-40 cursor-not-allowed' : ''}`}>
                     {lbl}<span className="block font-mono text-[10px] text-slate-400">{sub}</span>
                   </button>
                 ))}
