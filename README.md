@@ -390,6 +390,8 @@ Get-Process -Id (Get-NetTCPConnection -LocalPort 8010 -State Listen -EA Silently
 
 ### ⚠️ omc가 깔려있는데도 reason이 "omc 없음"일 때 (자주 겪음)
 
+> **먼저:** `run.bat`/`run.sh`는 이제 omc 표준 설치 위치(`C:\Program Files\OpenModelica*\bin\omc.exe`)를 **자동 탐지**함. 표준 위치에 깔았으면 OMC_BIN/PATH 안 건드리고 **그냥 `.\run.bat`** 이면 잡힘. 기동 로그 `omc: OMC_BIN = ...` 줄로 확인. 아래는 그래도 안 잡힐 때(비표준 위치/PATH 충돌).
+
 **원인:** 서버는 **자기를 띄운 PowerShell 창의 PATH**를 물려받음. 그 창이 OpenModelica 설치 *전*에 열렸거나 PATH 변경을 아직 못 받았으면 — omc가 설치돼 있어도 서버가 못 찾음. (다른 창에서 `omc --version`이 되더라도 **서버 띄운 그 창**에 없으면 소용 없음.)
 
 진단 — **서버 기동 로그의 `Modelica:` 줄을 먼저 봐라.** 비활성이면 바로 아래 두 줄이 원인을 찍어줌:

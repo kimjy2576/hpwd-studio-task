@@ -35,6 +35,21 @@ if not exist venv (
 
 echo [3/3] 서버 시작 중...
 
+REM ── omc: OMC_BIN 미설정 & PATH에도 없으면 표준 설치 위치 자동 탐지 ──
+REM   (버전 폴더명 1.26.x/1.25.x.. 자동 처리. 찾으면 OMC_BIN으로 박아 python에 전달)
+if "%OMC_BIN%"=="" (
+    where omc >nul 2>nul || (
+        for /d %%D in ("C:\Program Files\OpenModelica*-64bit") do if exist "%%D\bin\omc.exe" set "OMC_BIN=%%D\bin\omc.exe"
+        for /d %%D in ("C:\Program Files\OpenModelica*") do if exist "%%D\bin\omc.exe" set "OMC_BIN=%%D\bin\omc.exe"
+        for /d %%D in ("%USERPROFILE%\AppData\Local\Programs\OpenModelica*") do if exist "%%D\bin\omc.exe" set "OMC_BIN=%%D\bin\omc.exe"
+    )
+)
+if not "%OMC_BIN%"=="" (
+    echo   omc: OMC_BIN = %OMC_BIN%
+) else (
+    where omc >nul 2>nul && echo   omc: PATH에서 발견 || echo   omc: 미발견 ^(OpenModelica 미설치거나 비표준 위치 — §3 트러블슈팅^)
+)
+
 REM ── Modelica(OM) 엔진: HELMHOLTZ_PATH 미설정이면 흔한 위치 자동 탐지 ──
 REM (omc 설치 여부는 백엔드가 자동 감지. 경로 역슬래시는 백엔드가 '/'로 변환)
 if "%HELMHOLTZ_PATH%"=="" (
