@@ -151,6 +151,17 @@ git clone https://github.com/thorade/HelmholtzMedia.git
 - HelmholtzMedia → `$HOME\HelmholtzMedia`
   (라이브러리 진입점: `HelmholtzMedia\HelmholtzMedia\package.mo` ← 폴더가 한 번 더 중첩됨)
 
+> ⚠️ **`$HOME`이 안 맞을 수 있음 (실제 겪은 함정).** PowerShell `$HOME`이 환경에 따라 비거나 엉뚱한 곳을 가리키면 `$HOME\HelmholtzMedia\...`가 없는 경로가 됨 → `/health` reason이 `HelmholtzMedia 없음`으로 뜸. **clone 받은 위치를 본인이 직접 확인하고, 환경변수엔 절대경로를 박는 걸 권장:**
+> ```powershell
+> $HOME                                                   # 뭘 가리키는지 눈으로 확인
+> Test-Path "$HOME\HelmholtzMedia\HelmholtzMedia\package.mo"   # True 여야 함. False면 아래처럼 절대경로로.
+> ```
+> clone을 다른 데(예: `C:\Users\USER\dev\...`) 받았으면 그 경로 그대로:
+> ```powershell
+> $env:HELMHOLTZ_PATH = "C:\Users\USER\dev\HelmholtzMedia\HelmholtzMedia\package.mo"   # ← 본인 실제 경로
+> ```
+> (역슬래시 그대로 둬도 됨 — 백엔드가 omc용으로 `/` 변환. `.Replace('\','/')` 불필요)
+
 #### C. Python 패키지 설치
 
 ```powershell
