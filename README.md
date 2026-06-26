@@ -61,25 +61,47 @@ HPWD Studio는 세 부분으로 구성됩니다.
 
 ## 2. 빠른 시작
 
-**로컬 단일 서버 (UI+API)** — 레포 루트에서:
+**배치 파일(스크립트) 하나면 끝** — UI+API · 사내 공유 · Modelica 엔진까지 자동. 레포 루트에서:
 
 ```bash
-# Mac/Linux
-./run.sh                 # 포트 변경: PORT=9000 ./run.sh
-
 # Windows
-run.bat
+run.bat              # 더블클릭 또는 PowerShell에서  .\run.bat
+
+# Mac/Linux
+./run.sh             # 포트 변경:  PORT=9000 ./run.sh
 ```
 
-- 최초 실행 시 `backend/venv` 생성 + 의존성 설치(CoolProp/scipy 등, 수 분). 이후엔 바로 기동.
-- 콘솔에 접속 URL이 출력됨:
-  - **로컬:** `http://localhost:8000`
-  - **사내 공유:** `http://<서버IP>:8000` (같은 망의 동료가 접속)
-- 브라우저로 접속하면 캔버스가 뜨고, **API는 자동으로 같은 서버**를 가리킴(별도 Backend URL 설정 불필요).
-- **Modelica 엔진**을 쓰려면 그 서버 PC에 OpenModelica(omc) 설치 필요(§3). 없으면 Python 엔진으로 자동 동작.
-- 우상단 **Backend 뱃지**에서 상태/엔진(Python·Modelica) 토글. cloud(Railway)나 커스텀 URL이 필요하면 `?backend=<url>` 또는 뱃지에서 지정 가능.
+이 하나가 자동으로 처리하는 것:
+- **UI+API 단일 서버** 기동 (최초 1회만 `backend/venv` 생성 + 의존성 설치, 수 분)
+- **사내 공유 자동** — `0.0.0.0` 바인딩이라 같은 망 동료가 `http://<서버IP>:8000` 으로 바로 접속 (콘솔에 URL 출력, 별도 설정 없음)
+- **Modelica(OM) 엔진 자동** — 그 PC에 omc + HelmholtzMedia가 **표준 위치**에 있으면 자동 탐지해 활성화. 없으면 Python 엔진만으로 동작.
 
-> **사내 서버에 상시 공유**하려면: 사내 PC/서버에서 위 명령으로 띄우고(방화벽에서 해당 포트 허용), 동료에게 `http://<서버IP>:8000` 공유. 백그라운드 상시 구동은 `nohup ./run.sh &`(Linux) 또는 작업 스케줄러/서비스 등록.
+기동 로그에서 이 줄들로 상태 확인:
+```
+  omc:       OMC_BIN = ...           (또는 'PATH에서 발견')
+  Modelica:  활성 (OM 엔진 사용 가능)
+  로컬:      http://localhost:8000
+  사내 공유: http://<IP>:8000        (같은 망에서 접속)
+```
+- 브라우저로 접속하면 캔버스가 뜨고 **API는 자동으로 같은 서버**를 가리킴(Backend URL 설정 불필요).
+- 우상단 **Backend 뱃지**에서 엔진(Python·Modelica) 상태 확인.
+
+### OM이 자동으로 안 켜질 때 (비표준 경로) — `local.env` 한 번만
+
+omc나 HelmholtzMedia를 표준 위치가 **아닌** 곳에 깔았으면(기동 로그가 `미발견`/`미감지`로 알려줌), `backend/local.env.example` 을 `backend/local.env` 로 복사하고 본인 경로를 박으면 — 이후엔 **`run.bat`만으로 OM까지 자동**으로 켜짐:
+
+```ini
+# backend/local.env  (git에 안 올라감)
+OMC_BIN=C:\Program Files\OpenModelica1.26.9-64bit\bin\omc.exe
+HELMHOLTZ_PATH=C:\Users\USER\HelmholtzMedia\HelmholtzMedia\package.mo
+# PORT=8000
+# HOST=0.0.0.0          # 나만 쓰려면 127.0.0.1
+```
+- **절대경로 권장** (역슬래시 `\` 그대로 둬도 됨 — 백엔드가 `/`로 변환). PowerShell `$HOME`은 환경따라 빗나갈 수 있으니 `local.env`엔 풀 경로를.
+- 표준 위치(`C:\Program Files\OpenModelica*`, `%USERPROFILE%\HelmholtzMedia`)에 깔았으면 이 파일 **不要**.
+- omc 설치 자체가 처음이면 → §3.
+
+> **상시 사내 서버**: 서버 PC에서 위 명령으로 띄우고(방화벽에서 포트 허용), 동료에게 `http://<서버IP>:8000` 공유. 백그라운드 구동은 `nohup ./run.sh &`(Linux) 또는 작업 스케줄러/서비스 등록.
 
 ### 업데이트 (레포가 바뀌었을 때)
 
@@ -171,31 +193,28 @@ pip install -r requirements.txt
 
 (fastapi, uvicorn, pydantic, CoolProp, scipy — CoolProp 빌드에 좀 걸림)
 
-#### D. 서버 띄우기
+#### D. 서버 띄우기 — `run.bat` 권장
 
-A/B/C가 끝났으면(omc PATH + HelmholtzMedia를 `$HOME\HelmholtzMedia`에 clone), **§2의 `run.bat`(또는 `./run.sh`)를 그대로** 쓰면 됨 — 표준 위치의 HelmholtzMedia를 자동 탐지해 OM 엔진을 켬:
-
+A/B/C 끝났으면 **§2의 `run.bat`(또는 `./run.sh`) 하나면 됨** — omc·HelmholtzMedia 표준 위치를 자동 탐지해 OM 엔진까지 켬:
 ```powershell
 cd $HOME\hpwd-studio-task
-.\run.bat                      # 포트 변경: set PORT=8010 & .\run.bat
+.\run.bat
 ```
+- 기동 로그에 `Modelica:  활성 (OM 엔진 사용 가능)` 뜨면 OK. `/health` → `available: true`.
+- 비표준 경로라 자동탐지가 실패하면 → `backend\local.env`에 `OMC_BIN`/`HELMHOLTZ_PATH` 한 번만 박기(§2). 이후 `.\run.bat`만으로 자동.
 
-- 기동 로그에 `Modelica 엔진: HelmholtzMedia 감지 ... → omc 있으면 자동 활성` 떠야 함.
-- `/health`의 `modelica_engine: available=True` 면 OK.
-
-**비표준 위치이거나 직접 띄우고 싶으면** (`run.bat` 대신 수동):
+**수동으로 직접 띄우려면 — 한 번에 복붙** (PowerShell 창에 통째로; env 3~4줄 + 실행이 한 블록):
 ```powershell
 cd $HOME\hpwd-studio-task\backend
-$env:HELMHOLTZ_PATH = "D:\어딘가\HelmholtzMedia\HelmholtzMedia\package.mo"  # 비표준 위치일 때만
-$env:PORT="8010"               # 8000 충돌 시
+$env:OMC_BIN        = "C:\Program Files\OpenModelica1.26.9-64bit\bin\omc.exe"   # omc가 PATH에 있으면 이 줄 생략 가능
+$env:HELMHOLTZ_PATH = "C:\Users\USER\HelmholtzMedia\HelmholtzMedia\package.mo"  # ← 본인 절대경로
+$env:PORT           = "8000"                                                     # 8000 충돌 시 8010 등
 python server.py
 ```
-
-- ⚠️ `HELMHOLTZ_PATH` 역슬래시 그대로 둬도 됨 — 백엔드가 omc용으로 `/`로 자동 변환.
-- ⚠️ `PORT` — 기본 8000. 8000을 Docker·LLM 서버가 잡으면 `8010` 등으로.
-- 성공 로그: `Uvicorn running on http://0.0.0.0:<PORT>` + `Frontend(public/) mounted at /` + `Modelica bridge imported (...)`. 이 포트로 접속 시 UI·API same-origin이라 Backend URL 설정 불필요.
-- ⚠️ **창 닫거나 Ctrl+C 하면 서버 죽음.** 사내 상시 공유는 끄지 말 것(백그라운드 구동은 §2 참고).
-- 💡 omc PATH 충돌이 잦으면 → `$env:OMC_BIN="C:\...\omc.exe"`로 PATH 우회(아래 **빠른 복붙 B** / 트러블슈팅 **해결 3**).
+- ⚠️ **절대경로로 박을 것.** PowerShell `$HOME`이 환경따라 빗나가면 `HelmholtzMedia 없음`이 뜸(실제 겪은 함정). 확인: `Test-Path "<경로>"` → `True`.
+- ⚠️ 역슬래시 `\` 그대로 OK — 백엔드가 omc용으로 `/` 변환.
+- 성공 로그: `Modelica: 활성` + `Uvicorn running on http://0.0.0.0:<PORT>`. 같은 포트로 접속 시 same-origin이라 Backend URL 설정 불필요.
+- ⚠️ 창 닫거나 Ctrl+C 하면 서버 죽음. 사내 상시 공유는 끄지 말 것.
 
 #### E. 서버 확인 (새 PowerShell 창)
 
@@ -210,56 +229,26 @@ Invoke-RestMethod http://localhost:8010/health
 
 띄운 포트로 접속하면 됨 — 예: `http://localhost:8010`. 프론트가 same-origin으로 API를 자동 인식(별도 Backend URL 설정 없음). 사내 공유는 `http://<서버IP>:8010`.
 
-### 버전 2 — 원래 작업하던 컴퓨터 (설치됨, 재부팅/재설정만)
+### 버전 2 — 원래 작업하던 컴퓨터 (재기동, 한 줄 복붙)
 
-**재부팅하면 날아가는 것:** ① 환경변수(세션 한정) ② 띄워둔 서버
-**그대로 남는 것:** 설치 프로그램, clone한 코드, 캔버스 설정(localStorage의 Backend URL·엔진 선호)
+재부팅하면 ① 세션 환경변수 ② 띄워둔 서버가 날아감. 설치·clone·캔버스 설정(localStorage)은 남음.
 
+**권장 — `run.bat` 한 줄** (경로를 `backend\local.env`에 박아뒀으면 OM까지 자동):
 ```powershell
-# (변경 있었을 때만) 최신 코드
-cd $HOME\hpwd-studio-task; git pull
-
-# 포트 비었는지 확인
-Get-NetTCPConnection -LocalPort 8010 -State Listen -EA SilentlyContinue
-
-# 서버 띄우기 (환경변수는 매번 다시!)
-cd $HOME\hpwd-studio-task\backend
-$env:HELMHOLTZ_PATH = "$HOME\HelmholtzMedia\HelmholtzMedia\package.mo".Replace('\','/')
-$env:PORT="8010"
-python server.py
-
-# (새 창) 확인
-Invoke-RestMethod http://localhost:8010/health
+cd $HOME\hpwd-studio-task; git pull; .\run.bat
 ```
 
-- 백엔드·프론트 모두 같은 서버라 **코드 바뀌면 서버 재시작 + 브라우저 하드리프레시(Ctrl+Shift+R)**.
-- 프론트는 same-origin으로 API 자동 인식. 다른 호스트의 백엔드를 쓰려면 Backend 뱃지 → Custom URL 또는 `?backend=<url>`.
-
-### 빠른 복붙 (원래 PC, 한 줄)
-
-**A. 표준 — omc가 PATH에 잡힌 창에서:**
+**수동 한 줄** (env 직접 — local.env 안 쓸 때):
 ```powershell
-cd $HOME\hpwd-studio-task\backend; $env:HELMHOLTZ_PATH = "$HOME\HelmholtzMedia\HelmholtzMedia\package.mo".Replace('\','/'); $env:PORT="8010"; python server.py
+cd $HOME\hpwd-studio-task\backend; $env:OMC_BIN="C:\Program Files\OpenModelica1.26.9-64bit\bin\omc.exe"; $env:HELMHOLTZ_PATH="C:\Users\USER\HelmholtzMedia\HelmholtzMedia\package.mo"; $env:PORT="8000"; python server.py
 ```
+- omc가 PATH에 잡혀 있으면 `$env:OMC_BIN="...";` 부분 생략 가능.
+- **매번 env 치기 싫으면** → 둘 중 하나로 한 번만 고정:
+  - `backend\local.env`에 박고 `.\run.bat` (가장 깔끔), 또는
+  - 영구 환경변수: `[Environment]::SetEnvironmentVariable("OMC_BIN","C:\...\bin\omc.exe","User")` (새 창부터 적용)
+- 코드 바뀌면 **서버 재시작 + 브라우저 하드리프레시(Ctrl+Shift+R)**. 포트 점유 확인: `Get-NetTCPConnection -LocalPort 8000 -State Listen -EA SilentlyContinue`.
 
-**B. OMC_BIN 경로 직접 지정 (권장) — PATH 신경 안 써도 됨.**
-
-① 일회용 (이 창에서만):
-```powershell
-cd $HOME\hpwd-studio-task\backend
-$env:OMC_BIN = "C:\Program Files\OpenModelica1.26.3-64bit\bin\omc.exe"   # 실제 omc.exe 경로
-$env:HELMHOLTZ_PATH = "$HOME\HelmholtzMedia\HelmholtzMedia\package.mo".Replace('\','/')
-$env:PORT="8010"
-python server.py
-```
-
-② 영구 (한 번만 박으면 새 창마다 자동 적용):
-```powershell
-[Environment]::SetEnvironmentVariable("OMC_BIN", "C:\Program Files\OpenModelica1.26.3-64bit\bin\omc.exe", "User")
-# 이후 새 창부터는 OMC_BIN 줄 빼도 됨
-```
-
-> `OMC_BIN`은 백엔드(`bridge.py` `_omc_bin()`, `server.py` `_modelica_status()`)가 PATH보다 **우선** 사용. `where.exe omc`가 못 찾아도 동작.
+> `OMC_BIN`·`HELMHOLTZ_PATH`는 백엔드(`bridge.py`, `server.py`)가 PATH·기본값보다 **우선** 사용. `local.env` → 자동탐지 → 수동 env 순으로 적용됨.
 
 ---
 
@@ -348,7 +337,8 @@ python emit_full.py    # r290_table.npz → ../R290Tab.mo
 ```
 hpwd-studio-task/
 ├─ README.md                  ← 이 파일
-├─ run.sh / run.bat           로컬 단일 서버 실행 (UI+API)
+├─ run.sh / run.bat           로컬 단일 서버 실행 (UI+API) — omc·HelmholtzMedia 자동탐지
+├─ .gitignore                 venv·local.env·omc 빌드산출물(modelica/) 제외
 ├─ server.py                  (legacy) Railway 정적 서버 — 로컬에선 불필요
 ├─ Procfile, railway.json     (legacy) Railway 배포 설정
 ├─ public/
@@ -372,7 +362,8 @@ hpwd-studio-task/
 │  ├─ server.py               FastAPI (Python·Modelica 엔진)
 │  ├─ bridge.py(외)·components·design·modelica
 │  ├─ requirements.txt        Python 의존성
-│  └─ Dockerfile, start.bat/sh
+│  ├─ local.env.example       로컬 경로 설정 템플릿 (복사 → local.env, 비표준 경로용)
+│  └─ Dockerfile, start.bat/sh  start 스크립트: local.env 로드 + omc/HelmholtzMedia 자동탐지
 ├─ docs/
 │  ├─ local-modelica-setup.md 로컬 셋업 (본 README §3의 원본)
 │  └─ modelica-decision.md    Modelica 채택 의사결정 기록
@@ -457,8 +448,8 @@ Get-ChildItem "C:\Program Files\OpenModelica*\bin\omc.exe" | Select-Object -Expa
 
 ## 9. 한눈 체크리스트
 
-**새 PC:** Git → Python(3.11+) → (Modelica 쓸 거면) OpenModelica 설치 → repo clone → `./run.sh`(최초 venv 자동) → 브라우저 `http://localhost:8000` → (Modelica면 `HELMHOLTZ_PATH` 설정 후 재기동) → 엔진 선택 → 테스트.  사내 공유는 `http://<서버IP>:8000`.
+**새 PC:** Git → Python(3.11+) → (Modelica 쓸 거면) OpenModelica + HelmholtzMedia clone → repo clone → `run.bat`/`./run.sh`(최초 venv 자동, omc·HelmholtzMedia 자동탐지) → 브라우저 `http://localhost:8000` → 기동 로그 `Modelica: 활성` 확인 → 테스트.  자동탐지 실패 시 `backend/local.env`에 경로 한 번만.  사내 공유는 `http://<서버IP>:8000`.
 
-**원래 PC (업데이트):** `git pull` → (서버 떠 있으면 Ctrl+C) → `./run.sh`(Windows: `run.bat`) → 브라우저 하드리프레시(Ctrl+Shift+R) → `/health` 확인.  `requirements.txt` 바뀌었으면 venv에 `pip install -r backend/requirements.txt`. (Modelica는 `HELMHOLTZ_PATH` 재설정)
+**원래 PC (업데이트):** `git pull` → (서버 떠 있으면 Ctrl+C) → `run.bat`/`./run.sh` → 브라우저 하드리프레시(Ctrl+Shift+R) → `/health` 확인.  `requirements.txt` 바뀌었으면 venv에 `pip install -r backend/requirements.txt`. (Modelica 경로는 `backend/local.env`에 박아두면 매번 자동)
 
 **모델 직접 실행(개발):** §4 로드 순서대로 `loadFile` → `simulate(모델, stopTime=N, numberOfIntervals=N)` → `.mat`를 OMEdit/Python으로 읽기.

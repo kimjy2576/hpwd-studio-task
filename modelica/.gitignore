@@ -1,0 +1,8 @@
+# OpenModelica(omc) 빌드 산출물 전부 무시, 소스만 추적
+# (.o .c .h .json .xml .mat .makefile .log .libs .bin, 모델명 실행파일 등)
+*
+!.gitignore
+!*/
+!*.mo
+!*.py
+!*.md

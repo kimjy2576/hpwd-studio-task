@@ -19,6 +19,15 @@ fi
 
 echo "[3/3] 서버 시작 중..."
 
+# ── local.env (있으면) 로드: 비표준 경로를 여기 한 번만 박으면 ./run.sh만으로 OK ──
+if [ -f local.env ]; then
+    echo "  local.env 로드"
+    while IFS='=' read -r _k _v; do
+        case "$_k" in ''|\#*) continue;; esac
+        export "$_k=$_v"
+    done < local.env
+fi
+
 # ── omc: OMC_BIN 미설정 & PATH에도 없으면 표준 위치 자동 탐지 ──
 if [ -z "$OMC_BIN" ] && ! command -v omc >/dev/null 2>&1; then
     for cand in /usr/bin/omc /usr/local/bin/omc /opt/openmodelica/bin/omc /Applications/OpenModelica.app/Contents/Resources/omc; do

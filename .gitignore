@@ -1,0 +1,11 @@
+# Python venv / 캐시
+backend/venv/
+**/__pycache__/
+*.pyc
+
+# 로컬 설정 (사용자별 경로·포트 — git에 안 올림)
+backend/local.env
+
+# OS
+.DS_Store
+Thumbs.db

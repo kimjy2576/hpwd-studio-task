@@ -35,6 +35,13 @@ if not exist venv (
 
 echo [3/3] 서버 시작 중...
 
+REM ── local.env (있으면) 로드: 비표준 경로를 여기 한 번만 박으면 배치만으로 OK ──
+REM   형식: KEY=VALUE 한 줄씩 (OMC_BIN / HELMHOLTZ_PATH / PORT / HOST). '#' 주석.
+if exist "local.env" (
+    echo   local.env 로드
+    for /f "usebackq eol=# tokens=1* delims==" %%A in ("local.env") do set "%%A=%%B"
+)
+
 REM ── omc: OMC_BIN 미설정 & PATH에도 없으면 표준 설치 위치 자동 탐지 ──
 REM   (버전 폴더명 1.26.x/1.25.x.. 자동 처리. 찾으면 OMC_BIN으로 박아 python에 전달)
 if "%OMC_BIN%"=="" (
