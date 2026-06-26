@@ -1049,7 +1049,89 @@ def run_cycle_l2(model='CycleDynL2', stop_time=120.0, tolerance=1e-6,
 
 
 # ══════════════════════════════════════════════════════════════════
-# 캔버스 토폴로지 → 커플드 .mo 자동생성 (냉매 closed + 공기 closed 결합)
+#  L3 (on-design) 정상상태 사이클 — warm-start 2-step
+#   Comp_Chamber + Cond_On + EEV_On + Evap_On + Volume_L3 4노드 폐루프.
+#   폐루프 DAE init이 cold-start면 starved 점으로 빠짐 → guess(.mat)로 warm-start:
+#     ① simulate(Cycle_L3_guess): 4컴포넌트를 healthy 경계로 독립 솔브 → .mat
+#     ② simulate(Cycle_L3_steady, -iif <guess>.mat): HX 내부배열까지 이름매핑 init
+#        → healthy 운전점(Pc≈19/Pe≈6) 수렴.
+# ══════════════════════════════════════════════════════════════════
+_L3_BASE_MO = ['R290Tab.mo', 'HXCorr.mo', 'HPWD.mo', 'HPWDon.mo',
+               'HPWDevap.mo', 'Cycle.mo', 'Control.mo', 'HPWDcycle.mo']
+
+
+def run_cycle_l3(stop_time=2.0, tolerance=1e-6, intervals=None,
+                 n_traj=80, timeout=2400):
+    """L3 on-design 폐루프 사이클을 warm-start로 솔브 → 정착값 + 궤적.
+
+    L1 run_canvas_cycle / L2 run_cycle_l2의 L3판. on-design 컴포넌트(Comp_Chamber·
+    Cond_On·Evap_On·EEV_On)는 cold-start 폐루프가 starved-attractor로 빠지므로
+    Cycle_L3_guess(.mat) → Cycle_L3_steady(-iif) 2-step. omc 필요, 수십초~수분.
+
+    반환: {model, stop_time, settled{Pc_bar,Pe_bar,mdot,SH,Q_evap,Q_cond,
+            W_comp,COP_cooling}, trajectory{time,Pc_bar,Pe_bar,SH_evap}}
+    """
+    if intervals is None:
+        intervals = max(20, int(round(stop_time)) * 10)
+    wdir = os.path.join(_WORK, 'l3_cycle')
+    os.makedirs(wdir, exist_ok=True)
+    loads = "".join(
+        f'loadFile("{_fs(os.path.join(MODELICA_DIR, f))}"); getErrorString();\n'
+        for f in _L3_BASE_MO)
+    mos = (
+        f'loadModel(Modelica); getErrorString();\n'
+        f'loadFile("{_fs(HELMHOLTZ_PATH)}"); getErrorString();\n'
+        f'{loads}'
+        # ① warm-start guess → HPWDcycle.Cycle_L3_guess_res.mat
+        f'simulate(HPWDcycle.Cycle_L3_guess, stopTime=0.1, numberOfIntervals=1, '
+        f'method="dassl", tolerance=1e-7); getErrorString();\n'
+        # ② steady를 guess .mat에서 초기화 (HX 내부배열까지 이름매핑)
+        f'simulate(HPWDcycle.Cycle_L3_steady, stopTime={float(stop_time):.6g}, '
+        f'numberOfIntervals={int(intervals)}, method="dassl", '
+        f'tolerance={float(tolerance):.3g}, outputFormat="csv", '
+        f'simflags="-iif HPWDcycle.Cycle_L3_guess_res.mat"); getErrorString();\n')
+    open(os.path.join(wdir, 'run.mos'), 'w').write(mos)
+    r = subprocess.run([_omc_bin(), "run.mos"], cwd=wdir,
+                       capture_output=True, text=True, timeout=timeout)
+    csv_path = os.path.join(wdir, "HPWDcycle.Cycle_L3_steady_res.csv")
+    if not os.path.exists(csv_path):
+        raise RuntimeError(
+            "L3 사이클 실행 실패 (guess→steady warm-start):\n"
+            + (r.stdout + r.stderr)[-1800:])
+    rows = list(_csv.reader(open(csv_path)))
+    hdr, data = rows[0], rows[1:]
+    col = {h: i for i, h in enumerate(hdr)}
+
+    def last(name, d=None):
+        i = col.get(name)
+        return float(data[-1][i]) if (i is not None and data) else d
+
+    def ds(name):
+        i = col.get(name)
+        if i is None or not data:
+            return []
+        s = [float(row[i]) for row in data]
+        if len(s) <= n_traj:
+            return s
+        step = len(s) / n_traj
+        return [s[min(len(s) - 1, int(k * step))] for k in range(n_traj)]
+
+    settled = {}
+    for k in ('Pc_bar', 'Pe_bar', 'mdot', 'SH', 'x_evap_in',
+              'Q_evap', 'Q_cond', 'W_comp'):
+        v = last(k)
+        if v is not None:
+            settled[k] = v
+    if 'mdot' in settled:
+        settled['m_dot'] = settled['mdot']        # 프론트 카드 키 alias
+    if settled.get('W_comp'):
+        settled['COP_cooling'] = settled.get('Q_evap', 0.0) / max(settled['W_comp'], 1.0)
+        if settled.get('Q_cond'):
+            settled['COP_heating'] = settled['Q_cond'] / max(settled['W_comp'], 1.0)
+    traj = {'time': ds('time'), 'Pc_bar': ds('Pc_bar'),
+            'Pe_bar': ds('Pe_bar'), 'SH_evap': ds('SH')}
+    return {'model': 'Cycle_L3_steady', 'stop_time': float(stop_time),
+            'settled': settled, 'trajectory': traj}
 #   냉매 링(comp→cond→eev→evap)과 공기 링(drum→[filter]→fan→evap→cond)을
 #   각각 추출. evap/cond는 양쪽이 공유하는 merged HX(한 번만 선언, 냉매 chain은
 #   port_a/b · 공기 chain은 air_a/b 참조). 표준 토폴로지면 Cycle_coupled_closed

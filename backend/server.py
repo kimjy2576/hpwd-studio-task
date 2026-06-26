@@ -69,6 +69,7 @@ try:
                                   run_coupled_cycle as _run_coupled_cycle, COUPLED_MODELS,
                                   run_canvas_coupled_cycle as _run_canvas_coupled_cycle,
                                   run_cycle_l2 as _run_cycle_l2, ALL_L2_MODELS,
+                                  run_cycle_l3 as _run_cycle_l3,
                                   CYCLE_MODELS_L2, COUPLED_MODELS_L2,
                                   COMPONENT_REGISTRY, CYCLE_MODELS, HELMHOLTZ_PATH)
     _modelica['imported'] = True
@@ -353,6 +354,12 @@ class CycleL2Request(BaseModel):
     intervals: int | None = None   # None → stopTime(1s 스텝): 풀SEMI init 안정화
 
 
+class CycleL3Request(BaseModel):
+    stop_time: float = 2.0          # steady warm-start: 짧게(수렴점 유지 확인)
+    tolerance: float = 1e-6
+    intervals: int | None = None    # None → stopTime*10
+
+
 @app.post("/run_cycle_l2", response_model=CycleResponse)
 def run_cycle_l2_endpoint(req: CycleL2Request):
     """L2 SEMI 사이클(냉매 CycleDynL2 / 커플드 Cycle_SEMI_full·_L2air) transient 시뮬.
@@ -374,6 +381,27 @@ def run_cycle_l2_endpoint(req: CycleL2Request):
                              settled=r['settled'], trajectory=r['trajectory'])
     except Exception as e:
         return CycleResponse(model=req.model, error=f"{type(e).__name__}: {e}")
+
+
+@app.post("/run_cycle_l3", response_model=CycleResponse)
+def run_cycle_l3_endpoint(req: CycleL3Request):
+    """L3 on-design 폐루프 사이클 — warm-start 2-step (guess → steady -iif).
+
+    L1/L2 사이클 러너의 L3판. on-design 컴포넌트(Comp_Chamber·Cond_On·Evap_On·
+    EEV_On + Volume_L3 4노드)는 cold-start 폐루프가 starved점으로 빠지므로
+    Cycle_L3_guess(.mat)로 healthy 경계를 만들고 Cycle_L3_steady를 -iif로 초기화.
+    Pc≈19/Pe≈6 운전점 반환. omc 필요(컴파일 포함 수십초~수분).
+    """
+    ok, why = _modelica_status()
+    if not ok:
+        return CycleResponse(model="Cycle_L3_steady", error=f"Modelica 엔진 사용 불가: {why}.")
+    try:
+        r = _run_cycle_l3(stop_time=req.stop_time, tolerance=req.tolerance,
+                          intervals=req.intervals)
+        return CycleResponse(model=r['model'], stop_time=r['stop_time'],
+                             settled=r['settled'], trajectory=r['trajectory'])
+    except Exception as e:
+        return CycleResponse(model="Cycle_L3_steady", error=f"{type(e).__name__}: {e}")
 
 
 @app.post("/run_canvas_coupled_cycle", response_model=CanvasCycleResponse)
