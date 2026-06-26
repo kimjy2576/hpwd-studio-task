@@ -392,7 +392,23 @@ Get-Process -Id (Get-NetTCPConnection -LocalPort 8010 -State Listen -EA Silently
 
 **원인:** 서버는 **자기를 띄운 PowerShell 창의 PATH**를 물려받음. 그 창이 OpenModelica 설치 *전*에 열렸거나 PATH 변경을 아직 못 받았으면 — omc가 설치돼 있어도 서버가 못 찾음. (다른 창에서 `omc --version`이 되더라도 **서버 띄운 그 창**에 없으면 소용 없음.)
 
-진단 — 서버 띄운 바로 그 창에서 `omc --version` 실패하면 그 창 PATH에 omc 없음(원인 확정).
+진단 — **서버 기동 로그의 `Modelica:` 줄을 먼저 봐라.** 비활성이면 바로 아래 두 줄이 원인을 찍어줌:
+```
+Modelica:  비활성 — <reason>
+           ↳ 서버가 보는 OMC_BIN = ...
+           ↳ 서버가 보는 HELMHOLTZ_PATH = ...
+```
+- **`OMC_BIN = (미설정)`** 인데 본인은 설정했다? → **그 설정이 서버 프로세스에 전달 안 된 것.** 거의 항상 아래 둘 중 하나:
+  - ⚠️ **`run.bat`를 탐색기에서 더블클릭**으로 띄움 → PowerShell에서 친 `$env:OMC_BIN`과 **완전 별개 프로세스**라 못 받음. **더블클릭 금지.** OMC_BIN 설정한 **바로 그 PowerShell 창**에서 `cd $HOME\hpwd-studio-task; .\run.bat`.
+  - ⚠️ OMC_BIN을 **A 창**에서 설정하고 서버는 **B 창**에서 띄움 → env는 창마다 따로. 같은 창에서 해야 함.
+  - 매번 같은 창 맞추기 귀찮으면 → **영구(User) 등록** 후 **새 창**에서 실행:
+    ```powershell
+    [Environment]::SetEnvironmentVariable("OMC_BIN", "C:\Program Files\OpenModelica1.26.3-64bit\bin\omc.exe", "User")
+    # 새 PowerShell 창 열고 → cd $HOME\hpwd-studio-task; .\run.bat
+    ```
+- **`OMC_BIN = C:\...\omc.exe`** 로 값은 잡혔는데 reason이 `"OMC_BIN 경로에 파일 없음"`? → 경로 오타이거나 **omc.exe 파일까지** 안 주고 bin 폴더만 줬거나, 드라이브/버전 폴더명이 틀림. STEP 0으로 실제 경로 재확인.
+
+서버 띄운 바로 그 창에서 `omc --version` 실패하면 그 창 PATH에 omc 없음(OMC_BIN 방식이 답).
 
 **STEP 0 — 내 omc.exe 실제 경로부터 찾기** (버전 폴더명이 사람마다 다름: `1.26.3`/`1.25.x`/`1.24.x`…). 아래 한 줄이면 설치된 omc.exe 전체 경로가 그대로 나옴:
 ```powershell

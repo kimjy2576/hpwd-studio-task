@@ -431,6 +431,13 @@ if __name__ == "__main__":
     if _lan_ip:
         print(f"  사내 공유: http://{_lan_ip}:{port}   (같은 망에서 접속)")
     print(f"  Health:    http://localhost:{port}/health")
+    m_ok, m_why = _modelica_status()
+    if m_ok:
+        print("  Modelica:  활성 (OM 엔진 사용 가능)")
+    else:
+        print(f"  Modelica:  비활성 — {m_why}")
+        print(f"             ↳ 서버가 보는 OMC_BIN = {os.environ.get('OMC_BIN') or '(미설정)'}")
+        print(f"             ↳ 서버가 보는 HELMHOLTZ_PATH = {os.environ.get('HELMHOLTZ_PATH') or '(미설정 → 기본값)'}")
     print("  종료: Ctrl+C")
     print("═══════════════════════════════════════════════════════════\n")
     uvicorn.run(
