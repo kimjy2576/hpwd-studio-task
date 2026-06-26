@@ -5141,10 +5141,10 @@ function HPWDStudio() {
         />
       )}
       {cycleOpen && <UnifiedCycleRunnerModal onClose={() => setCycleOpen(false)} blocks={blocks} connections={connections}
-        onLoadTestRing={() => { const r = makeL1TestRing(); pushHistory(blocks, connections); setBlocks(r.blocks); setConnections(r.connections); return r; }}
-        onLoadL2TestRing={() => { const r = makeL2TestRing(); pushHistory(blocks, connections); setBlocks(r.blocks); setConnections(r.connections); return r; }}
-        onLoadAirTestRing={() => { const r = makeAirTestRing(); pushHistory(blocks, connections); setBlocks(r.blocks); setConnections(r.connections); return r; }}
-        onLoadCoupledTestRing={() => { const r = makeCoupledTestRing(); pushHistory(blocks, connections); setBlocks(r.blocks); setConnections(r.connections); return r; }} />}
+        onLoadTestRing={() => { const r = makeL1TestRing(); pushHistory(blocks, connections); setBlocks(r.blocks); setConnections(r.connections); setZoom(0.5); return r; }}
+        onLoadL2TestRing={() => { const r = makeL2TestRing(); pushHistory(blocks, connections); setBlocks(r.blocks); setConnections(r.connections); setZoom(0.5); return r; }}
+        onLoadAirTestRing={() => { const r = makeAirTestRing(); pushHistory(blocks, connections); setBlocks(r.blocks); setConnections(r.connections); setZoom(0.5); return r; }}
+        onLoadCoupledTestRing={() => { const r = makeCoupledTestRing(); pushHistory(blocks, connections); setBlocks(r.blocks); setConnections(r.connections); setZoom(0.5); return r; }} />}
       <ChatFAB onSend={chatExecuteMock} />
     </div>
   );
