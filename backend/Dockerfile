@@ -15,8 +15,8 @@ COPY design/ ./design/
 COPY sessions/ ./sessions/
 
 # Railway는 PORT 환경변수로 포트 지정
-ENV PORT=8000
-EXPOSE 8000
+ENV PORT=8010
+EXPOSE 8010
 
 # 실행
 CMD ["python", "server.py"]

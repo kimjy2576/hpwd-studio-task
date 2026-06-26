@@ -97,10 +97,10 @@ const { useState, useEffect, useMemo, useRef } = React;
 /* Backend URL 해결 — HPWD Studio와 동일한 우선순위:
    1. URL 파라미터 ?backend=...
    2. localStorage 'hpwd_backend_url' (HPWD Studio가 저장한 값과 공유)
-   3. localhost면 localhost:8000, 그 외엔 Railway cloud URL */
+   3. localhost면 localhost:8010, 그 외엔 Railway cloud URL */
 const DEFAULT_BACKENDS = {
   cloud: 'https://hpwd-studio-task-production.up.railway.app',  // 실제로는 backend 별도 서비스 URL
-  local: 'http://localhost:8000',
+  local: 'http://localhost:8010',
 };
 
 function resolveBackendUrl() {

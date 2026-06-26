@@ -10,7 +10,7 @@ Endpoints:
   GET  /components/{name}           — 특정 컴포넌트 modelDescription
 
 CORS: 모든 origin 허용 (localhost 환경 가정)
-Port: 8000 (환경변수 PORT로 변경 가능)
+Port: 8010 (환경변수 PORT로 변경 가능)
 """
 
 import os
@@ -443,7 +443,7 @@ else:
 if __name__ == "__main__":
     import uvicorn
 
-    port = int(os.environ.get("PORT", 8000))
+    port = int(os.environ.get("PORT", 8010))
     host = os.environ.get("HOST", "0.0.0.0")
     print(f"\nLoaded components: {list_components()}\n")
     # 사내 공유용 LAN IP 안내
