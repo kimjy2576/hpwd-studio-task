@@ -388,7 +388,7 @@ hpwd-studio-task/
 | `/health`가 `{"detail":"Not Found"}` (404) | 그 포트에 **HPWD가 아닌 다른 서버**(Docker/Open WebUI/llama 등) | 포트 점유자 정리 또는 **HPWD를 다른 포트로**(`$env:PORT="8010"`) |
 | Status **"Failed to fetch" / Disconnected** | 로컬 서버가 안 떠 있음(창 닫힘/Ctrl+C/크래시) | 서버 다시 띄우기 |
 | `/health` reason **"omc 없음"** | OpenModelica 미설치, 또는 (자주) 설치는 됐는데 서버 띄운 창의 PATH에 omc 없음 | 서버 창에서 `omc --version` 확인 → 아래 **omc PATH** 참고 |
-| `/health` reason **"HelmholtzMedia 없음: <경로>"** | `HELMHOLTZ_PATH` 미설정/틀림 | `$HOME` 방식으로 재설정 → `Test-Path`로 파일 존재 확인 |
+| `/health` reason **"HelmholtzMedia 없음: <경로>"** | `HELMHOLTZ_PATH` 미설정/틀림 (자주: `$HOME`이 엉뚱한 곳) | `Test-Path "<경로>"`로 확인 → False면 **절대경로**로 `$env:HELMHOLTZ_PATH` 재설정(§1-B 경고 참고). clone 안 받았으면 `git clone .../HelmholtzMedia.git` |
 | Modelica 토글이 **회색** (연결은 됨) | 위 둘 중 하나 | `Invoke-RestMethod .../health \| ConvertTo-Json -Depth 5`로 reason 보기 |
 | 새 창에서 띄웠더니 `available=False` | `$env:HELMHOLTZ_PATH`가 안 잡힘(환경변수는 창마다 따로) | 같은 창에서 HELMHOLTZ_PATH 다시 설정 후 재시작 |
 | 포트 8000 자꾸 충돌 | Docker 등이 8000 점유 | **PORT=8010** 등 다른 포트 |
