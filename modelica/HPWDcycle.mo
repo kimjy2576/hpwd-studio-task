@@ -180,4 +180,54 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     W_comp=comp.W_shaft; W_ind=comp.W_indicated; COP=Q_evap/max(W_comp, 1.0);
   end Cycle_L3_homotopy;
 
+  model Cycle_L3_coldstart "L3 on-design 콜드스타트 — rest 균일압서 staged N ramp으로 운전점 수렴 (Cycle_L1_ramp_PI의 L3판)"
+    // 목표: warm-start 없이 콜드스타트. rest(균일압·N=0·무유량) init은 trivial →
+    //   N을 계단식(0→500→1500→N_final)으로 천천히 올려 t≈0.5s 상변화 벽을 완만 통과.
+    //   노드 체적 V_node를 크게 잡아 과도를 댐핑(수치 안정).
+    parameter Real N_final = 3000.0 "최종 회전수 [rpm]";
+    parameter Real eev_opening = 8.0 "EEV 개도 [%] (고정; 추후 PI)";
+    parameter Modelica.Units.SI.Pressure p_rest = 9.0e5 "기동 전 균일 정지압 [Pa]";
+    parameter Modelica.Units.SI.SpecificEnthalpy h_rest = 590e3 "정지 엔탈피 [J/kg] (rest 과열증기)";
+    parameter Modelica.Units.SI.Volume V_node = 2e-3 "노드 체적 [m3] (클수록 과도 완만·안정)";
+    HPWDon.Comp_Chamber comp(V_disp_cm3=10.0);
+    Volume_L3 vol1(V=V_node, p_start=p_rest, h_start=h_rest, fixedState=true);
+    HPWDevap.Cond_On cond;
+    Volume_L3 vol2(V=V_node, p_start=p_rest, h_start=h_rest, fixedState=true);
+    HPWDon.EEV_On eev(D_seat=2.0e-3, stroke_max=1.0e-3);
+    Volume_L3 vol3(V=V_node, p_start=p_rest, h_start=h_rest, fixedState=true);
+    HPWDevap.Evap_On evap;
+    Volume_L3 vol4(V=V_node, p_start=p_rest, h_start=h_rest, fixedState=true);
+    // staged N ramp: 0 → 500 → 1500 → N_final (선형보간, 단계별 hold). t0=1s, 단계 10s.
+    //   (반복변수 start 처방 후엔 t_stage를 줄여 가속 가능)
+    Modelica.Blocks.Sources.TimeTable Nsig(table=[
+        0.0,    0.0;
+        1.0,    0.0;
+        11.0,   500.0;
+        21.0,   500.0;
+        31.0,   1500.0;
+        41.0,   1500.0;
+        51.0,   N_final;
+        500.0,  N_final]);
+    Modelica.Blocks.Sources.Constant opsig(k=eev_opening);
+    Real Pc_bar, Pe_bar, mdot, SH, Q_evap, Q_cond, W_comp;
+  equation
+    connect(comp.port_b, vol1.port_a);
+    connect(vol1.port_b, cond.port_a);
+    connect(cond.port_b, vol2.port_a);
+    connect(vol2.port_b, eev.port_a);
+    connect(eev.port_b, vol3.port_a);
+    connect(vol3.port_b, evap.port_a);
+    connect(evap.port_b, vol4.port_a);
+    connect(vol4.port_b, comp.port_a);
+    connect(Nsig.y, comp.N);
+    connect(opsig.y, eev.opening);
+    Pc_bar=vol1.p/1e5;
+    Pe_bar=vol3.p/1e5;
+    mdot=comp.m_dot;
+    SH=evap.SH;
+    Q_evap=evap.Q_total;
+    Q_cond=cond.Q_total;
+    W_comp=comp.W_shaft;
+  end Cycle_L3_coldstart;
+
 end HPWDcycle;
