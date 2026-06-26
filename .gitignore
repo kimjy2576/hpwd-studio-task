@@ -1,3 +1,4 @@
+node_modules/
 # Python venv / 캐시
 backend/venv/
 **/__pycache__/

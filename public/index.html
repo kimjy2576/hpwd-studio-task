@@ -5142,6 +5142,7 @@ function HPWDStudio() {
       )}
       {cycleOpen && <UnifiedCycleRunnerModal onClose={() => setCycleOpen(false)} blocks={blocks} connections={connections}
         onLoadTestRing={() => { const r = makeL1TestRing(); pushHistory(blocks, connections); setBlocks(r.blocks); setConnections(r.connections); return r; }}
+        onLoadL2TestRing={() => { const r = makeL2TestRing(); pushHistory(blocks, connections); setBlocks(r.blocks); setConnections(r.connections); return r; }}
         onLoadAirTestRing={() => { const r = makeAirTestRing(); pushHistory(blocks, connections); setBlocks(r.blocks); setConnections(r.connections); return r; }}
         onLoadCoupledTestRing={() => { const r = makeCoupledTestRing(); pushHistory(blocks, connections); setBlocks(r.blocks); setConnections(r.connections); return r; }} />}
       <ChatFAB onSend={chatExecuteMock} />
@@ -5682,6 +5683,46 @@ function makeL1TestRing() {
     cornerRadius: 8, routeMode: 'auto',
   });
   // 냉매 흐름 링: Comp→Cond→EEV→Evap→Comp
+  const connections = [
+    edge(comp, cond, 'right', 'left'),
+    edge(cond, eev, 'bottom', 'top'),
+    edge(eev, evap, 'left', 'right'),
+    edge(evap, comp, 'top', 'bottom'),
+  ];
+  return { blocks, connections };
+}
+
+// makeL2TestRing — L2(SEMI MB) 냉매 링을 캔버스 블록+연결로 생성 (makeL1TestRing의 L2판)
+//   전 컴포넌트 L2 타입(Winandy 압축기 / MB Cond·Evap / SEMI EEV). 레퍼런스 운전점(Pc 19.07/Pe 5.51) 박음.
+function makeL2TestRing() {
+  const ts = Date.now();
+  const mk = (i, type, x, y, name, params, inputValues) => {
+    const def = TYPES[type] || {};
+    return {
+      id: `l2t${ts}_${i}`, type, x, y, name,
+      params: { ...Object.fromEntries((def.parameters || []).map(p => [p.key, p.value])), ...params },
+      inputValues: inputValues || {},
+      outputs: {},
+      state: def.stateInit ? JSON.parse(JSON.stringify(def.stateInit)) : {},
+    };
+  };
+  const comp = mk(0, 'compressor_winandy', 180, 120, 'Comp · L2-test',
+    { V_disp: 10 }, { P_suc: 5.51, T_suc: 15, P_dis: 19.07, N: 3000 });
+  const cond = mk(1, 'condenser_moving_boundary', 700, 120, 'Cond · L2-test',
+    {}, { P_cond: 19.07, h_in: 690, m_dot_ref: 0.00458, T_air_in: 35, RH_air_in: 50, V_air_CMM: 25.42 });
+  const eev = mk(2, 'eev_moving_boundary', 700, 480, 'EEV · L2-test',
+    {}, { P_in: 19.07, h_in: 312, P_out: 5.51, opening: 50, m_dot_meas: 0.00458 });
+  const evap = mk(3, 'evaporator_moving_boundary', 180, 480, 'Evap · L2-test',
+    {}, { P_evap: 5.51, h_in: 312, m_dot_ref: 0.00458, T_air_in: 50, RH_air_in: 90, V_air_CMM: 2.54 });
+  const blocks = [comp, cond, eev, evap];
+  const edge = (from, to, fside, tside) => ({
+    from: { blockId: from.id, side: fside, slot: 0 },
+    to: { blockId: to.id, side: tside, slot: 0 },
+    kind: 'refrigerant',
+    signals: autoMapSignals(from, to),
+    lineParams: defaultLineParams('refrigerant'),
+    cornerRadius: 8, routeMode: 'auto',
+  });
   const connections = [
     edge(comp, cond, 'right', 'left'),
     edge(cond, eev, 'bottom', 'top'),
@@ -6941,7 +6982,7 @@ const UNIFIED_CARD_DEFS = [
   { keys: ['Q_evap', 'Q_latent'], n: 'Q 증발', u: 'W', d: 0, c: 'text-indigo-600' },
 ];
 
-function UnifiedCycleRunnerModal({ onClose, blocks, connections, onLoadTestRing, onLoadAirTestRing, onLoadCoupledTestRing }) {
+function UnifiedCycleRunnerModal({ onClose, blocks, connections, onLoadTestRing, onLoadL2TestRing, onLoadAirTestRing, onLoadCoupledTestRing }) {
   const [fidelity, setFidelity] = useState('L1');       // 'L1' | 'L2'
   const [domain, setDomain] = useState('refrigerant');  // 'refrigerant' | 'air' | 'coupled'
   const [running, setRunning] = useState(false);
@@ -6985,6 +7026,11 @@ function UnifiedCycleRunnerModal({ onClose, blocks, connections, onLoadTestRing,
     try {
       let data = null;
       if (isL2) {
+        // L1과 동일하게: 먼저 캔버스에 L2 테스트 링을 구축(시각화) → 레퍼런스 SEMI 모델 실행
+        const builder = { refrigerant: onLoadL2TestRing, air: onLoadAirTestRing, coupled: onLoadCoupledTestRing }[domain];
+        if (builder) builder();
+        const L2LBL = { refrigerant: ['Comp', 'Cond', 'EEV', 'Evap'], air: ['Drum', 'Filter', 'Fan', 'Evap', 'Cond'], coupled: ['Comp', 'Cond', 'EEV', 'Evap'] };
+        setDetected(L2LBL[domain]);
         const M = { refrigerant: ['CycleDynL2', 120], air: ['AirRingL2', 300], coupled: ['Cycle_SEMI_full', 300] }[domain];
         data = await _post('/run_cycle_l2', { model: M[0], stop_time: M[1], tolerance: 1e-6, intervals: null }, isAir ? 'X' : 'Pc_bar');
       } else if (domain === 'refrigerant') {
@@ -7039,9 +7085,9 @@ function UnifiedCycleRunnerModal({ onClose, blocks, connections, onLoadTestRing,
       coupled: 'L1 커플드 (냉매 링 + 공기 링, Evap·Cond 공유 merged HX). 테스트 링 구축 후 추출·실행 (/run_canvas_coupled_cycle).',
     },
     L2: {
-      refrigerant: 'L2 냉매 (CycleDynL2 — 전 컴포넌트 SEMI MB). 레퍼런스 모델 실행 (/run_cycle_l2). 공기경계 고정.',
-      air: 'L2 공기 (AirRingL2 — Drum_L2 감률·흡착 + Fan_L2 손실분해, 코일 고정온도). 레퍼런스 모델 실행 (/run_cycle_l2).',
-      coupled: 'L2 커플드 (Cycle_SEMI_full — 냉매·공기 전 SEMI, 코일온도 상호결정 + SMER). 레퍼런스 모델 실행 (/run_cycle_l2).',
+      refrigerant: 'L2 냉매 (CycleDynL2 — 전 컴포넌트 SEMI MB). 캔버스에 L2 테스트 링(Winandy·MB·SEMI) 구축 후 레퍼런스 모델 실행 (/run_cycle_l2). 공기경계 고정.',
+      air: 'L2 공기 (AirRingL2 — Drum_L2 감률·흡착 + Fan_L2 손실분해, 코일 고정온도). 캔버스에 공기 링 구축 후 레퍼런스 모델 실행 (/run_cycle_l2).',
+      coupled: 'L2 커플드 (Cycle_SEMI_full — 냉매·공기 전 SEMI, 코일온도 상호결정 + SMER). 캔버스에 커플드 링 구축 후 레퍼런스 모델 실행 (/run_cycle_l2).',
     },
   };
 
