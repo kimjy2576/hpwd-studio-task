@@ -2758,7 +2758,7 @@ function HPWDStudio() {
     setSelectedConnIds([]);
   };
 
-  const evaluateBlocks = (prevBlocks, conns, t, dt) => {
+  const evaluateBlocks = (prevBlocks, conns, t, dt, useBackend = true) => {
     return prevBlocks.map(b => {
       const def = TYPES[b.type];
       const inputs = {};
@@ -2790,7 +2790,7 @@ function HPWDStudio() {
       // def.backend === 'python' && def.pythonComponent → callBackendSync()
       // 백엔드 실패 시 JS compute()로 fallback (시뮬은 끊기지 않음)
       let outputs;
-      if (def.backend === 'python' && def.pythonComponent) {
+      if (useBackend && def.backend === 'python' && def.pythonComponent) {
         try {
           const result = callBackendSync(def.pythonComponent, inputs, b.params, newState, dt);
           outputs = result.outputs;
@@ -3106,9 +3106,10 @@ function HPWDStudio() {
     if (blocks.length === 0) return;
     const timer = setTimeout(() => {
       const conns = connectionsRef.current;
-      // 2-pass 평가로 신호 전파
-      let evaluated = evaluateBlocks(blocks, conns, 0, simState.dt);
-      evaluated = evaluateBlocks(evaluated, conns, 0, simState.dt);
+      // 2-pass 평가로 신호 전파 — 편집 중 미리보기는 JS compute만 사용(동기 HTTP 블로킹 제거).
+      // 백엔드 정확값은 실제 Run/Reset 시에만 호출.
+      let evaluated = evaluateBlocks(blocks, conns, 0, simState.dt, false);
+      evaluated = evaluateBlocks(evaluated, conns, 0, simState.dt, false);
       // outputs/lastInputs만 업데이트 (x,y 위치 변경 방지)
       setBlocks(bs => bs.map(b => {
         const ev = evaluated.find(e => e.id === b.id);
