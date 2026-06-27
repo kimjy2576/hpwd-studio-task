@@ -6,15 +6,19 @@
 set -e
 cd "$(dirname "$0")"
 
-if [ ! -d venv ]; then
+VENV_PY="venv/bin/python"
+
+# ── venv 없으면 생성 ──
+if [ ! -x "$VENV_PY" ]; then
     echo "[1/3] Python 가상환경 생성 중..."
     python3 -m venv venv
-    echo "[2/3] 의존성 설치 중..."
-    source venv/bin/activate
-    pip install --quiet --upgrade pip
-    pip install --quiet -r requirements.txt
-else
-    source venv/bin/activate
+fi
+
+# ── 의존성 검증: import 실패하면 설치 (중단/불완전 venv 자동 복구) ──
+if ! "$VENV_PY" -c "import fastapi, uvicorn, pydantic, CoolProp, scipy" >/dev/null 2>&1; then
+    echo "[2/3] 의존성 설치 중... (최초 실행 또는 누락 복구 — 수 분 소요)"
+    "$VENV_PY" -m pip install --upgrade pip
+    "$VENV_PY" -m pip install -r requirements.txt
 fi
 
 echo "[3/3] 서버 시작 중..."
@@ -65,4 +69,5 @@ echo ""
 echo "  HPWD-Studio (UI+API) 시작 — 아래 URL로 접속"
 echo ""
 
-python server.py
+# venv python으로 직접 실행 (activate 의존 제거 → '모듈 없음' 오류 방지)
+exec "$VENV_PY" server.py

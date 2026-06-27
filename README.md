@@ -395,6 +395,8 @@ hpwd-studio-task/
 | Modelica 토글이 **회색** (연결은 됨) | 위 둘 중 하나 | `Invoke-RestMethod .../health \| ConvertTo-Json -Depth 5`로 reason 보기 |
 | 새 창에서 띄웠더니 `available=False` | `$env:HELMHOLTZ_PATH`가 안 잡힘(환경변수는 창마다 따로) | 같은 창에서 HELMHOLTZ_PATH 다시 설정 후 재시작 |
 | 포트 8010 자꾸 충돌 | 다른 프로세스가 8010 점유 | **PORT=8020** 등 다른 포트 |
+| `ModuleNotFoundError: No module named 'fastapi'` | venv가 불완전(이전 설치 중단 등) | run.bat/run.sh가 이제 **의존성 자동 검증·복구**함 → 그냥 다시 실행. 그래도면 `backend\venv` 폴더 삭제 후 재실행(최초 설치 다시) |
+| 배치 실행 시 콘솔 한글 깨짐(`?쒕쾭` 등) | cp949 콘솔이 UTF-8 .bat 못 읽음 | start.bat에 `chcp 65001` 적용됨(자동). 그래도면 콘솔을 Windows Terminal로 사용 |
 | 같은 포트에 python 2개 listen | 이전 서버가 안 죽음 | `Get-NetTCPConnection -LocalPort <포트> -State Listen`로 PID 확인 → `Stop-Process` |
 
 **포트 점유자 확인:**
