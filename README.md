@@ -64,12 +64,21 @@ HPWD Studio는 세 부분으로 구성됩니다.
 **배치 파일(스크립트) 하나면 끝** — UI+API · 사내 공유 · Modelica 엔진까지 자동. 레포 루트에서:
 
 ```bash
-# Windows
+# Windows ─ 사내 공유 (같은 망 동료도 접속)
 run.bat              # 더블클릭 또는 PowerShell에서  .\run.bat
+# Windows ─ 로컬 전용 (이 PC에서만)
+run_local.bat
 
 # Mac/Linux
-./run.sh             # 포트 변경:  PORT=9000 ./run.sh
+./run.sh             # 사내 공유 / 포트 변경:  PORT=9000 ./run.sh
+./run_local.sh       # 로컬 전용 (이 PC에서만)
 ```
+
+> **`run.bat`(사내 공유) vs `run_local.bat`(로컬 전용)** — 둘 다 같은 서버고, 차이는 바인딩뿐: 공유는 `0.0.0.0`(같은 망 누구나 `<IP>:8010`), 로컬 전용은 `127.0.0.1`(이 PC만). 어느 쪽이든 **기동하면 콘솔에 접속 주소가 찍힘**:
+> ```
+>   ▶ 접속 주소:   http://localhost:8010
+>   ▶ 사내 공유:   http://192.168.x.x:8010   ← 동료에게 이 주소 공유   (run.bat일 때만)
+> ```
 
 이 하나가 자동으로 처리하는 것:
 - **UI+API 단일 서버** 기동 (최초 1회만 `backend/venv` 생성 + 의존성 설치, 수 분)
@@ -78,10 +87,10 @@ run.bat              # 더블클릭 또는 PowerShell에서  .\run.bat
 
 기동 로그에서 이 줄들로 상태 확인:
 ```
-  omc:       OMC_BIN = ...           (또는 'PATH에서 발견')
-  Modelica:  활성 (OM 엔진 사용 가능)
-  로컬:      http://localhost:8010
-  사내 공유: http://<IP>:8010        (같은 망에서 접속)
+  omc:           OMC_BIN = ...        (또는 'PATH에서 발견')
+  Modelica:      활성 (OM 엔진 사용 가능)
+  ▶ 접속 주소:   http://localhost:8010
+  ▶ 사내 공유:   http://<IP>:8010     (run.bat일 때만 — run_local은 localhost만)
 ```
 - 브라우저로 접속하면 캔버스가 뜨고 **API는 자동으로 같은 서버**를 가리킴(Backend URL 설정 불필요).
 - 우상단 **Backend 뱃지**에서 엔진(Python·Modelica) 상태 확인.
@@ -339,7 +348,8 @@ python emit_full.py    # r290_table.npz → ../R290Tab.mo
 ```
 hpwd-studio-task/
 ├─ README.md                  ← 이 파일
-├─ run.sh / run.bat           로컬 단일 서버 실행 (UI+API) — omc·HelmholtzMedia 자동탐지
+├─ run.sh / run.bat           실행 (사내 공유, 0.0.0.0) — omc·HelmholtzMedia 자동탐지
+├─ run_local.sh / run_local.bat  실행 (로컬 전용, 127.0.0.1 — 이 PC에서만)
 ├─ .gitignore                 venv·local.env·omc 빌드산출물(modelica/) 제외
 ├─ server.py                  (legacy) Railway 정적 서버 — 로컬에선 불필요
 ├─ Procfile, railway.json     (legacy) Railway 배포 설정

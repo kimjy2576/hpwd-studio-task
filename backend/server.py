@@ -499,20 +499,27 @@ if __name__ == "__main__":
 
     port = int(os.environ.get("PORT", 8010))
     host = os.environ.get("HOST", "0.0.0.0")
+    shared = host in ("0.0.0.0", "::", "")
     print(f"\nLoaded components: {list_components()}\n")
-    # 사내 공유용 LAN IP 안내
-    try:
-        import socket
-        _s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        _s.connect(("8.8.8.8", 80)); _lan_ip = _s.getsockname()[0]; _s.close()
-    except Exception:
-        _lan_ip = None
+    # 사내 공유 모드일 때만 LAN IP 안내
+    _lan_ip = None
+    if shared:
+        try:
+            import socket
+            _s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            _s.connect(("8.8.8.8", 80)); _lan_ip = _s.getsockname()[0]; _s.close()
+        except Exception:
+            _lan_ip = None
     print("═══════════════════════════════════════════════════════════")
     print("  HPWD-Studio — UI + API 단일 서버")
-    print(f"  로컬:      http://localhost:{port}")
-    if _lan_ip:
-        print(f"  사내 공유: http://{_lan_ip}:{port}   (같은 망에서 접속)")
-    print(f"  Health:    http://localhost:{port}/health")
+    print(f"  ▶ 접속 주소:   http://localhost:{port}")
+    if shared and _lan_ip:
+        print(f"  ▶ 사내 공유:   http://{_lan_ip}:{port}   ← 같은 망의 동료에게 이 주소 공유")
+    elif shared:
+        print(f"    (LAN IP 자동탐지 실패 — ipconfig의 IPv4로 http://<IP>:{port} 접속)")
+    else:
+        print("    (로컬 전용 모드 — 이 PC에서만 접속. 사내 공유는 run.bat/run.sh)")
+    print(f"  Health:        http://localhost:{port}/health")
     m_ok, m_why = _modelica_status()
     if m_ok:
         print("  Modelica:  활성 (OM 엔진 사용 가능)")

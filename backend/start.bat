@@ -37,9 +37,10 @@ echo [3/3] 서버 시작 중...
 
 REM ── local.env (있으면) 로드: 비표준 경로를 여기 한 번만 박으면 배치만으로 OK ──
 REM   형식: KEY=VALUE 한 줄씩 (OMC_BIN / HELMHOLTZ_PATH / PORT / HOST). '#' 주석.
+REM   이미 설정된 env는 안 덮음(명시 env > local.env) → run_local.bat의 HOST 보존
 if exist "local.env" (
     echo   local.env 로드
-    for /f "usebackq eol=# tokens=1* delims==" %%A in ("local.env") do set "%%A=%%B"
+    for /f "usebackq eol=# tokens=1* delims==" %%A in ("local.env") do if not defined %%A set "%%A=%%B"
 )
 
 REM ── omc: OMC_BIN 미설정 & PATH에도 없으면 표준 설치 위치 자동 탐지 ──

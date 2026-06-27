@@ -20,11 +20,12 @@ fi
 echo "[3/3] 서버 시작 중..."
 
 # ── local.env (있으면) 로드: 비표준 경로를 여기 한 번만 박으면 ./run.sh만으로 OK ──
+#   이미 설정된 env var는 덮지 않음(명시 env > local.env) → run_local.sh의 HOST 보존
 if [ -f local.env ]; then
     echo "  local.env 로드"
     while IFS='=' read -r _k _v; do
         case "$_k" in ''|\#*) continue;; esac
-        export "$_k=$_v"
+        if [ -z "${!_k}" ]; then export "$_k=$_v"; fi
     done < local.env
 fi
 
