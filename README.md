@@ -105,7 +105,9 @@ HELMHOLTZ_PATH=C:\Users\USER\HelmholtzMedia\HelmholtzMedia\package.mo
 
 ### 업데이트 (레포가 바뀌었을 때)
 
-이미 clone 받아둔 PC에서 최신 변경을 반영하려면:
+> 💡 **가장 쉬운 방법 — 화면 우측 상단 툴바의 `🔄 업데이트` 버튼.** 누르면 서버가 `git pull --ff-only`를 실행하고, 변경 파일 목록과 함께 (백엔드 변경 시) "서버 재시작 필요" / (화면 변경 시) "새로고침" 버튼을 띄움. 로컬에 커밋 안 된 변경이 있으면 안전하게 거부하고 그 파일을 알려줌(이때만 아래 수동 절차).
+
+이미 clone 받아둔 PC에서 최신 변경을 반영하려면 (수동):
 
 ```bash
 cd <레포 경로>          # 예: cd ~/hpwd-studio-task

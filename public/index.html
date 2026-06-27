@@ -54,6 +54,7 @@
     const Download   = _mkIcon(<g><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></g>);
     const Undo       = _mkIcon(<g><path d="M3 7v6h6" /><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6.7 3L3 13" /></g>);
     const Redo       = _mkIcon(<g><path d="M21 7v6h-6" /><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6.7 3L21 13" /></g>);
+    const RefreshCw  = _mkIcon(<g><path d="M21 2v6h-6" /><path d="M3 12a9 9 0 0 1 15-6.7L21 8" /><path d="M3 22v-6h6" /><path d="M21 12a9 9 0 0 1-15 6.7L3 16" /></g>);
 
 
 /* ════════ Python Backend 통합 ════════
@@ -2037,6 +2038,24 @@ function HPWDStudio() {
   const [slotModal, setSlotModal] = useState(null);
   const [slotList, setSlotList] = useState([]);  // 슬롯 메타데이터 목록
   const [cycleOpen, setCycleOpen] = useState(false);  // Cycle Runner(Modelica) 통합 L1/L2 모달
+  const [updateBusy, setUpdateBusy] = useState(false);   // 업데이트 진행중
+  const [updateResult, setUpdateResult] = useState(null); // /api/update 결과 (null이면 모달 닫힘)
+
+  // GUI 업데이트 버튼 — 서버에 git pull --ff-only 요청
+  const doUpdate = async () => {
+    setUpdateBusy(true);
+    setUpdateResult({ status: 'loading', message: '레포 업데이트 확인 중…' });
+    try {
+      const base = (window.HPWD_BACKEND && window.HPWD_BACKEND.url) || window.location.origin;
+      const res = await fetch(base.replace(/\/$/, '') + '/api/update', { method: 'POST' });
+      const data = await res.json();
+      setUpdateResult(data);
+    } catch (e) {
+      setUpdateResult({ status: 'error', message: '서버에 연결할 수 없습니다: ' + (e.message || e) });
+    } finally {
+      setUpdateBusy(false);
+    }
+  };
 
   // 편의를 위해 단일 선택 API를 다중으로 어댑트
   const selected = selectedIds.length > 0 ? selectedIds[selectedIds.length - 1] : null;
@@ -3454,6 +3473,10 @@ function HPWDStudio() {
         <ToolBtn onClick={exportAllCsv} icon={Download} label="Export CSV"
                  disabled={simState.history.length === 0}
                  color="text-sky-600 hover:bg-sky-50" />
+        <div className="w-px h-5 bg-slate-200 mx-1.5" />
+        <ToolBtn onClick={doUpdate} icon={RefreshCw} label="업데이트" disabled={updateBusy}
+                 color="text-teal-600 hover:bg-teal-50"
+                 title="레포를 최신본으로 업데이트 (git pull --ff-only)" />
         <div className="w-px h-5 bg-slate-200 mx-1.5" />
         <div className="flex items-center gap-2 text-[11px] text-slate-600">
           <label className="text-slate-500">dt</label>
@@ -5147,6 +5170,76 @@ function HPWDStudio() {
         onLoadL3TestRing={() => { const r = makeL3TestRing(); pushHistory(blocks, connections); setBlocks(r.blocks); setConnections(r.connections); setZoom(0.5); return r; }}
         onLoadAirTestRing={() => { const r = makeAirTestRing(); pushHistory(blocks, connections); setBlocks(r.blocks); setConnections(r.connections); setZoom(0.5); return r; }}
         onLoadCoupledTestRing={() => { const r = makeCoupledTestRing(); pushHistory(blocks, connections); setBlocks(r.blocks); setConnections(r.connections); setZoom(0.5); return r; }} />}
+
+      {updateResult && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4"
+             onMouseDown={() => { if (!updateBusy) setUpdateResult(null); }}>
+          <div className="bg-white rounded-xl shadow-2xl border border-slate-200 w-full max-w-md max-h-[80vh] overflow-hidden flex flex-col"
+               onMouseDown={e => e.stopPropagation()}>
+            <div className="px-5 py-3.5 border-b border-slate-200 flex items-center gap-2">
+              <RefreshCw size={16} className={`text-teal-600 ${updateBusy ? 'animate-spin' : ''}`} />
+              <span className="font-bold text-slate-800">업데이트</span>
+              <span className="ml-auto text-[11px] font-mono text-slate-400">git pull --ff-only</span>
+            </div>
+            <div className="px-5 py-4 overflow-y-auto text-sm text-slate-700">
+              {updateResult.status === 'loading' && (
+                <div className="text-slate-500">{updateResult.message}</div>
+              )}
+              {updateResult.status === 'up_to_date' && (
+                <div className="flex items-center gap-2 text-emerald-700 font-semibold">✅ 이미 최신입니다.</div>
+              )}
+              {updateResult.status === 'updated' && (
+                <div className="space-y-3">
+                  <div className="text-emerald-700 font-semibold">✅ {updateResult.message}</div>
+                  {updateResult.backend_changed && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-amber-800 text-[13px]">
+                      ⚠️ 백엔드(.py) 변경됨 — <b>서버를 재시작</b>해야 반영됩니다 (Ctrl+C 후 다시 실행).
+                    </div>
+                  )}
+                  {updateResult.frontend_changed && !updateResult.backend_changed && (
+                    <div className="bg-sky-50 border border-sky-200 rounded-lg px-3 py-2 text-sky-800 text-[13px]">
+                      화면(public) 변경됨 — 아래 <b>새로고침</b>으로 바로 반영됩니다.
+                    </div>
+                  )}
+                  {updateResult.changed_files && updateResult.changed_files.length > 0 && (
+                    <div>
+                      <div className="text-[11px] font-mono text-slate-400 mb-1">변경 파일 {updateResult.changed_files.length}개</div>
+                      <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 max-h-40 overflow-y-auto font-mono text-[12px] text-slate-600 space-y-0.5">
+                        {updateResult.changed_files.map((f, i) => <div key={i}>{f}</div>)}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+              {updateResult.status === 'dirty' && (
+                <div className="space-y-2">
+                  <div className="text-amber-700 font-semibold">⚠️ 자동 업데이트 불가</div>
+                  <div className="text-[13px]">{updateResult.message}</div>
+                  {updateResult.changed_files && updateResult.changed_files.length > 0 && (
+                    <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 max-h-40 overflow-y-auto font-mono text-[12px] text-slate-600 space-y-0.5">
+                      {updateResult.changed_files.map((f, i) => <div key={i}>{f}</div>)}
+                    </div>
+                  )}
+                </div>
+              )}
+              {(updateResult.status === 'error' || updateResult.status === 'no_git') && (
+                <div className="space-y-2">
+                  <div className="text-red-700 font-semibold">{updateResult.status === 'no_git' ? 'ℹ️ git 레포 아님' : '❌ 실패'}</div>
+                  <div className="text-[13px] whitespace-pre-wrap font-mono text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 max-h-48 overflow-y-auto">{updateResult.message}</div>
+                </div>
+              )}
+            </div>
+            <div className="px-5 py-3 border-t border-slate-200 flex justify-end gap-2">
+              {updateResult.status === 'updated' && updateResult.frontend_changed && (
+                <button onClick={() => window.location.reload()}
+                        className="px-4 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold">새로고침</button>
+              )}
+              <button onClick={() => setUpdateResult(null)} disabled={updateBusy}
+                      className="px-4 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-semibold disabled:opacity-50">닫기</button>
+            </div>
+          </div>
+        </div>
+      )}
       <ChatFAB onSend={chatExecuteMock} />
     </div>
   );

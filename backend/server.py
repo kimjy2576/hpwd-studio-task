@@ -15,6 +15,7 @@ Port: 8010 (환경변수 PORT로 변경 가능)
 
 import os
 import sys
+import subprocess
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
@@ -402,6 +403,59 @@ def run_cycle_l3_endpoint(req: CycleL3Request):
                              settled=r['settled'], trajectory=r['trajectory'])
     except Exception as e:
         return CycleResponse(model="Cycle_L3_steady", error=f"{type(e).__name__}: {e}")
+
+
+# ── GUI 업데이트 버튼: git pull --ff-only ────────────────────────────
+_REPO_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), ".."))
+
+
+class UpdateResponse(BaseModel):
+    status: str                          # updated|up_to_date|dirty|no_git|error
+    message: str
+    changed_files: list[str] = []
+    backend_changed: bool = False        # .py/backend 변경 → 서버 재시작 필요
+    frontend_changed: bool = False       # public/ 변경 → 브라우저 새로고침
+    before: str | None = None
+    after: str | None = None
+
+
+@app.post("/api/update", response_model=UpdateResponse)
+def api_update():
+    """레포를 git pull --ff-only로 갱신하고 변경사항을 반환 (GUI 업데이트 버튼)."""
+    def _git(*args, timeout=120):
+        return subprocess.run(["git", *args], cwd=_REPO_ROOT,
+                              capture_output=True, text=True, timeout=timeout)
+
+    if not os.path.isdir(os.path.join(_REPO_ROOT, ".git")):
+        return UpdateResponse(status="no_git",
+                              message="git 레포가 아닙니다 (수동 설치본). git clone본에서만 자동 업데이트가 됩니다.")
+    try:
+        st = _git("status", "--porcelain")
+        if st.stdout.strip():
+            dirty = [ln[3:] for ln in st.stdout.strip().splitlines()][:20]
+            return UpdateResponse(status="dirty", changed_files=dirty,
+                message="로컬에 커밋되지 않은 변경이 있어 자동 업데이트할 수 없습니다. 변경을 commit 또는 되돌린 뒤 다시 시도하세요.")
+        before = _git("rev-parse", "HEAD").stdout.strip()
+        pull = _git("pull", "--ff-only")
+        after = _git("rev-parse", "HEAD").stdout.strip()
+        if pull.returncode != 0:
+            return UpdateResponse(status="error", before=before, after=after,
+                message="git pull 실패: " + (pull.stderr or pull.stdout).strip()[-400:])
+        if before == after:
+            return UpdateResponse(status="up_to_date", before=before, after=after,
+                                  message="이미 최신입니다.")
+        diff = _git("diff", "--name-only", before, after)
+        files = [f for f in diff.stdout.strip().splitlines() if f]
+        backend_changed = any(f.endswith(".py") or f.startswith("backend/") for f in files)
+        frontend_changed = any(f.startswith("public/") for f in files)
+        return UpdateResponse(status="updated", before=before, after=after,
+            changed_files=files[:40], backend_changed=backend_changed,
+            frontend_changed=frontend_changed,
+            message=f"{len(files)}개 파일 업데이트됨 ({before[:7]} → {after[:7]}).")
+    except subprocess.TimeoutExpired:
+        return UpdateResponse(status="error", message="git pull 타임아웃 (네트워크/인증 확인).")
+    except Exception as e:
+        return UpdateResponse(status="error", message=f"{type(e).__name__}: {e}")
 
 
 @app.post("/run_canvas_coupled_cycle", response_model=CanvasCycleResponse)
