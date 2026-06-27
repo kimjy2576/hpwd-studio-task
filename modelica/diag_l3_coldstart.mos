@@ -1,23 +1,26 @@
 // ════════════════════════════════════════════════════════════════════
-//  L3 콜드스타트 진단 스크립트 (Cycle_L3_coldstart)
-//  목적: ① 컴파일 되는지 ② init 비선형계 반복변수 목록(LOG_NLS_V)
-//        ③ 콜드스타트 transient가 어디서/왜 발산하는지(LOG_NLS, 시각)
+//  L3 콜드스타트 진단 (Cycle_L3_coldstart) — 빌드에러까지 상세 출력판
 //
-//  실행 (modelica/ 디렉터리에서):
-//    1) 아래 HELMHOLTZ 경로를 본인 절대경로로 수정
-//    2)  omc diag_l3_coldstart.mos > diag_l3_out.txt 2>&1
-//    3)  diag_l3_out.txt 전체(특히 끝부분 + "nonlinear system" 줄)를 공유
+//  ★ 최초 1회만 셋업 ★  이 폴더(modelica/)에 helmholtz_path.mos 파일을
+//    만들고 딱 한 줄 적어 저장 (본인 절대경로, 역슬래시 대신 / 사용):
 //
-//  출력 파일: HPWDcycle.Cycle_L3_coldstart_res.csv (성공 시), diag_l3_out.txt(로그)
+//        loadFile("C:/Users/kimjy/HelmholtzMedia/HelmholtzMedia/package.mo");
+//
+//    → helmholtz_path.mos는 git이 무시함(개인 경로). 한 번 만들면 git pull
+//      해도 안 지워지고, 앞으로 경로를 다시 넣을 필요 없음.
+//
+//  실행 (modelica/ 에서, 매번 이것만):
+//     & "C:\Program Files\OpenModelica1.26.9-64bit\bin\omc.exe" diag_l3_coldstart.mos > diag_l3_out.txt 2>&1
+//  → diag_l3_out.txt 공유
 // ════════════════════════════════════════════════════════════════════
 
-// ▼▼▼ 본인 HelmholtzMedia 절대경로로 수정 (역슬래시 \ 대신 / 사용) ▼▼▼
-loadFile("C:/Users/USER/HelmholtzMedia/HelmholtzMedia/package.mo"); getErrorString();
-// ▲▲▲ 예: "C:/Users/USER/HelmholtzMedia/HelmholtzMedia/package.mo" ▲▲▲
+setCommandLineOptions("-d=failtrace");  // 빌드/코드젠 실패 시 상세 추적
+getErrorString();
+
+// 개인 HelmholtzMedia 경로 (사이드카)
+runScript("helmholtz_path.mos"); getErrorString();
 
 loadModel(Modelica); getErrorString();
-
-// L3 의존 파일 (이 .mos가 있는 modelica/ 폴더 기준 상대경로)
 loadFile("R290Tab.mo");   getErrorString();
 loadFile("HXCorr.mo");    getErrorString();
 loadFile("HPWD.mo");      getErrorString();
@@ -27,27 +30,26 @@ loadFile("Cycle.mo");     getErrorString();
 loadFile("Control.mo");   getErrorString();
 loadFile("HPWDcycle.mo"); getErrorString();
 
-// ── STEP 1: 컴파일만 (구문/연결/구조 오류 + 모델 통계) ──
-print("\n========== STEP 1: buildModel (컴파일) ==========\n");
-buildModel(HPWDcycle.Cycle_L3_coldstart); getErrorString();
+// ── STEP 1: checkModel (구조/타입 에러 상세) ──
+print("\n========== STEP 1: checkModel ==========\n");
+print(checkModel(HPWDcycle.Cycle_L3_coldstart) + "\n");
+print("[STEP1 에러] " + getErrorString() + "\n");
 
-// ── STEP 2: 시뮬 — init 수렴 + 콜드스타트 transient 발산 추적 ──
-//   LOG_INIT: 초기화 단계 / LOG_NLS: 비선형 솔버 호출·실패(어느 system #N, 어느 t) /
-//   LOG_STATS: 적분 통계. stopTime=80: ramp(1~51s) + 정착 여유.
-//   → 실패하면 "nonlinear system ... failed at time = T" 줄이 핵심.
-//   (다음 라운드: 그 system에 -lv=LOG_NLS_V 붙여 반복변수 값까지 덤프)
-print("\n========== STEP 2: simulate (LOG_INIT, LOG_NLS, LOG_STATS) ==========\n");
+// ── STEP 2: buildModel (빌드 + 에러 명시) ──
+print("\n========== STEP 2: buildModel ==========\n");
+bm := buildModel(HPWDcycle.Cycle_L3_coldstart);
+print("buildModel 산출 = {" + bm[1] + " | " + bm[2] + "}\n");
+print("[STEP2 에러] " + getErrorString() + "\n");
+
+// ── STEP 3: simulate (빌드 성공 시 init/발산 추적) ──
+print("\n========== STEP 3: simulate ==========\n");
 simulate(HPWDcycle.Cycle_L3_coldstart,
-         stopTime=80,
-         numberOfIntervals=800,
-         method="dassl",
-         tolerance=1e-6,
-         outputFormat="csv",
-         simflags="-lv=LOG_INIT,LOG_NLS,LOG_STATS -w");
-getErrorString();
+         stopTime=80, numberOfIntervals=800, method="dassl",
+         tolerance=1e-6, outputFormat="csv",
+         simflags="-lv=LOG_INIT,LOG_NLS,LOG_STATS");
+print("[STEP3 에러] " + getErrorString() + "\n");
 
-// ── STEP 3: 결과 파일 확인 ──
-print("\n========== STEP 3: 결과 파일 ==========\n");
-print("CSV 생성 여부 = " + String(regularFileExists("HPWDcycle.Cycle_L3_coldstart_res.csv")) + "\n");
-print("→ CSV가 생겼으면 마지막 몇 줄을(Pc_bar/Pe_bar/SH/mdot 컬럼) 공유.\n");
-print("→ 안 생겼으면 위 로그의 마지막 ~50줄 + 'nonlinear system'/'failed'/'time =' 줄을 공유.\n");
+// ── STEP 4: 결과 파일 ──
+print("\n========== STEP 4: 결과 ==========\n");
+print("CSV 생성 = " + String(regularFileExists("HPWDcycle.Cycle_L3_coldstart_res.csv")) + "\n");
+print("→ 빌드 실패면 STEP1/STEP2 에러를, 성공+발산이면 STEP3 끝부분을 공유.\n");

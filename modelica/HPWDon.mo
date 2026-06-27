@@ -145,7 +145,7 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     m_dot_swept = V_eff*omega*rho_su;
     m_dot       = max(m_dot_swept - m_leak, 1e-6);
     m_dot_ideal = V_max*omega*rho_su;
-    eta_v       = max(0.05, min(m_dot/max(m_dot_ideal, 1e-9), 1.0));
+    eta_v       = max(0.05, m_dot/max(m_dot_ideal, 1e-9));
     // polytropic 내부압력
     P_int = p_su*(rv_in^n_poly);
     // 등엔트로피 토출 (R290Tab 역산)

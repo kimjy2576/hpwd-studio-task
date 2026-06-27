@@ -7,3 +7,6 @@
 !*.py
 !*.md
 !*.mos
+
+# 개인 HelmholtzMedia 경로 사이드카 (각자 로컬, 추적 안 함)
+helmholtz_path.mos
