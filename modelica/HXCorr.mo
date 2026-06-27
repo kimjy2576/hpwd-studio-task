@@ -384,7 +384,7 @@ package HXCorr "HX Moving-Boundary correlation 함수 라이브러리 (Python �
       beta := void_homogeneous(x, rho_l, rho_v);
       y := beta/max(1.0 - beta, 1e-9);
       s_arg := y/(1.0 + y*E2) - y*E2;
-      S := 1.0 + E1*sqrt(max(s_arg, 0.0));
+      S := 1.0 + E1*sqrt(max(s_arg, 1e-9));
       alpha := max(0.0, min(void_slip(x, rho_l, rho_v, S), 1.0));
     end if;
   end void_premoli;

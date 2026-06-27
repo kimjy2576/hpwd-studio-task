@@ -137,10 +137,10 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     V_re  = V_clear*(pi_ratio^(1.0/n_poly));
     V_eff = max(V_max - V_re, 0.01*V_max);
     // 누설
-    rpm_factor = (N/N_rated)^(-n_leak_rpm);
+    rpm_factor = (max(N, 1.0)/N_rated)^(-n_leak_rpm);
     dP_chamber = p_dis - p_su;
     rho_avg    = rho_su*1.5;
-    m_leak     = Cd_leak*A_leak*sqrt(max(0.0, 2.0*rho_avg*dP_chamber))*rpm_factor;
+    m_leak     = Cd_leak*A_leak*sqrt(max(1e-9, 2.0*rho_avg*dP_chamber))*rpm_factor;
     // swept + 실효 + 체적효율
     m_dot_swept = V_eff*omega*rho_su;
     m_dot       = max(m_dot_swept - m_leak, 1e-6);
