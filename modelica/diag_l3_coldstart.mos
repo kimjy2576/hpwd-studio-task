@@ -17,6 +17,12 @@
 setCommandLineOptions("-d=failtrace");  // 빌드/코드젠 실패 시 상세 추적
 getErrorString();
 
+// ★ 비선형 블록 처리 플래그: 비미분 thermo 함수 + max() 역산 회피
+//   noTearing: 토른 방정식 심볼릭 역산 안 함 (max 역산 시도 제거)
+//   numeric Jacobian: 심볼릭 미분 대신 수치 → 비미분 함수 OK
+setCommandLineOptions("--tearingMethod=minimalTearing"); getErrorString();
+setCommandLineOptions("--generateDynamicJacobian=numeric"); getErrorString();
+
 // 개인 HelmholtzMedia 경로 (사이드카)
 runScript("helmholtz_path.mos"); getErrorString();
 
