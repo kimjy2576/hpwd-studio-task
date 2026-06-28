@@ -482,6 +482,7 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     output Real h_fg;
   algorithm
     h_fg := 2501000.0 - 2361.0*T_C;
+    annotation(Inline=true);
   end hfgWater;
 
   function dWsdT "포화습도비 기울기 dWs/dT [1/K] (Magnus 중앙차분)"
@@ -490,6 +491,7 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     output Real dWdT;
   algorithm
     dWdT := (HXCorr.W_sat(T_C + 0.5, P_atm) - HXCorr.W_sat(T_C - 0.5, P_atm))/1.0;
+    annotation(Inline=true);
   end dWsdT;
 
   function hi_dispatch_cond "응축 h_i 디스패치: x>1 증기Gn / 0.05<x<1 Shah / 0~0.05 블렌딩 / x<0 액Gn (dryout無)"
@@ -525,6 +527,7 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     mrp := m*r_i*phi;
     ef := if mrp > 0.01 then tanh(mrp)/mrp else 1.0;
     eta_o_wet := 1.0 - A_fin_ratio*(1.0 - ef);
+    annotation(Inline=true);
   end finEffWet;
 
   model TestWetSeg "단일 습세그먼트: 엔탈피포텐셜 + b factor + T_w 음함수 solve"
