@@ -307,4 +307,104 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     connect(cond.port_b, snk.port);
   end TestCondOn;
 
+  model Cond_On_Dyn "L3 응축기 — 동적 유한체적 (냉매 엔탈피 h_ref + 벽온도 T_w 상태). 폐루프/콜드스타트용."
+    HPWD.RefPort port_a "냉매 입구 (과열증기)";
+    HPWD.RefPort port_b "냉매 출구 (2상/과냉)";
+    parameter Real T_air_in=25.0 "공기 입구온도 [degC]";
+    parameter Real RH_in=0.4;
+    parameter Real m_air_seg=0.00296086 "(col,seg)당 공기유량 [kg/s]";
+    parameter Real h_o=108.59150 "공기측 HTC [W/m2K]";
+    parameter Integer Nr=4, Nseg=10, Nt=12;
+    parameter Real Di=0.00822;
+    parameter Real A_i_seg=0.0012911946, A_o_seg=0.0249040267;
+    parameter Real Dc=0.00976, Xm=0.0127, XL=0.01270128, k_fin=200.0, fin_t=0.12e-3;
+    parameter Real A_fin_ratio=0.9424260735;
+    parameter Real Patm=101325.0, Pcrit=4.2512e6, M_mol=44.0956;
+    parameter Real A_cs=Modelica.Constants.pi*Di^2/4.0;
+    parameter Real K_bend=0.75, L_seg=A_i_seg/(Modelica.Constants.pi*Di), L_path=Nr*Nseg*L_seg;
+    parameter Real Wi=HXCorr.W_humid(T_air_in, RH_in, Patm);
+    parameter Real cp_a_dry=HXCorr.cp_air_moist(Wi) "건공기 cp";
+    parameter Real eta_o_dry=HPWDon.finEffWet(h_o, 1.0, Dc, Xm, XL, k_fin, fin_t, A_fin_ratio);
+    parameter Integer M=Nr*Nseg;
+    parameter Integer rowOf[M]={pathRow(k - 1, Nr, Nseg) for k in 1:M};
+    parameter Integer segOf[M]={pathSeg(k - 1, Nr, Nseg) for k in 1:M};
+    parameter Integer kOf[Nr,Nseg]={{cellK(p, s, Nr, Nseg) for s in 1:Nseg} for p in 1:Nr};
+    // ── 동특성 파라미터 ──
+    parameter Real rho_ref_nom=300.0 "냉매 공칭밀도 [kg/m3] (셀 홀드업 산정용)";
+    parameter Real C_wall_cell=5.0 "셀당 벽(튜브+핀) 열용량 [J/K]";
+    parameter Real V_cell=A_cs*L_seg "셀 냉매 체적 [m3]";
+    parameter Real M_cell=rho_ref_nom*V_cell "셀당 냉매 질량 [kg]";
+    // 콜드스타트 초기조건 (rest)
+    parameter Real h_ref_start=270e3 "냉매 엔탈피 초기값 [J/kg]";
+    parameter Real T_w_start=T_air_in "벽온도 초기값 [degC]";
+    // ── 상태 (fixed=true → init 비선형계 제거) ──
+    Real h_ref[M](each start=h_ref_start, each fixed=true) "냉매 엔탈피/셀 [J/kg]";
+    Real T_w[M](each start=T_w_start, each fixed=true, each min=-40.0, each max=160.0) "벽온도/셀 [degC]";
+    // ── 대수 ──
+    Real P, m_ref_col, G_ref, h_in;
+    Real T_satC, hl, hv, h_fg, mu_l, k_l, cp_l, Pr_l, rho_l, rho_v, mu_v, k_v, cp_v, Pr_v, P_r;
+    Real T_ref[M], xq[M], h_i[M], Q_ref[M], Q_air[M];
+    Real T_aen[Nr + 1,Nseg](each start=27.0);
+    Real Q_total, h_out, x_out, T_air_out, x_in_q, dp_fric, dp_bend, dp_total, rho_mix, x_mid;
+  equation
+    P=port_a.p;
+    port_a.m_flow + port_b.m_flow=0;
+    m_ref_col=port_a.m_flow/Nt;
+    G_ref=m_ref_col/A_cs;
+    h_in=inStream(port_a.h_outflow);
+    T_satC=R290Tab.Tsat(P) - 273.15; hl=R290Tab.hl(P); hv=R290Tab.hv(P); h_fg=hv - hl;
+    mu_l=R290Tab.mul(P); k_l=R290Tab.kl(P); cp_l=R290Tab.cpl(P); Pr_l=cp_l*mu_l/k_l;
+    rho_l=R290Tab.rhol(P); rho_v=R290Tab.rhov(P); mu_v=R290Tab.muv(P); P_r=P/Pcrit;
+    k_v=R290Tab.kv(P); cp_v=R290Tab.cpv(P); Pr_v=cp_v*mu_v/k_v;
+    // 셀별 냉매 상태/열전달 (상태 h_ref,T_w 로부터 전부 명시적)
+    for k in 1:M loop
+      T_ref[k]=R290Tab.T_ph(P, h_ref[k]) - 273.15;
+      xq[k]=(h_ref[k] - hl)/h_fg;
+      h_i[k]=HPWDon.hi_dispatch_cond(xq[k], G_ref, Di, mu_l, k_l, Pr_l, mu_v, k_v, Pr_v, P_r);
+      Q_ref[k]=h_i[k]*A_i_seg*(T_ref[k] - T_w[k]);
+    end for;
+    // 냉매 엔탈피 동특성 (upwind, path 순서; 응축기 방열 → −Q_ref)
+    M_cell*der(h_ref[1])=m_ref_col*(h_in - h_ref[1]) - Q_ref[1];
+    for k in 2:M loop
+      M_cell*der(h_ref[k])=m_ref_col*(h_ref[k - 1] - h_ref[k]) - Q_ref[k];
+    end for;
+    // 공기측 march (행 방향) + Q_air (벽→공기)
+    for s in 1:Nseg loop
+      T_aen[1,s]=T_air_in;
+    end for;
+    for p in 1:Nr loop
+      for s in 1:Nseg loop
+        Q_air[kOf[p,s] + 1]=eta_o_dry*h_o*A_o_seg*(T_w[kOf[p,s] + 1] - T_aen[p,s]);
+        T_aen[p + 1,s]=T_aen[p,s] + Q_air[kOf[p,s] + 1]/(m_air_seg*cp_a_dry);
+      end for;
+    end for;
+    // 벽 동특성 (냉매에서 받고 공기로 버림)
+    for k in 1:M loop
+      C_wall_cell*der(T_w[k])=Q_ref[k] - Q_air[k];
+    end for;
+    Q_total=Nt*sum(Q_ref);
+    h_out=h_ref[M];
+    x_out=(h_out - hl)/h_fg;
+    T_air_out=sum(T_aen[Nr + 1,s] for s in 1:Nseg)/Nseg;
+    // dp (명시적 — 미분 불필요)
+    x_in_q=(h_in - hl)/h_fg;
+    dp_fric=HXCorr.msh_2phase(rho_l, mu_l, rho_v, mu_v, max(x_out, 0.001), min(x_in_q, 0.999), m_ref_col, Di, L_path, 40);
+    x_mid=(min(x_in_q, 1.0) + max(x_out, 0.0))/2.0;
+    rho_mix=1.0/(x_mid/rho_v + (1.0 - x_mid)/rho_l);
+    dp_bend=(Nr - 1)*K_bend*G_ref^2/(2.0*rho_mix);
+    dp_total=dp_fric + dp_bend;
+    port_b.p=P - dp_total;
+    port_b.h_outflow=h_out;
+    port_a.h_outflow=h_in;
+  end Cond_On_Dyn;
+
+  model TestCondOnDyn "Cond_On_Dyn 동적 응축기 단독 과도 검증 (rest → steady)"
+    FlowSource src(m_dot=0.02, h=662208.6, p=1907172.2);
+    Cond_On_Dyn cond(h_ref_start=270e3, T_w_start=25.0);
+    OpenSink snk(h=540000.0);
+  equation
+    connect(src.port, cond.port_a);
+    connect(cond.port_b, snk.port);
+  end TestCondOnDyn;
+
 end HPWDevap;
