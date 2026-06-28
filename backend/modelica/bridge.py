@@ -1060,43 +1060,47 @@ _L3_BASE_MO = ['R290Tab.mo', 'HXCorr.mo', 'HPWD.mo', 'HPWDon.mo',
                'HPWDevap.mo', 'Cycle.mo', 'Control.mo', 'HPWDcycle.mo']
 
 
-def run_cycle_l3(stop_time=2.0, tolerance=1e-6, intervals=None,
-                 n_traj=80, timeout=2400):
-    """L3 on-design 폐루프 사이클을 warm-start로 솔브 → 정착값 + 궤적.
+_L3_CYCLE_MODELS = ('Cycle_L3_coldstart_dyn', 'Cycle_L3_coldstart_PI')
 
-    L1 run_canvas_cycle / L2 run_cycle_l2의 L3판. on-design 컴포넌트(Comp_Chamber·
-    Cond_On·Evap_On·EEV_On)는 cold-start 폐루프가 starved-attractor로 빠지므로
-    Cycle_L3_guess(.mat) → Cycle_L3_steady(-iif) 2-step. omc 필요, 수십초~수분.
+def run_cycle_l3(model='Cycle_L3_coldstart_dyn', stop_time=120.0, tolerance=1e-6,
+                 intervals=None, n_traj=120, timeout=2400):
+    """L3 동적 콜드스타트 폐루프 — 단번에 컴파일·실행 (rest→N ramp→정착).
 
-    반환: {model, stop_time, settled{Pc_bar,Pe_bar,mdot,SH,Q_evap,Q_cond,
-            W_comp,COP_cooling}, trajectory{time,Pc_bar,Pe_bar,SH_evap}}
+    ①동특성 재구성으로 on-design HX(Cond_On_Dyn·Evap_On_Dyn) 내부를 상태화하여
+    폐루프 대수루프를 없앴고, 저유량 층류 정규화로 콜드스타트 zero-flow 특이점을
+    회피. warm-start(guess→steady -iif) 불필요. HelmholtzMedia도 불필요(R290Tab).
+    빌드 플래그 --generateDynamicJacobian=numeric 필수(증발기 습핀 dWsdT 2차도함수
+    회피). model='Cycle_L3_coldstart_dyn'(고정 EEV) 또는 '_PI'(EEV SH 제어).
+
+    반환: {model, stop_time, settled{Pc_bar,Pe_bar,mdot,m_dot,SH,Q_evap,Q_cond,
+            W_comp,COP_cooling,COP_heating[,opening]},
+           trajectory{time,Pc_bar,Pe_bar,SH_evap,mdot,Q_evap,Q_cond,W_comp[,opening]}}
     """
+    if model not in _L3_CYCLE_MODELS:
+        raise ValueError(f"미지원 L3 사이클 모델: '{model}'. 지원: {list(_L3_CYCLE_MODELS)}")
     if intervals is None:
-        intervals = max(20, int(round(stop_time)) * 10)
+        intervals = max(200, int(round(stop_time)) * 10)
     wdir = os.path.join(_WORK, 'l3_cycle')
     os.makedirs(wdir, exist_ok=True)
     loads = "".join(
         f'loadFile("{_fs(os.path.join(MODELICA_DIR, f))}"); getErrorString();\n'
         for f in _L3_BASE_MO)
     mos = (
+        # ★ 동적 HX ODE 야코비안 수치화 (증발기 습핀 dWsdT 심볼릭 2차도함수 회피)
+        f'setCommandLineOptions("--generateDynamicJacobian=numeric"); getErrorString();\n'
         f'loadModel(Modelica); getErrorString();\n'
-        f'loadFile("{_fs(HELMHOLTZ_PATH)}"); getErrorString();\n'
         f'{loads}'
-        # ① warm-start guess → HPWDcycle.Cycle_L3_guess_res.mat
-        f'simulate(HPWDcycle.Cycle_L3_guess, stopTime=0.1, numberOfIntervals=1, '
-        f'method="dassl", tolerance=1e-7); getErrorString();\n'
-        # ② steady를 guess .mat에서 초기화 (HX 내부배열까지 이름매핑)
-        f'simulate(HPWDcycle.Cycle_L3_steady, stopTime={float(stop_time):.6g}, '
+        # 단일 simulate (콜드스타트: rest init은 fixed=true라 trivial, warm-start 불필요)
+        f'simulate(HPWDcycle.{model}, stopTime={float(stop_time):.6g}, '
         f'numberOfIntervals={int(intervals)}, method="dassl", '
-        f'tolerance={float(tolerance):.3g}, outputFormat="csv", '
-        f'simflags="-iif HPWDcycle.Cycle_L3_guess_res.mat"); getErrorString();\n')
+        f'tolerance={float(tolerance):.3g}, outputFormat="csv"); getErrorString();\n')
     open(os.path.join(wdir, 'run.mos'), 'w').write(mos)
     r = subprocess.run([_omc_bin(), "run.mos"], cwd=wdir,
                        capture_output=True, text=True, timeout=timeout)
-    csv_path = os.path.join(wdir, "HPWDcycle.Cycle_L3_steady_res.csv")
+    csv_path = os.path.join(wdir, f"HPWDcycle.{model}_res.csv")
     if not os.path.exists(csv_path):
         raise RuntimeError(
-            "L3 사이클 실행 실패 (guess→steady warm-start):\n"
+            f"L3 콜드스타트 사이클 실행 실패 ({model}):\n"
             + (r.stdout + r.stderr)[-1800:])
     rows = list(_csv.reader(open(csv_path)))
     hdr, data = rows[0], rows[1:]
@@ -1117,20 +1121,28 @@ def run_cycle_l3(stop_time=2.0, tolerance=1e-6, intervals=None,
         return [s[min(len(s) - 1, int(k * step))] for k in range(n_traj)]
 
     settled = {}
-    for k in ('Pc_bar', 'Pe_bar', 'mdot', 'SH', 'x_evap_in',
-              'Q_evap', 'Q_cond', 'W_comp'):
+    for k in ('Pc_bar', 'Pe_bar', 'mdot', 'SH', 'Q_evap', 'Q_cond', 'W_comp', 'opening'):
         v = last(k)
         if v is not None:
             settled[k] = v
     if 'mdot' in settled:
         settled['m_dot'] = settled['mdot']        # 프론트 카드 키 alias
+        settled['mdot_comp'] = settled['mdot']    # 프론트 CARDS(mdot_comp) 호환
+    if 'SH' in settled:
+        settled['SH_evap'] = settled['SH']        # 프론트 CARDS(SH_evap) 호환
+    if 'W_comp' in settled:
+        settled['W'] = settled['W_comp']          # 프론트 CARDS(W) 호환
     if settled.get('W_comp'):
         settled['COP_cooling'] = settled.get('Q_evap', 0.0) / max(settled['W_comp'], 1.0)
         if settled.get('Q_cond'):
             settled['COP_heating'] = settled['Q_cond'] / max(settled['W_comp'], 1.0)
-    traj = {'time': ds('time'), 'Pc_bar': ds('Pc_bar'),
-            'Pe_bar': ds('Pe_bar'), 'SH_evap': ds('SH')}
-    return {'model': 'Cycle_L3_steady', 'stop_time': float(stop_time),
+    traj = {'time': ds('time'), 'Pc_bar': ds('Pc_bar'), 'Pe_bar': ds('Pe_bar'),
+            'SH_evap': ds('SH'), 'mdot': ds('mdot'), 'Q_evap': ds('Q_evap'),
+            'Q_cond': ds('Q_cond'), 'W_comp': ds('W_comp')}
+    op = ds('opening')
+    if op:
+        traj['opening'] = op
+    return {'model': model, 'stop_time': float(stop_time),
             'settled': settled, 'trajectory': traj}
 #   냉매 링(comp→cond→eev→evap)과 공기 링(drum→[filter]→fan→evap→cond)을
 #   각각 추출. evap/cond는 양쪽이 공유하는 merged HX(한 번만 선언, 냉매 chain은

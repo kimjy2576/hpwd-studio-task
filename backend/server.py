@@ -356,9 +356,10 @@ class CycleL2Request(BaseModel):
 
 
 class CycleL3Request(BaseModel):
-    stop_time: float = 2.0          # steady warm-start: 짧게(수렴점 유지 확인)
+    model: str = "Cycle_L3_coldstart_dyn"   # 또는 "Cycle_L3_coldstart_PI" (EEV SH 제어)
+    stop_time: float = 120.0        # 콜드스타트 과도: rest→N ramp→정착에 충분히
     tolerance: float = 1e-6
-    intervals: int | None = None    # None → stopTime*10
+    intervals: int | None = None    # None → max(200, stopTime*10)
 
 
 @app.post("/run_cycle_l2", response_model=CycleResponse)
@@ -386,23 +387,23 @@ def run_cycle_l2_endpoint(req: CycleL2Request):
 
 @app.post("/run_cycle_l3", response_model=CycleResponse)
 def run_cycle_l3_endpoint(req: CycleL3Request):
-    """L3 on-design 폐루프 사이클 — warm-start 2-step (guess → steady -iif).
+    """L3 동적 콜드스타트 폐루프 — rest→staged N ramp→정착 (단번 컴파일·실행).
 
-    L1/L2 사이클 러너의 L3판. on-design 컴포넌트(Comp_Chamber·Cond_On·Evap_On·
-    EEV_On + Volume_L3 4노드)는 cold-start 폐루프가 starved점으로 빠지므로
-    Cycle_L3_guess(.mat)로 healthy 경계를 만들고 Cycle_L3_steady를 -iif로 초기화.
-    Pc≈19/Pe≈6 운전점 반환. omc 필요(컴파일 포함 수십초~수분).
+    ①동특성 재구성으로 on-design HX(Cond_On_Dyn·Evap_On_Dyn)를 상태화 → 폐루프
+    대수루프 소멸 → 단번에 컴파일. 저유량 층류 정규화로 콜드스타트 zero-flow
+    특이점 회피. warm-start·HelmholtzMedia 불필요. model='Cycle_L3_coldstart_dyn'
+    (고정 EEV) 또는 '_PI'(EEV SH 제어). omc 필요(컴파일 포함 수십초~수분).
     """
     ok, why = _modelica_status()
     if not ok:
-        return CycleResponse(model="Cycle_L3_steady", error=f"Modelica 엔진 사용 불가: {why}.")
+        return CycleResponse(model=req.model, error=f"Modelica 엔진 사용 불가: {why}.")
     try:
-        r = _run_cycle_l3(stop_time=req.stop_time, tolerance=req.tolerance,
-                          intervals=req.intervals)
+        r = _run_cycle_l3(model=req.model, stop_time=req.stop_time,
+                          tolerance=req.tolerance, intervals=req.intervals)
         return CycleResponse(model=r['model'], stop_time=r['stop_time'],
                              settled=r['settled'], trajectory=r['trajectory'])
     except Exception as e:
-        return CycleResponse(model="Cycle_L3_steady", error=f"{type(e).__name__}: {e}")
+        return CycleResponse(model=req.model, error=f"{type(e).__name__}: {e}")
 
 
 # ── GUI 업데이트 버튼: git pull --ff-only ────────────────────────────

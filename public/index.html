@@ -7160,10 +7160,10 @@ function UnifiedCycleRunnerModal({ onClose, blocks, connections, onLoadTestRing,
     try {
       let data = null;
       if (isL3) {
-        // L3 on-design 폐루프: 캔버스에 L3 테스트 링 구축(시각화) → warm-start 레퍼런스 솔브
+        // L3 on-design 동적 콜드스타트 폐루프: rest→staged N ramp→정착 (단번 컴파일·실행)
         onLoadL3TestRing();
         setDetected(['Comp', 'Cond', 'EEV', 'Evap']);
-        data = await _post('/run_cycle_l3', { stop_time: 2, tolerance: 1e-6, intervals: null }, 'Pc_bar');
+        data = await _post('/run_cycle_l3', { model: 'Cycle_L3_coldstart_dyn', stop_time: 120, tolerance: 1e-6, intervals: null }, 'Pc_bar');
       } else if (isL2) {
         // L1과 동일하게: 먼저 캔버스에 L2 테스트 링을 구축(시각화) → 레퍼런스 SEMI 모델 실행
         const builder = { refrigerant: onLoadL2TestRing, air: onLoadAirTestRing, coupled: onLoadCoupledTestRing }[domain];
@@ -7229,7 +7229,7 @@ function UnifiedCycleRunnerModal({ onClose, blocks, connections, onLoadTestRing,
       coupled: 'L2 커플드 (Cycle_SEMI_full — 냉매·공기 전 SEMI, 코일온도 상호결정 + SMER). 캔버스에 커플드 링 구축 후 레퍼런스 모델 실행 (/run_cycle_l2).',
     },
     L3: {
-      refrigerant: 'L3 on-design 냉매 폐루프 (Comp_Chamber·Cond_On·EEV_On·Evap_On + Volume_L3 4노드). 캔버스에 L3 테스트 링 구축 후 warm-start 솔브 (guess→steady -iif, /run_cycle_l3) → Pc≈19/Pe≈6 운전점.',
+      refrigerant: 'L3 on-design 냉매 폐루프 (Comp_Chamber·Cond_On_Dyn·EEV_On·Evap_On_Dyn + Volume_L3 4노드). 동적 유한체적 HX로 콜드스타트 폐루프를 단번에 컴파일·실행 (rest→staged N ramp→정착, /run_cycle_l3). 동적 HX 상태화로 대수루프 소멸 + 저유량 층류 정규화.',
       air: 'L3 공기는 아직 미지원 — 냉매 폐루프만. (L3 탭은 냉매 고정)',
       coupled: 'L3 커플드는 아직 미지원 — 냉매 폐루프만. (L3 탭은 냉매 고정)',
     },
