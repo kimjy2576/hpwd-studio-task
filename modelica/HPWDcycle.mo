@@ -230,4 +230,51 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     W_comp=comp.W_shaft;
   end Cycle_L3_coldstart;
 
+  model Cycle_L3_coldstart_dyn "L3 동적 콜드스타트 — Cond_On_Dyn/Evap_On_Dyn(동적 유한체적) 폐루프. rest→staged N ramp."
+    // ①동특성 재구성 적용: HX 내부 h_ref·T_w 상태화 → 폐루프 대수루프 소멸 → 컴파일.
+    //   빌드 시 --generateDynamicJacobian=numeric 필수(증발기 습핀 dWsdT 2차도함수 회피).
+    parameter Real N_final = 3000.0 "최종 회전수 [rpm]";
+    parameter Real eev_opening = 8.0 "EEV 개도 [%] (고정; 추후 PI)";
+    parameter Modelica.Units.SI.Pressure p_rest = 9.0e5 "기동 전 균일 정지압 [Pa]";
+    parameter Modelica.Units.SI.SpecificEnthalpy h_rest = 590e3 "정지 엔탈피 [J/kg]";
+    parameter Modelica.Units.SI.Volume V_node = 2e-3 "노드 체적 [m3]";
+    HPWDon.Comp_Chamber comp(V_disp_cm3=10.0);
+    Volume_L3 vol1(V=V_node, p_start=p_rest, h_start=h_rest, fixedState=true);
+    HPWDevap.Cond_On_Dyn cond(h_ref_start=h_rest, T_w_start=25.0);
+    Volume_L3 vol2(V=V_node, p_start=p_rest, h_start=h_rest, fixedState=true);
+    HPWDon.EEV_On eev(D_seat=2.0e-3, stroke_max=1.0e-3);
+    Volume_L3 vol3(V=V_node, p_start=p_rest, h_start=h_rest, fixedState=true);
+    HPWDevap.Evap_On_Dyn evap(h_ref_start=h_rest, T_w_start=35.0);
+    Volume_L3 vol4(V=V_node, p_start=p_rest, h_start=h_rest, fixedState=true);
+    Modelica.Blocks.Sources.TimeTable Nsig(table=[
+        0.0,    0.0;
+        1.0,    0.0;
+        11.0,   500.0;
+        21.0,   500.0;
+        31.0,   1500.0;
+        41.0,   1500.0;
+        51.0,   N_final;
+        500.0,  N_final]);
+    Modelica.Blocks.Sources.Constant opsig(k=eev_opening);
+    Real Pc_bar, Pe_bar, mdot, SH, Q_evap, Q_cond, W_comp;
+  equation
+    connect(comp.port_b, vol1.port_a);
+    connect(vol1.port_b, cond.port_a);
+    connect(cond.port_b, vol2.port_a);
+    connect(vol2.port_b, eev.port_a);
+    connect(eev.port_b, vol3.port_a);
+    connect(vol3.port_b, evap.port_a);
+    connect(evap.port_b, vol4.port_a);
+    connect(vol4.port_b, comp.port_a);
+    connect(Nsig.y, comp.N);
+    connect(opsig.y, eev.opening);
+    Pc_bar=vol1.p/1e5;
+    Pe_bar=vol3.p/1e5;
+    mdot=comp.m_dot;
+    SH=evap.SH;
+    Q_evap=evap.Q_total;
+    Q_cond=cond.Q_total;
+    W_comp=comp.W_shaft;
+  end Cycle_L3_coldstart_dyn;
+
 end HPWDcycle;
