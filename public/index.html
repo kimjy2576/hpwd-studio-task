@@ -2053,8 +2053,8 @@ function HPWDStudio() {
       if (!res.ok || !data || !data.status) {
         // 옛 서버엔 /api/update가 없어 404 → status 없는 응답 → 빈 모달 방지, 명확히 안내
         setUpdateResult({ status: 'error', message:
-          (res.status === 404
-            ? '이 서버에는 /api/update 엔드포인트가 없습니다.\n서버를 한 번 재시작하면(python server.py) 이후 업데이트 버튼이 동작합니다.'
+          ((res.status === 404 || res.status === 405)
+            ? `서버 코드가 옛 버전이라 /api/update가 없습니다 (HTTP ${res.status}).\n서버 디렉토리에서 git pull 후 서버를 재시작하세요 (≥ 커밋 c1d050b 필요).`
             : `예상치 못한 응답 (HTTP ${res.status}): ` + JSON.stringify(data || {}).slice(0, 300)) });
       } else {
         setUpdateResult(data);
