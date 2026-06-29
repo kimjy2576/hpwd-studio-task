@@ -38,18 +38,18 @@ package CondMBe "방정식형 응축기 (L2 정상상태) — 3-zone(deSH+2상+S
   model CondenserSS "정상상태 방정식형 응축기 (RefPort TwoPort)"
     HPWD.RefPort port_a "입구 (과열증기)";
     HPWD.RefPort port_b "출구 (과냉액)";
-    parameter Real D_o = 7e-3, D_i = 6.5e-3, L_tube_total = 10.0, N_tubes = 24.0;
-    parameter Integer N_rows = 2;
-    parameter Real n_circuits = 2.0, P_t = 25e-3, P_l = 22e-3, t_fin = 0.12e-3;
-    parameter Real FPI = 12.0, k_fin = 200.0, A_o_face = 0.05;
+    parameter Real D_o = 5e-3, D_i = 4.6e-3, L_tube_total = 3.84, N_tubes = 16.0;
+    parameter Integer N_rows = 4;
+    parameter Real n_circuits = 1.0, P_t = 14.14e-3, P_l = 10e-3, t_fin = 0.11e-3;
+    parameter Real FPI = 20.0, k_fin = 200.0, A_o_face = 0.0135744;
     parameter Real dP_ref = 0.03;
     parameter Real T_air_in_C = 35.0, RH_in = 0.50, V_air_CMM = 25.42;
     // ── 튜브 배열 + micro-fin (내부강화) ──
     parameter String layout = "staggered" "튜브 배열: staggered / inline";
-    parameter String tube_type = "smooth" "튜브 내면: smooth / microfin";
-    parameter Integer n_microfin = 0 "(microfin) 내부 핀 개수";
-    parameter Real e_microfin = 0.0 "(microfin) 핀 높이 [m]";
-    parameter Real helix_angle = 0.0 "(microfin) 나선각 [deg]";
+    parameter String tube_type = "microfin" "튜브 내면: smooth / microfin";
+    parameter Integer n_microfin = 54 "(microfin) 내부 핀 개수";
+    parameter Real e_microfin = 0.15e-3 "(microfin) 핀 높이 [m]";
+    parameter Real helix_angle = 15.0 "(microfin) 나선각 [deg]";
     // ── 파생 (형상/공기) ──
     final parameter Real P_fin = 0.0254/FPI;
     final parameter Real A_tube_outer = 3.141592653589793*D_o*L_tube_total;

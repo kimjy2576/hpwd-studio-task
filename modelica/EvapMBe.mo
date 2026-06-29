@@ -8,16 +8,16 @@ package EvapMBe "방정식형 이동경계 증발기 (L2) — dry, v2(HXCorr Che
     HPWD.RefPort port_a "입구 (2상, EEV측)";
     HPWD.RefPort port_b "출구 (과열, 압축기측)";
     // ── 형상 (알고리즘 EvapMB 검증 케이스와 동일) ──
-    parameter Real D_o = 7e-3, D_i = 6.5e-3, L_tube_total = 10.0, N_tubes = 24.0;
-    parameter Integer N_rows = 2;
-    parameter Real n_circuits = 2.0, P_t = 25e-3, P_l = 22e-3, t_fin = 0.12e-3;
-    parameter Real FPI = 12.0, k_fin = 200.0, A_o_face = 0.05;
+    parameter Real D_o = 5e-3, D_i = 4.6e-3, L_tube_total = 5.76, N_tubes = 24.0;
+    parameter Integer N_rows = 6;
+    parameter Real n_circuits = 1.0, P_t = 14.14e-3, P_l = 10e-3, t_fin = 0.11e-3;
+    parameter Real FPI = 22.0, k_fin = 200.0, A_o_face = 0.0135744;
     // ── 튜브 배열 + micro-fin (내부강화) ──
     parameter String layout = "staggered" "튜브 배열: staggered / inline";
-    parameter String tube_type = "smooth" "튜브 내면: smooth / microfin";
-    parameter Integer n_microfin = 0 "(microfin) 내부 핀 개수";
-    parameter Real e_microfin = 0.0 "(microfin) 핀 높이 [m]";
-    parameter Real helix_angle = 0.0 "(microfin) 나선각 [deg]";
+    parameter String tube_type = "microfin" "튜브 내면: smooth / microfin";
+    parameter Integer n_microfin = 54 "(microfin) 내부 핀 개수";
+    parameter Real e_microfin = 0.15e-3 "(microfin) 핀 높이 [m]";
+    parameter Real helix_angle = 15.0 "(microfin) 나선각 [deg]";
     // ── 공기 (dry: W=0) ──
     parameter Real T_air_in_C = 45.0 "공기 입구 [°C]";
     parameter Real RH_in = 0.85 "입구 상대습도 0~1";
