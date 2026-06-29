@@ -158,15 +158,48 @@ package CycleMBe "방정식형 MB 사이클: EvaporatorSS + Comp_Winandy + Conde
   model CycleDynL2 "순수 L2 MB 사이클: Comp_Winandy + CondenserSS + EEV_MB(L2 SEMI) + EvaporatorMBdyn. 전 컴포넌트 SEMI."
     HPWD.Comp_Winandy comp(N = 3000.0);
     CondMBe.CondenserSS cond(P_c(start = 15e5));
-    EevMB.EEV_MB eev(opening_pct = opening_pct);
+    EevMB.EEV_MB eev;
     EvapMBe.EvaporatorMBdyn evap(is_wet = false);
+    Modelica.Blocks.Sources.Constant openSig(k = opening_pct);
     parameter Real opening_pct = 12.0 "EEV 개도 [%]";
+    Real Pc_bar, Pe_bar, SH, mdot, opening;
   equation
     connect(comp.port_b, cond.port_a);
     connect(cond.port_b, eev.port_a);
     connect(eev.port_b, evap.port_a);
     connect(evap.port_b, comp.port_a);
+    connect(openSig.y, eev.opening);
+    Pc_bar = cond.P_c/1e5;
+    Pe_bar = evap.P_e/1e5;
+    SH = evap.SH_out;
+    mdot = comp.m_dot;
+    opening = openSig.y;
   end CycleDynL2;
+
+  model CycleDynL2_PI "L2 MB 사이클 + EEV PI(SH 제어) — L1/L3와 동일 HPWDctrl.PI_Controller 공유. 고정SH 비교용."
+    parameter Real SH_target = 6.0 "목표 과열도 [K]";
+    parameter Real N = 3000.0 "압축기 회전수 [rpm]";
+    HPWD.Comp_Winandy comp(N = N);
+    CondMBe.CondenserSS cond(P_c(start = 15e5));
+    EevMB.EEV_MB eev;
+    EvapMBe.EvaporatorMBdyn evap(is_wet = false);
+    HPWDctrl.PI_Controller ctrl(
+      SH_target = SH_target, Kp = 0.5, Ki = 0.05,
+      opening_init = 12.0, opening_min = 5.0, opening_max = 100.0, I(fixed = true));
+    Real Pc_bar, Pe_bar, SH, mdot, opening;
+  equation
+    connect(comp.port_b, cond.port_a);
+    connect(cond.port_b, eev.port_a);
+    connect(eev.port_b, evap.port_a);
+    connect(evap.port_b, comp.port_a);
+    ctrl.SH_meas = evap.SH_out;          // SH 측정 → PI
+    connect(ctrl.opening, eev.opening);  // PI 출력 → EEV 개도
+    Pc_bar = cond.P_c/1e5;
+    Pe_bar = evap.P_e/1e5;
+    SH = evap.SH_out;
+    mdot = comp.m_dot;
+    opening = ctrl.opening;
+  end CycleDynL2_PI;
 
   model CycleDynWet "습윤코일(제습) 사이클 — HPWD 건조모드. CycleDyn + evap 습표면"
     extends CycleDyn(evap(is_wet = true));

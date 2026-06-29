@@ -95,7 +95,7 @@ package EevMB
     parameter Real A_orifice_mm2 = 3.14, opening_min = 0.0, Cd_0 = 0.72;
     parameter Real Re_c = 5000.0, k_sub = 0.05, k_op = 0.15, Y_crit = 0.55, cf_A = 1.0;
     parameter Boolean use_choke = true;
-    parameter Real opening_pct = 50.0 "개도 [%] (제어입력)";
+    Modelica.Blocks.Interfaces.RealInput opening "개도 [%] (신호: PI 또는 Constant)";
     Real m_dot_ref, opening_calc, Cd_eff, Re, dP_eff_bar, is_choked;
     Real T_sub, x_out, T_out_C;
     Real m_dot, P_in, P_out, h_in;
@@ -122,7 +122,7 @@ package EevMB
     // EEV 계산 (control mode)
     (mdr, opc, cde, re_l, dpe, isc) := eevMB(
       A_orifice_mm2, opening_min, Cd_0, Re_c, k_sub, k_op, Y_crit, cf_A,
-      use_choke, true, P_in/1e5, h_in/1000.0, P_out/1e5, opening_pct, 0.0,
+      use_choke, true, P_in/1e5, h_in/1000.0, P_out/1e5, opening, 0.0,
       rho_in, mu_in, T_sub);
     m_dot_ref := mdr; opening_calc := opc; Cd_eff := cde; Re := re_l; dP_eff_bar := dpe; is_choked := isc;
     // 출구상태 (등엔탈피, h_out=h_in @ P_out)
@@ -149,10 +149,12 @@ package EevMB
   end PBnd;
 
   model EEV_MB_test "압력경계(고압 과냉액) → EEV → 압력경계(저압)"
-    EevMB.EEV_MB eev(opening_pct = 50.0);
+    EevMB.EEV_MB eev;
+    Modelica.Blocks.Sources.Constant openSig(k = 50.0);
     PBnd inlet(p = 16.49e5, h = 271000);
     PBnd outlet(p = 5.5e5, h = 0);
   equation
+    connect(openSig.y, eev.opening);
     connect(inlet.port, eev.port_a);
     connect(eev.port_b, outlet.port);
   end EEV_MB_test;
