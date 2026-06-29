@@ -12,6 +12,12 @@ package EvapMBe "방정식형 이동경계 증발기 (L2) — dry, v2(HXCorr Che
     parameter Integer N_rows = 2;
     parameter Real n_circuits = 2.0, P_t = 25e-3, P_l = 22e-3, t_fin = 0.12e-3;
     parameter Real FPI = 12.0, k_fin = 200.0, A_o_face = 0.05;
+    // ── 튜브 배열 + micro-fin (내부강화) ──
+    parameter String layout = "staggered" "튜브 배열: staggered / inline";
+    parameter String tube_type = "smooth" "튜브 내면: smooth / microfin";
+    parameter Integer n_microfin = 0 "(microfin) 내부 핀 개수";
+    parameter Real e_microfin = 0.0 "(microfin) 핀 높이 [m]";
+    parameter Real helix_angle = 0.0 "(microfin) 나선각 [deg]";
     // ── 공기 (dry: W=0) ──
     parameter Real T_air_in_C = 45.0 "공기 입구 [°C]";
     parameter Real RH_in = 0.85 "입구 상대습도 0~1";
@@ -41,6 +47,10 @@ package EvapMBe "방정식형 이동경계 증발기 (L2) — dry, v2(HXCorr Che
     final parameter Real T_dp_in = HXCorr.Tdew(T_air_in_C, RH_in, 101325.0);
     final parameter Real m_dot_air = HXCorr.rho_humid_air(T_air_in_C, W_in, 101325.0)*(V_air_CMM/60.0);
     final parameter Real C_air = m_dot_air*HXCorr.cp_ha_moist(W_in);
+    // micro-fin EF (기하만 의존 → final parameter). smooth면 ψ=1 → EF=1 (하위호환).
+    final parameter Real psi_mf = if tube_type == "microfin" then HXCorr.microfin_area_ratio(n_microfin, e_microfin, helix_angle, D_i) else 1.0;
+    final parameter Real EF_evap = HXCorr.microfin_ef("evap", psi_mf, helix_angle);
+    final parameter Real EF_sgl = HXCorr.microfin_ef("single", psi_mf, helix_angle);
     // ── 상태 ──
     Real zeta(start = 0.8, fixed = true) "2상 zone 분율";
     Modelica.Units.SI.AbsolutePressure P_e(start = 5.5e5, fixed = true);
@@ -172,17 +182,17 @@ package EvapMBe "방정식형 이동경계 증발기 (L2) — dry, v2(HXCorr Che
     x_avg_2ph := 0.5*((h_in - h_l)/(h_v - h_l) + 1.0);
     q_flux := mdot_in*(h_v - h_in)/A_i;
     G_2ph := (mdot_in/n_circuits)/A_cross;
-    alpha_2ph := HXCorr.h_evap_chen1966(x_avg_2ph, G_2ph, D_i, q_flux, mu_l, k_l, Pr_l, rho_l, rho_v, mu_v, P_ec/Pcrit, Mmol);
-    alpha_SH := HXCorr.dittus_boelter(mu10, k10, cp10, mdot_in/n_circuits, D_i, true);
+    alpha_2ph := HXCorr.h_evap_chen1966(x_avg_2ph, G_2ph, D_i, q_flux, mu_l, k_l, Pr_l, rho_l, rho_v, mu_v, P_ec/Pcrit, Mmol)*EF_evap;
+    alpha_SH := HXCorr.dittus_boelter(mu10, k10, cp10, mdot_in/n_circuits, D_i, true)*EF_sgl;
     // ── 공기측 α (Wang j + Schmidt 핀) ──
     T_air_avg := 0.5*(T_air_in + Tsat);
     mu_a := HXCorr.mu_air(T_air_avg);
     Pr_a := HXCorr.Pr_air(T_air_avg);
     G_air := m_dot_air/A_c;
     Re_Dc := G_air*Dc/mu_a;
-    j_air := HXCorr.j_wang2000_plain(Re_Dc, N_rows, Dc, P_t, P_l, FPI, t_fin);
+    j_air := if layout == "inline" then HXCorr.j_plain_inline(Re_Dc, N_rows, Dc, P_t, P_l, FPI, t_fin) else HXCorr.j_wang2000_plain(Re_Dc, N_rows, Dc, P_t, P_l, FPI, t_fin);
     alpha_air := j_air*G_air*1006.0/Pr_a^(2.0/3.0);
-    eta_fin := HXCorr.schmidt_fin(D_o, P_t, P_l, t_fin, k_fin, alpha_air, "staggered");
+    eta_fin := HXCorr.schmidt_fin(D_o, P_t, P_l, t_fin, k_fin, alpha_air, layout);
     eta_overall := (A_tube_outer + A_fin_total*eta_fin)/A_o;
   end EvaporatorMBdyn;
 

@@ -44,6 +44,12 @@ package CondMBe "방정식형 응축기 (L2 정상상태) — 3-zone(deSH+2상+S
     parameter Real FPI = 12.0, k_fin = 200.0, A_o_face = 0.05;
     parameter Real dP_ref = 0.03;
     parameter Real T_air_in_C = 35.0, RH_in = 0.50, V_air_CMM = 25.42;
+    // ── 튜브 배열 + micro-fin (내부강화) ──
+    parameter String layout = "staggered" "튜브 배열: staggered / inline";
+    parameter String tube_type = "smooth" "튜브 내면: smooth / microfin";
+    parameter Integer n_microfin = 0 "(microfin) 내부 핀 개수";
+    parameter Real e_microfin = 0.0 "(microfin) 핀 높이 [m]";
+    parameter Real helix_angle = 0.0 "(microfin) 나선각 [deg]";
     // ── 파생 (형상/공기) ──
     final parameter Real P_fin = 0.0254/FPI;
     final parameter Real A_tube_outer = 3.141592653589793*D_o*L_tube_total;
@@ -61,6 +67,10 @@ package CondMBe "방정식형 응축기 (L2 정상상태) — 3-zone(deSH+2상+S
     final parameter Real W_in = HXCorr.W_humid(T_air_in_C, RH_in, 101325.0);
     final parameter Real m_dot_air = HXCorr.rho_humid_air(T_air_in_C, W_in, 101325.0)*(V_air_CMM/60.0);
     final parameter Real C_air = m_dot_air*HXCorr.cp_ha_moist(W_in);
+    // micro-fin EF (기하만 의존 → final parameter). smooth면 ψ=1 → EF=1 (하위호환).
+    final parameter Real psi_mf = if tube_type == "microfin" then HXCorr.microfin_area_ratio(n_microfin, e_microfin, helix_angle, D_i) else 1.0;
+    final parameter Real EF_cond = HXCorr.microfin_ef("cond", psi_mf, helix_angle);
+    final parameter Real EF_sgl = HXCorr.microfin_ef("single", psi_mf, helix_angle);
     // ── 미지수 (zone) — start로 초기추정 ──
     Real zeta_d(start = 0.15), zeta_2(start = 0.51), zeta_sc;
     Real Qd, Q2, Qsc, Q_total;
@@ -87,19 +97,19 @@ package CondMBe "방정식형 응축기 (L2 정상상태) — 3-zone(deSH+2상+S
     // ── 물성 (record 격리 함수) + 알파 (equation화) ──
     (Tcond, Trefin, h_l, h_v, rho_l, rho_v, mu_l, k_l, Pr_l, cpl_sat, cpv_mean, mu_v5, k_v5, Pr_v5, mu_l5, k_l5, Pr_l5, Pcrit) = CondMBe.propsCond(P_c, h_in);
     G_2ph = (mdot/n_circuits)/A_cross;
-    alpha_2ph = HXCorr.h_cond_shah1979(0.5, G_2ph, D_i, mu_l, k_l, Pr_l, P_c/Pcrit);
+    alpha_2ph = HXCorr.h_cond_shah1979(0.5, G_2ph, D_i, mu_l, k_l, Pr_l, P_c/Pcrit)*EF_cond;
     Re_deSH = G_2ph*D_i/mu_v5;
-    alpha_deSH = HXCorr.gnielinski(Re_deSH, Pr_v5, k_v5, D_i);
+    alpha_deSH = HXCorr.gnielinski(Re_deSH, Pr_v5, k_v5, D_i)*EF_sgl;
     Re_SC = G_2ph*D_i/mu_l5;
-    alpha_SC = HXCorr.gnielinski(Re_SC, Pr_l5, k_l5, D_i);
+    alpha_SC = HXCorr.gnielinski(Re_SC, Pr_l5, k_l5, D_i)*EF_sgl;
     T_air_avg = 0.5*(T_air_in + Tcond);
     mu_a = HXCorr.mu_air(T_air_avg);
     Pr_a = HXCorr.Pr_air(T_air_avg);
     G_air = m_dot_air/A_c;
     Re_Dc = G_air*Dc/mu_a;
-    j_air = HXCorr.j_wang2000_plain(Re_Dc, N_rows, Dc, P_t, P_l, FPI, t_fin);
+    j_air = if layout == "inline" then HXCorr.j_plain_inline(Re_Dc, N_rows, Dc, P_t, P_l, FPI, t_fin) else HXCorr.j_wang2000_plain(Re_Dc, N_rows, Dc, P_t, P_l, FPI, t_fin);
     alpha_air = j_air*G_air*1006.0/Pr_a^(2.0/3.0);
-    eta_fin = HXCorr.schmidt_fin(D_o, P_t, P_l, t_fin, k_fin, alpha_air, "staggered");
+    eta_fin = HXCorr.schmidt_fin(D_o, P_t, P_l, t_fin, k_fin, alpha_air, layout);
     eta_overall = (A_tube_outer + A_fin_total*eta_fin)/A_o;
     // ── 냉매측 UA (zeta 의존) + 직렬 UA ──
     UA_ref_deSH = alpha_deSH*A_i*zeta_d;
