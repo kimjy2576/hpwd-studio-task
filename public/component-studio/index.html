@@ -1202,8 +1202,12 @@ try {
     show('레포 업데이트 확인 중…', '#2563EB');
     try {
       var res = await fetch(backend().replace(/\/$/, '') + '/api/update', { method: 'POST' });
-      var d = await res.json();
-      if (d.status === 'up_to_date') {
+      var d = null; try { d = await res.json(); } catch (e2) {}
+      if (!res.ok || !d || !d.status) {
+        show(res.status === 404
+          ? '이 서버엔 /api/update가 없음.<br>서버를 한 번 재시작(python server.py)하면 이후 동작.'
+          : '예상치 못한 응답 (HTTP ' + res.status + ').', '#DC2626');
+      } else if (d.status === 'up_to_date') {
         show('✓ 이미 최신입니다.', '#059669');
       } else if (d.status === 'updated') {
         var msg = '✓ ' + esc(d.message);
