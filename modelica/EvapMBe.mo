@@ -8,10 +8,10 @@ package EvapMBe "방정식형 이동경계 증발기 (L2) — dry, v2(HXCorr Che
     HPWD.RefPort port_a "입구 (2상, EEV측)";
     HPWD.RefPort port_b "출구 (과열, 압축기측)";
     // ── 형상 (알고리즘 EvapMB 검증 케이스와 동일) ──
-    parameter Real D_o = 5e-3, D_i = 4.6e-3, L_tube_total = 5.76, N_tubes = 24.0;
-    parameter Integer N_rows = 6;
+    parameter Real D_o = 5e-3, D_i = 4.6e-3, L_tube_total = 3.84, N_tubes = 16.0;
+    parameter Integer N_rows = 4;
     parameter Real n_circuits = 1.0, P_t = 14.14e-3, P_l = 10e-3, t_fin = 0.11e-3;
-    parameter Real FPI = 22.0, k_fin = 200.0, A_o_face = 0.0135744;
+    parameter Real FPI = 20.0, k_fin = 200.0, A_o_face = 0.0135744;
     // ── 튜브 배열 + micro-fin (내부강화) ──
     parameter String layout = "staggered" "튜브 배열: staggered / inline";
     parameter String tube_type = "microfin" "튜브 내면: smooth / microfin";

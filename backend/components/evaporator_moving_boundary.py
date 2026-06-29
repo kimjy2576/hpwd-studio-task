@@ -78,16 +78,16 @@ modelDescription = {
          'group': 'Geometry', 'start': 4.6e-3, 'unit': 'm',
          'description': '튜브 내경'},
         {'name': 'L_tube_total', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Geometry', 'start': 5.76, 'unit': 'm',
+         'group': 'Geometry', 'start': 3.84, 'unit': 'm',
          'description': '튜브 총 길이 (모든 튜브 합)'},
         {'name': 'N_tubes', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Geometry', 'start': 24.0, 'unit': '-',
+         'group': 'Geometry', 'start': 16.0, 'unit': '-',
          'description': '튜브 본수 (병렬 회로 기준 분포)'},
         {'name': 'n_circuits', 'causality': 'parameter', 'type': 'Real',
          'group': 'Geometry', 'start': 1.0, 'unit': '-',
          'description': '병렬 냉매 회로 수 (G = ṁ/n_circuits/A_cross). 검증 시 On circuit_mode의 회로수와 일치시킴'},
         {'name': 'N_rows', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Geometry', 'start': 6.0, 'unit': '-',
+         'group': 'Geometry', 'start': 4.0, 'unit': '-',
          'description': '공기 흐름 방향 row 수'},
         {'name': 'P_t', 'causality': 'parameter', 'type': 'Real',
          'group': 'Geometry', 'start': 14.14e-3, 'unit': 'm',
@@ -99,7 +99,7 @@ modelDescription = {
          'group': 'Geometry', 'start': 0.11e-3, 'unit': 'm',
          'description': '핀 두께'},
         {'name': 'FPI', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Geometry', 'start': 22.0, 'unit': 'fins/inch',
+         'group': 'Geometry', 'start': 20.0, 'unit': 'fins/inch',
          'description': '핀 밀도 (FPI=12 → P_fin ≈ 2.12mm)'},
         {'name': 'k_fin', 'causality': 'parameter', 'type': 'Real',
          'group': 'Geometry', 'start': 200.0, 'unit': 'W/(m·K)',
@@ -354,14 +354,14 @@ def step(input, params, state, dt):
     # Geometry
     D_o = float(params.get('D_o', 5.0e-3))
     D_i = float(params.get('D_i', 4.6e-3))
-    L_tube_total = float(params.get('L_tube_total', 5.76))
-    N_tubes = float(params.get('N_tubes', 24.0))
-    N_rows = float(params.get('N_rows', 6.0))
+    L_tube_total = float(params.get('L_tube_total', 3.84))
+    N_tubes = float(params.get('N_tubes', 16.0))
+    N_rows = float(params.get('N_rows', 4.0))
     n_circuits = float(params.get('n_circuits', 1.0))  # 병렬 회로 수 (G 결정)
     P_t = float(params.get('P_t', 14.14e-3))
     P_l = float(params.get('P_l', 10.0e-3))
     t_fin = float(params.get('t_fin', 0.11e-3))
-    FPI = float(params.get('FPI', 22.0))
+    FPI = float(params.get('FPI', 20.0))
     k_fin = float(params.get('k_fin', 200.0))
     A_o_face = float(params.get('A_o_face', 0.0135744))
     eps_over_D = float(params.get('eps_over_D', 0.0))

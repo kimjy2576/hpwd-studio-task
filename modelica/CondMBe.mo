@@ -38,10 +38,10 @@ package CondMBe "방정식형 응축기 (L2 정상상태) — 3-zone(deSH+2상+S
   model CondenserSS "정상상태 방정식형 응축기 (RefPort TwoPort)"
     HPWD.RefPort port_a "입구 (과열증기)";
     HPWD.RefPort port_b "출구 (과냉액)";
-    parameter Real D_o = 5e-3, D_i = 4.6e-3, L_tube_total = 3.84, N_tubes = 16.0;
-    parameter Integer N_rows = 4;
+    parameter Real D_o = 5e-3, D_i = 4.6e-3, L_tube_total = 5.76, N_tubes = 24.0;
+    parameter Integer N_rows = 6;
     parameter Real n_circuits = 1.0, P_t = 14.14e-3, P_l = 10e-3, t_fin = 0.11e-3;
-    parameter Real FPI = 20.0, k_fin = 200.0, A_o_face = 0.0135744;
+    parameter Real FPI = 22.0, k_fin = 200.0, A_o_face = 0.0135744;
     parameter Real dP_ref = 0.03;
     parameter Real T_air_in_C = 35.0, RH_in = 0.50, V_air_CMM = 25.42;
     // ── 튜브 배열 + micro-fin (내부강화) ──

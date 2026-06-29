@@ -93,8 +93,8 @@ modelDescription = {
          'group': 'Geometry', 'start': 0.05656, 'unit': 'm',
          'description': '공기 흐름 face 높이 (코일 height)'},
         {'name': 'D', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Geometry', 'start': 0.06, 'unit': 'm',
-         'description': '공기 흐름 방향 두께 (코일 depth)'},
+         'group': 'Geometry', 'start': 0.04, 'unit': 'm',
+         'description': '공기 흐름 방향 두께 (코일 depth, 4row)'},
         
         # ═══════ Geometry — 튜브 ═══════
         {'name': 'D_o', 'causality': 'parameter', 'type': 'Real',
@@ -110,8 +110,8 @@ modelDescription = {
          'group': 'Tube', 'start': 10.0e-3, 'unit': 'm',
          'description': 'Longitudinal pitch (공기 방향)'},
         {'name': 'N_rows', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Tube', 'start': 6.0, 'unit': '-',
-         'description': '공기 흐름 row 수'},
+         'group': 'Tube', 'start': 4.0, 'unit': '-',
+         'description': '공기 흐름 row 수 (증발기 4)'},
         {'name': 'N_tubes_per_row', 'causality': 'parameter', 'type': 'Real',
          'group': 'Tube', 'start': 4.0, 'unit': '-',
          'description': 'Row당 튜브 수 (총 튜브: Nr × Nt)'},
@@ -133,13 +133,13 @@ modelDescription = {
         
         # ═══════ Geometry — Fin ═══════
         {'name': 'FPI', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Fin', 'start': 22.0, 'unit': 'fins/inch',
+         'group': 'Fin', 'start': 20.0, 'unit': 'fins/inch',
          'description': '핀 밀도 (FPI=12 → P_fin ≈ 2.12mm)'},
         {'name': 't_fin', 'causality': 'parameter', 'type': 'Real',
          'group': 'Fin', 'start': 0.11e-3, 'unit': 'm',
          'description': '핀 두께'},
         {'name': 'fin_type', 'causality': 'parameter', 'type': 'String',
-         'group': 'Fin', 'start': 'slit', 'unit': '-', 'options': FIN_TYPES,
+         'group': 'Fin', 'start': 'plain', 'unit': '-', 'options': FIN_TYPES,
          'description': 'Fin 타입 — plain/wavy/louver/slit'},
         {'name': 'k_fin', 'causality': 'parameter', 'type': 'Real',
          'group': 'Fin', 'start': 200.0, 'unit': 'W/(m·K)',
@@ -366,14 +366,14 @@ def step(input, params, state, dt):
     # Geometry — outer dimensions
     W = float(params.get('W', 0.24))
     H = float(params.get('H', 0.05656))
-    D = float(params.get('D', 0.06))
+    D = float(params.get('D', 0.04))
     
     # Tube
     D_o = float(params.get('D_o', 5.0e-3))
     D_i = float(params.get('D_i', 4.6e-3))
     P_t = float(params.get('P_t', 14.14e-3))
     P_l = float(params.get('P_l', 10.0e-3))
-    N_rows = int(float(params.get('N_rows', 6.0)))
+    N_rows = int(float(params.get('N_rows', 4.0)))
     N_tubes_per_row = int(float(params.get('N_tubes_per_row', 4.0)))
     layout = params.get('layout', 'staggered')
 
@@ -384,9 +384,9 @@ def step(input, params, state, dt):
     helix_angle = float(params.get('helix_angle', 15.0))    # [deg]
 
     # Fin
-    FPI = float(params.get('FPI', 22.0))
+    FPI = float(params.get('FPI', 20.0))
     t_fin = float(params.get('t_fin', 0.11e-3))
-    fin_type = params.get('fin_type', 'slit')
+    fin_type = params.get('fin_type', 'plain')
     k_fin = float(params.get('k_fin', 200.0))
     edge_type = params.get('edge_type', 'rounded')
     wavy_amp = float(params.get('wavy_amplitude', 1.0e-3))
@@ -673,17 +673,17 @@ def validate(params):
     if P_t <= D_o:
         issues.append({'key': 'P_t', 'msg': f'P_t ({P_t*1000:.1f}mm) ≤ D_o ({D_o*1000:.1f}mm) — 튜브가 겹칩'})
     
-    FPI = float(params.get('FPI', 22.0))
+    FPI = float(params.get('FPI', 20.0))
     t_fin = float(params.get('t_fin', 0.11e-3))
     fin_pitch = 0.0254 / FPI
     if t_fin >= fin_pitch:
         issues.append({'key': 't_fin', 'msg': f'핀 두께({t_fin*1000:.2f}mm) ≥ 핀 간격({fin_pitch*1000:.2f}mm)'})
     
-    N_rows = int(float(params.get('N_rows', 6.0)))
+    N_rows = int(float(params.get('N_rows', 4.0)))
     if N_rows < 1 or N_rows > 12:
         issues.append({'key': 'N_rows', 'msg': f'N_rows={N_rows} — 1~12 범위 권장'})
     
-    fin_type = params.get('fin_type', 'slit')
+    fin_type = params.get('fin_type', 'plain')
     if fin_type not in FIN_TYPES:
         issues.append({'key': 'fin_type', 'msg': f"unknown fin_type='{fin_type}'"})
     
