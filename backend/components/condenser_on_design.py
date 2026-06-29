@@ -59,8 +59,14 @@ modelDescription = {
 _overrides = {
     'mode': {'start': 'cond',
              'description': '운전 모드: cond (응축기 default for typeNo 222) / evap'},
+    # ── 응축기 사양 (블록1): Plain fin, FPI20, N_row4, depth=Nr×Pl ──
+    # 공유 튜브(Do5/Di4.6 micro-fin n54/e0.15/15°, Pt14.14/Pl10, Nt4, L_tube=W=240mm,
+    #  t_fin0.11, k_fin200, layout staggered, circuit single)는 evaporator default 상속.
+    'fin_type': {'start': 'plain', 'description': 'Fin 타입 — 응축기 Plain'},
+    'FPI': {'start': 20.0, 'description': '핀 밀도 (응축기 20 FPI)'},
+    'N_rows': {'start': 4.0, 'description': '공기 흐름 row 수 (응축기 4)'},
+    'D': {'start': 0.04, 'description': '공기 흐름 방향 두께 (코일 depth = N_row×P_l = 4×10mm)'},
     # ref correlation default — cond_corr가 이미 shah1979로 default라 그대로
-    # Air j-factor default도 그대로 (auto)
 }
 
 for var in modelDescription['variables']:

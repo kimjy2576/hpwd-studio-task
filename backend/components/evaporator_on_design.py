@@ -87,59 +87,59 @@ modelDescription = {
         
         # ═══════ Geometry — 외관 ═══════
         {'name': 'W', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Geometry', 'start': 0.40, 'unit': 'm',
+         'group': 'Geometry', 'start': 0.24, 'unit': 'm',
          'description': '튜브 길이 방향 (코일 width)'},
         {'name': 'H', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Geometry', 'start': 0.30, 'unit': 'm',
+         'group': 'Geometry', 'start': 0.05656, 'unit': 'm',
          'description': '공기 흐름 face 높이 (코일 height)'},
         {'name': 'D', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Geometry', 'start': 0.044, 'unit': 'm',
+         'group': 'Geometry', 'start': 0.06, 'unit': 'm',
          'description': '공기 흐름 방향 두께 (코일 depth)'},
         
         # ═══════ Geometry — 튜브 ═══════
         {'name': 'D_o', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Tube', 'start': 7.0e-3, 'unit': 'm',
+         'group': 'Tube', 'start': 5.0e-3, 'unit': 'm',
          'description': '튜브 외경'},
         {'name': 'D_i', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Tube', 'start': 6.5e-3, 'unit': 'm',
+         'group': 'Tube', 'start': 4.6e-3, 'unit': 'm',
          'description': '튜브 내경'},
         {'name': 'P_t', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Tube', 'start': 25.0e-3, 'unit': 'm',
+         'group': 'Tube', 'start': 14.14e-3, 'unit': 'm',
          'description': 'Transverse pitch (공기 방향 수직)'},
         {'name': 'P_l', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Tube', 'start': 22.0e-3, 'unit': 'm',
+         'group': 'Tube', 'start': 10.0e-3, 'unit': 'm',
          'description': 'Longitudinal pitch (공기 방향)'},
         {'name': 'N_rows', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Tube', 'start': 2.0, 'unit': '-',
+         'group': 'Tube', 'start': 6.0, 'unit': '-',
          'description': '공기 흐름 row 수'},
         {'name': 'N_tubes_per_row', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Tube', 'start': 12.0, 'unit': '-',
+         'group': 'Tube', 'start': 4.0, 'unit': '-',
          'description': 'Row당 튜브 수 (총 튜브: Nr × Nt)'},
         {'name': 'layout', 'causality': 'parameter', 'type': 'String',
          'group': 'Tube', 'start': 'staggered', 'unit': '-', 'options': LAYOUTS,
          'description': '튜브 배열: staggered (일반) / inline'},
         {'name': 'tube_type', 'causality': 'parameter', 'type': 'String',
-         'group': 'Tube', 'start': 'smooth', 'unit': '-', 'options': TUBE_TYPES,
+         'group': 'Tube', 'start': 'microfin', 'unit': '-', 'options': TUBE_TYPES,
          'description': '튜브 내면: smooth / microfin (마이크로핀 내부강화 — Carnavos/Cavallini-Diani EF)'},
         {'name': 'n_microfin', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Tube', 'start': 0.0, 'unit': '-',
+         'group': 'Tube', 'start': 54.0, 'unit': '-',
          'description': '(microfin) 내부 핀 개수 (둘레)'},
         {'name': 'e_microfin', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Tube', 'start': 0.0, 'unit': 'm',
+         'group': 'Tube', 'start': 0.15e-3, 'unit': 'm',
          'description': '(microfin) 핀 높이'},
         {'name': 'helix_angle', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Tube', 'start': 0.0, 'unit': 'deg',
+         'group': 'Tube', 'start': 15.0, 'unit': 'deg',
          'description': '(microfin) 나선각'},
         
         # ═══════ Geometry — Fin ═══════
         {'name': 'FPI', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Fin', 'start': 12.0, 'unit': 'fins/inch',
+         'group': 'Fin', 'start': 22.0, 'unit': 'fins/inch',
          'description': '핀 밀도 (FPI=12 → P_fin ≈ 2.12mm)'},
         {'name': 't_fin', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Fin', 'start': 0.12e-3, 'unit': 'm',
+         'group': 'Fin', 'start': 0.11e-3, 'unit': 'm',
          'description': '핀 두께'},
         {'name': 'fin_type', 'causality': 'parameter', 'type': 'String',
-         'group': 'Fin', 'start': 'plain', 'unit': '-', 'options': FIN_TYPES,
+         'group': 'Fin', 'start': 'slit', 'unit': '-', 'options': FIN_TYPES,
          'description': 'Fin 타입 — plain/wavy/louver/slit'},
         {'name': 'k_fin', 'causality': 'parameter', 'type': 'Real',
          'group': 'Fin', 'start': 200.0, 'unit': 'W/(m·K)',
@@ -164,10 +164,10 @@ modelDescription = {
          'group': 'Fin', 'start': 1.0e-3, 'unit': 'm',
          'description': '(slit) Ss — 슬릿 높이'},
         {'name': 'slit_width', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Fin', 'start': 2.0e-3, 'unit': 'm',
+         'group': 'Fin', 'start': 7.0e-3, 'unit': 'm',
          'description': '(slit) Sh — 슬릿 폭'},
         {'name': 'n_slits', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Fin', 'start': 6.0, 'unit': '-',
+         'group': 'Fin', 'start': 4.0, 'unit': '-',
          'description': '(slit) 슬릿 개수'},
 
         # ═══════ Circuit ═══════
@@ -364,29 +364,29 @@ def step(input, params, state, dt):
     fluid = params.get('fluid', 'R290')
     
     # Geometry — outer dimensions
-    W = float(params.get('W', 0.40))
-    H = float(params.get('H', 0.30))
-    D = float(params.get('D', 0.044))
+    W = float(params.get('W', 0.24))
+    H = float(params.get('H', 0.05656))
+    D = float(params.get('D', 0.06))
     
     # Tube
-    D_o = float(params.get('D_o', 7.0e-3))
-    D_i = float(params.get('D_i', 6.5e-3))
-    P_t = float(params.get('P_t', 25.0e-3))
-    P_l = float(params.get('P_l', 22.0e-3))
-    N_rows = int(float(params.get('N_rows', 2.0)))
-    N_tubes_per_row = int(float(params.get('N_tubes_per_row', 12.0)))
+    D_o = float(params.get('D_o', 5.0e-3))
+    D_i = float(params.get('D_i', 4.6e-3))
+    P_t = float(params.get('P_t', 14.14e-3))
+    P_l = float(params.get('P_l', 10.0e-3))
+    N_rows = int(float(params.get('N_rows', 6.0)))
+    N_tubes_per_row = int(float(params.get('N_tubes_per_row', 4.0)))
     layout = params.get('layout', 'staggered')
 
     # Micro-fin tube (내부 강화) — tube_type='microfin'이면 Carnavos/Cavallini-Diani EF 적용
-    tube_type = params.get('tube_type', 'smooth')
-    n_microfin = int(float(params.get('n_microfin', 0)))
-    e_microfin = float(params.get('e_microfin', 0.0))      # [m]
-    helix_angle = float(params.get('helix_angle', 0.0))    # [deg]
+    tube_type = params.get('tube_type', 'microfin')
+    n_microfin = int(float(params.get('n_microfin', 54)))
+    e_microfin = float(params.get('e_microfin', 0.15e-3))      # [m]
+    helix_angle = float(params.get('helix_angle', 15.0))    # [deg]
 
     # Fin
-    FPI = float(params.get('FPI', 12.0))
-    t_fin = float(params.get('t_fin', 0.12e-3))
-    fin_type = params.get('fin_type', 'plain')
+    FPI = float(params.get('FPI', 22.0))
+    t_fin = float(params.get('t_fin', 0.11e-3))
+    fin_type = params.get('fin_type', 'slit')
     k_fin = float(params.get('k_fin', 200.0))
     edge_type = params.get('edge_type', 'rounded')
     wavy_amp = float(params.get('wavy_amplitude', 1.0e-3))
@@ -395,8 +395,8 @@ def step(input, params, state, dt):
     louver_angle = float(params.get('louver_angle', 27.0))
     # Slit fin (Ss 높이, Sh 폭, n_slits 개수) — fin_type='slit'일 때 공기측 슬릿 상관식에 사용
     slit_height = float(params.get('slit_height', 1.0e-3))
-    slit_width = float(params.get('slit_width', 2.0e-3))
-    n_slits = int(float(params.get('n_slits', 6)))
+    slit_width = float(params.get('slit_width', 7.0e-3))
+    n_slits = int(float(params.get('n_slits', 4)))
     
     # Circuit
     circuit_mode = params.get('circuit_mode', 'single')
@@ -664,26 +664,26 @@ def validate(params):
     """Parameter validation — 사용자에게 미리 알릴 만한 issues."""
     issues = []
     
-    D_o = float(params.get('D_o', 7.0e-3))
-    D_i = float(params.get('D_i', 6.5e-3))
+    D_o = float(params.get('D_o', 5.0e-3))
+    D_i = float(params.get('D_i', 4.6e-3))
     if D_i >= D_o:
         issues.append({'key': 'D_i', 'msg': f'D_i ({D_i*1000:.2f}mm) ≥ D_o ({D_o*1000:.2f}mm) — D_i < D_o 이어야'})
     
-    P_t = float(params.get('P_t', 25.0e-3))
+    P_t = float(params.get('P_t', 14.14e-3))
     if P_t <= D_o:
         issues.append({'key': 'P_t', 'msg': f'P_t ({P_t*1000:.1f}mm) ≤ D_o ({D_o*1000:.1f}mm) — 튜브가 겹칩'})
     
-    FPI = float(params.get('FPI', 12.0))
-    t_fin = float(params.get('t_fin', 0.12e-3))
+    FPI = float(params.get('FPI', 22.0))
+    t_fin = float(params.get('t_fin', 0.11e-3))
     fin_pitch = 0.0254 / FPI
     if t_fin >= fin_pitch:
         issues.append({'key': 't_fin', 'msg': f'핀 두께({t_fin*1000:.2f}mm) ≥ 핀 간격({fin_pitch*1000:.2f}mm)'})
     
-    N_rows = int(float(params.get('N_rows', 2.0)))
+    N_rows = int(float(params.get('N_rows', 6.0)))
     if N_rows < 1 or N_rows > 12:
         issues.append({'key': 'N_rows', 'msg': f'N_rows={N_rows} — 1~12 범위 권장'})
     
-    fin_type = params.get('fin_type', 'plain')
+    fin_type = params.get('fin_type', 'slit')
     if fin_type not in FIN_TYPES:
         issues.append({'key': 'fin_type', 'msg': f"unknown fin_type='{fin_type}'"})
     
