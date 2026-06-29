@@ -72,40 +72,40 @@ modelDescription = {
 
         # ═══════ Geometry — 10개 ═══════
         {'name': 'D_o', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Geometry', 'start': 7.0e-3, 'unit': 'm',
+         'group': 'Geometry', 'start': 5.0e-3, 'unit': 'm',
          'description': '튜브 외경'},
         {'name': 'D_i', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Geometry', 'start': 6.5e-3, 'unit': 'm',
+         'group': 'Geometry', 'start': 4.6e-3, 'unit': 'm',
          'description': '튜브 내경'},
         {'name': 'L_tube_total', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Geometry', 'start': 10.0, 'unit': 'm',
+         'group': 'Geometry', 'start': 5.76, 'unit': 'm',
          'description': '튜브 총 길이 (모든 튜브 합)'},
         {'name': 'N_tubes', 'causality': 'parameter', 'type': 'Real',
          'group': 'Geometry', 'start': 24.0, 'unit': '-',
          'description': '튜브 본수 (병렬 회로 기준 분포)'},
         {'name': 'n_circuits', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Geometry', 'start': 2.0, 'unit': '-',
+         'group': 'Geometry', 'start': 1.0, 'unit': '-',
          'description': '병렬 냉매 회로 수 (G = ṁ/n_circuits/A_cross). 검증 시 On circuit_mode의 회로수와 일치시킴'},
         {'name': 'N_rows', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Geometry', 'start': 2.0, 'unit': '-',
+         'group': 'Geometry', 'start': 6.0, 'unit': '-',
          'description': '공기 흐름 방향 row 수'},
         {'name': 'P_t', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Geometry', 'start': 25.0e-3, 'unit': 'm',
+         'group': 'Geometry', 'start': 14.14e-3, 'unit': 'm',
          'description': '튜브 transverse pitch (공기 방향 수직)'},
         {'name': 'P_l', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Geometry', 'start': 22.0e-3, 'unit': 'm',
+         'group': 'Geometry', 'start': 10.0e-3, 'unit': 'm',
          'description': '튜브 longitudinal pitch (공기 방향)'},
         {'name': 't_fin', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Geometry', 'start': 0.12e-3, 'unit': 'm',
+         'group': 'Geometry', 'start': 0.11e-3, 'unit': 'm',
          'description': '핀 두께'},
         {'name': 'FPI', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Geometry', 'start': 12.0, 'unit': 'fins/inch',
+         'group': 'Geometry', 'start': 22.0, 'unit': 'fins/inch',
          'description': '핀 밀도 (FPI=12 → P_fin ≈ 2.12mm)'},
         {'name': 'k_fin', 'causality': 'parameter', 'type': 'Real',
          'group': 'Geometry', 'start': 200.0, 'unit': 'W/(m·K)',
          'description': '핀 열전도율 (Al~200, Cu~390)'},
         {'name': 'A_o_face', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Geometry', 'start': 0.05, 'unit': 'm²',
+         'group': 'Geometry', 'start': 0.0135744, 'unit': 'm²',
          'description': '정면 (face) 면적 — V_max 계산용'},
 
         # ═══════ Correlation 선택 (dropdown) ═══════
@@ -352,18 +352,18 @@ def step(input, params, state, dt):
     fluid = params.get('fluid', 'R290')
     wet_mode = params.get('wet_coil_mode', 'auto')
     # Geometry
-    D_o = float(params.get('D_o', 7.0e-3))
-    D_i = float(params.get('D_i', 6.5e-3))
-    L_tube_total = float(params.get('L_tube_total', 10.0))
+    D_o = float(params.get('D_o', 5.0e-3))
+    D_i = float(params.get('D_i', 4.6e-3))
+    L_tube_total = float(params.get('L_tube_total', 5.76))
     N_tubes = float(params.get('N_tubes', 24.0))
-    N_rows = float(params.get('N_rows', 2.0))
-    n_circuits = float(params.get('n_circuits', 2.0))  # 병렬 회로 수 (G 결정)
-    P_t = float(params.get('P_t', 25.0e-3))
-    P_l = float(params.get('P_l', 22.0e-3))
-    t_fin = float(params.get('t_fin', 0.12e-3))
-    FPI = float(params.get('FPI', 12.0))
+    N_rows = float(params.get('N_rows', 6.0))
+    n_circuits = float(params.get('n_circuits', 1.0))  # 병렬 회로 수 (G 결정)
+    P_t = float(params.get('P_t', 14.14e-3))
+    P_l = float(params.get('P_l', 10.0e-3))
+    t_fin = float(params.get('t_fin', 0.11e-3))
+    FPI = float(params.get('FPI', 22.0))
     k_fin = float(params.get('k_fin', 200.0))
-    A_o_face = float(params.get('A_o_face', 0.05))
+    A_o_face = float(params.get('A_o_face', 0.0135744))
     eps_over_D = float(params.get('eps_over_D', 0.0))
     # Correlations
     corr_2ph = params.get('corr_2ph', 'chen1966')

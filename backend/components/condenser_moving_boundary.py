@@ -74,17 +74,17 @@ modelDescription = {
 
         # Geometry — 11개
         {'name': 'D_o', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Geometry', 'start': 7.0e-3, 'unit': 'm', 'description': '튜브 외경'},
+         'group': 'Geometry', 'start': 5.0e-3, 'unit': 'm', 'description': '튜브 외경'},
         {'name': 'D_i', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Geometry', 'start': 6.5e-3, 'unit': 'm', 'description': '튜브 내경'},
+         'group': 'Geometry', 'start': 4.6e-3, 'unit': 'm', 'description': '튜브 내경'},
         {'name': 'L_tube_total', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Geometry', 'start': 10.0, 'unit': 'm', 'description': '튜브 총 길이'},
+         'group': 'Geometry', 'start': 3.84, 'unit': 'm', 'description': '튜브 총 길이'},
         {'name': 'N_tubes', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Geometry', 'start': 24.0, 'unit': '-', 'description': '튜브 본수'},
+         'group': 'Geometry', 'start': 16.0, 'unit': '-', 'description': '튜브 본수'},
         {'name': 'N_rows', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Geometry', 'start': 2.0, 'unit': '-', 'description': '공기 row 수'},
+         'group': 'Geometry', 'start': 4.0, 'unit': '-', 'description': '공기 row 수'},
         {'name': 'n_circuits', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Geometry', 'start': 2.0, 'unit': '-',
+         'group': 'Geometry', 'start': 1.0, 'unit': '-',
          'description': '병렬 냉매 회로 수 (G = ṁ/n_circuits/A_cross). 검증 시 On circuit_mode의 회로수와 일치시킴'},
         {'name': 'void_model', 'causality': 'parameter', 'type': 'String',
          'group': 'Geometry', 'start': 'Premoli', 'unit': '-',
@@ -95,17 +95,17 @@ modelDescription = {
          'options': ['counter', 'parallel'],
          'description': '공기-냉매 흐름 배치 (counter=대향류 default, parallel=평행류). On과 동일'},
         {'name': 'P_t', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Geometry', 'start': 25.0e-3, 'unit': 'm', 'description': 'Transverse pitch'},
+         'group': 'Geometry', 'start': 14.14e-3, 'unit': 'm', 'description': 'Transverse pitch'},
         {'name': 'P_l', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Geometry', 'start': 22.0e-3, 'unit': 'm', 'description': 'Longitudinal pitch'},
+         'group': 'Geometry', 'start': 10.0e-3, 'unit': 'm', 'description': 'Longitudinal pitch'},
         {'name': 't_fin', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Geometry', 'start': 0.12e-3, 'unit': 'm', 'description': '핀 두께'},
+         'group': 'Geometry', 'start': 0.11e-3, 'unit': 'm', 'description': '핀 두께'},
         {'name': 'FPI', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Geometry', 'start': 12.0, 'unit': 'fins/inch', 'description': 'FPI'},
+         'group': 'Geometry', 'start': 20.0, 'unit': 'fins/inch', 'description': 'FPI'},
         {'name': 'k_fin', 'causality': 'parameter', 'type': 'Real',
          'group': 'Geometry', 'start': 200.0, 'unit': 'W/(m·K)', 'description': '핀 열전도율'},
         {'name': 'A_o_face', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Geometry', 'start': 0.05, 'unit': 'm²', 'description': '정면 (face) 면적'},
+         'group': 'Geometry', 'start': 0.0135744, 'unit': 'm²', 'description': '정면 (face) 면적'},
 
         # Correlation
         {'name': 'corr_cond', 'causality': 'parameter', 'type': 'String',
@@ -296,18 +296,18 @@ def _cmm_to_mass(V_air_CMM, T_air_C=20.0, RH=50.0, P_atm=101325.0):
 def step(input, params, state, dt):
     # ── Parameters ──
     fluid = params.get('fluid', 'R290')
-    D_o = float(params.get('D_o', 7.0e-3))
-    D_i = float(params.get('D_i', 6.5e-3))
-    L_tube_total = float(params.get('L_tube_total', 10.0))
-    N_tubes = float(params.get('N_tubes', 24.0))
-    N_rows = float(params.get('N_rows', 2.0))
-    n_circuits = float(params.get('n_circuits', 2.0))  # 병렬 회로 수 (G 결정)
-    P_t = float(params.get('P_t', 25.0e-3))
-    P_l = float(params.get('P_l', 22.0e-3))
-    t_fin = float(params.get('t_fin', 0.12e-3))
-    FPI = float(params.get('FPI', 12.0))
+    D_o = float(params.get('D_o', 5.0e-3))
+    D_i = float(params.get('D_i', 4.6e-3))
+    L_tube_total = float(params.get('L_tube_total', 3.84))
+    N_tubes = float(params.get('N_tubes', 16.0))
+    N_rows = float(params.get('N_rows', 4.0))
+    n_circuits = float(params.get('n_circuits', 1.0))  # 병렬 회로 수 (G 결정)
+    P_t = float(params.get('P_t', 14.14e-3))
+    P_l = float(params.get('P_l', 10.0e-3))
+    t_fin = float(params.get('t_fin', 0.11e-3))
+    FPI = float(params.get('FPI', 20.0))
     k_fin = float(params.get('k_fin', 200.0))
-    A_o_face = float(params.get('A_o_face', 0.05))
+    A_o_face = float(params.get('A_o_face', 0.0135744))
     corr_cond = params.get('corr_cond', 'shah1979')
     corr_SP = params.get('corr_SP', single_phase.DEFAULT)
     corr_air = params.get('corr_air', 'wang2000_plain')
@@ -646,17 +646,17 @@ def step(input, params, state, dt):
 def validate(params):
     issues = []
     
-    D_o = float(params.get('D_o', 7.0e-3))
-    D_i = float(params.get('D_i', 6.5e-3))
+    D_o = float(params.get('D_o', 5.0e-3))
+    D_i = float(params.get('D_i', 4.6e-3))
     if D_i >= D_o:
         issues.append({'key': 'D_i', 'msg': f'D_i ≥ D_o ({D_i*1000:.2f} ≥ {D_o*1000:.2f}mm)'})
     
-    P_t = float(params.get('P_t', 25.0e-3))
+    P_t = float(params.get('P_t', 14.14e-3))
     if P_t <= D_o:
         issues.append({'key': 'P_t', 'msg': f'P_t ({P_t*1000:.1f}mm) ≤ D_o ({D_o*1000:.1f}mm)'})
     
-    FPI = float(params.get('FPI', 12.0))
-    t_fin = float(params.get('t_fin', 0.12e-3))
+    FPI = float(params.get('FPI', 20.0))
+    t_fin = float(params.get('t_fin', 0.11e-3))
     fin_pitch = 0.0254 / FPI
     if t_fin >= fin_pitch:
         issues.append({'key': 't_fin', 'msg': f'핀 두께({t_fin*1000:.2f}) ≥ 핀 간격({fin_pitch*1000:.2f}mm)'})
