@@ -1163,5 +1163,76 @@ ReactDOM.render(<App />, document.getElementById('app'));
     }
   });
 </script>
+<!-- ╔═ GUI 업데이트 버튼 (프레임워크 무관, /api/update 호출) ═╗ -->
+<script>
+(function () {
+  if (window.__hpwdUpdateWidget) return; window.__hpwdUpdateWidget = true;
+  var backend = function () {
+    try { return localStorage.getItem('hpwd_backend_url') || 'http://localhost:8010'; }
+    catch (e) { return 'http://localhost:8010'; }
+  };
+  // ── 버튼 ──
+  var btn = document.createElement('button');
+  btn.textContent = '↻ 업데이트';
+  btn.title = '서버 레포를 git pull --ff-only 로 갱신';
+  Object.assign(btn.style, {
+    position: 'fixed', right: '16px', bottom: '16px', zIndex: 99999,
+    padding: '9px 14px', borderRadius: '10px', border: '1px solid #cbd5e1',
+    background: '#0f172a', color: '#fff', font: "600 12px 'JetBrains Mono',monospace",
+    cursor: 'pointer', boxShadow: '0 4px 14px rgba(0,0,0,.18)', letterSpacing: '.3px'
+  });
+  btn.onmouseenter = function () { btn.style.background = '#1e293b'; };
+  btn.onmouseleave = function () { btn.style.background = '#0f172a'; };
+  // ── 토스트 ──
+  var toast = document.createElement('div');
+  Object.assign(toast.style, {
+    position: 'fixed', right: '16px', bottom: '62px', zIndex: 99999,
+    maxWidth: '360px', padding: '12px 14px', borderRadius: '10px',
+    background: '#fff', color: '#1a1a2e', border: '1px solid #e2e8f0',
+    font: "500 12px/1.5 'Pretendard',system-ui,sans-serif",
+    boxShadow: '0 6px 20px rgba(0,0,0,.14)', display: 'none', whiteSpace: 'pre-wrap'
+  });
+  function show(html, color) {
+    toast.style.display = 'block';
+    toast.style.borderLeft = '4px solid ' + (color || '#2563EB');
+    toast.innerHTML = html;
+  }
+  function esc(s){var d=document.createElement('div');d.textContent=s==null?'':String(s);return d.innerHTML;}
+  btn.onclick = async function () {
+    btn.disabled = true; btn.style.opacity = .6;
+    show('레포 업데이트 확인 중…', '#2563EB');
+    try {
+      var res = await fetch(backend().replace(/\/$/, '') + '/api/update', { method: 'POST' });
+      var d = await res.json();
+      if (d.status === 'up_to_date') {
+        show('✓ 이미 최신입니다.', '#059669');
+      } else if (d.status === 'updated') {
+        var msg = '✓ ' + esc(d.message);
+        if (d.backend_changed) msg += '<br><b style="color:#D97706">서버(.py) 변경 — python server.py 재시작 필요</b>';
+        if (d.frontend_changed) msg += '<br><button id="__hpwdReload" style="margin-top:8px;padding:6px 12px;border:0;border-radius:8px;background:#2563EB;color:#fff;font:600 11px monospace;cursor:pointer">새로고침</button>';
+        show(msg, '#059669');
+        var rb = document.getElementById('__hpwdReload');
+        if (rb) rb.onclick = function () { location.reload(true); };
+      } else if (d.status === 'dirty') {
+        show('⚠ 로컬에 커밋 안 된 변경이 있어 자동 업데이트 불가.<br>변경 commit/되돌린 뒤 재시도.<br><span style="font:400 10px monospace;color:#64748b">' + esc((d.changed_files||[]).slice(0,6).join(', ')) + '</span>', '#DC2626');
+      } else if (d.status === 'no_git') {
+        show('수동 설치본(git 아님) — 자동 업데이트 불가.', '#D97706');
+      } else {
+        show('업데이트 실패: ' + esc(d.message), '#DC2626');
+      }
+    } catch (e) {
+      show('서버 연결 실패 — 백엔드 실행/주소 확인 (' + esc(backend()) + ').', '#DC2626');
+    } finally {
+      btn.disabled = false; btn.style.opacity = 1;
+      clearTimeout(window.__hpwdToastT);
+      window.__hpwdToastT = setTimeout(function () { toast.style.display = 'none'; }, 12000);
+    }
+  };
+  function mount() { document.body.appendChild(toast); document.body.appendChild(btn); }
+  if (document.body) mount(); else document.addEventListener('DOMContentLoaded', mount);
+})();
+</script>
+<!-- ╚═ /업데이트 버튼 ═╝ -->
+
 </body>
 </html>
