@@ -15,6 +15,7 @@ from .correlations import (
     REFSIDE_DP_CORRELATIONS,
     h_with_transition,
     h_single_gnielinski,
+    microfin_ef,
     compute_dp_ref_seg, recommend_dp_ref_correlation,
     validate_re_range_wang2000,
     validate_evap_correlation, validate_cond_correlation,
@@ -218,7 +219,8 @@ class HXSolver:
         fin_type = inp.ft_spec.fin_type if inp.hx_type == "FT" else "louver"
         Pt = inp.ft_spec.Pt if inp.hx_type == "FT" else 0.01
         Pl = inp.ft_spec.Pl if inp.hx_type == "FT" else 0.01
-        self.corr = select_correlations(inp.hx_type, self.Di, fin_type, Pt, Pl)
+        layout = inp.ft_spec.layout if inp.hx_type == "FT" else "staggered"
+        self.corr = select_correlations(inp.hx_type, self.Di, fin_type, Pt, Pl, layout)
 
     def solve(self) -> SimulationResult:
         """Run the full simulation."""
@@ -842,6 +844,18 @@ class HXSolver:
                 cond_corr=self.corr.get("cond"),
             ) * inp.cf_hi
 
+            # --- Micro-fin 내부 강화 (FT-HX, tube_type='microfin'만) ---
+            #   매끈관 h_i에 EF 곱: 단상=Carnavos, 2상=Cavallini-Diani-type.
+            #   단상/응축/증발 판정은 현재 건도 x_ref + 운전모드.
+            _spec = getattr(self.geo, "spec", None)
+            if _spec is not None and getattr(_spec, "tube_type", "smooth") == "microfin":
+                _psi = getattr(self.geo, "area_ratio_i", 1.0)
+                if x_ref <= 0.0 or x_ref >= 1.0:
+                    _mf_regime = "single"
+                else:
+                    _mf_regime = "cond" if inp.mode == "cond" else "evap"
+                h_i *= microfin_ef(_mf_regime, _psi, _spec.helix_angle, x=x_ref, G=G_ref)
+
             # --- Fin efficiency ---
             if is_wet:
                 b = self._compute_b_factor(T_w, T_air, W_air, h_o)
@@ -1067,6 +1081,9 @@ class HXSolver:
                     "louver": "f_louver_enhanced",
                 }
                 f_corr_id = fin_type_map.get(spec.fin_type, "f_wang2000_plain")
+                # in-line plain fin → in-line f 상관식 (Wang × arrangement)
+                if spec.fin_type == "plain" and getattr(spec, "layout", "staggered") == "inline":
+                    f_corr_id = "f_plain_inline"
 
             # Build kwargs for the correlation
             f_kwargs = dict(

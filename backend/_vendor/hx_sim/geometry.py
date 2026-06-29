@@ -28,6 +28,13 @@ class FinTubeSpec:
     Nt: int = 12            # number of tubes per row
     layout: Literal["staggered", "inline"] = "staggered"
 
+    # Micro-fin tube (내부 강화). tube_type="microfin" → Carnavos(단상)/Cavallini-Diani(2상) EF 적용.
+    #   매끈관 h에 곱하는 enhancement factor 방식 (EF가 면적+스월 포함 → A_i는 nominal 유지, 이중계산 방지).
+    tube_type: Literal["smooth", "microfin"] = "smooth"
+    n_microfin: int = 0          # 내부 핀 개수 (둘레 방향)
+    e_microfin: float = 0.0      # 핀 높이 [m]
+    helix_angle: float = 0.0     # 나선각 [degrees]
+
     # Fin specs
     FPI: float = 14.0       # fins per inch
     fin_thickness: float = 0.00012  # [m]
@@ -156,6 +163,7 @@ class FinTubeGeo:
     N_tubes: int = 0
     N_fins: int = 0
     L_tube: float = 0.0
+    area_ratio_i: float = 1.0  # 내부면적 강화비 (micro-fin 진단용; Q는 EF로 반영하므로 A_i는 nominal)
 
     # Per-segment
     A_i_seg: float = 0.0     # internal area per segment
@@ -207,6 +215,15 @@ class FinTubeGeo:
         #   단순히 A_i 늘리면 Q 과대평가. 학계 표준 처리: 직선 튜브 영역만 A_i,
         #   U-bend 효과는 dP에 bend loss로 추가 (compute_dp_ref_seg 외부에서).
         g.A_i = math.pi * s.Di * s.W * g.N_tubes
+
+        # 내부면적 강화비 (micro-fin 진단). 핀 플랭크가 둘레에 ~2·n·e 추가, 나선으로 1/cos(β) 보정.
+        #   주: Q 계산엔 미사용 — EF(Carnavos/Cavallini-Diani)가 면적효과를 포함하므로 A_i는 nominal 유지.
+        if s.tube_type == "microfin" and s.n_microfin > 0 and s.e_microfin > 0.0:
+            beta = math.radians(s.helix_angle)
+            fin_perim = 2.0 * s.n_microfin * s.e_microfin / max(math.cos(beta), 0.1)
+            g.area_ratio_i = 1.0 + fin_perim / (math.pi * s.Di)
+        else:
+            g.area_ratio_i = 1.0
 
         # Minimum free-flow area
         # σ = (Pt - Dc)(Fp - δ) / (Pt × Fp)

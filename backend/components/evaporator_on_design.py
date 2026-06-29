@@ -55,6 +55,7 @@ FIN_TYPES = ['plain', 'wavy', 'louver', 'slit']
 EDGE_TYPES = ['sharp', 'rounded', 'chamfered']
 CIRCUIT_MODES = ['row_parallel', 'serpentine_2', 'serpentine_4', 'single', 'custom']
 LAYOUTS = ['staggered', 'inline']
+TUBE_TYPES = ['smooth', 'microfin']
 
 # Air-side j-factor correlations (HX-Sim 30+ 노출, 4가지로 단순화)
 # user-friendly subset
@@ -117,6 +118,18 @@ modelDescription = {
         {'name': 'layout', 'causality': 'parameter', 'type': 'String',
          'group': 'Tube', 'start': 'staggered', 'unit': '-', 'options': LAYOUTS,
          'description': '튜브 배열: staggered (일반) / inline'},
+        {'name': 'tube_type', 'causality': 'parameter', 'type': 'String',
+         'group': 'Tube', 'start': 'smooth', 'unit': '-', 'options': TUBE_TYPES,
+         'description': '튜브 내면: smooth / microfin (마이크로핀 내부강화 — Carnavos/Cavallini-Diani EF)'},
+        {'name': 'n_microfin', 'causality': 'parameter', 'type': 'Real',
+         'group': 'Tube', 'start': 0.0, 'unit': '-',
+         'description': '(microfin) 내부 핀 개수 (둘레)'},
+        {'name': 'e_microfin', 'causality': 'parameter', 'type': 'Real',
+         'group': 'Tube', 'start': 0.0, 'unit': 'm',
+         'description': '(microfin) 핀 높이'},
+        {'name': 'helix_angle', 'causality': 'parameter', 'type': 'Real',
+         'group': 'Tube', 'start': 0.0, 'unit': 'deg',
+         'description': '(microfin) 나선각'},
         
         # ═══════ Geometry — Fin ═══════
         {'name': 'FPI', 'causality': 'parameter', 'type': 'Real',
@@ -147,6 +160,15 @@ modelDescription = {
         {'name': 'louver_angle', 'causality': 'parameter', 'type': 'Real',
          'group': 'Fin', 'start': 27.0, 'unit': 'deg',
          'description': '(louver) θ'},
+        {'name': 'slit_height', 'causality': 'parameter', 'type': 'Real',
+         'group': 'Fin', 'start': 1.0e-3, 'unit': 'm',
+         'description': '(slit) Ss — 슬릿 높이'},
+        {'name': 'slit_width', 'causality': 'parameter', 'type': 'Real',
+         'group': 'Fin', 'start': 2.0e-3, 'unit': 'm',
+         'description': '(slit) Sh — 슬릿 폭'},
+        {'name': 'n_slits', 'causality': 'parameter', 'type': 'Real',
+         'group': 'Fin', 'start': 6.0, 'unit': '-',
+         'description': '(slit) 슬릿 개수'},
 
         # ═══════ Circuit ═══════
         {'name': 'circuit_mode', 'causality': 'parameter', 'type': 'String',
@@ -354,7 +376,13 @@ def step(input, params, state, dt):
     N_rows = int(float(params.get('N_rows', 2.0)))
     N_tubes_per_row = int(float(params.get('N_tubes_per_row', 12.0)))
     layout = params.get('layout', 'staggered')
-    
+
+    # Micro-fin tube (내부 강화) — tube_type='microfin'이면 Carnavos/Cavallini-Diani EF 적용
+    tube_type = params.get('tube_type', 'smooth')
+    n_microfin = int(float(params.get('n_microfin', 0)))
+    e_microfin = float(params.get('e_microfin', 0.0))      # [m]
+    helix_angle = float(params.get('helix_angle', 0.0))    # [deg]
+
     # Fin
     FPI = float(params.get('FPI', 12.0))
     t_fin = float(params.get('t_fin', 0.12e-3))
@@ -365,6 +393,10 @@ def step(input, params, state, dt):
     wavy_wl = float(params.get('wavy_wavelength', 10.0e-3))
     louver_pitch = float(params.get('louver_pitch', 1.7e-3))
     louver_angle = float(params.get('louver_angle', 27.0))
+    # Slit fin (Ss 높이, Sh 폭, n_slits 개수) — fin_type='slit'일 때 공기측 슬릿 상관식에 사용
+    slit_height = float(params.get('slit_height', 1.0e-3))
+    slit_width = float(params.get('slit_width', 2.0e-3))
+    n_slits = int(float(params.get('n_slits', 6)))
     
     # Circuit
     circuit_mode = params.get('circuit_mode', 'single')
@@ -441,6 +473,8 @@ def step(input, params, state, dt):
         Do=D_o, Di=D_i, Pt=P_t, Pl=P_l,
         Nr=N_rows, Nt=N_tubes_per_row,
         layout=layout,
+        tube_type=tube_type, n_microfin=n_microfin,
+        e_microfin=e_microfin, helix_angle=helix_angle,
         FPI=FPI, fin_thickness=t_fin,
         fin_type=fin_type, k_fin=k_fin,
         edge_type=edge_type,
@@ -455,6 +489,10 @@ def step(input, params, state, dt):
     if fin_type == 'louver':
         spec_kwargs['louver_pitch'] = louver_pitch
         spec_kwargs['louver_angle'] = louver_angle
+    if fin_type == 'slit':
+        spec_kwargs['slit_height'] = slit_height
+        spec_kwargs['slit_width'] = slit_width
+        spec_kwargs['n_slits'] = n_slits
     
     spec = FinTubeSpec(**spec_kwargs)
     

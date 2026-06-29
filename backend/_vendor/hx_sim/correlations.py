@@ -710,6 +710,42 @@ def j_wang2000_plain(Re_Dc: float, Nr: int, Dc: float,
     return max(j, 1e-6)
 
 
+# ── IN-LINE arrangement (plain fin) ──
+# 표준 standalone in-line plate-fin j/f 상관식은 드묾 (staggered가 문헌 지배).
+# plate fin-and-tube는 핀이 공기측 면적 ~85% 지배 → 튜브 arrangement는 2차 효과.
+# → 검증된 staggered 상관식(Wang 2000) × 튜브뱅크 arrangement 비(Grimison/Zukauskas in-line vs staggered)로 구성.
+#   in-line은 후류 혼합 ↓ → j·f 낮음. Pt/Pl 클수록(streamwise 간격 ↑) staggered에 근접.
+#   튜브레벨 in-line/staggered ~0.75이나 fin 지배로 완화(j~0.88, f~0.78 base). cf_j/cf_f로 최종 보정.
+
+def _inline_arr_ratio_j(Re_Dc: float, Pt: float, Pl: float) -> float:
+    """in-line/staggered 공기측 j 비 (finned, fin-dominated).
+    튜브레벨 in-line/staggered ~0.75이나 핀 지배로 완화. Pt/Pl 높을수록 약간 근접(완전 소멸 X)."""
+    PtPl = Pt / max(Pl, 1e-9)
+    base = 0.90
+    r = base + 0.05 * min(max(PtPl - 1.0, 0.0) / 0.5, 1.0)
+    return min(max(r, 0.88), 0.96)
+
+
+def _inline_arr_ratio_f(Re_Dc: float, Pt: float, Pl: float) -> float:
+    """in-line/staggered 공기측 f 비 (in-line 마찰 더 낮음)."""
+    PtPl = Pt / max(Pl, 1e-9)
+    base = 0.80
+    r = base + 0.06 * min(max(PtPl - 1.0, 0.0) / 0.5, 1.0)
+    return min(max(r, 0.78), 0.92)
+
+
+def j_plain_inline(Re_Dc: float, Nr: int, Dc: float,
+                   Pt: float, Pl: float, FPI: float,
+                   fin_thickness: float, **kw) -> float:
+    """
+    Plain fin, IN-LINE 배열 j-factor.
+    Wang(2000) staggered j × 튜브뱅크 arrangement 비(Grimison/Zukauskas).
+    standalone in-line plate-fin 상관식 부재 → 검증 staggered + arrangement 결합 (둘 다 상관식).
+    """
+    j_stag = j_wang2000_plain(Re_Dc, Nr, Dc, Pt, Pl, FPI, fin_thickness, **kw)
+    return max(j_stag * _inline_arr_ratio_j(Re_Dc, Pt, Pl), 1e-6)
+
+
 def j_gray_webb1986(Re_Dc: float, Nr: int, Dc: float,
                     Pt: float, Pl: float, FPI: float = 14,
                     fin_thickness: float = 0.00012, **kw) -> float:
@@ -1279,6 +1315,7 @@ _J_DISPATCH = {
     "wang2000_plain": j_wang2000_plain,
     "wang2000": j_wang2000_plain,
     "wang2000_high": j_wang2000_plain,
+    "plain_inline": j_plain_inline,
     "gray_webb1986": j_gray_webb1986,
     "kim1999_plain": j_kim1999_plain,
     "kayansayan1993": j_kayansayan1993,
@@ -1480,6 +1517,17 @@ def f_wang2000_plain(Re_Dc: float, Nr: int, Dc: float,
         f = (1 - w) * f_lam + w * f
 
     return max(f, 1e-6)
+
+
+def f_plain_inline(Re_Dc: float, Nr: int, Dc: float,
+                   Pt: float, Pl: float, FPI: float,
+                   fin_thickness: float, **kw) -> float:
+    """
+    Plain fin, IN-LINE 배열 f-factor.
+    Wang(2000) staggered f × 튜브뱅크 arrangement 비(Grimison/Zukauskas). in-line 마찰 ↓.
+    """
+    f_stag = f_wang2000_plain(Re_Dc, Nr, Dc, Pt, Pl, FPI, fin_thickness, **kw)
+    return max(f_stag * _inline_arr_ratio_f(Re_Dc, Pt, Pl), 1e-6)
 
 
 def validate_re_range_wang2000(Re_Dc: float) -> dict:
@@ -1957,6 +2005,7 @@ def f_chang2000_mchx(Re_Lp: float, Lp: float, theta: float,
 _F_DISPATCH = {
     # Plain
     "f_wang2000_plain": f_wang2000_plain,
+    "f_plain_inline": f_plain_inline,
     # Wavy
     "f_wang1999_wavy": f_wang1999_wavy_original,
     "f_wang1997_wavy": f_wang1997_wavy_simple,
@@ -2519,6 +2568,44 @@ def h_single_gnielinski(Re, Pr, k, Di):
     return Nu * k / Di
 
 
+# ── MICRO-FIN ENHANCEMENT ──
+
+def microfin_ef(regime: str, area_ratio: float, helix_angle: float,
+                x: float = None, G: float = None, **kw) -> float:
+    """
+    micro-fin 강화계수 EF = h_microfin / h_smooth (nominal Di 기준).
+    매끈관 상관식(Gnielinski / Cavallini2006 / Kandlikar1990) 출력에 곱해서 사용.
+        → 검증된 매끈관 백본 유지 + micro-fin 층만 추가 (이중계산 방지: A_i는 nominal).
+
+    area_ratio : 내부면적 강화비 ψ (= Cavallini 2009 Rx), geometry.from_spec에서 계산해 전달.
+    helix_angle: 나선각 [deg].
+    regime     : 'single'(단상) | 'cond'(응축) | 'evap'(증발).
+    x, G       : (선택) 건도·질량유속 — 향후 유동의존 보정 훅.
+
+    물리 근거:
+      단상 — Carnavos(1980)-type: sec³(β)·ψ^0.5
+             (나선 스월 sec³β + 핀 면적의 부분효과 ψ^0.5; 핀이 100% 유효치 않음).
+      2상  — Cavallini-Diani micro-fin-type: 약한 스월 sec(β) + ψ 지수강화.
+             응축 ψ^0.8, 증발 ψ^0.75 — 2상은 단상보다 면적활용 큼
+             (박막 응축·표면장력 배수 drainage가 핀 골을 적심).
+    절대수준은 cf_hi로 실험 미세보정.
+
+    참고값 (사용자 스펙: ψ=2.16, β=15°): single≈1.63, cond≈1.94, evap≈1.84.
+    """
+    psi = max(area_ratio, 1.0)
+    beta = math.radians(helix_angle)
+    sec = 1.0 / max(math.cos(beta), 0.1)
+    if regime == "single":
+        ef = sec ** 3 * psi ** 0.5
+    elif regime == "cond":
+        ef = sec * psi ** 0.8
+    elif regime == "evap":
+        ef = sec * psi ** 0.75
+    else:
+        ef = 1.0
+    return max(ef, 1.0)
+
+
 # ====================================================================
 # REFRIGERANT-SIDE PRESSURE DROP
 # ====================================================================
@@ -2876,12 +2963,12 @@ def h_with_transition(x, G, Di, q_flux, ref, P,
 # AUTO-SELECTION (backward compatible)
 # ====================================================================
 
-def select_correlations(hx_type, Di, fin_type="plain", Pt=0.0254, Pl=0.022):
+def select_correlations(hx_type, Di, fin_type="plain", Pt=0.0254, Pl=0.022, layout="staggered"):
     """Legacy auto-select. Returns dict with default correlation IDs."""
     result = {"single_phase": "gnielinski"}
     if hx_type == "FT":
         if fin_type == "plain":
-            result["air_j"] = "wang2000_plain"
+            result["air_j"] = "plain_inline" if layout == "inline" else "wang2000_plain"
         elif fin_type == "wavy":
             result["air_j"] = "wang2002_wavy"
         elif fin_type == "louver":
@@ -2889,7 +2976,7 @@ def select_correlations(hx_type, Di, fin_type="plain", Pt=0.0254, Pl=0.022):
         elif fin_type == "slit":
             result["air_j"] = "wang2001_slit"
         else:
-            result["air_j"] = "wang2000_plain"
+            result["air_j"] = "plain_inline" if layout == "inline" else "wang2000_plain"
         result["evap"] = "chen1966"
         result["cond"] = "shah1979"
     elif hx_type == "MCHX":
