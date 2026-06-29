@@ -292,8 +292,7 @@ package HPWDhx "UA 모델 HX connector"
     connect(cond.port_b, snk.port);
   end CondUA_test;
 
-  model Evap_UA_eq "증발기 UA — equation 버전 (acausal, 사이클용)"
-    package Ref = HelmholtzMedia.HelmholtzFluids.Propane;
+  model Evap_UA_eq "증발기 UA — equation 버전 (acausal, 사이클용). 물성 R290Tab(테이블)."
     package Air = Modelica.Media.Air.MoistAir;
     HPWD.RefPort port_a "입구 (2상)";
     HPWD.RefPort port_b "출구 (과열)";
@@ -325,7 +324,7 @@ package HPWDhx "UA 모델 HX connector"
     port_a.h_outflow = port_b.h_outflow;
     SH = SH_calc;
     // ── 포화 ──
-    T_evap_K = Ref.saturationTemperature(P_evap);
+    T_evap_K = R290Tab.Tsat(P_evap);
     T_evap = T_evap_K - 273.15;
     (h_l, h_v, cp_ref_SH, dummy_cpbub) = satProps(P_evap);
     h_fg = h_v - h_l;
@@ -378,7 +377,7 @@ package HPWDhx "UA 모델 HX connector"
     h_out = h_after_2ph + Q_SH/m_dot;
     T_air_out_K = T_air_after_2ph_K - Q_SH/C_air;
     P_ref_out = port_b.p;
-    T_ref_out = Ref.temperature(Ref.setState_ph(P_ref_out, h_out)) - 273.15;
+    T_ref_out = R290Tab.T_ph(P_ref_out, h_out) - 273.15;
     SH_calc = if h_out >= h_v then max(0.0, T_ref_out - T_evap) else 0.0;
   end Evap_UA_eq;
 
@@ -391,8 +390,7 @@ package HPWDhx "UA 모델 HX connector"
     connect(evap.port_b, snk.port);
   end EvapEq_test;
 
-  model Cond_UA_eq "응축기 UA 3-zone cascade — equation 버전 (acausal, 사이클용)"
-    package Ref = HelmholtzMedia.HelmholtzFluids.Propane;
+  model Cond_UA_eq "응축기 UA 3-zone cascade — equation 버전 (acausal, 사이클용). 물성 R290Tab(테이블)."
     package Air = Modelica.Media.Air.MoistAir;
     HPWD.RefPort port_a "입구 (과열증기)";
     HPWD.RefPort port_b "출구 (과냉액)";
@@ -421,11 +419,11 @@ package HPWDhx "UA 모델 HX connector"
     port_a.h_outflow = port_b.h_outflow;
     SC = SC_calc;
     // ── 포화 + 입구 ──
-    T_cond_K = Ref.saturationTemperature(P_cond);
+    T_cond_K = R290Tab.Tsat(P_cond);
     T_cond_C = T_cond_K - 273.15;
     (h_l_sat, h_v_sat, dummy_dew, cp_l) = satProps(P_cond);
     h_fg = h_v_sat - h_l_sat;
-    T_ref_in_K = Ref.temperature(Ref.setState_ph(P_cond, h_in));
+    T_ref_in_K = R290Tab.T_ph(P_cond, h_in);
     T_ref_in_C = T_ref_in_K - 273.15;
     // ── 공기 ──
     (cp_air, rho_air, x_w_in, Xw_in) = airProps(P_atm, T_air_in_C + 273.15, RH_in);
@@ -433,7 +431,7 @@ package HPWDhx "UA 모델 HX connector"
     C_air = m_dot_air*cp_air;
     // ── Zone 1: De-SH ──
     c1 = (h_in > h_v_sat) and (T_air_in_C < T_ref_in_C);
-    cp_v = Ref.specificHeatCapacityCp(Ref.setState_pT(P_cond, max(T_ref_in_K, T_cond_K + 5.0)));
+    cp_v = dummy_dew;  // de-SH 증기 cp ≈ sat 증기 cp(cpv) — satProps서 이미 계산. Helmholtz cp_pT 대체(표준 1D 근사)
     C_ref_v = m_dot*cp_v;
     Cmin_dS = min(C_ref_v, C_air); Cmax_dS = max(C_ref_v, C_air); Cr_dS = Cmin_dS/Cmax_dS;
     NTU_dS = UA_deSH/Cmin_dS;
@@ -462,9 +460,9 @@ package HPWDhx "UA 모델 HX connector"
     // ── 출구 ──
     Q_total = Q_deSH + Q_2ph + Q_SC;
     h_out = h_ref_3;
-    T_ref_out = if h_out >= h_v_sat then Ref.temperature(Ref.setState_ph(P_cond, h_out)) - 273.15
+    T_ref_out = if h_out >= h_v_sat then R290Tab.T_ph(P_cond, h_out) - 273.15
                 elseif h_out >= h_l_sat then T_cond_C
-                else Ref.temperature(Ref.setState_ph(P_cond, h_out)) - 273.15;
+                else R290Tab.T_ph(P_cond, h_out) - 273.15;
     quality_out = if h_out >= h_v_sat then 1.0 + max(0.0, (h_out - h_v_sat)/max(h_fg, 1.0))
                   elseif h_out >= h_l_sat then max(0.0, min(1.0, (h_out - h_l_sat)/h_fg))
                   else -max(0.0, (h_l_sat - h_out)/max(h_fg, 1.0));
