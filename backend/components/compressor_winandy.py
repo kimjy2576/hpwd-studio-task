@@ -67,13 +67,13 @@ modelDescription = {
 
         # Group: Geometry (압축기 물리 치수, 변하지 않음)
         {'name': 'V_disp', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Geometry', 'start': 10.0, 'unit': 'cm³',
+         'group': 'Geometry', 'start': 7.5, 'unit': 'cm³',
          'description': '행정 체적 (배제 용적)'},
         {'name': 'rv_in', 'causality': 'parameter', 'type': 'Real',
          'group': 'Geometry', 'start': 2.5, 'unit': '-',
          'description': '내부 체적비 (built-in volume ratio)'},
         {'name': 'eta_motor', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Geometry', 'start': 0.92, 'unit': '-',
+         'group': 'Geometry', 'start': 0.90, 'unit': '-',
          'description': '모터 효율 (정격, fitting 가능하지만 보통 데이터시트값)'},
 
         # Group: Fitting Parameters (실험 데이터로 calibration)
@@ -90,7 +90,7 @@ modelDescription = {
          'group': 'Fitting', 'start': 0.95, 'unit': '-',
          'description': '체적 효율 baseline (clearance 외 손실)'},
         {'name': 'clearance_factor', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Fitting', 'start': 0.05, 'unit': '-',
+         'group': 'Fitting', 'start': 0.03, 'unit': '-',
          'description': 'η_v 식의 clearance 항 가중 (η_v = V_se - factor × (rp^(1/γ) - 1))'},
         {'name': 'over_comp_factor', 'causality': 'parameter', 'type': 'Real',
          'group': 'Fitting', 'start': 0.5, 'unit': '-',
@@ -152,7 +152,7 @@ def step(input, params, state, dt):
     # ── Parameters ──
     fluid     = params.get('fluid', 'R290')
     T_amb_C   = float(params.get('T_amb', 25.0))
-    V_disp_cm3 = float(params.get('V_disp', 10.0))
+    V_disp_cm3 = float(params.get('V_disp', 7.5))
     AU_loss   = float(params.get('AU_loss', 5.0))
     AU_su     = float(params.get('AU_su', 3.0))
     dP_su     = float(params.get('dP_su', 0.05))
@@ -160,16 +160,16 @@ def step(input, params, state, dt):
     rv_in     = float(params.get('rv_in', 2.5))
     W_loss0   = float(params.get('W_loss_const', 30.0))
     alpha     = float(params.get('alpha_loss', 0.1))
-    eta_motor = float(params.get('eta_motor', 0.92))
+    eta_motor = float(params.get('eta_motor', 0.90))
     # Fitting params (이전엔 하드코딩, 이제 사용자 calibration 가능)
-    clearance_factor = float(params.get('clearance_factor', 0.05))
+    clearance_factor = float(params.get('clearance_factor', 0.03))
     over_comp_factor = float(params.get('over_comp_factor', 0.5))
 
     # ── Inputs ──
     P_suc_bar = float(input.get('P_suc', 5.0))
     T_suc_C   = float(input.get('T_suc', 5.0))
     P_dis_bar = float(input.get('P_dis', 18.0))
-    N_rpm     = float(input.get('N', 3000.0))
+    N_rpm     = float(input.get('N', 1800.0))
 
     # ── 입력 검증 ──
     if P_suc_bar <= 0 or P_dis_bar <= 0:

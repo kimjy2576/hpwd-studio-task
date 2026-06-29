@@ -74,10 +74,10 @@ modelDescription = {
 
         # Group: Geometry (압축기 물리 치수)
         {'name': 'V_disp', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Geometry', 'start': 10.0, 'unit': 'cm³',
+         'group': 'Geometry', 'start': 7.5, 'unit': 'cm³',
          'description': '행정 체적 (BDC - TDC 차이)'},
         {'name': 'clearance_ratio', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Geometry', 'start': 0.04, 'unit': '-',
+         'group': 'Geometry', 'start': 0.03, 'unit': '-',
          'description': 'Clearance 체적 / V_disp (TDC 잔류 비율)'},
         {'name': 'rv_in', 'causality': 'parameter', 'type': 'Real',
          'group': 'Geometry', 'start': 2.5, 'unit': '-',
@@ -89,10 +89,10 @@ modelDescription = {
          'group': 'Geometry', 'start': 6.0, 'unit': 'mm²',
          'description': '토출 밸브 유효 면적'},
         {'name': 'N_rated', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Geometry', 'start': 3000.0, 'unit': 'rpm',
+         'group': 'Geometry', 'start': 1800.0, 'unit': 'rpm',
          'description': '정격 회전수 (누설 RPM 보정의 기준)'},
         {'name': 'eta_motor', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Geometry', 'start': 0.92, 'unit': '-', 'description': '모터 효율'},
+         'group': 'Geometry', 'start': 0.90, 'unit': '-', 'description': '모터 효율'},
         {'name': 'eta_inv', 'causality': 'parameter', 'type': 'Real',
          'group': 'Geometry', 'start': 0.95, 'unit': '-', 'description': '인버터 효율'},
 
@@ -188,8 +188,8 @@ def step(input, params, state, dt):
     # ── Parameters ──
     fluid       = params.get('fluid', 'R290')
     T_amb_C     = float(params.get('T_amb', 25.0))
-    V_disp_cm3  = float(params.get('V_disp', 10.0))
-    clear_ratio = float(params.get('clearance_ratio', 0.04))
+    V_disp_cm3  = float(params.get('V_disp', 7.5))
+    clear_ratio = float(params.get('clearance_ratio', 0.03))
     rv_in       = float(params.get('rv_in', 2.5))
     A_in_mm2    = float(params.get('A_valve_in_mm2', 8.0))
     A_out_mm2   = float(params.get('A_valve_out_mm2', 6.0))
@@ -201,17 +201,17 @@ def step(input, params, state, dt):
     W_f_const   = float(params.get('W_f_const', 20.0))
     alpha_f     = float(params.get('alpha_f_rpm', 8e-6))
     AU_loss     = float(params.get('AU_loss', 5.0))
-    eta_motor   = float(params.get('eta_motor', 0.92))
+    eta_motor   = float(params.get('eta_motor', 0.90))
     eta_inv     = float(params.get('eta_inv', 0.95))
     # 신규 fitting/geometry params (이전엔 하드코딩)
-    N_rated     = float(params.get('N_rated', 3000.0))
+    N_rated     = float(params.get('N_rated', 1800.0))
     over_comp_factor = float(params.get('over_comp_factor', 0.3))
 
     # ── Inputs ──
     P_suc_bar = float(input.get('P_suc', 5.0))
     T_suc_C   = float(input.get('T_suc', 5.0))
     P_dis_bar = float(input.get('P_dis', 18.0))
-    N_rpm     = float(input.get('N', 3000.0))
+    N_rpm     = float(input.get('N', 1800.0))
 
     # ── 입력 검증 ──
     if P_suc_bar <= 0 or P_dis_bar <= 0:

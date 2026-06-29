@@ -79,7 +79,7 @@ modelDescription = {
          'group': 'Geometry', 'start': 30.0, 'unit': 'deg',
          'description': 'Needle cone 반각 α/2 (보통 15~45°)'},
         {'name': 'D_seat', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Geometry', 'start': 2.0e-3, 'unit': 'm',
+         'group': 'Geometry', 'start': 1.0e-3, 'unit': 'm',
          'description': 'Seat 내경 = 오리피스 직경 (보통 1.5~3 mm for R290 EEV)'},
         {'name': 'stroke_max', 'causality': 'parameter', 'type': 'Real',
          'group': 'Geometry', 'start': 1.0e-3, 'unit': 'm',
@@ -101,7 +101,7 @@ modelDescription = {
 
         # ═══ Fitting (calibration) ═══
         {'name': 'Cd_base', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Fitting', 'start': 0.72, 'unit': '-',
+         'group': 'Fitting', 'start': 0.70, 'unit': '-',
          'description': 'Cd at fully open + high Re (R290 EEV: 0.65~0.78)'},
         {'name': 'Re_transition', 'causality': 'parameter', 'type': 'Real',
          'group': 'Fitting', 'start': 1000.0, 'unit': '-',
@@ -230,12 +230,12 @@ def step(input, params, state, dt):
     
     needle_profile = params.get('needle_profile', 'cone')
     needle_angle = float(params.get('needle_angle', 30.0))
-    D_seat = float(params.get('D_seat', 2.0e-3))
+    D_seat = float(params.get('D_seat', 1.0e-3))
     stroke_max = float(params.get('stroke_max', 1.0e-3))
     opening_min = float(params.get('opening_min', 0.0))
     
     choke_ratio = float(params.get('choke_ratio', 0.5))
-    Cd_base = float(params.get('Cd_base', 0.72))
+    Cd_base = float(params.get('Cd_base', 0.70))
     Re_transition = float(params.get('Re_transition', 1000.0))
     cf_A = float(params.get('cf_A', 1.0))
     
@@ -408,7 +408,7 @@ def _zero_output(P_in_bar, P_out_bar, h_in_kjkg, mode, opening_pct):
 def validate(params):
     issues = []
     
-    D_seat = float(params.get('D_seat', 2.0e-3))
+    D_seat = float(params.get('D_seat', 1.0e-3))
     if D_seat <= 0 or D_seat > 10e-3:
         issues.append({'key': 'D_seat',
                       'msg': f'D_seat={D_seat*1000:.2f}mm — 보통 1~3mm (R290 EEV)'})
@@ -423,7 +423,7 @@ def validate(params):
         issues.append({'key': 'stroke_max',
                       'msg': f'stroke_max={stroke_max*1000:.2f}mm — 보통 0.5~2 mm'})
     
-    Cd_base = float(params.get('Cd_base', 0.72))
+    Cd_base = float(params.get('Cd_base', 0.70))
     if Cd_base < 0.4 or Cd_base > 0.95:
         issues.append({'key': 'Cd_base',
                       'msg': f'Cd_base={Cd_base} — 0.6~0.8 권장 (R290 EEV)'})

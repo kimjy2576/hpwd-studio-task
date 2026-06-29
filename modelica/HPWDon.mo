@@ -15,12 +15,12 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     Modelica.Blocks.Interfaces.RealInput opening "개도 [%] (신호 입력)";
 
     // ─ 기하 (needle + seat) ─
-    parameter Modelica.Units.SI.Length D_seat = 2.0e-3 "seat 직경";
+    parameter Modelica.Units.SI.Length D_seat = 1.0e-3 "seat 직경 (1mm 오리피스)";
     parameter Modelica.Units.SI.Length stroke_max = 1.0e-3 "최대 stroke";
     parameter Real needle_angle_deg = 30.0 "needle cone 반각 α/2 [deg]";
     parameter Real cf_A = 1.0 "throat 면적 보정계수";
     // ─ 유동 ─
-    parameter Real Cd_base = 0.72 "기준 토출계수";
+    parameter Real Cd_base = 0.70 "기준 토출계수 (EEV)";
     parameter Real Re_transition = 1000.0 "Re 전이값";
     parameter Real choke_ratio = 0.5 "임계 압력비 (P_out/P_in)";
     parameter Real opening_min = 0.0 "최소 개도 [%]";
@@ -92,8 +92,8 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     Modelica.Blocks.Interfaces.RealInput N "회전수 [rpm] (신호 입력)";
 
     // ─ 기하 ─
-    parameter Real V_disp_cm3 = 10.0 "행정체적 [cm³]";
-    parameter Real clearance_ratio = 0.04 "clearance 체적/V_disp";
+    parameter Real V_disp_cm3 = 7.5 "행정체적 [cm³] (Rotary 7.5cc)";
+    parameter Real clearance_ratio = 0.03 "clearance 체적/V_disp (Rotary)";
     parameter Real rv_in = 2.5 "built-in 체적비";
     parameter Real A_valve_in_mm2 = 8.0;
     parameter Real A_valve_out_mm2 = 6.0;
@@ -102,12 +102,12 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     parameter Real A_leak_mm2 = 0.02;
     parameter Real Cd_leak = 0.6;
     parameter Real n_leak_rpm = 0.5;
-    parameter Real N_rated = 3000.0;
+    parameter Real N_rated = 1800.0;
     parameter Real over_comp_factor = 0.3;
     // ─ 마찰/모터 ─
     parameter Real W_f_const = 20.0;
     parameter Real alpha_f_rpm = 8e-6;
-    parameter Real eta_motor = 0.92;
+    parameter Real eta_motor = 0.90;
     parameter Real eta_inv = 0.95;
     // ─ 파생 상수 ─
     final parameter Real V_clear = V_disp_cm3*clearance_ratio*1e-6;

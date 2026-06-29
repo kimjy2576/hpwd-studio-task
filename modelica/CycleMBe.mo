@@ -128,7 +128,7 @@ package CycleMBe "방정식형 MB 사이클: EvaporatorSS + Comp_Winandy + Conde
   end EvapSS_test;
 
   model CycleFixedPc "MB 폐루프: Comp_Winandy->CondenserSS->EEV_L1->EvaporatorSS. P_c 고정 closure (조립·solvability 증명)"
-    HPWD.Comp_Winandy comp(N = 3000.0);
+    HPWD.Comp_Winandy comp(N = 1800.0);
     CondMBe.CondenserSS cond(P_c(start = 15e5));
     HPWD.EEV_L1 eev;
     EvaporatorSS evap(P_e(start = 5.5e5));
@@ -142,7 +142,7 @@ package CycleMBe "방정식형 MB 사이클: EvaporatorSS + Comp_Winandy + Conde
   end CycleFixedPc;
 
   model CycleDyn "MB 사이클: Comp_Winandy + CondenserSS + EEV_L1 + 동적 증발기(P_e 상태로 압력레벨 핀). 시간적분 -> 정상상태"
-    HPWD.Comp_Winandy comp(N = 3000.0);
+    HPWD.Comp_Winandy comp(N = 1800.0);
     CondMBe.CondenserSS cond(P_c(start = 15e5));
     HPWD.EEV_L1 eev;
     EvapMBe.EvaporatorMBdyn evap(is_wet = false);
@@ -156,7 +156,7 @@ package CycleMBe "방정식형 MB 사이클: EvaporatorSS + Comp_Winandy + Conde
   end CycleDyn;
 
   model CycleDynL2 "순수 L2 MB 사이클: Comp_Winandy + CondenserSS + EEV_MB(L2 SEMI) + EvaporatorMBdyn. 전 컴포넌트 SEMI."
-    HPWD.Comp_Winandy comp(N = 3000.0);
+    HPWD.Comp_Winandy comp(N = 1800.0);
     CondMBe.CondenserSS cond(P_c(start = 15e5));
     EevMB.EEV_MB eev;
     EvapMBe.EvaporatorMBdyn evap(is_wet = false);
@@ -178,7 +178,7 @@ package CycleMBe "방정식형 MB 사이클: EvaporatorSS + Comp_Winandy + Conde
 
   model CycleDynL2_PI "L2 MB 사이클 + EEV PI(SH 제어) — L1/L3와 동일 HPWDctrl.PI_Controller 공유. 고정SH 비교용."
     parameter Real SH_target = 6.0 "목표 과열도 [K]";
-    parameter Real N = 3000.0 "압축기 회전수 [rpm]";
+    parameter Real N = 1800.0 "압축기 회전수 [rpm] (30Hz)";
     HPWD.Comp_Winandy comp(N = N);
     CondMBe.CondenserSS cond(P_c(start = 15e5));
     EevMB.EEV_MB eev;
@@ -206,7 +206,7 @@ package CycleMBe "방정식형 MB 사이클: EvaporatorSS + Comp_Winandy + Conde
   end CycleDynWet;
 
   model CycleSH "전SS 정상상태 사이클: 과열제어 closure (개도 free, SH=SH_set). 절대제약으로 압력레벨 핀"
-    HPWD.Comp_Winandy comp(N = 3000.0);
+    HPWD.Comp_Winandy comp(N = 1800.0);
     CondMBe.CondenserSS cond(P_c(start = 16e5));
     HPWD.EEV_L1 eev;
     EvaporatorSS evap(P_e(start = 5.5e5));

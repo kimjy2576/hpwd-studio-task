@@ -35,13 +35,13 @@ modelDescription = {
          'group': 'Material', 'start': 'R290', 'unit': '-', 'options': FLUIDS,
          'description': '냉매 종류'},
         {'name': 'V_disp', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Geometry', 'start': 10.0, 'unit': 'cm³',
+         'group': 'Geometry', 'start': 7.5, 'unit': 'cm³',
          'description': '행정체적 (도면 초안에서 대략)'},
         {'name': 'eta_vol', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Fitting', 'start': 0.85, 'unit': '-',
+         'group': 'Fitting', 'start': 0.88, 'unit': '-',
          'description': '체적효율 (추정 ~0.85)'},
         {'name': 'eta_isen', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Fitting', 'start': 0.65, 'unit': '-',
+         'group': 'Fitting', 'start': 0.68, 'unit': '-',
          'description': '등엔트로피효율 (추정 ~0.65)'},
 
         # ═══════ Inputs ═══════
@@ -81,14 +81,14 @@ def init_state(params):
 def step(input, params, state, dt):
     """이론 압축기 1 step 평가."""
     fluid    = params.get('fluid', 'R290')
-    V_disp   = float(params.get('V_disp', 10.0)) * 1e-6   # cm³ → m³
-    eta_vol  = float(params.get('eta_vol', 0.85))
-    eta_isen = float(params.get('eta_isen', 0.65))
+    V_disp   = float(params.get('V_disp', 7.5)) * 1e-6   # cm³ → m³
+    eta_vol  = float(params.get('eta_vol', 0.88))
+    eta_isen = float(params.get('eta_isen', 0.68))
 
     P_suc_Pa = float(input.get('P_suc', 5.5)) * 1e5
     T_suc_K  = float(input.get('T_suc', 10.0)) + 273.15
     P_dis_Pa = float(input.get('P_dis', 19.0)) * 1e5
-    N        = float(input.get('N', 3000.0))
+    N        = float(input.get('N', 1800.0))
 
     # 흡입 상태 (P, T) → ρ, s, h
     h_suc = CP.PropsSI('H', 'P', P_suc_Pa, 'T', T_suc_K, fluid)
@@ -128,7 +128,7 @@ def validate(params):
         except (TypeError, ValueError):
             pass
     try:
-        if float(params.get('V_disp', 10.0)) <= 0:
+        if float(params.get('V_disp', 7.5)) <= 0:
             issues.append({'key': 'V_disp', 'msg': 'V_disp는 양수여야 함'})
     except (TypeError, ValueError):
         pass

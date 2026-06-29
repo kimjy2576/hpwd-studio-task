@@ -30,14 +30,14 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
 
   model Cycle_L3_guess "warm-start guess: 4컴포넌트를 healthy 경계로 독립 솔브 (각=검증된 standalone)"
     // 동일 인스턴스명(comp/cond/eev/evap) → .mat가 폐루프 Cycle에 -iif로 매핑됨
-    HPWDon.Comp_Chamber comp(V_disp_cm3=10.0);
+    HPWDon.Comp_Chamber comp(V_disp_cm3=7.5);
     HPWD.Source src_c(p=6e5, h=623127.0);
     HPWD.Sink snk_c(p=19e5);
-    Modelica.Blocks.Sources.Constant Nsig(k=3000.0);
+    Modelica.Blocks.Sources.Constant Nsig(k=1800.0);
     HPWDevap.Cond_On cond;
     HPWDevap.FlowSource src_cond(m_dot=0.005366, h=693465.0, p=19e5);
     HPWDevap.OpenSink snk_cond(h=312428.0);
-    HPWDon.EEV_On eev(D_seat=2.0e-3, stroke_max=1.0e-3);
+    HPWDon.EEV_On eev(D_seat=1.0e-3, stroke_max=1.0e-3);
     HPWD.Source src_e(p=19e5, h=312428.0);
     HPWD.Sink snk_e(p=6e5);
     Modelica.Blocks.Sources.Constant opsig(k=8.0);
@@ -58,13 +58,13 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
   end Cycle_L3_guess;
 
   model Cycle_L3_steady "L3 정상상태 사이클 (N·opening 고정, 운전점 솔브)"
-    parameter Real N_comp=3000.0 "압축기 회전수 [rpm]";
+    parameter Real N_comp=1800.0 "압축기 회전수 [rpm]";
     parameter Real eev_opening=8.0 "EEV 개도 [%]";
-    HPWDon.Comp_Chamber comp(V_disp_cm3=10.0);
+    HPWDon.Comp_Chamber comp(V_disp_cm3=7.5);
     Volume_L3 vol1(p_start=19e5, h_start=693e3) "토출 (Pc, 과열증기)";
     HPWDevap.Cond_On cond;
     Volume_L3 vol2(p_start=19e5, h_start=312e3) "응축출구 (Pc, 과냉액)";
-    HPWDon.EEV_On eev(D_seat=2.0e-3, stroke_max=1.0e-3);
+    HPWDon.EEV_On eev(D_seat=1.0e-3, stroke_max=1.0e-3);
     Volume_L3 vol3(p_start=6e5, h_start=312e3) "팽창후 (Pe, 2상)";
     HPWDevap.Evap_On evap;
     Volume_L3 vol4(p_start=6e5, h_start=623e3) "흡입 (Pe, 과열증기)";
@@ -93,12 +93,12 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
   end Cycle_L3_steady;
 
   model Cycle_L3_relax "L3 사이클 — 좋은 추정값서 fixedState init → transient 완화 (steady 근처)"
-    parameter Real N_comp=3000.0, eev_opening=40.0;
-    HPWDon.Comp_Chamber comp(V_disp_cm3=10.0);
+    parameter Real N_comp=1800.0, eev_opening=40.0;
+    HPWDon.Comp_Chamber comp(V_disp_cm3=7.5);
     Volume_L3 vol1(p_start=19e5, h_start=620e3, fixedState=true);
     HPWDevap.Cond_On cond;
     Volume_L3 vol2(p_start=19e5, h_start=360e3, fixedState=true);
-    HPWDon.EEV_On eev(D_seat=2.0e-3, stroke_max=1.0e-3);
+    HPWDon.EEV_On eev(D_seat=1.0e-3, stroke_max=1.0e-3);
     Volume_L3 vol3(p_start=6e5, h_start=350e3, fixedState=true);
     HPWDevap.Evap_On evap;
     Volume_L3 vol4(p_start=6e5, h_start=580e3, fixedState=true);
@@ -150,14 +150,14 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
   end FreeNode;
 
   model Cycle_L3_homotopy "L3 사이클 — opening homotopy(40%→타깃)로 고압점 초기화 연속화"
-    parameter Real N_comp=3000.0 "압축기 회전수 [rpm]";
+    parameter Real N_comp=1800.0 "압축기 회전수 [rpm]";
     parameter Real op_target=8.0 "목표 EEV 개도 [%] (고압점)";
     parameter Real op_easy=40.0 "homotopy 시작 개도 [%] (저압, 수렴쉬움)";
-    HPWDon.Comp_Chamber comp(V_disp_cm3=10.0);
+    HPWDon.Comp_Chamber comp(V_disp_cm3=7.5);
     Volume_L3 vol1(p_start=19e5, h_start=620e3);
     HPWDevap.Cond_On cond;
     Volume_L3 vol2(p_start=19e5, h_start=360e3);
-    HPWDon.EEV_On eev(D_seat=2.0e-3, stroke_max=1.0e-3);
+    HPWDon.EEV_On eev(D_seat=1.0e-3, stroke_max=1.0e-3);
     Volume_L3 vol3(p_start=6e5, h_start=350e3);
     HPWDevap.Evap_On evap;
     Volume_L3 vol4(p_start=6e5, h_start=580e3);
@@ -184,16 +184,16 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     // 목표: warm-start 없이 콜드스타트. rest(균일압·N=0·무유량) init은 trivial →
     //   N을 계단식(0→500→1500→N_final)으로 천천히 올려 t≈0.5s 상변화 벽을 완만 통과.
     //   노드 체적 V_node를 크게 잡아 과도를 댐핑(수치 안정).
-    parameter Real N_final = 3000.0 "최종 회전수 [rpm]";
+    parameter Real N_final = 1800.0 "최종 회전수 [rpm]";
     parameter Real eev_opening = 8.0 "EEV 개도 [%] (고정; 추후 PI)";
     parameter Modelica.Units.SI.Pressure p_rest = 9.0e5 "기동 전 균일 정지압 [Pa]";
     parameter Modelica.Units.SI.SpecificEnthalpy h_rest = 590e3 "정지 엔탈피 [J/kg] (rest 과열증기)";
     parameter Modelica.Units.SI.Volume V_node = 2e-3 "노드 체적 [m3] (클수록 과도 완만·안정)";
-    HPWDon.Comp_Chamber comp(V_disp_cm3=10.0);
+    HPWDon.Comp_Chamber comp(V_disp_cm3=7.5);
     Volume_L3 vol1(V=V_node, p_start=p_rest, h_start=h_rest, fixedState=true);
     HPWDevap.Cond_On cond;
     Volume_L3 vol2(V=V_node, p_start=p_rest, h_start=h_rest, fixedState=true);
-    HPWDon.EEV_On eev(D_seat=2.0e-3, stroke_max=1.0e-3);
+    HPWDon.EEV_On eev(D_seat=1.0e-3, stroke_max=1.0e-3);
     Volume_L3 vol3(V=V_node, p_start=p_rest, h_start=h_rest, fixedState=true);
     HPWDevap.Evap_On evap;
     Volume_L3 vol4(V=V_node, p_start=p_rest, h_start=h_rest, fixedState=true);
@@ -233,16 +233,16 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
   model Cycle_L3_coldstart_dyn "L3 동적 콜드스타트 — Cond_On_Dyn/Evap_On_Dyn(동적 유한체적) 폐루프. rest→staged N ramp."
     // ①동특성 재구성 적용: HX 내부 h_ref·T_w 상태화 → 폐루프 대수루프 소멸 → 컴파일.
     //   빌드 시 --generateDynamicJacobian=numeric 필수(증발기 습핀 dWsdT 2차도함수 회피).
-    parameter Real N_final = 3000.0 "최종 회전수 [rpm]";
+    parameter Real N_final = 1800.0 "최종 회전수 [rpm]";
     parameter Real eev_opening = 8.0 "EEV 개도 [%] (고정; 추후 PI)";
     parameter Modelica.Units.SI.Pressure p_rest = 9.0e5 "기동 전 균일 정지압 [Pa]";
     parameter Modelica.Units.SI.SpecificEnthalpy h_rest = 590e3 "정지 엔탈피 [J/kg]";
     parameter Modelica.Units.SI.Volume V_node = 2e-3 "노드 체적 [m3]";
-    HPWDon.Comp_Chamber comp(V_disp_cm3=10.0);
+    HPWDon.Comp_Chamber comp(V_disp_cm3=7.5);
     Volume_L3 vol1(V=V_node, p_start=p_rest, h_start=h_rest, fixedState=true);
     HPWDevap.Cond_On_Dyn cond(h_ref_start=h_rest, T_w_start=25.0);
     Volume_L3 vol2(V=V_node, p_start=p_rest, h_start=h_rest, fixedState=true);
-    HPWDon.EEV_On eev(D_seat=2.0e-3, stroke_max=1.0e-3);
+    HPWDon.EEV_On eev(D_seat=1.0e-3, stroke_max=1.0e-3);
     Volume_L3 vol3(V=V_node, p_start=p_rest, h_start=h_rest, fixedState=true);
     HPWDevap.Evap_On_Dyn evap(h_ref_start=h_rest, T_w_start=35.0);
     Volume_L3 vol4(V=V_node, p_start=p_rest, h_start=h_rest, fixedState=true);
@@ -278,17 +278,17 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
   end Cycle_L3_coldstart_dyn;
 
   model Cycle_L3_coldstart_PI "L3 동적 콜드스타트 + EEV PI(SH 제어) — starved 해소, 현실 운전점 수렴"
-    parameter Real N_final = 3000.0 "최종 회전수 [rpm]";
+    parameter Real N_final = 1800.0 "최종 회전수 [rpm]";
     parameter Real SH_target = 6.0 "목표 과열도 [K]";
     parameter Modelica.Units.SI.Pressure p_rest = 12.5e5
       "정지 균압=충전 proxy. 9b→starved(SH 15K,개도 100% 포화). 12.5b에서 PI가 SH≈6K를 개도~60%로 추종(스윕 확정). step3서 L1/L2 충전 매칭 시 미세조정";
     parameter Modelica.Units.SI.SpecificEnthalpy h_rest = 590e3;
     parameter Modelica.Units.SI.Volume V_node = 2e-3;
-    HPWDon.Comp_Chamber comp(V_disp_cm3=10.0);
+    HPWDon.Comp_Chamber comp(V_disp_cm3=7.5);
     Volume_L3 vol1(V=V_node, p_start=p_rest, h_start=h_rest, fixedState=true);
     HPWDevap.Cond_On_Dyn cond(h_ref_start=h_rest, T_w_start=25.0);
     Volume_L3 vol2(V=V_node, p_start=p_rest, h_start=h_rest, fixedState=true);
-    HPWDon.EEV_On eev(D_seat=2.0e-3, stroke_max=1.0e-3);
+    HPWDon.EEV_On eev(D_seat=1.0e-3, stroke_max=1.0e-3);
     Volume_L3 vol3(V=V_node, p_start=p_rest, h_start=h_rest, fixedState=true);
     HPWDevap.Evap_On_Dyn evap(h_ref_start=h_rest, T_w_start=35.0);
     Volume_L3 vol4(V=V_node, p_start=p_rest, h_start=h_rest, fixedState=true);

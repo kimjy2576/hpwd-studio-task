@@ -92,7 +92,7 @@ package EevMB
   model EEV_MB "EEV MB (L2 SEMI). RefPort TwoPort. 등엔탈피 팽창. 냉매물성 R290Tab."
     HPWD.RefPort port_a "입구 (고압 과냉액)";
     HPWD.RefPort port_b "출구 (저압 2상)";
-    parameter Real A_orifice_mm2 = 3.14, opening_min = 0.0, Cd_0 = 0.72;
+    parameter Real A_orifice_mm2 = 0.785, opening_min = 0.0, Cd_0 = 0.70;
     parameter Real Re_c = 5000.0, k_sub = 0.05, k_op = 0.15, Y_crit = 0.55, cf_A = 1.0;
     parameter Boolean use_choke = true;
     Modelica.Blocks.Interfaces.RealInput opening "개도 [%] (신호: PI 또는 Constant)";

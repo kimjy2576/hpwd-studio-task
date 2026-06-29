@@ -51,8 +51,8 @@ modelDescription = {
          'group': 'Operating', 'start': 'control', 'unit': '-', 'options': MODES,
          'description': 'control: opening→ṁ / measure: ṁ→opening'},
         {'name': 'A_orifice', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Geometry', 'start': 3.14, 'unit': 'mm²',
-         'description': 'Maximum orifice 면적 [mm²] (D=2mm → 3.14 mm²). 내부에서 ×1e-6로 m² 변환'},
+         'group': 'Geometry', 'start': 0.785, 'unit': 'mm²',
+         'description': 'Maximum orifice 면적 [mm²] (D=1mm → 0.785 mm²). 내부에서 ×1e-6로 m² 변환'},
         {'name': 'opening_min', 'causality': 'parameter', 'type': 'Real',
          'group': 'Geometry', 'start': 0.0, 'unit': '%',
          'description': 'Minimum opening % (leakage)'},
@@ -118,7 +118,7 @@ def _phi(op_frac, c0, c1, c2, c3):
 def step(input, params, state, dt):
     fluid = params.get('fluid', 'R290')
     mode = params.get('mode', 'control')
-    A_orifice = float(params.get('A_orifice', 3.14)) * 1e-6   # mm² → m² (UI=mm², 물리=SI)
+    A_orifice = float(params.get('A_orifice', 0.785)) * 1e-6   # mm² → m² (UI=mm², 물리=SI)
     opening_min = float(params.get('opening_min', 0.0))
     Cv_rated = float(params.get('Cv_rated', 0.7))
     c0 = float(params.get('c0', 0.0))
@@ -226,7 +226,7 @@ def _zero_output(P_in_bar, P_out_bar, h_in_kjkg, mode, opening_pct):
 
 def validate(params):
     issues = []
-    A_mm2 = float(params.get('A_orifice', 3.14))   # mm²
+    A_mm2 = float(params.get('A_orifice', 0.785))   # mm²
     if A_mm2 <= 0 or A_mm2 > 100:
         issues.append({'key': 'A_orifice',
                        'msg': f'A_orifice={A_mm2:.2f}mm² — 보통 1~30 mm²'})

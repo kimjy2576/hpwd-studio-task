@@ -36,7 +36,7 @@ package HPWD "HPWD 냉매 사이클 컴포넌트 (L1)"
     RefPort port_a "inlet (상류)";
     RefPort port_b "outlet (하류)";
     Modelica.Blocks.Interfaces.RealInput opening "개도 [%] (신호 입력)";
-    parameter Real A_orifice=3.14e-6, Cv_rated=0.7;
+    parameter Real A_orifice=7.854e-7, Cv_rated=0.7;
     parameter Real c0=0.0, c1=0.5, c2=0.3, c3=0.2;
     parameter Real opening_min=0.0;
     Real op, phi, h_in, rho_in;
@@ -55,7 +55,7 @@ package HPWD "HPWD 냉매 사이클 컴포넌트 (L1)"
     package M = HelmholtzMedia.HelmholtzFluids.Propane;
     RefPort port_a "흡입 (저압)";
     RefPort port_b "토출 (고압)";
-    parameter Real N=3000.0, N_rated=3000.0, eta_motor=0.92, alpha_W=1.0;
+    parameter Real N=1800.0, N_rated=1800.0, eta_motor=0.90, alpha_W=1.0;
     parameter Real Mc[10] = {1.584115e+01, 4.950100e-01, -2.289228e-02,
        5.213752e-03, 5.696390e-04, -1.838950e-04, 2.544573e-05,
        1.200546e-05, -5.465480e-06, -1.224724e-06};
@@ -85,10 +85,10 @@ package HPWD "HPWD 냉매 사이클 컴포넌트 (L1)"
     package M = HelmholtzMedia.HelmholtzFluids.Propane;
     RefPort port_a "흡입 (저압)";
     RefPort port_b "토출 (고압)";
-    parameter Real V_disp = 10e-6 "행정체적 [m³/rev]";
-    parameter Real N = 3000.0 "회전수 [rpm] (목표/정격)";
-    parameter Real eta_vol = 0.85 "체적효율";
-    parameter Real eta_isen = 0.65 "등엔트로피효율";
+    parameter Real V_disp = 7.5e-6 "행정체적 [m³/rev] (Rotary 7.5cc)";
+    parameter Real N = 1800.0 "회전수 [rpm] (30Hz×60, Rotary)";
+    parameter Real eta_vol = 0.88 "체적효율 (Rotary)";
+    parameter Real eta_isen = 0.68 "등엔트로피효율 (Rotary @30Hz)";
     parameter Real t_ramp = 0.0 "기동 ramp 시간 [s]. 0이면 N 고정(단독검증), >0이면 0→N로 선형 상승";
     Real N_eff "유효 회전수 (ramp 적용)";
     Real h_suc(start=590e3), s_suc(start=2450), rho_suc(start=11), h_dis_s(start=648e3), h_dis(start=680e3), m_dot(start=0.005), W(start=450);
@@ -115,11 +115,11 @@ package HPWD "HPWD 냉매 사이클 컴포넌트 (L1)"
     RefPort port_a "흡입 (저압)";
     RefPort port_b "토출 (고압)";
     // ── 기하/운전 ──
-    parameter Real V_disp = 10e-6 "행정체적 [m³/rev]";
-    parameter Real N = 3000.0 "회전수 [rpm]";
+    parameter Real V_disp = 7.5e-6 "행정체적 [m³/rev] (Rotary 7.5cc)";
+    parameter Real N = 1800.0 "회전수 [rpm] (30Hz×60, Rotary)";
     parameter Real V_se = 0.95 "swept volume 효율 (ηv 식 절편)";
     parameter Real rv_in = 2.5 "built-in 체적비 (over/under-comp)";
-    parameter Real clearance_factor = 0.05 "ηv clearance 항 가중";
+    parameter Real clearance_factor = 0.03 "ηv clearance 항 가중 (Rotary 작음)";
     parameter Real over_comp_factor = 0.5 "over-comp 손실 계수";
     // ── 열/손실 (semi-empirical fit, R290 ~10cc) ──
     parameter Real AU_su = 3.0 "흡입 가열 UA [W/K]";
@@ -127,7 +127,7 @@ package HPWD "HPWD 냉매 사이클 컴포넌트 (L1)"
     parameter Real dP_su = 0.05 "흡입 압력손실 비율 [-]";
     parameter Real W_loss0 = 30.0 "정수 기계손실 [W]";
     parameter Real alpha_loss = 0.1 "비례 기계손실 [-]";
-    parameter Real eta_motor = 0.92 "모터 효율";
+    parameter Real eta_motor = 0.90 "모터 효율 (소형 인버터 Rotary)";
     parameter Modelica.Units.SI.Temperature T_amb = 308.15 "shell 주위 온도 [K]";
     parameter Real t_ramp = 0.0 "기동 ramp [s] (0=N 고정 단독검증)";
     // ── 변수 ──
