@@ -280,7 +280,8 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
   model Cycle_L3_coldstart_PI "L3 동적 콜드스타트 + EEV PI(SH 제어) — starved 해소, 현실 운전점 수렴"
     parameter Real N_final = 3000.0 "최종 회전수 [rpm]";
     parameter Real SH_target = 6.0 "목표 과열도 [K]";
-    parameter Modelica.Units.SI.Pressure p_rest = 9.0e5;
+    parameter Modelica.Units.SI.Pressure p_rest = 12.5e5
+      "정지 균압=충전 proxy. 9b→starved(SH 15K,개도 100% 포화). 12.5b에서 PI가 SH≈6K를 개도~60%로 추종(스윕 확정). step3서 L1/L2 충전 매칭 시 미세조정";
     parameter Modelica.Units.SI.SpecificEnthalpy h_rest = 590e3;
     parameter Modelica.Units.SI.Volume V_node = 2e-3;
     HPWDon.Comp_Chamber comp(V_disp_cm3=10.0);
