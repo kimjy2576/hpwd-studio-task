@@ -201,7 +201,7 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     //   (반복변수 start 처방 후엔 t_stage를 줄여 가속 가능)
     Modelica.Blocks.Sources.TimeTable Nsig(table=[
         0.0,    0.0;
-        1.0,    0.0;
+        1.0,    300.0;
         11.0,   500.0;
         21.0,   500.0;
         31.0,   1500.0;
@@ -248,7 +248,7 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     Volume_L3 vol4(V=V_node, p_start=p_rest, h_start=h_rest, fixedState=true);
     Modelica.Blocks.Sources.TimeTable Nsig(table=[
         0.0,    0.0;
-        1.0,    0.0;
+        1.0,    300.0;
         11.0,   500.0;
         21.0,   500.0;
         31.0,   1500.0;
@@ -295,7 +295,7 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     HPWDctrl.PI_Controller ctrl(SH_target=SH_target, Kp=1.0, Ki=0.3, opening_init=12.0, opening_min=3.0, I(fixed=true));
     Modelica.Blocks.Sources.TimeTable Nsig(table=[
         0.0,    0.0;
-        1.0,    0.0;
+        1.0,    300.0;
         11.0,   500.0;
         21.0,   500.0;
         31.0,   1500.0;
