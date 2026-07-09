@@ -259,6 +259,9 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     Modelica.Blocks.Sources.Constant opsig(k=eev_opening);
     Real Pc_bar, Pe_bar, mdot, SH, Q_evap, Q_cond, W_comp;
   equation
+    // ── 공기 폐루프: 증발기 출구 → 응축기 입구 (온도·습도) ──
+    cond.T_air_in = evap.T_air_out;
+    cond.Wi       = evap.W_air_out;
     connect(comp.port_b, vol1.port_a);
     connect(vol1.port_b, cond.port_a);
     connect(cond.port_b, vol2.port_a);
@@ -306,6 +309,9 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
         500.0,  N_final]);
     Real Pc_bar, Pe_bar, mdot, SH, Q_evap, Q_cond, W_comp, opening;
   equation
+    // ── 공기 폐루프: 증발기 출구 → 응축기 입구 (온도·습도) ──
+    cond.T_air_in = evap.T_air_out;
+    cond.Wi       = evap.W_air_out;
     connect(comp.port_b, vol1.port_a);
     connect(vol1.port_b, cond.port_a);
     connect(cond.port_b, vol2.port_a);
