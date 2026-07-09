@@ -234,9 +234,10 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     // ①동특성 재구성 적용: HX 내부 h_ref·T_w 상태화 → 폐루프 대수루프 소멸 → 컴파일.
     //   빌드 시 --generateDynamicJacobian=numeric 필수(증발기 습핀 dWsdT 2차도함수 회피).
     parameter Real N_final = 1800.0 "최종 회전수 [rpm]";
-    parameter Real eev_opening = 8.0 "EEV 개도 [%] (고정; 추후 PI)";
-    parameter Modelica.Units.SI.Pressure p_rest = 9.0e5 "기동 전 균일 정지압 [Pa]";
-    parameter Modelica.Units.SI.SpecificEnthalpy h_rest = 590e3 "정지 엔탈피 [J/kg]";
+    parameter Real eev_opening = 40.1
+      "EEV 개도 [%] (고정). coldstart_PI가 SH=6K로 정착시킨 개도와 동일 → 두 변이가 같은 평형해 재현(교차검증). 구값 8.0은 옛 HX 기준으로 starved(SH 60K, Pe 1.9b)";
+    parameter Modelica.Units.SI.Pressure p_rest = 12.5e5 "기동 전 균일 정지압 [Pa] (coldstart_PI와 일치)";
+    parameter Modelica.Units.SI.SpecificEnthalpy h_rest = 575e3 "정지 엔탈피 [J/kg] = 충전 proxy (coldstart_PI와 일치)";
     parameter Modelica.Units.SI.Volume V_node = 2e-3 "노드 체적 [m3]";
     HPWDon.Comp_Chamber comp(V_disp_cm3=7.5);
     Volume_L3 vol1(V=V_node, p_start=p_rest, h_start=h_rest, fixedState=true);
