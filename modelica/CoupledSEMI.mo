@@ -325,7 +325,7 @@ model Cycle_SEMI_full
   "전체 SEMI 시스템: Comp_Winandy + CondenserSS_cpl + EEV_MB + EvaporatorMBdyn_cpl + Fan_L2 + Drum_L2 + 폐공기루프. 냉매·공기 전 컴포넌트 SEMI."
   HPWD.Comp_Winandy comp(N = 3000.0);
   CondenserSS_cpl cond(P_c(start = 15e5), K_air = 300);
-  EevMB.EEV_MB eev(opening_pct = opening_pct);
+  EevMB.EEV_MB eev "개도는 equation서 opening_pct 신호로 지정";
   EvaporatorMBdyn_cpl evap(is_wet = true, K_air = 300);
   parameter Real opening_pct = 12.0 "EEV 개도 [%]";
   // ── 공기 폐루프 (L2) ──
@@ -343,6 +343,7 @@ model Cycle_SEMI_full
   HPWDair.AirVolume volC(V = 0.05, T_start = 291.0, W_start = 0.012, fixedState = true);
   HPWDair.AirVolume volD(V = 0.05, T_start = 333.0, W_start = 0.012, fixedState = true);
 equation
+    eev.opening = opening_pct "RealInput 신호에 상수 개도 부여";
   // ── 냉매 루프 (직접연결, CycleDynL2 동일) ──
   connect(comp.port_b, cond.port_a);
   connect(cond.port_b, eev.port_a);
@@ -358,5 +359,36 @@ equation
   connect(cond.air_b,    volD.port_a);
   connect(volD.port_b,   drum.port_a);
 end Cycle_SEMI_full;
+
+model Cycle_SEMI_open
+  "L2 SEMI — 냉매루프 비교용 오픈 공기루프 (드럼/팬 제외).
+   공기: 고정소스(20°C/RH80%, 2.42CMM) → 증발기 → 응축기 → 배출.
+   압축기 N=1800 / V_disp=7.5cc 로 L1·L3와 스펙 통일."
+  HPWD.Comp_Winandy comp(N = 1800.0);
+  CondenserSS_cpl cond(P_c(start = 15e5), K_air = 300);
+  EevMB.EEV_MB eev "개도는 equation서 opening_pct 신호로 지정";
+  EvaporatorMBdyn_cpl evap(is_wet = true, K_air = 300);
+  parameter Real opening_pct = 12.0 "EEV 개도 [%]";
+  // ── 공기 오픈루프 경계 (L3와 동일 BC) ──
+  parameter Modelica.Units.SI.MassFlowRate m_air_da = 0.047786
+    "건공기 질량유량 [kg/s] = 2.42 CMM (L1·L3 통일)";
+  parameter Modelica.Units.SI.Temperature T_air_in = 293.15 "증발기 입구 20°C";
+  parameter Real W_air_in = 0.011674 "증발기 입구 절대습도 (20°C, RH80%)";
+  HPWDair.BoundaryAir_mflow src(m_flow_da = -m_air_da, T = T_air_in, W = W_air_in);
+  HPWDair.BoundaryAir_pTW snk(p = HPWDair.MoistAir.p_ref, T = T_air_in, W = W_air_in);
+  HPWDair.AirVolume volC(V = 0.05, T_start = 288.0, W_start = 0.0100, fixedState = true);
+equation
+  eev.opening = opening_pct "RealInput 신호에 상수 개도 부여";
+  // ── 냉매 루프 (Cycle_SEMI_full과 동일) ──
+  connect(comp.port_b, cond.port_a);
+  connect(cond.port_b, eev.port_a);
+  connect(eev.port_b, evap.port_a);
+  connect(evap.port_b, comp.port_a);
+  // ── 공기 오픈루프: src → evap → volC → cond → snk ──
+  connect(src.port,    evap.air_a);
+  connect(evap.air_b,  volC.port_a);
+  connect(volC.port_b, cond.air_a);
+  connect(cond.air_b,  snk.port);
+end Cycle_SEMI_open;
 
 end CplSEMI;

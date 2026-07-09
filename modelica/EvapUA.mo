@@ -297,8 +297,8 @@ package HPWDhx "UA 모델 HX connector"
     HPWD.RefPort port_a "입구 (2상)";
     HPWD.RefPort port_b "출구 (과열)";
     Modelica.Blocks.Interfaces.RealOutput SH "출구 과열도 [K]";
-    parameter Modelica.Units.SI.Temperature T_air_in = 50.0 + 273.15;
-    parameter Real RH_in = 0.90, V_air_CMM = 3.0 "default: 3.0 CMM 단일루프 운전점";
+    parameter Modelica.Units.SI.Temperature T_air_in = 20.0 + 273.15 "L3 통일: 드럼 출구 공기";
+    parameter Real RH_in = 0.80, V_air_CMM = 2.42 "L3 통일: RH0.8, 2.42 CMM";
     parameter Real UA_2ph = 8.75, UA_SH = 1.4, dP_ref = 0.02, R_fric = 2e6, L_inertia = 1e5 "default: Pe=5.5bar 타겟 (원 25/4의 ×0.35)";
     parameter Modelica.Units.SI.Pressure P_atm = 101325.0;
     Real m_dot(start=0.005, fixed=true), h_in(start=440e3), P_evap;
@@ -395,7 +395,7 @@ package HPWDhx "UA 모델 HX connector"
     HPWD.RefPort port_a "입구 (과열증기)";
     HPWD.RefPort port_b "출구 (과냉액)";
     Modelica.Blocks.Interfaces.RealOutput SC "출구 과냉도 [K]";
-    parameter Real T_air_in_C = 35.0, RH_in = 0.50, V_air_CMM = 3.0 "default: 3.0 CMM 단일루프 운전점";
+    parameter Real T_air_in_C = 14.1, RH_in = 0.70, V_air_CMM = 2.62 "L3 통일: 증발기 출구 공기(근사), 2.62 CMM";
     parameter Real UA_deSH = 24.0, UA_2ph = 150.0, UA_SC = 15.0, dP_ref = 0.03, R_fric = 1e7, L_inertia = 1e5 "default: 3.0CMM right-size (합 189 W/K)";
     parameter Modelica.Units.SI.Pressure P_atm = 101325.0;
     Real m_dot(start=0.005, fixed=true), h_in(start=700e3), P_cond;
