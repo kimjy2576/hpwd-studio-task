@@ -281,8 +281,9 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     parameter Real N_final = 1800.0 "최종 회전수 [rpm]";
     parameter Real SH_target = 6.0 "목표 과열도 [K]";
     parameter Modelica.Units.SI.Pressure p_rest = 12.5e5
-      "정지 균압=충전 proxy. 9b→starved(SH 15K,개도 100% 포화). 12.5b에서 PI가 SH≈6K를 개도~60%로 추종(스윕 확정). step3서 L1/L2 충전 매칭 시 미세조정";
-    parameter Modelica.Units.SI.SpecificEnthalpy h_rest = 590e3;
+      "정지 균압. h_rest와 함께 충전 결정. 12.5b + h_rest=575e3에서 SH=6.00K/개도 40.1% 정착(EF·기하 sync 후 재검증). 구 주석의 '개도 100% 포화'는 제로플로우 홀드 파탄 + 옛 HX 기준이라 무효";
+    parameter Modelica.Units.SI.SpecificEnthalpy h_rest = 575e3
+      "정지 엔탈피=충전 proxy. 575e3에서 PI가 SH=6.00K를 개도 40.1%로 정착 추종(t=200 수렴 확인, 실제 staged ramp). 590e3은 진동 큼. step3서 L1/L2 충전 매칭 시 미세조정";
     parameter Modelica.Units.SI.Volume V_node = 2e-3;
     HPWDon.Comp_Chamber comp(V_disp_cm3=7.5);
     Volume_L3 vol1(V=V_node, p_start=p_rest, h_start=h_rest, fixedState=true);
