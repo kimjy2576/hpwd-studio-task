@@ -97,6 +97,11 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     parameter Real rv_in = 2.5 "built-in 체적비";
     parameter Real A_valve_in_mm2 = 8.0;
     parameter Real A_valve_out_mm2 = 6.0;
+    // ─ 흡입 경로 (shell 흡입가열 + 흡입 압력손실) ─
+    parameter Real zeta_su = 2.823 "흡입 손실계수 [-] (흡입관·머플러·밸브). 설계점서 dP≈5% (L2 Winandy dP_su와 정합)";
+    parameter Real AU_su = 3.0 "흡입 가열 UA [W/K] (shell → 흡입가스)";
+    parameter Real AU_loss = 5.0 "shell 외부 열손실 UA [W/K]";
+    parameter Modelica.Units.SI.Temperature T_amb = 308.15 "shell 주위 온도 [K]";
     // ─ 손실/누설 ─
     parameter Real zeta_valve = 1.5;
     parameter Real A_leak_mm2 = 0.02;
@@ -119,14 +124,30 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     // ─ 변수 ─
     Real p_su, p_dis, h_su, s_su, rho_su, n_poly, omega, pi_ratio;
     Real V_re, V_eff, rpm_factor, dP_chamber, rho_avg, m_leak;
+    Real p_su1, h_su1, T_su1, cp_su1, rho_su1, m_dot_port, dP_suction, eps_su, NTU_su, T_w(start=333.15) "포트(1) → 챔버 흡입 상태";
     Real m_dot_swept, m_dot, m_dot_ideal, eta_v;
     Real P_int, h_dis_is, w_is, v_internal, w_overunder;
     Real dP_in, W_valve_in, rho_dis_est, dP_out, W_valve_out;
     Real w_chamber, W_indicated, h_dis, eta_is, W_friction, W_shaft, W_elec, T_dis;
   equation
-    p_su   = port_a.p;
+    // ── 흡입 경로: 포트(1) → 흡입 압력손실(유량의존) → shell 가열 → 챔버 흡입 ──
+    p_su1  = port_a.p;
+    h_su1  = inStream(port_a.h_outflow);
+    T_su1  = R290Tab.T_ph(p_su1, h_su1);
+    cp_su1 = R290Tab.cp_ph(p_su1, h_su1);
+    rho_su1    = R290Tab.rho_ph(p_su1, h_su1);
+    m_dot_port = V_max*omega*rho_su1;
+    // 흡입관·머플러·밸브 손실: dP ∝ ṁ² (정지 시 0 → 콜드스타트 균압 안전).
+    // rho_su1(포트 상태)로 평가해 rho_su ← p_su ← dP 대수루프를 끊음.
+    dP_suction = zeta_su*m_dot_port^2/(rho_su1*A_in^2);
+    p_su   = max(p_su1 - dP_suction, 0.5*p_su1);
+    // shell → 흡입가스 가열 (ε-NTU). 벽 에너지 균형으로 T_w 결정
+    NTU_su = min(AU_su/max(m_dot_port*cp_su1, 1e-6), 20.0);
+    eps_su = 1.0 - exp(-NTU_su);
+    h_su   = h_su1 + eps_su*cp_su1*(T_w - T_su1);
+    AU_loss*(T_w - T_amb) + AU_su*(T_w - T_su1) = W_friction;
+
     p_dis  = port_b.p;
-    h_su   = inStream(port_a.h_outflow);
     rho_su = R290Tab.rho_ph(p_su, h_su);
     s_su   = R290Tab.s_ph(p_su, h_su);
     n_poly = R290Tab.gamma_ph(p_su, h_su);
