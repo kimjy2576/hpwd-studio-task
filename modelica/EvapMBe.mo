@@ -51,14 +51,15 @@ package EvapMBe "방정식형 이동경계 증발기 (L2) — dry, v2(HXCorr Che
     final parameter Real psi_mf = if tube_type == "microfin" then HXCorr.microfin_area_ratio(n_microfin, e_microfin, helix_angle, D_i) else 1.0;
     final parameter Real EF_evap = HXCorr.microfin_ef("evap", psi_mf, helix_angle);
     final parameter Real EF_sgl = HXCorr.microfin_ef("single", psi_mf, helix_angle);
+    parameter Real cf_SH = 0.043 "과열존 HTC 보정계수. der(zeta) 대수화 후 부품 피팅: L3 유한체적 SH(5.91K)에 정합(0.06%/1.4%). 이동경계 2존(2상 최소면적)과 셀별 유한체적의 과열존 면적배분 구조차 보정";
     // ── 상태 ──
-    Real zeta(start = 0.8, fixed = true) "2상 zone 분율";
+    Real zeta(start = 0.8, min = 0.01, max = 0.999) "2상 zone 분율 (대수: Q_2ph_supply=demand)";
     Modelica.Units.SI.AbsolutePressure P_e(start = 5.5e5, fixed = true);
     Real h_out(start = 600e3, fixed = true);
-    Modelica.Units.SI.Temperature T_w1(start = 295.0, fixed = true);
-    Modelica.Units.SI.Temperature T_w2(start = 300.0, fixed = true);
+    Modelica.Units.SI.Temperature T_w1(start = 280.0) "벽온도-2상 (대수, 관측용)";
+    Modelica.Units.SI.Temperature T_w2(start = 285.0) "벽온도-과열 (대수, 관측용)";
     // ── 관측/대수 ──
-    Real mdot_in, mdot_out, h_in, mdot_b, x_in, SH_out, Q_total, Q1, Q2, T_sat_C;
+    Real mdot_in, mdot_out, h_in, mdot_b, x_in, SH_out, Q_total, Q1, Q2, T_sat_C, Q_2ph_demand;
     Real Q1_air, Q2_air, T_air_mid, T_air_out;
     Real h_air_mid, h_air_out, UA_air_2ph, BF, h_app, W_sat_surf, W_air_out, condensate, Q_latent, T_surf_C;
     Real UA_ref_2ph, UA_ref_SH, UA_ser_2ph, UA_ser_SH, Cmin_SH, Cr_SH, NTU_SH, eps_SH;
@@ -79,12 +80,21 @@ package EvapMBe "방정식형 이동경계 증발기 (L2) — dry, v2(HXCorr Che
     mdot_out = -port_b.m_flow;
     port_b.h_outflow = h_out;
     port_a.h_outflow = h_v;
-    // ── 질량 균형 (수동 der 전개)
-    V_tot*(drho1_dP*der(P_e)*zeta + rho1*der(zeta)) = mdot_in - mdot_b;
-    V_tot*((drho2_dP*der(P_e) + drho2_dh*der(h_out))*(1.0 - zeta) - rho2*der(zeta)) = mdot_b - mdot_out;
-    // ── 에너지 균형 (ρu = ρh̄ − P)
-    V_tot*(CE1P*der(P_e)*zeta + ru1*der(zeta)) = mdot_in*h_in - mdot_b*h_v + Q1;
-    V_tot*((CE2P*der(P_e) + CE2h*der(h_out))*(1.0 - zeta) - ru2*der(zeta)) = mdot_b*h_v - mdot_out*h_out + Q2;
+    // ── 질량 균형 (zeta 대수화: der(zeta) 제거 — 아래 zeta 대수제약 참조)
+    V_tot*(drho1_dP*der(P_e)*zeta) = mdot_in - mdot_b;
+    V_tot*((drho2_dP*der(P_e) + drho2_dh*der(h_out))*(1.0 - zeta)) = mdot_b - mdot_out;
+    // ── 에너지 균형 (과열존만; 2상존 에너지식은 zeta 대수제약으로 대체)
+    V_tot*((CE2P*der(P_e) + CE2h*der(h_out))*(1.0 - zeta)) = mdot_b*h_v - mdot_out*h_out + Q2;
+    // ── zeta 대수제약 (Python evaporator_moving_boundary.py 방식):
+    //   2상존 면적분율 zeta는 "냉매를 딱 완전증발시킬 만큼"으로 결정.
+    //   Q_2ph_supply(zeta) = Q_2ph_demand
+    //     Q_2ph_supply = eps_2ph·C_air·(T_air_2ph_in - T_evap)  [현열 ε-NTU, 벽온도 무관]
+    //     Q_2ph_demand = mdot_in*(h_v - h_in)  [냉매 완전증발에 필요]
+    //   Python처럼 현열 기반으로 써서 h_app(T_w1 의존)과 디커플 → 단조·유일해.
+    //   대향류지만 2상이 주 흡열원이므로 신선공기(T_air_in) 기준으로 2상 면적 우선 배분
+    //   (Python parallel 근사와 동일; counter의 T_air_mid는 과열 eps 과대시 2상을 굶겨 발산)
+    Q_2ph_demand = mdot_in*(h_v - h_in);
+    Q_2ph_demand = (1.0 - exp(-UA_ser_2ph/max(C_air,1e-9)))*C_air*(T_air_in - Tsat);
     // ── 직렬 UA per zone (알고리즘 EvapMB 동일: air↔ref 직렬 ε-NTU)
     UA_ref_2ph = alpha_2ph*A_i*zeta;
     UA_ref_SH = alpha_SH*A_i*(1.0 - zeta);
@@ -122,10 +132,12 @@ package EvapMBe "방정식형 이동경계 증발기 (L2) — dry, v2(HXCorr Che
     end if;
     T_air_out = HXCorr.T_moist_from_h(h_air_out, W_air_out) + 273.15;
     // ── 벽: 공기측 직렬열 수신 − 냉매측 배출. 정상서 Q=Q_air=알고리즘 직렬열 → ζ 일치
-    C_w1*der(T_w1) = Q1_air - Q1;
-    C_w2*der(T_w2) = Q2_air - Q2;
-    Q1 = UA_ref_2ph*(T_w1 - Tsat);
-    Q2 = UA_ref_SH*(T_w2 - Tref2);
+    // ── 냉매 흡수열 (Python 방식): 2상 냉매열 = demand(완전증발), 과열 냉매열 = 공기 현열공급.
+    //   습코일 잠열은 공기측 W 처리로만 반영(냉매 열 아님) → 냉매 에너지 균형 정합.
+    Q1 = Q_2ph_demand;
+    Q2 = Q2_air;
+    T_w1 = Tsat + Q1/max(UA_ref_2ph, 1e-9);
+    T_w2 = Tref2 + Q2/max(UA_ref_SH, 1e-9);
     // ── 관측
     Q_total = Q1 + Q2;
     SH_out = R290Tab.T_ph(P_ec, h_out) - Tsat;
@@ -183,7 +195,7 @@ package EvapMBe "방정식형 이동경계 증발기 (L2) — dry, v2(HXCorr Che
     q_flux := mdot_in*(h_v - h_in)/A_i;
     G_2ph := (mdot_in/n_circuits)/A_cross;
     alpha_2ph := HXCorr.h_evap_chen1966(x_avg_2ph, G_2ph, D_i, q_flux, mu_l, k_l, Pr_l, rho_l, rho_v, mu_v, P_ec/Pcrit, Mmol)*EF_evap;
-    alpha_SH := HXCorr.dittus_boelter(mu10, k10, cp10, mdot_in/n_circuits, D_i, true)*EF_sgl;
+    alpha_SH := HXCorr.dittus_boelter(mu10, k10, cp10, mdot_in/n_circuits, D_i, true)*EF_sgl*cf_SH;
     // ── 공기측 α (Wang j + Schmidt 핀) ──
     T_air_avg := 0.5*(T_air_in + Tsat);
     mu_a := HXCorr.mu_air(T_air_avg);
