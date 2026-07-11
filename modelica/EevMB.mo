@@ -93,7 +93,7 @@ package EevMB
     HPWD.RefPort port_a "입구 (고압 과냉액)";
     HPWD.RefPort port_b "출구 (저압 2상)";
     parameter Real A_orifice_mm2 = 0.785, opening_min = 0.0, Cd_0 = 0.70;
-    parameter Real Re_c = 5000.0, k_sub = 0.05, k_op = 0.15, Y_crit = 0.55, cf_A = 1.0;
+    parameter Real Re_c = 5000.0, k_sub = 0.05, k_op = 0.15, Y_crit = 0.55, cf_A = 2.327 "면적 보정 factor: L3 needle-cone 실효면적에 정합(선형 A_eff 근사 보정). 동일 BC서 ṁ이 L3와 0.09% 일치";
     parameter Boolean use_choke = true;
     Modelica.Blocks.Interfaces.RealInput opening "개도 [%] (신호: PI 또는 Constant)";
     Real m_dot_ref, opening_calc, Cd_eff, Re, dP_eff_bar, is_choked;
