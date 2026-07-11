@@ -137,6 +137,7 @@ model EvaporatorMBdyn_cpl
   parameter Real n_circuits = 2.0, P_t = 25e-3, P_l = 22e-3, t_fin = 0.12e-3;
   parameter Real FPI = 12.0, k_fin = 200.0, A_o_face = 0.05;
   parameter Boolean is_wet = true "습표면(제습) 여부";
+     parameter Real cf_SH = 0.043 "과열존 HTC 보정 (EvapMBe.EvaporatorMBdyn과 동일; L3 정합)";
   parameter Real C_w1 = 300.0, C_w2 = 150.0 "벽 열용량 [J/K]";
   parameter Real dP = 50.0, dh = 200.0 "FD 섭동";
   parameter Real K_air = 300 "공기측 핀 저항 (Pa·s²/m²)";
@@ -307,7 +308,7 @@ equation
     q_flux := mdot_in*(h_v - h_in)/A_i;
     G_2ph := (mdot_in/n_circuits)/A_cross;
     alpha_2ph := HXCorr.h_evap_chen1966(x_avg_2ph, G_2ph, D_i, q_flux, mu_l, k_l, Pr_l, rho_l, rho_v, mu_v, P_ec/Pcrit, Mmol);
-    alpha_SH := HXCorr.dittus_boelter(mu10, k10, cp10, mdot_in/n_circuits, D_i, true);
+    alpha_SH := HXCorr.dittus_boelter(mu10, k10, cp10, mdot_in/n_circuits, D_i, true)*cf_SH;
     // ── 공기측 α (Wang j + Schmidt 핀) ──
     T_air_avg := 0.5*(T_air_in + Tsat);
     mu_a := HXCorr.mu_air(T_air_avg);
