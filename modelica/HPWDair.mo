@@ -401,6 +401,198 @@ package HPWDair "HPWD air-side L1 (lumped, 비압축 + dry-air basis)"
     port_b.W_outflow = inStream(port_a.W_outflow);
   end Fan_L2;
 
+  model Fan_L3
+    "Centrifugal fan L3 (ON: Meanline + 손실 9종 + scroll). fan_on.py(fan-sim 포팅) acausal화.
+     문헌 6종 초과 — 시로코 전곡 특화(tongue·uncaptured·diffuser) 포함.
+     ground truth: backend/components/fan_on.py (동일 물리, jet-wake 1회, recirc softplus)."
+    AirPort port_a "inlet";
+    AirPort port_b "outlet";
+
+    parameter Modelica.Units.SI.Length D1 = 0.120 "impeller eye diameter (m)";
+    parameter Modelica.Units.SI.Length D2 = 0.175 "impeller outer diameter (m)";
+    parameter Modelica.Units.SI.Length b1 = 0.060 "inlet blade width (m)";
+    parameter Modelica.Units.SI.Length b2 = 0.050 "outlet blade width (m)";
+    parameter Real beta1 = 30 "blade inlet angle (deg)";
+    parameter Real beta2 = 145 "blade exit angle (deg, >90=전곡)";
+    parameter Integer Z = 36 "blade count";
+    parameter Real N = 1400 "rotational speed (rpm)";
+    parameter Modelica.Units.SI.Length tBlade = 0.001 "blade thickness (m)";
+    parameter Modelica.Units.SI.Length cutoffGap = 0.008 "tongue cutoff gap (m)";
+    parameter Modelica.Units.SI.Length Rtongue = 0.005 "tongue radius (m)";
+    parameter Real wrapAngle = 360 "scroll wrap angle (deg)";
+    parameter Real scrollExpRate = 0.12 "scroll expansion rate";
+    parameter Real diffAngle = 7 "diffuser half angle (deg)";
+    parameter Modelica.Units.SI.Length diffLength = 0.040 "diffuser length (m)";
+
+    parameter Real k_inc = 1.0;
+    parameter Real k_fric = 1.0;
+    parameter Real k_rec = 0.0085;
+    parameter Real DR_crit = 0.5;
+    parameter Real k_disk = 1.0;
+    parameter Real k_jw = 1.0;
+    parameter Real k_sc_mix = 0.20;
+    parameter Real k_tongue_a = 0.82;
+    parameter Real k_tongue_b = 0.7;
+    parameter Real c_wake = 0.12;
+    parameter Real r_scroll_w = 1.1;
+    parameter Real c_scroll_v = 0.7;
+    parameter Real c_tongue_loss = 0.3;
+    parameter Real eps_leak_max = 0.25;
+    parameter Real w_rec = 0.02 "recirc softplus 전이폭";
+    parameter Real eta_mech = 0.95;
+
+    Modelica.Units.SI.MassFlowRate m_flow_da(start = 0.05) "dry-air mass flow (a→b +)";
+    Modelica.Units.SI.VolumeFlowRate V_dot;
+    Modelica.Units.SI.Density rho;
+    Real mu "dynamic viscosity (Pa·s)";
+    Modelica.Units.SI.Velocity U1, U2, Cr1, Cr2, Ct2, C2, W1, W2, Wa;
+    Real sigma;
+    Modelica.Units.SI.Pressure Pt_e;
+    Modelica.Units.SI.Pressure dP_inc, dP_fric, dP_rec, dP_disk, dP_jw;
+    Modelica.Units.SI.Pressure dP_scroll, dP_tongue, dP_uncap;
+    Modelica.Units.SI.Pressure Pt_imp, Pt_fan, Ps;
+    Real DR, eps_leak, Q_delivered;
+    Modelica.Units.SI.Power W_shaft;
+    Real eta;
+
+    Real W_op(unit="kg/kg");
+    Modelica.Units.SI.SpecificEnthalpy h_op;
+    Modelica.Units.SI.Temperature T_op;
+
+    Real Re, f_darcy, Re_disk, Cm, Pdf;
+    Real Pdyn_imp, Pdyn_cap, A_sc, D_h_sc, C_sc, Re_sc, f_sc, dP_sc_fric, dP_sc_mix;
+    Real inc_A, sp_rec, A_exit;
+
+  protected
+    parameter Real b1R = beta1 * Modelica.Constants.pi / 180.0;
+    parameter Real b2R = beta2 * Modelica.Constants.pi / 180.0;
+    parameter Real omega_rot = 2 * Modelica.Constants.pi * N / 60;
+    parameter Real r1 = D1 / 2;
+    parameter Real r2 = D2 / 2;
+    parameter Real pitch2 = Modelica.Constants.pi * D2 / Z;
+    parameter Real Dh = 2 * pitch2 * b2 / (pitch2 + b2);
+    parameter Real k_inc_base = 1 - (tBlade / (Modelica.Constants.pi * D1 / Z))^2;
+    parameter Real wrapFrac = min(1.0, wrapAngle / 360);
+    parameter Real gapRatio = cutoffGap / (2 * r2);
+    parameter Real denom_tongue = 1 + Rtongue / cutoffGap;
+    parameter Real eps_jw = c_wake + 0.5 * tBlade / pitch2;
+    parameter Real bScrollM = b2 * r_scroll_w;
+    parameter Real L_scroll = 2 * Modelica.Constants.pi * r2 * wrapFrac;
+    parameter Real rExit = r2 + r2 * scrollExpRate * wrapFrac * 2 * Modelica.Constants.pi;
+    parameter Real A_sc_exit = bScrollM * (rExit - r2);
+    parameter Real Lb = blade_length(r1, r2, b1R, b2R);
+    constant Real T_ref = 273.15;
+    constant Real S_suth = 110.4;
+    constant Real mu_ref = 1.716e-5;
+
+  public
+    function blade_length "Blade 경로장 적분 (형상만)"
+      input Real r1_; input Real r2_; input Real b1R_; input Real b2R_;
+      output Real Lb_;
+    protected
+      Real px, py, th, t, r, rP, rM, tM, bM, x, y;
+      constant Integer n = 20;
+    algorithm
+      Lb_ := 0; px := r1_; py := 0; th := 0;
+      for i in 1:n loop
+        t := i / n;
+        r := r1_ + t * (r2_ - r1_);
+        rP := r1_ + (i - 1) / n * (r2_ - r1_);
+        rM := (r + rP) / 2;
+        tM := (t + (i - 1) / n) / 2;
+        bM := b1R_ + tM * (b2R_ - b1R_);
+        if abs(tan(bM)) > 0.001 then
+          th := th + (-1 / (rM * tan(bM))) * (r - rP);
+        end if;
+        x := r * cos(th); y := r * sin(th);
+        Lb_ := Lb_ + sqrt((x - px)^2 + (y - py)^2);
+        px := x; py := y;
+      end for;
+    end blade_length;
+
+    function softplus "(x)+ smooth. w→0이면 max(x,0)"
+      input Real x; input Real w; output Real y;
+    algorithm
+      y := if x / w > 30 then x
+           elseif x / w < -30 then 0.0
+           else w * log(1 + exp(x / w));
+    end softplus;
+
+  equation
+    m_flow_da = port_a.m_flow_da;
+    port_a.m_flow_da + port_b.m_flow_da = 0;
+
+    W_op = inStream(port_a.W_outflow);
+    h_op = inStream(port_a.h_tilde_outflow);
+    T_op = MoistAir.T_from_h(h_op, W_op);
+    rho  = MoistAir.rho_da_fn(T_op, W_op) * (1 + W_op);
+    mu = mu_ref * (T_op / T_ref)^1.5 * (T_ref + S_suth) / (T_op + S_suth);
+
+    V_dot = m_flow_da * (1 + W_op) / rho;
+
+    U1 = omega_rot * r1;
+    U2 = omega_rot * r2;
+    Cr1 = V_dot / (Modelica.Constants.pi * D1 * b1);
+    Cr2 = V_dot / (Modelica.Constants.pi * D2 * b2);
+    sigma = 1 - Modelica.Constants.pi * sin(b2R) / Z;
+    Ct2 = sigma * U2 - Cr2 / tan(b2R);
+    C2 = sqrt(Cr2^2 + Ct2^2);
+    W1 = sqrt(Cr1^2 + U1^2);
+    W2 = sqrt(Cr2^2 + (Ct2 - U2)^2);
+    Wa = (W1 + W2) / 2;
+    Pt_e = rho * U2 * Ct2;
+
+    inc_A = atan2(Cr1, U1) - b1R;
+    dP_inc = k_inc_base * k_inc * 0.5 * rho * (W1 * sin(inc_A))^2;
+    Re = rho * Wa * Dh / mu;
+    f_darcy = if Re > 2300 then 1 / (-1.8 * log10(6.9 / Re + (5e-5 / Dh / 3.7)^1.11))^2
+              else 64 / max(Re, 1);
+    dP_fric = k_fric * f_darcy * (Lb / Dh) * 0.5 * rho * Wa^2;
+    DR = 1 - W2 / W1 + abs(Ct2) / (2 * Z * W1 / Modelica.Constants.pi);
+    sp_rec = softplus(DR - DR_crit, w_rec);
+    dP_rec = k_rec * sp_rec^2 * rho * U2^2;
+    Re_disk = rho * omega_rot * r2^2 / mu;
+    Cm = 0.0622 / Re_disk^0.2;
+    Pdf = k_disk * 2 * 0.5 * Cm * rho * omega_rot^3 * r2^5;
+    dP_disk = min(Pdf / max(V_dot, 1e-6), Pt_e * 0.5);
+    dP_jw = k_jw * 0.5 * rho * C2^2 * eps_jw^2;
+
+    Pt_imp = max(0.0, Pt_e - dP_inc - dP_fric - dP_rec - dP_disk - dP_jw);
+    Pdyn_imp = 0.5 * rho * C2^2;
+
+    Pdyn_cap = Pdyn_imp * wrapFrac;
+    A_sc = max(A_sc_exit, V_dot / max(1.0, C2 * 0.5));
+    D_h_sc = 2 * A_sc / (sqrt(A_sc / bScrollM) + bScrollM);
+    C_sc = V_dot / max(1e-4, A_sc) * c_scroll_v;
+    Re_sc = rho * abs(C_sc) * max(0.005, D_h_sc) / mu;
+    f_sc = if Re_sc > 2300 then 0.316 / Re_sc^0.25 else 64 / max(Re_sc, 1);
+    dP_sc_fric = f_sc * (L_scroll / max(0.005, D_h_sc)) * 0.5 * rho * C_sc^2;
+    dP_sc_mix = k_sc_mix * Pdyn_cap;
+    dP_scroll = dP_sc_fric + dP_sc_mix;
+
+    eps_leak = min(eps_leak_max, k_tongue_a * gapRatio^k_tongue_b / denom_tongue);
+    Q_delivered = V_dot * (1 - eps_leak);
+    dP_tongue = eps_leak * Pt_imp * c_tongue_loss;
+
+    dP_uncap = 0.5 * rho * (C2 * sqrt(1 - wrapFrac))^2 * (1 - wrapFrac);
+
+    Pt_fan = max(0.0, Pt_imp - dP_scroll - dP_tongue - dP_uncap);
+    A_exit = max(0.001, A_sc * max(1.0,
+             1 + 2 * diffLength * tan(abs(diffAngle) * Modelica.Constants.pi / 180) / max(0.01, sqrt(A_sc))));
+    Ps = Pt_fan - 0.5 * rho * (Q_delivered / A_exit)^2;
+
+    W_shaft = Pt_e * V_dot + Pdf;
+    eta = if W_shaft > 0 then max(0.0, Ps * Q_delivered) / W_shaft else 0.0;
+
+    port_b.p = port_a.p + Ps;
+
+    port_a.h_tilde_outflow = inStream(port_b.h_tilde_outflow);
+    port_b.h_tilde_outflow = inStream(port_a.h_tilde_outflow)
+                             + W_shaft * (1 - eta) / max(1e-6, rho * V_dot);
+    port_a.W_outflow = inStream(port_b.W_outflow);
+    port_b.W_outflow = inStream(port_a.W_outflow);
+  end Fan_L3;
+
 
 
   // =============================================================
