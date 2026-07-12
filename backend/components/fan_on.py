@@ -8,10 +8,25 @@ Modelica Fan_L3(acausal)의 ground truth.
 문헌 대비(model-docs): 6종(incidence/blade-loading/skin-friction/disk/recirc/volute)
 초과 — 시로코(전곡 다익) 특화 tongue-recirc·uncaptured·diffuser 포함 = 9종.
 
-fan-sim 대비 2개 수정 (검토로 확정):
+fan-sim 대비 3개 개선 (물리 완결성 검토로 확정):
   (1) jet-wake 이중차감 버그 수정 → 1회만 (물리적으로 임펠러 출구 손실 1회)
   (2) recirculation 불연속(if DR>DR_crit) → softplus smooth (Modelica NLS 수렴)
       w_rec→0이면 원본 if와 수렴 (검증 파라미터)
+  (3) 하드코딩 반경험 상수 전부 파라미터 노출 (약점1/3):
+
+정직성 노트 — "fitting 0" 아님:
+  문헌(model-docs)은 이 모델을 "fitting 0 순수 물리"로 기술하나, 실제로는
+  순수 물리유도가 불가능한 반경험 계수를 포함한다. 이를 숨기지 않고 전부
+  파라미터로 노출한다 (기본값은 fan-sim 유지, 검증가능).
+
+  ● 순수 물리 (계수 없음): Euler head, slip(Wiesner), 속도삼각형,
+      skin-friction(Colebrook f), disk-friction(Daily&Nece Cm), incidence 기하
+  ● 보정 승수 (기본 1.0, 실측 calibration 대상):
+      k_inc, k_fric, k_rec, k_disk, k_jw
+  ● 반경험 계수 (물리유도 불가, 노출):
+      c_wake=0.12(wake폭), r_scroll_w=1.1(스크롤폭비), c_scroll_v=0.7(스크롤속도),
+      k_sc_mix=0.20(스크롤혼합), c_tongue_loss=0.3, eps_leak_max=0.25,
+      k_tongue_a=0.82, k_tongue_b=0.7, DR_crit=0.5
 
 인터페이스: step(input, params, state, dt) → {'outputs':{...}, 'newState':{}}
   (hpwd-studio-task 컴포넌트 표준, *_on_design.py와 동일 패턴)
@@ -120,6 +135,14 @@ def step(input, params, state, dt):
     k_tongue_a = float(params.get('k_tongue_a', 0.82))
     k_tongue_b = float(params.get('k_tongue_b', 0.7))
     w_rec = float(params.get('w_rec', 0.02))  # recirc smooth 전이폭 (약점5)
+    # ── 이전 하드코딩 상수 → 명시적 파라미터 노출 (약점3/1) ──
+    #   "fitting 0"은 부정확했음. 아래는 순수 물리유도 불가한 반경험 계수로,
+    #   숨기지 않고 노출해 정직성·검증가능성 확보. 기본값은 fan-sim 값 유지.
+    c_wake = float(params.get('c_wake', 0.12))          # jet-wake 기저 폭분율 (Whitfield: 0.1~0.15, slip 후 wake)
+    r_scroll_w = float(params.get('r_scroll_w', 1.1))   # 스크롤/임펠러 폭비 (통상 스크롤 약간 넓음)
+    c_scroll_v = float(params.get('c_scroll_v', 0.7))   # 스크롤 유효속도계수 (단면평균 대비, 반경험)
+    c_tongue_loss = float(params.get('c_tongue_loss', 0.3))  # tongue 손실계수 (누설분율×임펠러압 대비)
+    eps_leak_max = float(params.get('eps_leak_max', 0.25))   # tongue 누설분율 물리상한
 
     # ── 입구 공기 상태 (input) ──
     T_in = float(input.get('T_in', 25.0))       # °C
@@ -131,6 +154,9 @@ def step(input, params, state, dt):
     P_in = float(input.get('P_in', 101325.0))     # Pa
 
     # ── 운전점 유량 (input): dry-air mass flow 또는 V̇ 직접 ──
+    # 약점2(비압축): rho는 입구 기준 상수. 검토결과 팬 Δp~700-800Pa/대기압
+    #   = 밀도변화 <1% → 비압축 타당(손실오차<1%). cf. 압축기는 rp~2배라 압축성 필수.
+    #   온도상승(모터열)은 출구 dT_fan에 별도 반영. 문헌 비압축 규약과 일치.
     rho = _air_density(T_in, omega, P_in)
     mu = _air_viscosity(T_in)
     cp = _air_cp(T_in, omega)
@@ -189,7 +215,7 @@ def step(input, params, state, dt):
     dP_disk = Pdf / Qm3s if Qm3s > 1e-6 else Pdf / 1e-6
     dP_disk = min(dP_disk, Pt_e * 0.5)
     # ② Jet-wake / diffusion (blade loading)
-    eps_jw = 0.12 + 0.5 * tBladeM / pitch2
+    eps_jw = c_wake + 0.5 * tBladeM / pitch2
     dP_jw = k_jw * 0.5 * rho * C2 ** 2 * eps_jw ** 2
 
     # 임펠러 출구 전압 (jet-wake 1회 반영 — 버그 수정: 여기서만)
@@ -199,12 +225,12 @@ def step(input, params, state, dt):
     # ── ⑥ Scroll 손실 ──
     Pdyn_cap = Pdyn_imp * wrapFrac
     L_scroll = 2 * math.pi * r2 * wrapFrac
-    bScrollM = b2m * 1.1
+    bScrollM = b2m * r_scroll_w
     rExit = r2 + r2 * scrollExpRate * wrapFrac * 2 * math.pi
     A_sc_exit = bScrollM * (rExit - r2)
     A_sc = max(A_sc_exit, Qm3s / max(1.0, C2 * 0.5) if Qm3s > 0 else bScrollM * 0.02)
     D_h_sc = 2 * A_sc / (math.sqrt(A_sc / bScrollM) + bScrollM) if bScrollM > 0 else 0.01
-    C_sc = Qm3s / max(1e-4, A_sc) * 0.7 if Qm3s > 0 else C2 * 0.5
+    C_sc = Qm3s / max(1e-4, A_sc) * c_scroll_v if Qm3s > 0 else C2 * 0.5
     Re_sc = rho * abs(C_sc) * max(0.005, D_h_sc) / mu if mu > 0 else 1e5
     f_sc = 0.316 / Re_sc ** 0.25 if Re_sc > 2300 else (64 / Re_sc if Re_sc > 0 else 0.02)
     dP_sc_fric = f_sc * (L_scroll / max(0.005, D_h_sc)) * 0.5 * rho * C_sc ** 2
@@ -214,10 +240,10 @@ def step(input, params, state, dt):
     # ── Tongue 재순환 (시로코 특화) ──
     gapRatio = gapM / (2 * r2)
     denom_tongue = 1 + Rtongue / cutoffGap if cutoffGap > 0 else 1
-    eps_leak = min(0.25, k_tongue_a * gapRatio ** k_tongue_b / denom_tongue)
+    eps_leak = min(eps_leak_max, k_tongue_a * gapRatio ** k_tongue_b / denom_tongue)
     Q_recirc = Qm3s * eps_leak
     Q_delivered = Qm3s * (1 - eps_leak)
-    dP_tongue = eps_leak * Pt_imp * 0.3
+    dP_tongue = eps_leak * Pt_imp * c_tongue_loss
 
     # ── Diffuser (출구 확산 압력회복) ──
     if diffLength > 0:
