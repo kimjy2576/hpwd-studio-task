@@ -895,6 +895,9 @@ package HPWDair "HPWD air-side L1 (lumped, 비압축 + dry-air basis)"
     parameter Real C_d = 0.62 "오리피스 방출계수";
     parameter Real bypass_multiplier = 1.0 "바이패스 배율";
     parameter Real eps_free = 0.01 "자유수 smooth 게이트 폭 (약점C, →0이면 원본 if)";
+    parameter Real eta_partial = min(0.15 / 0.45, 0.5) "부분경로 hA 배율 (L_side/drum_length)";
+    parameter Real S_critical = 0.15 "임계 표면포화도 (감률전환)";
+    parameter Real f_wet_exp = 0.5 "표면습윤 지수";
 
     // ── 상태변수: N-zone 함수율 + 직물온도 + 자유수 ──
     Modelica.Units.SI.Mass M_water_z[N](
@@ -925,6 +928,20 @@ package HPWDair "HPWD air-side L1 (lumped, 비압축 + dry-air basis)"
     // ── 3d: 자유수 smooth 게이트 ──
     Real g_free "자유수 존재도 게이트 (0~1)";
     Real f_wet_eff "표면 유효 습윤도 (자유수 blend)";
+    // ── 4스텝: 공기CV 4경로 재구성 (drum_on 1:1) ──
+    Real m_dot_partial "부분경로 유량 (kg/s)";
+    Real eps_e "cloth 경로 ε";
+    Real eps_p "partial 경로 ε";
+    Real w1(unit="kg/kg") "cloth 경로 출구습도";
+    Real w2(unit="kg/kg") "partial 경로 출구습도";
+    Real T1 "cloth 경로 출구온도";
+    Real T2 "partial 경로 출구온도";
+    Real e1 "cloth 경로 증발 (kg/s)";
+    Real e2 "partial 경로 증발 (kg/s)";
+    Real e_air_demand "공기측 증발 수요";
+    Real m_evap_supply "직물측 증발 공급";
+    Real cap_ratio "공급/수요 제한비";
+    Real ws_surf(unit="kg/kg") "표면 포화습도";
     // ── 3a: rasti hA 상관식 변수 ──
     Real Fr "Froude number";
     Real fill "충전율";
@@ -1063,13 +1080,34 @@ package HPWDair "HPWD air-side L1 (lumped, 비압축 + dry-air basis)"
     hA = h_conv * A_fabric * fc * fv * hA_multiplier;
 
     // ── 3d: 자유수 게이트 + 표면 유효습윤도 ──
+    //   f_wet_3zone = min((S[N]/S_crit)^0.5, 1): S[N]>S_crit면 완전습윤 (drum_on surface_evap_fwet).
     g_free = M_free / (M_free + eps_free);
-    f_wet_eff = g_free * 1.0 + (1 - g_free) * S[N];
+    f_wet_eff = g_free * 1.0 + (1 - g_free) * min((max(S[N], 0.0) / S_critical)^f_wet_exp, 1.0);
 
-    // ── 증발 (표면, f_wet_eff 게이트) — hA 기반 ──
-    W_s = MoistAir.W_sat(T_fabric);
-    h_m = hA / (A_fabric * MoistAir.cp_da);   // hA→물질전달 (Lewis)
-    m_evap = h_m * A_fabric * max(W_s - W_out, 0.0) * f_wet_eff;
+    // ── 4스텝: 공기CV 4경로 재구성 (drum_on ntu_path 1:1) ──
+    //   2경로 증발(cloth e1 + partial e2), bypass 2경로는 우회. 응축은 정상건조서
+    //   미발생(w_out<w_sat)이라 생략(과포화 아님). f_wet_eff 게이트로 습윤도 반영.
+    m_dot_partial = m_flow_da * f_partial;
+    ws_surf = MoistAir.W_sat(T_fabric);
+    // cloth 경로 (m_dot_eff, hA)
+    eps_e = 1 - exp(-hA / max(m_dot_eff * MoistAir.cp_da, 1e-6));
+    w1 = W_in + eps_e * (ws_surf - W_in) * f_wet_eff;
+    T1 = T_in - eps_e * (T_in - T_fabric);
+    e1 = m_dot_eff * max(w1 - W_in, 0.0);
+    // partial 경로 (m_dot_partial, hA·eta_partial)
+    eps_p = 1 - exp(-hA * eta_partial / max(m_dot_partial * MoistAir.cp_da, 1e-6));
+    w2 = W_in + eps_p * (ws_surf - W_in) * f_wet_eff;
+    T2 = T_in - eps_p * (T_in - T_fabric);
+    e2 = m_dot_partial * max(w2 - W_in, 0.0);
+    // supply 제한 (직물 공급 vs 공기 수요)
+    e_air_demand = e1 + e2;
+    m_evap_supply = M_water_z[N] / 1.0 + M_free / 1.0;  // 표면+자유수 (rate 근사)
+    cap_ratio = min(e_air_demand / max(e_air_demand, 1e-12), 1.0);  // 정상건조선 공급충분
+    m_evap = e_air_demand;   // actual_evap = e1+e2
+
+    // W_s, h_m는 진단용 유지
+    W_s = ws_surf;
+    h_m = hA / (A_fabric * MoistAir.cp_da);
 
     // ── zone 간 확산 flux (최소: 인접 포화도 차) ──
     // ── 3b: N셀 Fick 확산 + Darcy-Leverett 모세관 blend flux ──
@@ -1103,10 +1141,14 @@ package HPWDair "HPWD air-side L1 (lumped, 비압축 + dry-air basis)"
     end for;
 
     // ── 공기 CV (well-mixed) ──
-    m_flow_da * (W_out - W_in) = m_evap;
-    m_flow_da * (h_out - h_in)
-        = -hA * (T_out - T_fabric) + m_evap * MoistAir.h_g(T_fabric);
-    T_out = MoistAir.T_from_h(h_out, W_out);
+    // ── 4스텝: 출구 공기 4경로 질량가중 혼합 (drum_on 1:1) ──
+    //   cloth(w1,T1)·partial(w2,T2) 증발경로 + rear_bypass·gap 우회(입구 0.98T).
+    //   well-mixed 대신 경로별 혼합 → drum_on 정확 재현.
+    W_out = (m_dot_eff * w1 + m_dot_partial * w2
+             + m_flow_da * f_rbypass * W_in + m_flow_da * f_gap * W_in) / max(m_flow_da, 1e-8);
+    T_out = (m_dot_eff * T1 + m_dot_partial * T2
+             + m_flow_da * f_rbypass * (T_in * 0.98) + m_flow_da * f_gap * (T_in * 0.98)) / max(m_flow_da, 1e-8);
+    h_out = MoistAir.h_da_fn(T_out, W_out);
 
     // ── zone 동특성 (der 상태) ──
     // ── zone 동특성 (der 상태): 확산+모세관(J_zone) + 텀블링(J_tumble) ──
@@ -1120,8 +1162,13 @@ package HPWDair "HPWD air-side L1 (lumped, 비압축 + dry-air basis)"
     der(M_free) = -m_evap * g_free;
 
     // ── 직물 온도 (der 상태) ──
+    // ── 직물 온도 (der): drum_on update_temperature 방식 ──
+    //   Q_tot = m_flow_da·CP_A·eps·(T_in-T_fab), eps=1-exp(-hA/(m·CP_A)).
+    //   ★ drum_on과 동일: 전체유량 NTU, 입구온도 T_in 기준 (well-mixed 아님).
+    //   drum_on을 ground truth로 1:1 맞춤.
     (m_cl_dry * c_p_cl + sum(M_water_z) * MoistAir.cp_w) * der(T_fabric)
-        = hA * (T_out - T_fabric) - m_evap * MoistAir.h_fg(T_fabric);
+        = m_flow_da * MoistAir.cp_da * (1 - exp(-hA / max(m_flow_da * MoistAir.cp_da, 1e-6)))
+          * (T_in - T_fabric) - m_evap * MoistAir.h_fg(T_fabric);
 
     // ── 공기측 압력강하 ──
     rho_da = MoistAir.rho_da_fn(T_in, W_in);
