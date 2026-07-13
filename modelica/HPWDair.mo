@@ -886,6 +886,14 @@ package HPWDair "HPWD air-side L1 (lumped, 비압축 + dry-air basis)"
     parameter Real k_exch_slide = 0.05 "텀블링 교환율 (sliding)";
     parameter Real k_exch_casc = 0.30 "텀블링 교환율 (cascading)";
     parameter Real k_exch_high = 0.02 "텀블링 교환율 (centrifuge)";
+    // ── 3c: 4경로 저항 도면기하 (drum_on) ──
+    parameter Modelica.Units.SI.Area A_rear_hole = 0.012 "후면 홀 면적 (m²)";
+    parameter Modelica.Units.SI.Area A_side_hole = 0.006 "측면 홀 면적 (m²)";
+    parameter Modelica.Units.SI.Length gap_width = 0.008 "간극 폭 (m)";
+    parameter Modelica.Units.SI.Length L_side_hole = 0.15 "측면 홀 경로장 (m)";
+    parameter Modelica.Units.SI.Length seal_depth = 0.03 "실 깊이 (m)";
+    parameter Real C_d = 0.62 "오리피스 방출계수";
+    parameter Real bypass_multiplier = 1.0 "바이패스 배율";
 
     // ── 상태변수: N-zone 함수율 + 직물온도 + 자유수 ──
     Modelica.Units.SI.Mass M_water_z[N](
@@ -920,6 +928,19 @@ package HPWDair "HPWD air-side L1 (lumped, 비압축 + dry-air basis)"
     Real h_conv "대류 열전달계수 (W/m²K)";
     Real fc "접촉 인자";
     Real fv "대류 인자";
+    // ── 3c: 4경로 저항 변수 ──
+    Real R_eff "cloth 관통 경로 저항";
+    Real R_partial "부분(측면홀) 경로 저항";
+    Real R_rear_bypass "후면 바이패스 저항";
+    Real R_gap_v "간극 누설 저항";
+    Real f_eff "cloth 관통 유량분율";
+    Real f_partial "부분 경로 유량분율";
+    Real f_rbypass "후면 바이패스 유량분율";
+    Real f_gap "간극 누설 유량분율";
+    Real m_dot_eff "cloth 유효유량 (kg/s)";
+    Real rear_covered "후면홀 덮임 비율";
+    Real theta_fill "충전 각도";
+    Real h_top "직물 상단 높이";
 
     // zone 간 확산 flux (최소: 단순 확산)
     Real J_zone[N-1] "zone 간 수분 flux (kg/s)";
@@ -940,6 +961,8 @@ package HPWDair "HPWD air-side L1 (lumped, 비압축 + dry-air basis)"
     parameter Real d_char = delta_fabric * 2.0 "특성 길이";
     parameter Real A_drum_cross = Modelica.Constants.pi * drum_radius^2 "드럼 단면적";
     parameter Real omega_rot = 2 * Modelica.Constants.pi * RPM / 60 "각속도";
+    parameter Real A_gap = 2 * Modelica.Constants.pi * drum_radius * gap_width "간극 면적";
+    parameter Real rho_fiber = rho_fabric "섬유 밀도 (R_laundry용)";
     parameter Real rho_fabric = 1520.0 "섬유 밀도 (kg/m³, cotton)";
     parameter Real A_fabric = m_cl_dry / (rho_fabric * delta_fabric) * 2
       "직물 유효면적 (drum_on 공식, m²)";
@@ -977,8 +1000,48 @@ package HPWDair "HPWD air-side L1 (lumped, 비압축 + dry-air basis)"
     Fr = omega_rot^2 * drum_radius / 9.81;
     fill = min((m_cl_dry / rho_bulk + sum(M_water_z) * 0.3 / 1000.0)
                / (Modelica.Constants.pi * drum_radius^2 * drum_length), 1.0);
-    // 대류 h: Nu=2+1.1Re^0.6Pr^(1/3), Re는 전체유량 기준 (4경로는 3c서)
-    h_conv = (2.0 + 1.1 * (RHO_AIR * (m_flow_da / max(RHO_AIR * A_drum_cross
+
+    // ── 3c: 4경로 저항 + 유량분배 ──
+    theta_fill = segment_fill_angle(fill);
+    // 직물 상단 높이 (Fr 리프트)
+    h_top = (if Fr < 0.01 then -drum_radius * cos(theta_fill)
+             elseif Fr < 0.1 then -drum_radius * cos(theta_fill) + drum_radius * (0.1 * Fr / 0.1)
+             elseif Fr < 0.5 then min(-drum_radius * cos(theta_fill) + drum_radius * (0.1 + 0.6 * (Fr - 0.1) / 0.4), drum_radius * 0.9)
+             elseif Fr < 1.0 then min(-drum_radius * cos(theta_fill) + drum_radius * (0.7 + 0.25 * (Fr - 0.5) / 0.5), drum_radius * 0.95)
+             else drum_radius * 0.95);
+    // 후면홀 덮임 = circle_area_below_h(h_top)
+    rear_covered = (acos(-max(min(h_top / drum_radius, 0.999), -0.999))
+                    - (-max(min(h_top / drum_radius, 0.999), -0.999))
+                    * sqrt(1 - max(min(h_top / drum_radius, 0.999), -0.999)^2)) / Modelica.Constants.pi;
+    // R_eff = R_orifice(A_rear·cover) + R_laundry
+    R_eff = 1.0 / (2.0 * RHO_AIR * C_d^2 * max(A_rear_hole * rear_covered, 1e-8)^2)
+            + laundry_R(fill, A_drum_cross, rho_bulk, rho_fiber, d_char, drum_radius, RHO_AIR);
+    // R_partial = R_orifice(A_side·side_cover) + R_laundry·side_ratio
+    R_partial = 1.0 / (2.0 * RHO_AIR * C_d^2 * max(A_side_hole * side_cover_fn(Fr, theta_fill), 1e-8)^2)
+            + laundry_R(fill, A_drum_cross, rho_bulk, rho_fiber, d_char, drum_radius, RHO_AIR)
+              * (L_side_hole / max(drum_length, 0.01));
+    // R_rear_bypass = R_orifice(A_rear·(1-cover))
+    R_rear_bypass = if A_rear_hole * (1 - rear_covered) > 1e-8
+                    then 1.0 / (2.0 * RHO_AIR * C_d^2 * (A_rear_hole * (1 - rear_covered))^2)
+                    else 1e8;
+    // R_gap = fL/(2·rho·A_gap²)
+    R_gap_v = (0.05 * seal_depth / (2 * gap_width) + 1.5) / (2.0 * RHO_AIR * A_gap^2);
+    // 유량분배: G_i=1/√R_i, 분율=G_i/ΣG
+    f_eff = (1/sqrt(max(R_eff,1.0)))
+            / ((1/sqrt(max(R_eff,1.0))) + (1/sqrt(max(R_partial,1.0)))
+             + (1/sqrt(max(R_rear_bypass,1.0)))*bypass_multiplier + (1/sqrt(max(R_gap_v,1.0)))*bypass_multiplier);
+    f_partial = (1/sqrt(max(R_partial,1.0)))
+            / ((1/sqrt(max(R_eff,1.0))) + (1/sqrt(max(R_partial,1.0)))
+             + (1/sqrt(max(R_rear_bypass,1.0)))*bypass_multiplier + (1/sqrt(max(R_gap_v,1.0)))*bypass_multiplier);
+    f_rbypass = (1/sqrt(max(R_rear_bypass,1.0)))*bypass_multiplier
+            / ((1/sqrt(max(R_eff,1.0))) + (1/sqrt(max(R_partial,1.0)))
+             + (1/sqrt(max(R_rear_bypass,1.0)))*bypass_multiplier + (1/sqrt(max(R_gap_v,1.0)))*bypass_multiplier);
+    f_gap = (1/sqrt(max(R_gap_v,1.0)))*bypass_multiplier
+            / ((1/sqrt(max(R_eff,1.0))) + (1/sqrt(max(R_partial,1.0)))
+             + (1/sqrt(max(R_rear_bypass,1.0)))*bypass_multiplier + (1/sqrt(max(R_gap_v,1.0)))*bypass_multiplier);
+    m_dot_eff = m_flow_da * f_eff;
+    // 대류 h: Nu=2+1.1Re^0.6Pr^(1/3), Re는 유효유량(4경로 cloth 관통) 기준
+    h_conv = (2.0 + 1.1 * (RHO_AIR * (m_dot_eff / max(RHO_AIR * A_drum_cross
              * max(0.85 - 0.4 * fill, 0.15), 1e-8)) * d_char / MU_AIR)^0.6
              * PR_AIR^(1.0/3.0)) * K_AIR / d_char;
     // f_contact: Fr Gaussian × fill 포물선
@@ -1074,6 +1137,53 @@ package HPWDair "HPWD air-side L1 (lumped, 비압축 + dry-air basis)"
     algorithm
       mu := 0.001 * exp(-3.7188 + 578.919 / ((T - 273.15) + 137.546));
     end mu_water;
+
+    function segment_fill_angle "충전각 bisection (fill=(θ-sinθcosθ)/π 역산)"
+      input Real fill;
+      output Real theta;
+    protected
+      Real lo, hi, mid, ratio;
+    algorithm
+      lo := 0.0; hi := Modelica.Constants.pi;
+      for k in 1:60 loop
+        mid := (lo + hi) / 2;
+        ratio := (mid - sin(mid) * cos(mid)) / Modelica.Constants.pi;
+        if ratio < fill then lo := mid; else hi := mid; end if;
+      end for;
+      theta := (lo + hi) / 2;
+    end segment_fill_angle;
+
+    function laundry_R "의류더미 Ergun 저항 (drum_on R_laundry)"
+      input Real fill; input Real A_cross; input Real rb; input Real rf;
+      input Real dc; input Real R_drum; input Real rho_a;
+      output Real R;
+    protected
+      Real eps, L_bed, A_flow, coeff;
+    algorithm
+      eps := max(1.0 - rb / rf, 0.15);
+      L_bed := 2.0 * R_drum * max(fill, 0.01)^0.5;
+      A_flow := A_cross * eps;
+      if A_flow < 1e-8 or dc < 1e-8 then
+        R := 1e6;
+      else
+        coeff := 1.75 * L_bed * (1 - eps) / (dc * eps^3);
+        R := coeff / (2.0 * rho_a * A_flow^2);
+      end if;
+    end laundry_R;
+
+    function side_cover_fn "측면홀 덮임 (Fr 구간별)"
+      input Real Fr_; input Real theta_fab;
+      output Real cover;
+    protected
+      Real ang;
+    algorithm
+      if Fr_ < 0.01 then ang := theta_fab;
+      elseif Fr_ < 0.5 then ang := min(theta_fab * (1.0 + 0.8 * Fr_ / 0.5), Modelica.Constants.pi * 0.85);
+      elseif Fr_ < 1.0 then ang := min(theta_fab * (1.8 + 0.4 * (Fr_ - 0.5) / 0.5), Modelica.Constants.pi * 0.9);
+      else ang := Modelica.Constants.pi * 0.95;
+      end if;
+      cover := min(ang / Modelica.Constants.pi, 0.95);
+    end side_cover_fn;
   end Drum_L3;
 
 
