@@ -894,6 +894,7 @@ package HPWDair "HPWD air-side L1 (lumped, 비압축 + dry-air basis)"
     parameter Modelica.Units.SI.Length seal_depth = 0.03 "실 깊이 (m)";
     parameter Real C_d = 0.62 "오리피스 방출계수";
     parameter Real bypass_multiplier = 1.0 "바이패스 배율";
+    parameter Real eps_free = 0.01 "자유수 smooth 게이트 폭 (약점C, →0이면 원본 if)";
 
     // ── 상태변수: N-zone 함수율 + 직물온도 + 자유수 ──
     Modelica.Units.SI.Mass M_water_z[N](
@@ -903,7 +904,7 @@ package HPWDair "HPWD air-side L1 (lumped, 비압축 + dry-air basis)"
       start = Tcl0, fixed = true,
       stateSelect = StateSelect.prefer) "직물 온도 (state)";
     Modelica.Units.SI.Mass M_free(
-      start = 0.0, fixed = true) "자유수 (state)";
+      start = 0.0, fixed = false) "자유수 (state)";
 
     // zone별 최대 수분 (parameter)
     Real M_water_max_z[N] "zone별 최대 수분";
@@ -921,6 +922,9 @@ package HPWDair "HPWD air-side L1 (lumped, 비압축 + dry-air basis)"
     Modelica.Units.SI.MassFlowRate m_evap(start = 5e-4);
     Real W_s(unit="kg/kg") "표면 포화습도";
     Real h_m "물질전달계수 (Lewis)";
+    // ── 3d: 자유수 smooth 게이트 ──
+    Real g_free "자유수 존재도 게이트 (0~1)";
+    Real f_wet_eff "표면 유효 습윤도 (자유수 blend)";
     // ── 3a: rasti hA 상관식 변수 ──
     Real Fr "Froude number";
     Real fill "충전율";
@@ -976,10 +980,14 @@ package HPWDair "HPWD air-side L1 (lumped, 비압축 + dry-air basis)"
       for i in 1:N-1} "쌍별 모세관 가중 (0=확산,1=모세관)";
 
   initial equation
-    // 초기 함수율 분배 (X0 균등 → 각 zone)
+    // 초기 함수율 분배 (drum_on init_state): X0>absorption면 초과분 자유수로
+    //   M_water_max_total = Σ(m_dry_z·absorption). X0·m_dry 초과분 = M_free.
+    //   각 zone은 S_init(=min(1, X0/absorption))까지 채움.
     for i in 1:N loop
-      M_water_z[i] = X0 * m_cl_dry * zf[i];
+      M_water_z[i] = m_cl_dry * zf[i] * absorption_ratio
+                     * min(1.0, X0 / absorption_ratio);
     end for;
+    M_free = max(X0 * m_cl_dry - m_cl_dry * absorption_ratio, 0.0);
 
   equation
     m_flow_da = port_a.m_flow_da;
@@ -1054,10 +1062,14 @@ package HPWDair "HPWD air-side L1 (lumped, 비압축 + dry-air basis)"
          else f_conv_centrifuge;
     hA = h_conv * A_fabric * fc * fv * hA_multiplier;
 
-    // ── 최소 증발 (표면 zone N만, 감률 없이) — hA 기반 ──
+    // ── 3d: 자유수 게이트 + 표면 유효습윤도 ──
+    g_free = M_free / (M_free + eps_free);
+    f_wet_eff = g_free * 1.0 + (1 - g_free) * S[N];
+
+    // ── 증발 (표면, f_wet_eff 게이트) — hA 기반 ──
     W_s = MoistAir.W_sat(T_fabric);
     h_m = hA / (A_fabric * MoistAir.cp_da);   // hA→물질전달 (Lewis)
-    m_evap = h_m * A_fabric * max(W_s - W_out, 0.0) * S[N];
+    m_evap = h_m * A_fabric * max(W_s - W_out, 0.0) * f_wet_eff;
 
     // ── zone 간 확산 flux (최소: 인접 포화도 차) ──
     // ── 3b: N셀 Fick 확산 + Darcy-Leverett 모세관 blend flux ──
@@ -1102,10 +1114,10 @@ package HPWDair "HPWD air-side L1 (lumped, 비압축 + dry-air basis)"
     for i in 2:N-1 loop
       der(M_water_z[i]) = J_zone[i-1] - J_zone[i] + J_tumble[i-1] - J_tumble[i];
     end for;
-    der(M_water_z[N]) = J_zone[N-1] + J_tumble[N-1] - m_evap;
+    der(M_water_z[N]) = J_zone[N-1] + J_tumble[N-1] - m_evap * (1 - g_free);
 
-    // 자유수 (최소골격: 변화 없음)
-    der(M_free) = 0.0;
+    // ── 3d: 자유수 der (증발이 자유수에서 g_free 비율로 소진) ──
+    der(M_free) = -m_evap * g_free;
 
     // ── 직물 온도 (der 상태) ──
     (m_cl_dry * c_p_cl + sum(M_water_z) * MoistAir.cp_w) * der(T_fabric)
