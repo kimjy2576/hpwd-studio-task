@@ -844,6 +844,129 @@ package HPWDair "HPWD air-side L1 (lumped, 비압축 + dry-air basis)"
     port_b.h_tilde_outflow = h_out;
   end Drum_L2;
 
+  model Drum_L3
+    "Drum L3 (ON: 3-Zone 다층직물) — drum_on.py acausal 동적 포팅. [최소 골격 검증판]
+     N-zone 함수율 + 직물온도 der 상태. 물리는 최소 (3스텝서 전체 이식)."
+    AirPort port_a "inlet";
+    AirPort port_b "outlet";
+
+    parameter Integer N = 3 "직물 두께방향 zone 수 (L3 기본 3)";
+    parameter Modelica.Units.SI.Mass m_cl_dry = 3.0 "dry cloth mass (kg)";
+    parameter Real c_p_cl = 1300 "dry cloth specific heat (J/kg·K)";
+    parameter Modelica.Units.SI.Area A_eff = 10 "effective cloth area (m²)";
+    parameter Real h_a = 50 "air-cloth HTC (W/m²·K)";
+    parameter Modelica.Units.SI.Area A_drum = 0.15 "drum cross-section (m²)";
+    parameter Real K_drum = 30 "cloth-bed resistance (Pa·s²/m²)";
+    parameter Real X0 = 0.6 "initial moisture ratio (kg水/kg dry)";
+    parameter Modelica.Units.SI.Temperature Tcl0 = 298.15 "initial cloth temp (K)";
+    parameter Real absorption_ratio = 1.8 "최대 흡수량 (kg水/kg건, cotton)";
+    // zone 두께 분율 (합=1)
+    parameter Real zf[N] = {0.25, 0.35, 0.40} "zone 두께 분율";
+
+    // ── 상태변수: N-zone 함수율 + 직물온도 + 자유수 ──
+    Modelica.Units.SI.Mass M_water_z[N](
+      each fixed = false,
+      each stateSelect = StateSelect.prefer) "zone별 수분질량 (state)";
+    Modelica.Units.SI.Temperature T_fabric(
+      start = Tcl0, fixed = true,
+      stateSelect = StateSelect.prefer) "직물 온도 (state)";
+    Modelica.Units.SI.Mass M_free(
+      start = 0.0, fixed = true) "자유수 (state)";
+
+    // zone별 최대 수분 (parameter)
+    Real M_water_max_z[N] "zone별 최대 수분";
+    Real S[N] "zone별 포화도";
+    Real X "전체 함수율 (dry basis)";
+
+    // 공기측
+    Modelica.Units.SI.MassFlowRate m_flow_da(start = 0.05) "dry-air mass flow";
+    Real W_in(unit="kg/kg");
+    Modelica.Units.SI.SpecificEnthalpy h_in;
+    Modelica.Units.SI.Temperature T_in;
+    Real W_out(unit="kg/kg", start = 0.02);
+    Modelica.Units.SI.SpecificEnthalpy h_out;
+    Modelica.Units.SI.Temperature T_out(start = 320);
+    Modelica.Units.SI.MassFlowRate m_evap(start = 5e-4);
+    Real W_s(unit="kg/kg") "표면 포화습도";
+    Real h_m "물질전달계수 (Lewis)";
+
+    // zone 간 확산 flux (최소: 단순 확산)
+    Real J_zone[N-1] "zone 간 수분 flux (kg/s)";
+
+    Modelica.Units.SI.Density rho_da;
+    Modelica.Units.SI.Velocity u;
+    Modelica.Units.SI.Pressure dp_drum;
+
+  protected
+    parameter Real D_simple = 1e-6 "최소골격 단순확산계수 (3스텝서 Fick으로 대체)";
+
+  initial equation
+    // 초기 함수율 분배 (X0 균등 → 각 zone)
+    for i in 1:N loop
+      M_water_z[i] = X0 * m_cl_dry * zf[i];
+    end for;
+
+  equation
+    m_flow_da = port_a.m_flow_da;
+    port_a.m_flow_da + port_b.m_flow_da = 0;
+
+    W_in = inStream(port_a.W_outflow);
+    h_in = inStream(port_a.h_tilde_outflow);
+    T_in = MoistAir.T_from_h(h_in, W_in);
+
+    // zone 최대수분·포화도
+    for i in 1:N loop
+      M_water_max_z[i] = m_cl_dry * zf[i] * absorption_ratio;
+      S[i] = M_water_z[i] / M_water_max_z[i];
+    end for;
+    X = sum(M_water_z) / m_cl_dry;
+
+    // ── 최소 증발 (표면 zone N만, 감률 없이) ──
+    W_s = MoistAir.W_sat(T_fabric);
+    h_m = h_a / MoistAir.cp_da;
+    m_evap = h_m * A_eff * max(W_s - W_out, 0.0) * S[N];  // 표면 포화도 비례
+
+    // ── zone 간 확산 flux (최소: 인접 포화도 차) ──
+    for i in 1:N-1 loop
+      J_zone[i] = D_simple * A_eff * (S[i] - S[i+1]);
+    end for;
+
+    // ── 공기 CV (well-mixed) ──
+    m_flow_da * (W_out - W_in) = m_evap;
+    m_flow_da * (h_out - h_in)
+        = -h_a * A_eff * (T_out - T_fabric) + m_evap * MoistAir.h_g(T_fabric);
+    T_out = MoistAir.T_from_h(h_out, W_out);
+
+    // ── zone 동특성 (der 상태) ──
+    // zone 1 (core): 다음 zone으로 확산만
+    der(M_water_z[1]) = -J_zone[1];
+    // 중간 zone: 이전에서 받고 다음으로
+    for i in 2:N-1 loop
+      der(M_water_z[i]) = J_zone[i-1] - J_zone[i];
+    end for;
+    // zone N (surface): 이전에서 받고 증발
+    der(M_water_z[N]) = J_zone[N-1] - m_evap;
+
+    // 자유수 (최소골격: 변화 없음)
+    der(M_free) = 0.0;
+
+    // ── 직물 온도 (der 상태) ──
+    (m_cl_dry * c_p_cl + sum(M_water_z) * MoistAir.cp_w) * der(T_fabric)
+        = h_a * A_eff * (T_out - T_fabric) - m_evap * MoistAir.h_fg(T_fabric);
+
+    // ── 공기측 압력강하 ──
+    rho_da = MoistAir.rho_da_fn(T_in, W_in);
+    u = m_flow_da / (rho_da * A_drum);
+    dp_drum = K_drum * u * abs(u);
+    port_b.p = port_a.p - dp_drum;
+
+    // ── stream: well-mixed ──
+    port_a.W_outflow = W_out;
+    port_b.W_outflow = W_out;
+    port_a.h_tilde_outflow = h_out;
+    port_b.h_tilde_outflow = h_out;
+  end Drum_L3;
+
 
 
   // =============================================================

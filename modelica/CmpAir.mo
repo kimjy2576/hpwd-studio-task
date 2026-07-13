@@ -60,4 +60,14 @@ package CmpAir "공기측 부품 충실도 비교 — 동일 BC에서 Fan(L1/L2)
     connect(inlet.port, drum.port_a);
     connect(drum.port_b, outlet.port);
   end Drum_L2_pt;
+
+  model Drum_L3_pt "L3 드럼 @ 유량경계 (최소골격 동적검증)"
+    HPWDair.BoundaryAir_mflow inlet(m_flow_da = -m_set, T = 333.15, W = 0.010);
+    HPWDair.Drum_L3 drum(m_cl_dry = 3.0, X0 = 0.6);
+    HPWDair.BoundaryAir_pTW outlet(p = 101325.0, T = 333.15, W = 0.010);
+    parameter Real m_set = 0.035 "질량유량 [kg_da/s]";
+  equation
+    connect(inlet.port, drum.port_a);
+    connect(drum.port_b, outlet.port);
+  end Drum_L3_pt;
 end CmpAir;
