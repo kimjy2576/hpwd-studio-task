@@ -854,14 +854,26 @@ package HPWDair "HPWD air-side L1 (lumped, 비압축 + dry-air basis)"
     parameter Modelica.Units.SI.Mass m_cl_dry = 3.0 "dry cloth mass (kg)";
     parameter Real c_p_cl = 1300 "dry cloth specific heat (J/kg·K)";
     parameter Modelica.Units.SI.Area A_eff = 10 "effective cloth area (m²)";
-    parameter Real h_a = 50 "air-cloth HTC (W/m²·K)";
+    parameter Real h_a = 50 "air-cloth HTC (W/m²·K) [3a서 rasti로 대체, 잔존 미사용]";
     parameter Modelica.Units.SI.Area A_drum = 0.15 "drum cross-section (m²)";
     parameter Real K_drum = 30 "cloth-bed resistance (Pa·s²/m²)";
     parameter Real X0 = 0.6 "initial moisture ratio (kg水/kg dry)";
     parameter Modelica.Units.SI.Temperature Tcl0 = 298.15 "initial cloth temp (K)";
     parameter Real absorption_ratio = 1.8 "최대 흡수량 (kg水/kg건, cotton)";
-    // zone 두께 분율 (합=1)
     parameter Real zf[N] = {0.25, 0.35, 0.40} "zone 두께 분율";
+    // ── 3a: rasti hA 상관식 파라미터 (drum_on) ──
+    parameter Modelica.Units.SI.Length drum_radius = 0.27 "드럼 반경 (m)";
+    parameter Modelica.Units.SI.Length drum_length = 0.45 "드럼 길이 (m)";
+    parameter Modelica.Units.SI.Length delta_fabric = 1.0e-3 "직물 두께 (m)";
+    parameter Real RPM = 45.0 "드럼 회전수 (rpm)";
+    parameter Real Fr_opt = 0.3 "최적 Froude";
+    parameter Real Fr_sigma = 0.25 "Froude Gaussian 폭";
+    parameter Real fill_optimal = 0.6 "최적 충전율";
+    parameter Real f_conv_sliding = 0.7 "대류인자 (sliding)";
+    parameter Real f_conv_peak = 1.7 "대류인자 (peak/cascading)";
+    parameter Real f_conv_centrifuge = 0.3 "대류인자 (centrifuge)";
+    parameter Real hA_multiplier = 1.0 "hA 보정계수";
+    parameter Real rho_bulk = 300.0 "드럼내 벌크밀도 (kg/m³)";
 
     // ── 상태변수: N-zone 함수율 + 직물온도 + 자유수 ──
     Modelica.Units.SI.Mass M_water_z[N](
@@ -889,6 +901,13 @@ package HPWDair "HPWD air-side L1 (lumped, 비압축 + dry-air basis)"
     Modelica.Units.SI.MassFlowRate m_evap(start = 5e-4);
     Real W_s(unit="kg/kg") "표면 포화습도";
     Real h_m "물질전달계수 (Lewis)";
+    // ── 3a: rasti hA 상관식 변수 ──
+    Real Fr "Froude number";
+    Real fill "충전율";
+    Real hA "총 열전달계수 (W/K)";
+    Real h_conv "대류 열전달계수 (W/m²K)";
+    Real fc "접촉 인자";
+    Real fv "대류 인자";
 
     // zone 간 확산 flux (최소: 단순 확산)
     Real J_zone[N-1] "zone 간 수분 flux (kg/s)";
@@ -898,7 +917,18 @@ package HPWDair "HPWD air-side L1 (lumped, 비압축 + dry-air basis)"
     Modelica.Units.SI.Pressure dp_drum;
 
   protected
-    parameter Real D_simple = 1e-6 "최소골격 단순확산계수 (3스텝서 Fick으로 대체)";
+    parameter Real D_simple = 1e-6 "최소골격 단순확산계수 (3b서 Fick으로 대체)";
+    // 3a: rasti hA 공기 물성 상수 (drum_on)
+    constant Real K_AIR = 0.028 "공기 열전도도 W/(m·K)";
+    constant Real MU_AIR = 2.0e-5 "공기 점도 Pa·s";
+    constant Real PR_AIR = 0.71 "Prandtl";
+    constant Real RHO_AIR = 1.05 "공기 밀도 kg/m³";
+    parameter Real d_char = delta_fabric * 2.0 "특성 길이";
+    parameter Real A_drum_cross = Modelica.Constants.pi * drum_radius^2 "드럼 단면적";
+    parameter Real omega_rot = 2 * Modelica.Constants.pi * RPM / 60 "각속도";
+    parameter Real rho_fabric = 1520.0 "섬유 밀도 (kg/m³, cotton)";
+    parameter Real A_fabric = m_cl_dry / (rho_fabric * delta_fabric) * 2
+      "직물 유효면적 (drum_on 공식, m²)";
 
   initial equation
     // 초기 함수율 분배 (X0 균등 → 각 zone)
@@ -921,10 +951,28 @@ package HPWDair "HPWD air-side L1 (lumped, 비압축 + dry-air basis)"
     end for;
     X = sum(M_water_z) / m_cl_dry;
 
-    // ── 최소 증발 (표면 zone N만, 감률 없이) ──
+    // ── 3a: Froude + fill + rasti hA 상관식 ──
+    Fr = omega_rot^2 * drum_radius / 9.81;
+    fill = min((m_cl_dry / rho_bulk + sum(M_water_z) * 0.3 / 1000.0)
+               / (Modelica.Constants.pi * drum_radius^2 * drum_length), 1.0);
+    // 대류 h: Nu=2+1.1Re^0.6Pr^(1/3), Re는 전체유량 기준 (4경로는 3c서)
+    h_conv = (2.0 + 1.1 * (RHO_AIR * (m_flow_da / max(RHO_AIR * A_drum_cross
+             * max(0.85 - 0.4 * fill, 0.15), 1e-8)) * d_char / MU_AIR)^0.6
+             * PR_AIR^(1.0/3.0)) * K_AIR / d_char;
+    // f_contact: Fr Gaussian × fill 포물선
+    fc = exp(-((Fr - Fr_opt)^2) / (2 * Fr_sigma^2))
+         * max(1.0 - 0.5 * ((fill - fill_optimal) / fill_optimal)^2, 0.2);
+    // f_conv: Fr 구간별 (smooth 근사 위해 noEvent)
+    fv = if Fr < 0.1 then f_conv_sliding
+         elseif Fr < 0.5 then f_conv_sliding + (f_conv_peak - f_conv_sliding) * (Fr - 0.1) / 0.4
+         elseif Fr < 1.0 then f_conv_peak + (f_conv_centrifuge - f_conv_peak) * (Fr - 0.5) / 0.5
+         else f_conv_centrifuge;
+    hA = h_conv * A_fabric * fc * fv * hA_multiplier;
+
+    // ── 최소 증발 (표면 zone N만, 감률 없이) — hA 기반 ──
     W_s = MoistAir.W_sat(T_fabric);
-    h_m = h_a / MoistAir.cp_da;
-    m_evap = h_m * A_eff * max(W_s - W_out, 0.0) * S[N];  // 표면 포화도 비례
+    h_m = hA / (A_fabric * MoistAir.cp_da);   // hA→물질전달 (Lewis)
+    m_evap = h_m * A_fabric * max(W_s - W_out, 0.0) * S[N];
 
     // ── zone 간 확산 flux (최소: 인접 포화도 차) ──
     for i in 1:N-1 loop
@@ -934,7 +982,7 @@ package HPWDair "HPWD air-side L1 (lumped, 비압축 + dry-air basis)"
     // ── 공기 CV (well-mixed) ──
     m_flow_da * (W_out - W_in) = m_evap;
     m_flow_da * (h_out - h_in)
-        = -h_a * A_eff * (T_out - T_fabric) + m_evap * MoistAir.h_g(T_fabric);
+        = -hA * (T_out - T_fabric) + m_evap * MoistAir.h_g(T_fabric);
     T_out = MoistAir.T_from_h(h_out, W_out);
 
     // ── zone 동특성 (der 상태) ──
@@ -952,7 +1000,7 @@ package HPWDair "HPWD air-side L1 (lumped, 비압축 + dry-air basis)"
 
     // ── 직물 온도 (der 상태) ──
     (m_cl_dry * c_p_cl + sum(M_water_z) * MoistAir.cp_w) * der(T_fabric)
-        = h_a * A_eff * (T_out - T_fabric) - m_evap * MoistAir.h_fg(T_fabric);
+        = hA * (T_out - T_fabric) - m_evap * MoistAir.h_fg(T_fabric);
 
     // ── 공기측 압력강하 ──
     rho_da = MoistAir.rho_da_fn(T_in, W_in);
