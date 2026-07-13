@@ -874,6 +874,18 @@ package HPWDair "HPWD air-side L1 (lumped, 비압축 + dry-air basis)"
     parameter Real f_conv_centrifuge = 0.3 "대류인자 (centrifuge)";
     parameter Real hA_multiplier = 1.0 "hA 보정계수";
     parameter Real rho_bulk = 300.0 "드럼내 벌크밀도 (kg/m³)";
+    // ── 3b: Fick 확산 + Darcy-Leverett 모세관 파라미터 (drum_on) ──
+    parameter Real D_ref = 5e-10 "확산계수 기준 (m²/s, cotton)";
+    parameter Real E_a = 35000.0 "확산 활성화에너지 (J/mol)";
+    parameter Real K_abs = 1e-12 "절대투과율 (m²)";
+    parameter Real diffusion_S_exp = 0.5 "D∝S^n 지수 (토양값 차용)";
+    parameter Real brooks_corey = 3.0 "모세관 K_r=S^n (토양값 차용)";
+    parameter Real L_char_mult = 3.0 "특성 확산거리 배율";
+    parameter Real R_GAS = 8.314 "기체상수 (J/mol·K)";
+    // ── 3b: 텀블링 zone 교환 파라미터 (Fr 구간별) ──
+    parameter Real k_exch_slide = 0.05 "텀블링 교환율 (sliding)";
+    parameter Real k_exch_casc = 0.30 "텀블링 교환율 (cascading)";
+    parameter Real k_exch_high = 0.02 "텀블링 교환율 (centrifuge)";
 
     // ── 상태변수: N-zone 함수율 + 직물온도 + 자유수 ──
     Modelica.Units.SI.Mass M_water_z[N](
@@ -911,6 +923,8 @@ package HPWDair "HPWD air-side L1 (lumped, 비압축 + dry-air basis)"
 
     // zone 간 확산 flux (최소: 단순 확산)
     Real J_zone[N-1] "zone 간 수분 flux (kg/s)";
+    Real J_tumble[N-1] "zone 간 텀블링 flux (kg/s)";
+    Real k_exch "텀블링 교환율 (Fr 구간별)";
 
     Modelica.Units.SI.Density rho_da;
     Modelica.Units.SI.Velocity u;
@@ -929,6 +943,14 @@ package HPWDair "HPWD air-side L1 (lumped, 비압축 + dry-air basis)"
     parameter Real rho_fabric = 1520.0 "섬유 밀도 (kg/m³, cotton)";
     parameter Real A_fabric = m_cl_dry / (rho_fabric * delta_fabric) * 2
       "직물 유효면적 (drum_on 공식, m²)";
+    // 3b: L_char N정규화 (drum_on: delta·mult·2/(N-1))
+    parameter Real L_char = delta_fabric * L_char_mult * (if N > 1 then 2.0 / (N - 1) else 1.0)
+      "특성 확산거리 (N셀 정규화)";
+    // 3b: w_cap 배열 — 각 쌍 diffusion↔capillary 가중 (i/(N-2))
+    parameter Real w_cap[N-1] = {
+      if N > 2 then max(0.0, min((i - 1) / (N - 2.0), 1.0))
+      else (if i == 1 then 0.0 else 1.0)
+      for i in 1:N-1} "쌍별 모세관 가중 (0=확산,1=모세관)";
 
   initial equation
     // 초기 함수율 분배 (X0 균등 → 각 zone)
@@ -975,8 +997,34 @@ package HPWDair "HPWD air-side L1 (lumped, 비압축 + dry-air basis)"
     m_evap = h_m * A_fabric * max(W_s - W_out, 0.0) * S[N];
 
     // ── zone 간 확산 flux (최소: 인접 포화도 차) ──
+    // ── 3b: N셀 Fick 확산 + Darcy-Leverett 모세관 blend flux ──
+    //   w_cap(i)=i/(N-2): 내부(확산지배)→표면(모세관지배). N=3서 원본 재현.
     for i in 1:N-1 loop
-      J_zone[i] = D_simple * A_eff * (S[i] - S[i+1]);
+      J_zone[i] = (
+        // (1-w_cap)·diffusion: D_eff(T,S)·(ΔS)/L_char·rho_fabric
+        (1 - w_cap[i]) * (
+          D_ref * exp(-E_a / (R_GAS * T_fabric)) * max(S[i], 0.01)^diffusion_S_exp
+          * (S[i] - S[i+1]) / L_char * rho_fabric
+        )
+        // w_cap·capillary: Darcy-Leverett
+        + w_cap[i] * max(
+          K_abs * (0.5 * (min(max(S[i],0.01),0.999)^brooks_corey
+                        + min(max(S[i+1],0.01),0.999)^brooks_corey))
+          / mu_water(T_fabric)
+          * (sigma_water(T_fabric) / sqrt(K_abs))
+          * ((0.364 * (1 - min(max(S[i],0.01),0.999))^0.5 - 0.221 * (1 - min(max(S[i],0.01),0.999)))
+           - (0.364 * (1 - min(max(S[i+1],0.01),0.999))^0.5 - 0.221 * (1 - min(max(S[i+1],0.01),0.999))))
+          / L_char * 1000.0, 0.0)
+      ) * A_fabric;
+    end for;
+
+    // ── 3b: 텀블링 zone 교환 flux (der 연속: rate = k·RPM/60) ──
+    k_exch = if Fr < 0.1 then k_exch_slide
+             elseif Fr < 0.5 then k_exch_slide + (k_exch_casc - k_exch_slide) * (Fr - 0.1) / 0.4
+             elseif Fr < 1.0 then k_exch_casc + (k_exch_high - k_exch_casc) * (Fr - 0.5) / 0.5
+             else k_exch_high;
+    for i in 1:N-1 loop
+      J_tumble[i] = k_exch * RPM / 60.0 * (M_water_z[i] - M_water_z[i+1]) / 2.0;
     end for;
 
     // ── 공기 CV (well-mixed) ──
@@ -986,14 +1034,12 @@ package HPWDair "HPWD air-side L1 (lumped, 비압축 + dry-air basis)"
     T_out = MoistAir.T_from_h(h_out, W_out);
 
     // ── zone 동특성 (der 상태) ──
-    // zone 1 (core): 다음 zone으로 확산만
-    der(M_water_z[1]) = -J_zone[1];
-    // 중간 zone: 이전에서 받고 다음으로
+    // ── zone 동특성 (der 상태): 확산+모세관(J_zone) + 텀블링(J_tumble) ──
+    der(M_water_z[1]) = -J_zone[1] - J_tumble[1];
     for i in 2:N-1 loop
-      der(M_water_z[i]) = J_zone[i-1] - J_zone[i];
+      der(M_water_z[i]) = J_zone[i-1] - J_zone[i] + J_tumble[i-1] - J_tumble[i];
     end for;
-    // zone N (surface): 이전에서 받고 증발
-    der(M_water_z[N]) = J_zone[N-1] - m_evap;
+    der(M_water_z[N]) = J_zone[N-1] + J_tumble[N-1] - m_evap;
 
     // 자유수 (최소골격: 변화 없음)
     der(M_free) = 0.0;
@@ -1013,6 +1059,21 @@ package HPWDair "HPWD air-side L1 (lumped, 비압축 + dry-air basis)"
     port_b.W_outflow = W_out;
     port_a.h_tilde_outflow = h_out;
     port_b.h_tilde_outflow = h_out;
+
+  public
+    function sigma_water "물 표면장력 (N/m, drum_on)"
+      input Modelica.Units.SI.Temperature T "K";
+      output Real sigma;
+    algorithm
+      sigma := 0.0756 - 0.000139 * (T - 273.15);
+    end sigma_water;
+
+    function mu_water "물 점도 (Pa·s, drum_on)"
+      input Modelica.Units.SI.Temperature T "K";
+      output Real mu;
+    algorithm
+      mu := 0.001 * exp(-3.7188 + 578.919 / ((T - 273.15) + 137.546));
+    end mu_water;
   end Drum_L3;
 
 
