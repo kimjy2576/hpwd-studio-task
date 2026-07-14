@@ -130,6 +130,217 @@ def init_state(params):
 
 
 def step(input, params, state, dt):
+    """
+    fidelity 파라미터로 L1/L2/L3 선택 (기본 L3).
+      params['fidelity'] ∈ {'L1','L2','L3'}
+    L1(Lewis+항률)/L2(감률+흡착)는 Modelica Drum_L1/L2와 동일 식 —
+    MoistAir 선형 psychrometrics(_ma_* 함수) 정확 복제로 궤적 일치.
+    L3(3-Zone 4경로 동적)는 dryer-drum-sim 포팅(_step_L3).
+    ⚠️ 동적 모델: init_state로 상태 초기화 후 step 반복. L1/L2는 상태
+       {m_w, T_cl}, L3는 {M_water_z[N], T_fabric, M_free}.
+    """
+    fidelity = params.get('fidelity', 'L3')
+    if fidelity == 'L1':
+        return _step_L1(input, params, state, dt)
+    elif fidelity == 'L2':
+        return _step_L2(input, params, state, dt)
+    else:
+        return _step_L3(input, params, state, dt)
+
+
+# ══════════════════════════════════════════════════════════════
+# Modelica MoistAir 정합 psychrometrics (L1/L2 궤적 일치용)
+#   ⚠️ L3용 _p_sat/_omega_sat와 별개 — Modelica MoistAir 식 정확 복제.
+#   상수: cp_da=1005, cp_v=1860, cp_w=4186, R_da=287.05, eps=0.622,
+#         T0=273.15, hfg0=2.501e6, p_ref=101325.
+# ══════════════════════════════════════════════════════════════
+_MA_cp_da = 1005.0; _MA_cp_v = 1860.0; _MA_cp_w = 4186.0
+_MA_R_da = 287.05; _MA_eps = 0.622; _MA_T0 = 273.15
+_MA_hfg0 = 2.501e6; _MA_p_ref = 101325.0
+
+def _ma_p_vs(T):      # 포화증기압 Magnus (T in K)
+    Tc = T - _MA_T0
+    return 610.78 * math.exp(17.27 * Tc / (Tc + 237.3))
+
+def _ma_W_sat(T):     # 포화습도비 @ p_ref
+    pvs = _ma_p_vs(T)
+    return _MA_eps * pvs / (_MA_p_ref - pvs)
+
+def _ma_rho_da(T, W): # dry-air 부분밀도 @ p_ref
+    return _MA_p_ref * _MA_eps / ((_MA_eps + W) * _MA_R_da * T)
+
+def _ma_h_g(T):       # 증기 엔탈피
+    return _MA_hfg0 + _MA_cp_v * (T - _MA_T0)
+
+def _ma_h_fg(T):      # 잠열
+    return _MA_hfg0 + (_MA_cp_v - _MA_cp_w) * (T - _MA_T0)
+
+def _ma_h_da(T, W):   # per-dry-air 엔탈피 h_tilde
+    return _MA_cp_da * (T - _MA_T0) + W * (_MA_hfg0 + _MA_cp_v * (T - _MA_T0))
+
+def _ma_T_from_h(h, W):  # 역함수 T(h_tilde, W)
+    return _MA_T0 + (h - W * _MA_hfg0) / (_MA_cp_da + W * _MA_cp_v)
+
+
+# ══════════════════════════════════════════════════════════════
+# L1 — Lewis + 항률건조 (Modelica Drum_L1 동형, 동적)
+# ══════════════════════════════════════════════════════════════
+def init_state_L1(params):
+    m_cl_dry = float(params.get('m_cl_dry', 3.0))
+    X0 = float(params.get('X0', 0.6))
+    Tcl0 = float(params.get('Tcl0', 298.15))
+    return {'m_w': X0 * m_cl_dry, 'T_cl': Tcl0}
+
+def _step_L1(input, params, state, dt):
+    """Lewis analogy + 항률증발. well-mixed 공기 CV. der→오일러."""
+    m_cl_dry = float(params.get('m_cl_dry', 3.0))
+    c_p_cl = float(params.get('c_p_cl', 1500.0))
+    A_eff = float(params.get('A_eff', 10.0))
+    h_a = float(params.get('h_a', 50.0))
+    A_drum = float(params.get('A_drum', 0.15))
+    K_drum = float(params.get('K_drum', 30.0))
+    UA_amb = float(params.get('UA_amb', 0.0))
+    T_amb = float(params.get('T_amb', 298.15))
+
+    m_w = state['m_w']; T_cl = state['T_cl']
+    # 입구 공기 (K, 절대)
+    T_in = float(input.get('T_in_K', input.get('T_in', 293.15) + (273.15 if input.get('T_in', 293.15) < 200 else 0)))
+    W_in = float(input.get('W_in', input.get('omega', 0.010)))
+    m_flow_da = float(input.get('m_flow_da', input.get('m_dot_air', 0.035)))
+
+    # well-mixed 공기 CV 대수해: W_out, T_out
+    #   Lewis: m_evap = h_m·A·(W_s - W_out), h_m = h_a/cp_da
+    #   질량: m_flow·(W_out - W_in) = m_evap
+    #   → W_out 대수 (W_s는 T_cl 함수, 고정)
+    W_s = _ma_W_sat(T_cl)
+    h_m = h_a / _MA_cp_da
+    # m_flow·(W_out-W_in) = h_m·A·(W_s-W_out)
+    # W_out·(m_flow + h_m·A) = m_flow·W_in + h_m·A·W_s
+    hmA = h_m * A_eff
+    W_out = (m_flow_da * W_in + hmA * W_s) / (m_flow_da + hmA)
+    m_evap = hmA * (W_s - W_out)
+
+    # 에너지 CV: T_out (well-mixed)
+    #   m_flow·(h_out-h_in) = -h_a·A·(T_out-T_cl) + m_evap·h_g(T_cl) - Q_amb
+    #   h_out = h_da(T_out, W_out), h_in = h_da(T_in, W_in)
+    #   선형이라 T_out 대수해 가능
+    h_in = _ma_h_da(T_in, W_in)
+    hg = _ma_h_g(T_cl)
+    # h_out = cp_da·(T_out-T0) + W_out·(hfg0+cp_v·(T_out-T0))
+    #       = (cp_da+W_out·cp_v)·(T_out-T0) + W_out·hfg0
+    # m_flow·[(cp_da+W_out·cp_v)(T_out-T0)+W_out·hfg0 - h_in]
+    #   = -h_a·A·(T_out-T_cl) + m_evap·hg - UA·(T_out-T_amb)
+    cpm = _MA_cp_da + W_out * _MA_cp_v
+    # LHS: m_flow·cpm·T_out - m_flow·cpm·T0 + m_flow·W_out·hfg0 - m_flow·h_in
+    # RHS: -h_a·A·T_out + h_a·A·T_cl + m_evap·hg - UA·T_out + UA·T_amb
+    # (m_flow·cpm + h_a·A + UA)·T_out = m_flow·cpm·T0 - m_flow·W_out·hfg0 + m_flow·h_in + h_a·A·T_cl + m_evap·hg + UA·T_amb
+    haA = h_a * A_eff
+    lhs_coef = m_flow_da * cpm + haA + UA_amb
+    rhs = (m_flow_da * cpm * _MA_T0 - m_flow_da * W_out * _MA_hfg0
+           + m_flow_da * h_in + haA * T_cl + m_evap * hg + UA_amb * T_amb)
+    T_out = rhs / lhs_coef
+
+    # cloth 동특성 (오일러 전진)
+    hfg = _ma_h_fg(T_cl)
+    dm_w = -m_evap
+    dT_cl = (haA * (T_out - T_cl) - m_evap * hfg) / (m_cl_dry * c_p_cl + m_w * _MA_cp_w)
+    m_w_new = m_w + dm_w * dt
+    T_cl_new = T_cl + dT_cl * dt
+
+    # 압력강하
+    rho_da = _ma_rho_da(T_in, W_in)
+    u = m_flow_da / (rho_da * A_drum)
+    dp_drum = K_drum * u * abs(u)
+
+    X = m_w / m_cl_dry
+    return {'outputs': {
+        'X': X, 'm_w': m_w, 'T_cl': T_cl - 273.15, 'T_cl_K': T_cl,
+        'm_evap': m_evap, 'W_out': W_out, 'T_out': T_out - 273.15,
+        'W_s': W_s, 'dp_drum': dp_drum, 'fidelity': 'L1',
+    }, 'newState': {'m_w': m_w_new, 'T_cl': T_cl_new}}
+
+
+# ══════════════════════════════════════════════════════════════
+# L2 — 감률 + 흡착 (Modelica Drum_L2 동형, 동적)
+# ══════════════════════════════════════════════════════════════
+def init_state_L2(params):
+    return init_state_L1(params)
+
+def _step_L2(input, params, state, dt):
+    """L1 + 흡착평형 X_eq(RH) + 감률인자 f_dry. der→오일러."""
+    m_cl_dry = float(params.get('m_cl_dry', 3.0))
+    c_p_cl = float(params.get('c_p_cl', 1500.0))
+    A_eff = float(params.get('A_eff', 10.0))
+    h_a = float(params.get('h_a', 50.0))
+    A_drum = float(params.get('A_drum', 0.15))
+    K_drum = float(params.get('K_drum', 30.0))
+    UA_amb = float(params.get('UA_amb', 0.0))
+    T_amb = float(params.get('T_amb', 298.15))
+    X_cr = float(params.get('X_cr', 0.2))
+    a_sorp = float(params.get('a_sorp', 0.25))
+    n_sorp = float(params.get('n_sorp', 2.0))
+
+    m_w = state['m_w']; T_cl = state['T_cl']
+    T_in = float(input.get('T_in_K', input.get('T_in', 293.15) + (273.15 if input.get('T_in', 293.15) < 200 else 0)))
+    W_in = float(input.get('W_in', input.get('omega', 0.010)))
+    m_flow_da = float(input.get('m_flow_da', input.get('m_dot_air', 0.035)))
+
+    X = m_w / m_cl_dry
+    W_s = _ma_W_sat(T_cl)
+    h_m = h_a / _MA_cp_da
+    hmA = h_m * A_eff
+    haA = h_a * A_eff
+    h_in = _ma_h_da(T_in, W_in)
+    hg = _ma_h_g(T_cl)
+
+    # L2는 f_dry가 RH_air(W_out, T_out)에 의존 → 비선형 연립.
+    #   Modelica는 동시 대수해. Python 순차 고정점은 진동 → 이전스텝 T_out
+    #   시드 + under-relaxation으로 안정화 (동적이라 T_out 연속).
+    W_out = state.get('W_out_prev', W_in + 1e-4)
+    T_out = state.get('T_out_prev', T_in)
+    f_dry = 1.0; X_eq = 0.0; RH_air = 0.0
+    relax = 0.5
+    for _ in range(200):
+        W_sat_out = _ma_W_sat(T_out)
+        RH_air = W_out / max(W_sat_out, 1e-9)
+        X_eq = min(a_sorp * RH_air**n_sorp, 0.9 * X_cr)
+        f_dry = max(0.0, min(1.0, (X - X_eq) / (X_cr - X_eq)))
+        W_out_tgt = (m_flow_da * W_in + f_dry * hmA * W_s) / (m_flow_da + f_dry * hmA)
+        m_evap_it = f_dry * hmA * (W_s - W_out_tgt)
+        cpm = _MA_cp_da + W_out_tgt * _MA_cp_v
+        lhs_coef = m_flow_da * cpm + haA + UA_amb
+        rhs = (m_flow_da * cpm * _MA_T0 - m_flow_da * W_out_tgt * _MA_hfg0
+               + m_flow_da * h_in + haA * T_cl + m_evap_it * hg + UA_amb * T_amb)
+        T_out_tgt = rhs / lhs_coef
+        # under-relaxation (진동 억제)
+        W_out_new = W_out + relax * (W_out_tgt - W_out)
+        T_out_new = T_out + relax * (T_out_tgt - T_out)
+        if abs(W_out_new - W_out) < 1e-12 and abs(T_out_new - T_out) < 1e-9:
+            W_out = W_out_new; T_out = T_out_new; break
+        W_out = W_out_new; T_out = T_out_new
+
+    m_evap = f_dry * hmA * (W_s - W_out)
+
+    hfg = _ma_h_fg(T_cl)
+    dm_w = -m_evap
+    dT_cl = (haA * (T_out - T_cl) - m_evap * hfg) / (m_cl_dry * c_p_cl + m_w * _MA_cp_w)
+    m_w_new = m_w + dm_w * dt
+    T_cl_new = T_cl + dT_cl * dt
+
+    rho_da = _ma_rho_da(T_in, W_in)
+    u = m_flow_da / (rho_da * A_drum)
+    dp_drum = K_drum * u * abs(u)
+
+    return {'outputs': {
+        'X': X, 'm_w': m_w, 'T_cl': T_cl - 273.15, 'T_cl_K': T_cl,
+        'm_evap': m_evap, 'W_out': W_out, 'T_out': T_out - 273.15,
+        'X_eq': X_eq, 'f_dry': f_dry, 'RH_air': RH_air,
+        'W_s': W_s, 'dp_drum': dp_drum, 'fidelity': 'L2',
+    }, 'newState': {'m_w': m_w_new, 'T_cl': T_cl_new,
+                    'W_out_prev': W_out, 'T_out_prev': T_out}}
+
+
+def _step_L3(input, params, state, dt):
     fabric = FABRIC_PRESETS[params.get("fabric", "cotton")]
     M_dry = float(params.get("M_dry", 3.0))
     zone_fractions = params.get("zone_fractions", (0.25, 0.35, 0.40))
