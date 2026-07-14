@@ -652,6 +652,141 @@ package HPWDair "HPWD air-side L1 (lumped, 비압축 + dry-air basis)"
     port_b.W_outflow = inStream(port_a.W_outflow);
   end Filter_L1;
 
+  model Filter_L2
+    "Lint filter L2 (SEMI: Darcy-Forchheimer 2항, a·b fit). filter_on.py L2 포팅.
+     ΔP = a·μu + b·ρu·|u| — 점성(Darcy) + 관성(Forchheimer). L1의 K=b·ρ 특수형."
+    AirPort port_a "inlet";
+    AirPort port_b "outlet";
+
+    parameter Modelica.Units.SI.Area A_face = 0.05 "filter face area (m²)";
+    parameter Real r_pleat = 1.0 "pleat area ratio (≥1, 1=flat)";
+    parameter Real theta_face = 0 "face slope angle (deg)";
+    parameter Real a_visc = 5.0e4 "점성(Darcy) 계수 (1/m²)";
+    parameter Real b_inert = 17.0 "관성(Forchheimer) 계수 (1/m)";
+
+    Modelica.Units.SI.MassFlowRate m_flow_da(start = 0.05) "dry-air mass flow (a→b +)";
+    Modelica.Units.SI.Area A_media "effective media area";
+    Modelica.Units.SI.Velocity u "media velocity (부호=유향)";
+    Modelica.Units.SI.VolumeFlowRate V_dot "volumetric flow";
+    Modelica.Units.SI.Density rho "moist-air density (p_ref)";
+    Real mu "dynamic viscosity (Pa·s, Sutherland)";
+    Modelica.Units.SI.Pressure dp "pressure drop";
+    Modelica.Units.SI.Pressure dp_visc, dp_inert;
+
+    Real W_op(unit="kg/kg") "inlet humidity ratio (upstream)";
+    Modelica.Units.SI.SpecificEnthalpy h_op "inlet h_tilde (upstream)";
+    Modelica.Units.SI.Temperature T_op "inlet temperature (upstream)";
+
+  protected
+    parameter Real theta_rad = theta_face * Modelica.Constants.pi / 180.0;
+    constant Real T_ref = 273.15;
+    constant Real S_suth = 110.4;
+    constant Real mu_ref = 1.716e-5;
+
+  equation
+    m_flow_da = port_a.m_flow_da;
+    port_a.m_flow_da + port_b.m_flow_da = 0;
+
+    W_op = inStream(port_a.W_outflow);
+    h_op = inStream(port_a.h_tilde_outflow);
+    T_op = MoistAir.T_from_h(h_op, W_op);
+    rho  = MoistAir.rho_da_fn(T_op, W_op) * (1 + W_op);
+    mu = mu_ref * (T_op / T_ref)^1.5 * (T_ref + S_suth) / (T_op + S_suth);
+
+    // 면 기하 → media velocity
+    A_media = A_face * r_pleat / cos(theta_rad);
+    V_dot = m_flow_da * (1 + W_op) / rho;
+    u = V_dot / A_media;
+
+    // ── DF 2항: 점성(Darcy) + 관성(Forchheimer), 역류 부호보존 ──
+    dp_visc = a_visc * mu * u;
+    dp_inert = b_inert * rho * u * abs(u);
+    dp = dp_visc + dp_inert;
+
+    port_b.p = port_a.p - dp;
+
+    // stream: 단열 pass-through (clean, 열·물질전달 무시)
+    port_a.h_tilde_outflow = inStream(port_b.h_tilde_outflow);
+    port_b.h_tilde_outflow = inStream(port_a.h_tilde_outflow);
+    port_a.W_outflow = inStream(port_b.W_outflow);
+    port_b.W_outflow = inStream(port_a.W_outflow);
+  end Filter_L2;
+
+  model Filter_L3
+    "Lint filter L3 (ON: 메쉬 기하 → Ergun, 다층). filter_on.py L3 포팅.
+     ε,d_f를 MPI·wire경에서 도출 → Ergun a·b (fit 아닌 기하) → 두께적분 → 다층 합."
+    AirPort port_a "inlet";
+    AirPort port_b "outlet";
+
+    parameter Modelica.Units.SI.Area A_face = 0.05 "filter face area (m²)";
+    parameter Real r_pleat = 1.0 "pleat area ratio (≥1, 1=flat)";
+    parameter Real theta_face = 0 "face slope angle (deg)";
+    parameter Real cf_ergun = 1.0 "재질 거칠기 보정";
+    // 다층 메쉬 (기본 단일 린트메쉬). N_layer개 병렬 두께.
+    parameter Integer N_layer = 1 "메쉬 층수 (pre+main)";
+    parameter Real MPI[N_layer] = {15.0} "인치당 메쉬수 (1/inch)";
+    parameter Modelica.Units.SI.Length d_w[N_layer] = {0.0004} "wire경 (m)";
+    parameter Modelica.Units.SI.Length L_layer[N_layer] = {0.0006} "층 두께 (m)";
+
+    Modelica.Units.SI.MassFlowRate m_flow_da(start = 0.05) "dry-air mass flow (a→b +)";
+    Modelica.Units.SI.Area A_media "effective media area";
+    Modelica.Units.SI.Velocity u "media velocity";
+    Modelica.Units.SI.VolumeFlowRate V_dot "volumetric flow";
+    Modelica.Units.SI.Density rho "moist-air density (p_ref)";
+    Real mu "dynamic viscosity (Pa·s)";
+    Modelica.Units.SI.Pressure dp "total pressure drop";
+    Modelica.Units.SI.Pressure dp_layer[N_layer] "층별 ΔP";
+
+    Real W_op(unit="kg/kg");
+    Modelica.Units.SI.SpecificEnthalpy h_op;
+    Modelica.Units.SI.Temperature T_op;
+
+  protected
+    parameter Real theta_rad = theta_face * Modelica.Constants.pi / 180.0;
+    constant Real T_ref = 273.15;
+    constant Real S_suth = 110.4;
+    constant Real mu_ref = 1.716e-5;
+    constant Real inch = 0.0254;
+    // Ergun 계수 (형상만 — 사전계산)
+    parameter Real MPI_per_m[N_layer] = {MPI[i] / inch for i in 1:N_layer};
+    parameter Real eps_l[N_layer] = {
+      max(min((1 - d_w[i] * MPI[i] / inch)^2, 0.999), 0.05) for i in 1:N_layer}
+      "개구율 ε=(1-d_w·MPI)²";
+    parameter Real a_erg[N_layer] = {
+      150.0 * (1 - eps_l[i])^2 / (eps_l[i]^3 * d_w[i]^2) for i in 1:N_layer}
+      "Ergun 점성계수";
+    parameter Real b_erg[N_layer] = {
+      1.75 * (1 - eps_l[i]) / (eps_l[i]^3 * d_w[i]) for i in 1:N_layer}
+      "Ergun 관성계수";
+
+  equation
+    m_flow_da = port_a.m_flow_da;
+    port_a.m_flow_da + port_b.m_flow_da = 0;
+
+    W_op = inStream(port_a.W_outflow);
+    h_op = inStream(port_a.h_tilde_outflow);
+    T_op = MoistAir.T_from_h(h_op, W_op);
+    rho  = MoistAir.rho_da_fn(T_op, W_op) * (1 + W_op);
+    mu = mu_ref * (T_op / T_ref)^1.5 * (T_ref + S_suth) / (T_op + S_suth);
+
+    A_media = A_face * r_pleat / cos(theta_rad);
+    V_dot = m_flow_da * (1 + W_op) / rho;
+    u = V_dot / A_media;
+
+    // ── 층별 Ergun ΔP (두께적분 = 균질이라 ·L), 부호보존 ──
+    for i in 1:N_layer loop
+      dp_layer[i] = cf_ergun * (a_erg[i] * mu * u + b_erg[i] * rho * u * abs(u)) * L_layer[i];
+    end for;
+    dp = sum(dp_layer);
+
+    port_b.p = port_a.p - dp;
+
+    port_a.h_tilde_outflow = inStream(port_b.h_tilde_outflow);
+    port_b.h_tilde_outflow = inStream(port_a.h_tilde_outflow);
+    port_a.W_outflow = inStream(port_b.W_outflow);
+    port_b.W_outflow = inStream(port_a.W_outflow);
+  end Filter_L3;
+
 
   // =============================================================
   // Drum_L1: 드럼 L1 (Lewis analogy + constant-rate). 첫 동적 컴포넌트.

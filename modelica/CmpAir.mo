@@ -42,6 +42,26 @@ package CmpAir "공기측 부품 충실도 비교 — 동일 BC에서 Fan(L1/L2)
     connect(fan.port_b, outlet.port);
   end Fan_L3_pt;
 
+  model Filter_L2_pt "L2 필터 @ 유량경계 (DF 2항)"
+    HPWDair.BoundaryAir_pTW inlet(p = 101325.0, T = 323.15, W = 0.010);
+    HPWDair.Filter_L2 filt(A_face = 0.05, a_visc = 5.0e4, b_inert = 17.0);
+    HPWDair.BoundaryAir_mflow outlet(m_flow_da = m_set, T = 323.15, W = 0.010);
+    parameter Real m_set = 0.05 "질량유량 [kg_da/s]";
+  equation
+    connect(inlet.port, filt.port_a);
+    connect(filt.port_b, outlet.port);
+  end Filter_L2_pt;
+
+  model Filter_L3_pt "L3 필터 @ 유량경계 (메쉬 Ergun)"
+    HPWDair.BoundaryAir_pTW inlet(p = 101325.0, T = 323.15, W = 0.010);
+    HPWDair.Filter_L3 filt(A_face = 0.05);
+    HPWDair.BoundaryAir_mflow outlet(m_flow_da = m_set, T = 323.15, W = 0.010);
+    parameter Real m_set = 0.05 "질량유량 [kg_da/s]";
+  equation
+    connect(inlet.port, filt.port_a);
+    connect(filt.port_b, outlet.port);
+  end Filter_L3_pt;
+
   // ───────────────────── Drum (입구 공기·유량 고정, 정착 시 증발량 비교) ─────────────────────
   model Drum_L1_pt "L1 드럼 @ 고정 공기 BC (Lewis+항률)"
     HPWDair.BoundaryAir_mflow inlet(m_flow_da = -0.05, T = 328.15, W = 0.008);
