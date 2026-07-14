@@ -107,7 +107,125 @@ def init_state(params):
 
 
 def step(input, params, state, dt):
-    # ── 기하 파라미터 (mm/°, fan-sim 기본값) ──
+    """
+    fidelity 파라미터로 L1/L2/L3 선택 (기본 L3).
+      params['fidelity'] ∈ {'L1','L2','L3'}
+    L1(Euler+Stodola 이론)/L2(손실분해 반경험)는 Modelica Fan_L1/L2와
+    동일 SI 식. L3(Meanline 9손실)는 fan-sim 포팅(아래 _step_L3).
+    ⚠️ L1/L2는 SI 단위(D2[m], N[rpm]), L3는 fan-sim 단위(mm/°) — 주의.
+    ⚠️ 부호 규약: Modelica 하네스 outlet=-m_fan → 내부 m_flow_da 음수.
+       L1/L2 검증 시 Python도 m_dot_da 음수로 넣어야 일치(cm2 부호가
+       ctheta2에 영향). 동일 BC 검증: dp L1 413.42 / L2 407.23 @ m=-0.05,
+       SI기하 D2=0.15/N=3000, 20°C/W=0.008.
+    """
+    fidelity = params.get('fidelity', 'L3')
+    if fidelity == 'L1':
+        return _step_L1(input, params, state, dt)
+    elif fidelity == 'L2':
+        return _step_L2(input, params, state, dt)
+    else:
+        return _step_L3(input, params, state, dt)
+
+
+# ══════════════════════════════════════════════════════════════
+# L1 — Euler + Stodola slip (교과서 이론, Modelica Fan_L1 동형)
+# ══════════════════════════════════════════════════════════════
+def _step_L1(input, params, state, dt):
+    """ΔP = η_h·ρ·U2·cθ2. Euler 수두 × 상수 유압효율. SI 단위."""
+    D2 = float(params.get('D2', 0.15))       # m
+    b2 = float(params.get('b2', 0.04))       # m
+    Z = float(params.get('Z', 40))
+    beta2 = float(params.get('beta2', 150.0))  # deg
+    eta_h = float(params.get('eta_h', 0.78))
+    eta_mech = float(params.get('eta_mech', 0.95))
+    N = float(params.get('N', 3000.0))       # rpm
+
+    T_in = float(input.get('T_in', 20.0))
+    omega = float(input.get('omega', 0.008))
+    P_in = float(input.get('P_in', 101325.0))
+    rho = _air_density(T_in, omega, P_in)
+
+    if 'm_dot_da' in input:
+        m_dot_da = float(input['m_dot_da'])
+        V_dot = m_dot_da * (1 + omega) / rho
+    else:
+        V_dot = float(input.get('V_dot', 0.05))
+        m_dot_da = V_dot * rho / (1 + omega)
+
+    beta2_rad = math.radians(beta2)
+    U2 = math.pi * D2 * N / 60
+    cm2 = V_dot / (math.pi * D2 * b2)
+    sigma = 1 - math.pi * math.sin(beta2_rad) / Z
+    ctheta2 = sigma * U2 - cm2 / math.tan(beta2_rad)
+    dp_t = rho * U2 * ctheta2
+    dp = eta_h * dp_t
+    W_sh = rho * V_dot * U2 * ctheta2 / eta_mech
+
+    return {'outputs': {
+        'dp': dp, 'dp_t': dp_t, 'P_out': P_in + dp,
+        'U2': U2, 'cm2': cm2, 'sigma': sigma, 'ctheta2': ctheta2,
+        'V_dot': V_dot, 'm_dot_da': m_dot_da, 'rho': rho, 'W_shaft': W_sh,
+        'fidelity': 'L1',
+    }, 'newState': {}}
+
+
+# ══════════════════════════════════════════════════════════════
+# L2 — 손실분해 Euler − Incidence − Friction (Modelica Fan_L2 동형)
+# ══════════════════════════════════════════════════════════════
+def _step_L2(input, params, state, dt):
+    """ΔP = Euler − incidence − friction. 상수효율 대신 유량의존 손실. SI."""
+    D2 = float(params.get('D2', 0.15))
+    b2 = float(params.get('b2', 0.04))
+    D1 = float(params.get('D1', 0.075))
+    b1 = float(params.get('b1', 0.045))
+    Z = float(params.get('Z', 40))
+    beta2 = float(params.get('beta2', 150.0))
+    beta1 = float(params.get('beta1', 35.0))
+    f_inc = float(params.get('f_inc', 0.6))
+    f_fric = float(params.get('f_fric', 0.8))
+    eta_mech = float(params.get('eta_mech', 0.95))
+    N = float(params.get('N', 3000.0))
+
+    T_in = float(input.get('T_in', 20.0))
+    omega = float(input.get('omega', 0.008))
+    P_in = float(input.get('P_in', 101325.0))
+    rho = _air_density(T_in, omega, P_in)
+
+    if 'm_dot_da' in input:
+        m_dot_da = float(input['m_dot_da'])
+        V_dot = m_dot_da * (1 + omega) / rho
+    else:
+        V_dot = float(input.get('V_dot', 0.05))
+        m_dot_da = V_dot * rho / (1 + omega)
+
+    beta2_rad = math.radians(beta2)
+    beta1_rad = math.radians(beta1)
+    U2 = math.pi * D2 * N / 60
+    U1 = math.pi * D1 * N / 60
+    cm2 = V_dot / (math.pi * D2 * b2)
+    cm1 = V_dot / (math.pi * D1 * b1)
+    sigma = 1 - math.pi * math.sin(beta2_rad) / Z
+    ctheta2 = sigma * U2 - cm2 / math.tan(beta2_rad)
+    w2 = math.sqrt(cm2**2 + (U2 - ctheta2)**2)
+
+    dp_euler = rho * U2 * ctheta2
+    dp_inc = 0.5 * rho * f_inc * (U1 - cm1 / math.tan(beta1_rad))**2
+    dp_fric = 0.5 * rho * f_fric * w2**2
+    dp = dp_euler - dp_inc - dp_fric
+    eta_h = dp / dp_euler if dp_euler != 0 else 0.0
+    W_sh = rho * V_dot * U2 * ctheta2 / eta_mech
+
+    return {'outputs': {
+        'dp': dp, 'dp_euler': dp_euler, 'dp_inc': dp_inc, 'dp_fric': dp_fric,
+        'eta_h': eta_h, 'P_out': P_in + dp,
+        'U2': U2, 'U1': U1, 'cm2': cm2, 'cm1': cm1, 'sigma': sigma,
+        'ctheta2': ctheta2, 'w2': w2,
+        'V_dot': V_dot, 'm_dot_da': m_dot_da, 'rho': rho, 'W_shaft': W_sh,
+        'fidelity': 'L2',
+    }, 'newState': {}}
+
+
+def _step_L3(input, params, state, dt):
     D1 = float(params.get('D1', 120.0))
     D2 = float(params.get('D2', 175.0))
     b1 = float(params.get('b1', 60.0))
