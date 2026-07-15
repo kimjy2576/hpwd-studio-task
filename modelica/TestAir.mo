@@ -157,23 +157,28 @@ end AirRingL2;
 
 
 model AirRingL3
-  "Air 링 L3: drum→fan→evap→cond→drum. Drum_L3(3-Zone 4경로 동적)+Fan_L3
-   (Meanline 9손실), 공기코일 고정온도(L1 재사용). volRef=압축성 압력앵커.
-   drum_on/fan_on 검증된 L3 컴포넌트로 구성한 최고충실도 공기 폐루프."
-  // ── R 컴포넌트 (L3 drum/fan, 공기코일 L1) ──
+  "Air 링 L3: drum→filter→fan→evap→cond→drum. Drum_L3(3-Zone 4경로 동적)
+   +Filter_L3(메쉬 Ergun)+Fan_L3(Meanline 9손실), 공기코일 고정온도(L1 재사용).
+   volRef=압축성 압력앵커. drum_on/filter_on/fan_on 검증 L3로 구성한
+   최고충실도 공기 폐루프. 필터는 드럼 직후(린트 포집) = 실제 건조기 구조."
+  // ── R 컴포넌트 (L3 drum/filter/fan, 공기코일 L1) ──
   HPWDair.Drum_L3 drum(
     m_cl_dry = 3.0, X0 = 0.6, Tcl0 = 305.0,
     drum_radius = 0.27, drum_length = 0.45, RPM = 45.0);
+  HPWDair.Filter_L3 filt(
+    A_face = 0.05, r_pleat = 1.0, theta_face = 0);
   HPWDair.Fan_L3 fan(
     D2 = 0.15, b2 = 0.04, Z = 40, beta2 = 150, N = 3000);
   HPWDair.EvapAir_L1 evap(
     T_evap = 283.15, BF = 0.2, A_face = 0.05, K_air = 50);
   HPWDair.CondAir_L1 cond(
     T_cond = 333.15, BF = 0.2, A_face = 0.05, K_air = 50);
-  // ── C 요소 4개 (volRef = 압축성 압력앵커, 나머지 비압축) ──
+  // ── C 요소 5개 (volRef = 압축성 압력앵커, 나머지 비압축) ──
   HPWDair.AirVolumeC volRef(
     V = 0.05, p_start = HPWDair.MoistAir.p_ref,
     T_start = 308.15, W_start = 0.018, fixedState = true);
+  HPWDair.AirVolume volF(
+    V = 0.05, T_start = 308.15, W_start = 0.018, fixedState = true);
   HPWDair.AirVolume volB(
     V = 0.05, T_start = 308.15, W_start = 0.018, fixedState = true);
   HPWDair.AirVolume volC(
@@ -182,7 +187,9 @@ model AirRingL3
     V = 0.05, T_start = 328.15, W_start = 0.011, fixedState = true);
 equation
   connect(drum.port_b,  volRef.port_a);
-  connect(volRef.port_b, fan.port_a);
+  connect(volRef.port_b, filt.port_a);
+  connect(filt.port_b,  volF.port_a);
+  connect(volF.port_b,  fan.port_a);
   connect(fan.port_b,   volB.port_a);
   connect(volB.port_b,  evap.port_a);
   connect(evap.port_b,  volC.port_a);
