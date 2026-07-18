@@ -465,6 +465,140 @@ package EvapMB
     M_holdup := M2_l + M_SH;
   end EvaporatorMB;
 
+  model EvaporatorMB_cpl
+    "증발기 MB L2 커플드 — EvaporatorMB(냉매 단독 검증용)의 공기 포트 개조판.
+     원본은 공기조건이 파라미터(T_air_in/RH_in/V_air_CMM)였으나, 여기선 AirPort
+     air_a/air_b로 받아 공기 폐루프와 결합. 냉매측 MB 물리는 원본과 동일(evaporatorMB
+     함수 그대로 호출) — 공기 입출력만 포트화. L2 커플드용."
+    package M = HelmholtzMedia.HelmholtzFluids.Propane;
+    HPWD.RefPort port_a "입구 (2상)";
+    HPWD.RefPort port_b "출구 (과열/2상)";
+    HPWDair.AirPort air_a "공기 입구 (증발기 상류)";
+    HPWDair.AirPort air_b "공기 출구 (냉각·제습 후)";
+    // ── 기하 (Python step() default) ──
+    parameter Real D_o = 7e-3, D_i = 6.5e-3, L_tube_total = 10, N_tubes = 24;
+    parameter Integer N_rows = 2;
+    parameter Real n_circuits = 2, P_t = 25e-3, P_l = 22e-3, t_fin = 0.12e-3;
+    parameter Real FPI = 12, k_fin = 200, A_o_face = 0.05, eps_over_D = 0;
+    parameter Real htc_corr_2ph = 1, htc_corr_SH = 1, htc_corr_air = 1, dp_corr_2ph = 1, dp_corr_SH = 1;
+    parameter Boolean flow_counter = true, wet_auto = true;
+    // ── 공기 조건 (AirPort 유래; 개조판) ──
+    //   원본의 파라미터 T_air_in/RH_in/V_air_CMM를 포트에서 계산.
+    parameter Real A_o_face_air = 0.05 "공기 정면 면적 (V_air_CMM 산정용, m²)";
+    Modelica.Units.SI.Temperature T_air_in(start = 318.15) "포트서 역산한 공기 입구온도";
+    Real RH_in(start = 0.85) "포트 W서 역산한 상대습도 (0~1)";
+    Real V_air_CMM(start = 2.5) "포트 유량서 산정한 체적유량 (m³/min)";
+    Real W_air_in(start = 0.055) "공기 입구 습도비 (포트)";
+    Real h_air_in(start = 1.6e5) "공기 입구 엔탈피 (포트)";
+    Real m_flow_da_air(start = 0.05) "건공기 질량유량 (포트, kg/s)";
+    Real rho_da_air(start = 1.1) "건공기 밀도";
+    // ── 노출 출력 ──
+    Real Q_total, Q_2ph, Q_SH, Q_latent "[W]";
+    Real T_ref_out_C, SH_out, quality_out, T_evap_C;
+    Real T_air_out_C, W_air_out, condensate_rate;
+    Real zeta, alpha_2ph, alpha_SH, alpha_air, eta_fin;
+    Real dP_total "[Pa]";
+    Real M_holdup "[kg]";
+    Real is_wet;
+    // ── 포트 결합용 ──
+    Real m_dot, P_evap, h_in, h_ref_out;
+  protected
+    M.SaturationProperties satP;
+    M.ThermodynamicState st_l, st_v, st_lq, st_vq, st10, st5, st_out, st_SHavg;
+    Real Tev_K, h_l, h_v, rho_l, rho_v, mu_l, mu_v, k_l, cp_l, Pr_l, sig, cp_vs;
+    Real mu10, k10, cp10, rho5, mu5, Pcrit, Mmol;
+    Real Q_2ph_l, Q_SH_l, Q_lat_l, href_l, Pout_l, qual_l, Taout_l, Waout_l, cond_l;
+    Real zeta_l, BF_l, a2_l, aSH_l, aair_l, etaf_l, UA2_l, UASH_l, dp2_l, dpSH_l, dpacc_l, dptot_l, M2_l, iswet_l;
+    Real T_SHavg_K, rho_SH, M_SH, V_internal;
+  equation
+    // ══ 공기 포트 → 내부 (개조 핵심) ══
+    m_flow_da_air = air_a.m_flow_da;
+    air_a.m_flow_da + air_b.m_flow_da = 0;
+    W_air_in = inStream(air_a.W_outflow);
+    h_air_in = inStream(air_a.h_tilde_outflow);
+    T_air_in = HPWDair.MoistAir.T_from_h(h_air_in, W_air_in);
+    // W → RH 역산: W = 0.622·pv/(p_ref−pv) → pv = W·p_ref/(0.622+W), RH = pv/pvs(T)
+    RH_in = min(1.0, max(0.0,
+      (W_air_in*HPWDair.MoistAir.p_ref/(HPWDair.MoistAir.eps + W_air_in))
+      / HPWDair.MoistAir.p_vs(T_air_in)));
+    // 유량 → 체적유량 CMM: V[m³/min] = (m_da/rho_da)·60
+    //   ⚠️ 초기 반복서 m_flow<0(역류)이면 V<0 → 함수 내 sqrt(alpha_o)<0 assert.
+    //   물리적으로 정상운전은 정방향 → abs로 보호(정상시 무영향).
+    rho_da_air = HPWDair.MoistAir.rho_da_fn(T_air_in, W_air_in);
+    V_air_CMM = abs(m_flow_da_air)/rho_da_air*60.0;
+    m_dot = port_a.m_flow;
+    P_evap = port_a.p;
+    h_in = inStream(port_a.h_outflow);
+    port_a.m_flow + port_b.m_flow = 0;
+    port_b.p = P_evap - dP_total;
+    port_b.h_outflow = h_ref_out;
+    port_a.h_outflow = inStream(port_b.h_outflow);
+  algorithm
+    // ── 냉매물성 (HelmholtzMedia; cp/k는 포화경계 특이 → ±0.1K 단상 평가) ──
+    Tev_K := M.saturationTemperature(P_evap);
+    satP := M.setSat_p(P_evap);
+    h_l := M.bubbleEnthalpy(satP);
+    h_v := M.dewEnthalpy(satP);
+    st_l := M.setState_px(P_evap, 0);
+    st_v := M.setState_px(P_evap, 1);
+    rho_l := st_l.d; rho_v := st_v.d;
+    mu_l := M.dynamicViscosity(st_l);
+    mu_v := M.dynamicViscosity(st_v);
+    st_lq := M.setState_pT(P_evap, Tev_K - 0.1);
+    st_vq := M.setState_pT(P_evap, Tev_K + 0.1);
+    k_l := M.thermalConductivity(st_lq);
+    cp_l := M.specificHeatCapacityCp(st_lq);
+    Pr_l := cp_l*mu_l/k_l;
+    cp_vs := M.specificHeatCapacityCp(st_vq);
+    sig := M.surfaceTension(satP);
+    st10 := M.setState_pT(P_evap, Tev_K + 10);
+    mu10 := M.dynamicViscosity(st10); k10 := M.thermalConductivity(st10); cp10 := M.specificHeatCapacityCp(st10);
+    st5 := M.setState_pT(P_evap, Tev_K + 5);
+    rho5 := st5.d; mu5 := M.dynamicViscosity(st5);
+    Pcrit := M.fluidConstants[1].criticalPressure;
+    Mmol := M.fluidConstants[1].molarMass*1000.0;
+    // ── MB 계산 ──
+    (Q_total, Q_2ph_l, Q_SH_l, Q_lat_l, href_l, Pout_l, qual_l, Taout_l, Waout_l, cond_l,
+     zeta_l, BF_l, a2_l, aSH_l, aair_l, etaf_l, UA2_l, UASH_l, dp2_l, dpSH_l, dpacc_l, dptot_l, M2_l, iswet_l)
+     := evaporatorMB(
+        D_o, D_i, L_tube_total, N_tubes, N_rows, n_circuits, P_t, P_l, t_fin, FPI, k_fin, A_o_face, eps_over_D,
+        htc_corr_2ph, htc_corr_SH, htc_corr_air, dp_corr_2ph, dp_corr_SH, flow_counter, wet_auto,
+        P_evap/1e5, h_in/1000.0, m_dot, T_air_in - 273.15, RH_in*100.0, V_air_CMM,
+        Tev_K, h_l, h_v, rho_l, rho_v, mu_l, mu_v, k_l, Pr_l, sig, cp_vs, Pcrit, Mmol,
+        mu10, k10, cp10, rho5, mu5);
+    dP_total := dptot_l;
+    h_ref_out := href_l;
+    Q_2ph := Q_2ph_l; Q_SH := Q_SH_l; Q_latent := Q_lat_l;
+    quality_out := qual_l; T_air_out_C := Taout_l; W_air_out := Waout_l; condensate_rate := cond_l;
+    zeta := zeta_l; alpha_2ph := a2_l; alpha_SH := aSH_l; alpha_air := aair_l; eta_fin := etaf_l;
+    is_wet := iswet_l;
+    T_evap_C := Tev_K - 273.15;
+    // ── 출구상태·SH·holdup (결과의존 → model에서 파생) ──
+    st_out := M.setState_ph(port_b.p, h_ref_out);
+    T_ref_out_C := M.temperature(st_out) - 273.15;
+    SH_out := max(0.0, T_ref_out_C - T_evap_C);
+    V_internal := 3.141592653589793*D_i^2/4.0*L_tube_total;
+    if zeta < 0.999 then
+      T_SHavg_K := 0.5*(Tev_K + (T_ref_out_C + 273.15));
+      st_SHavg := M.setState_pT(P_evap, T_SHavg_K);
+      rho_SH := st_SHavg.d;
+      M_SH := rho_SH*((1.0 - zeta)*V_internal);
+    else
+      M_SH := 0.0;
+    end if;
+    M_holdup := M2_l + M_SH;
+  equation
+    // ══ 내부 → 공기 포트 (개조 핵심) ══
+    //   함수가 준 출구 온도(Taout_l °C)·습도비(Waout_l)를 stream으로 방출.
+    //   양 포트 동일값(well-mixed 출구 규약, 다른 공기 컴포넌트와 일관).
+    //   ⚠️ 진짜 equation 섹션 — 위 블록은 algorithm이라 포트식(=)을 못 넣음.
+    air_a.h_tilde_outflow = HPWDair.MoistAir.h_da_fn(Taout_l + 273.15, Waout_l);
+    air_b.h_tilde_outflow = HPWDair.MoistAir.h_da_fn(Taout_l + 273.15, Waout_l);
+    air_a.W_outflow = Waout_l;
+    air_b.W_outflow = Waout_l;
+    air_b.p = air_a.p - dP_total;   // 공기측 ΔP (함수 산출)
+  end EvaporatorMB_cpl;
+
   model EvaporatorMB_test "FlowSource → 증발기MB → Sink (정합 검증)"
     EvapMB.EvaporatorMB evap;
     HPWDhx.FlowSource src(p = 5.5e5, h = 285990, m_flow_set = 0.004);
