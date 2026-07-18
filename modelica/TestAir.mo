@@ -147,8 +147,10 @@ model AirRingL2
     // a·b는 L3 메쉬(MPI15/d_w0.4mm/L0.6mm) 곡선에 최소자승 fit
     // → 3급이 같은 물리필터. L2는 전영역 L3 완벽재현(2항=Ergun 동형).
   HPWDair.Fan_L2 fan(
-    D2 = 0.15, b2 = 0.04, Z = 40, beta2 = 150,
-    eta_mech = 0.95, N = 3000);
+    D2 = 0.15, b2 = 0.04, D1 = 0.120, b1 = 0.060, Z = 40,
+    beta2 = 150, beta1 = 30, eta_mech = 0.95, N = 3000);
+    // D1/b1/beta1 명시: 미설정 시 L2 기본(0.075/0.045/35) vs L3 기본
+    // (0.120/0.060/30)이 달라 입사손실이 다른 팬 비교가 됨 → 통일.
   HPWDair.EvapAir_L1 evap(
     T_evap = 283.15, BF = 0.2, A_face = 0.05, K_air = 50);
   HPWDair.CondAir_L1 cond(
@@ -191,7 +193,8 @@ model AirRingL3
   HPWDair.Filter_L3 filt(
     A_face = 0.05, r_pleat = 1.0, theta_face = 0);
   HPWDair.Fan_L3 fan(
-    D2 = 0.15, b2 = 0.04, Z = 40, beta2 = 150, N = 3000);
+    D2 = 0.15, b2 = 0.04, D1 = 0.120, b1 = 0.060, Z = 40,
+    beta2 = 150, beta1 = 30, N = 3000);   // D1/b1/beta1 통일 (L2와 동일)
   HPWDair.EvapAir_L1 evap(
     T_evap = 283.15, BF = 0.2, A_face = 0.05, K_air = 50);
   HPWDair.CondAir_L1 cond(
