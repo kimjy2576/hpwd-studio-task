@@ -83,10 +83,10 @@ modelDescription = {
         # Fitting — UA 모드 — HPWD R290 typical 부품 (W=0.4, H=0.3, FPI=12) 기준
         # 비율: 2ph:SH ≈ 6:1, Total UA ≈ 29 W/K → Evap On★ default geometry와 일치
         {'name': 'UA_2ph', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Fitting', 'start': 25.0, 'unit': 'W/K',
+         'group': 'Fitting', 'start': 15.9, 'unit': 'W/K',
          'description': '2-phase 영역 UA (input_mode=UA 시 사용) — HPWD typical 25 W/K'},
         {'name': 'UA_SH', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Fitting', 'start': 4.0, 'unit': 'W/K',
+         'group': 'Fitting', 'start': 2.2, 'unit': 'W/K',
          'description': 'Superheat 영역 UA (input_mode=UA 시 사용) — HPWD typical 4 W/K'},
         {'name': 'eps_2ph', 'causality': 'parameter', 'type': 'Real',
          'group': 'Fitting', 'start': 0.85, 'unit': '-',
@@ -210,8 +210,8 @@ def step(input, params, state, dt):
     fluid       = params.get('fluid', 'R290')
     wet_mode    = params.get('wet_coil', 'auto')
     input_mode  = params.get('input_mode', 'UA')
-    UA_2ph      = float(params.get('UA_2ph', 25.0))
-    UA_SH       = float(params.get('UA_SH', 4.0))
+    UA_2ph      = float(params.get('UA_2ph', 15.9))
+    UA_SH       = float(params.get('UA_SH', 2.2))
     eps_2ph_in  = float(params.get('eps_2ph', 0.85))
     eps_SH_in   = float(params.get('eps_SH', 0.5))
     dP_ref      = float(params.get('dP_ref', 0.02))

@@ -219,7 +219,7 @@ COMPONENT_REGISTRY = {
         'modelica_model': 'HPWDhx.Evap_UA',
         'extra_mo': ['EvapUA.mo'],
         'param_defaults': {'T_air_in': 323.15, 'RH_in': 0.9, 'V_air_CMM': 2.54,
-                           'UA_2ph': 25.0, 'UA_SH': 4.0, 'dP_ref': 0.02},
+                           'UA_2ph': 15.9, 'UA_SH': 2.2, 'dP_ref': 0.02},
         'build_bc': {'P_evap': 551000.0, 'h_in': 336563.0, 'm_dot': 0.00458812},
         'override_map': {
             'T_air_in':  ('evap.T_air_in', _c_to_k),     # °C → K
@@ -241,7 +241,7 @@ COMPONENT_REGISTRY = {
         'modelica_model': 'HPWDhx.Cond_UA',
         'extra_mo': ['EvapUA.mo'],
         'param_defaults': {'T_air_in_C': 35.0, 'RH_in': 0.5, 'V_air_CMM': 25.42,
-                           'UA_deSH': 8.0, 'UA_2ph': 50.0, 'UA_SC': 5.0, 'dP_ref': 0.03},
+                           'UA_deSH': 15.5, 'UA_2ph': 280.0, 'UA_SC': 0.5, 'dP_ref': 0.03},
         'build_bc': {'P_cond': 1907000.0, 'h_in': 702725.0, 'm_dot': 0.00458812},
         'override_map': {
             'T_air_in':  ('cond.T_air_in_C', _ident),    # °C (변환 없음)

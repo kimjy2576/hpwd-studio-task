@@ -47,14 +47,13 @@ OMC = {'L1': 594.404, 'L2': 621.907, 'L3': 633.036}
 
 
 def verify_L1_with_omc_params():
-    """L1은 OMC 재피팅 UA를 주면 일치 — 파라미터 동기화 문제 입증."""
-    par = {'input_mode': 'UA', 'UA_deSH': 15.5, 'UA_2ph': 280.0, 'UA_SC': 0.5,
-           'dP_ref': 0.03, 'fluid': 'R290'}
+    """L1 기본 UA가 CmpParts 재피팅값으로 동기화됨 → 기본값으로 일치."""
+    par = {'input_mode': 'UA', 'fluid': 'R290'}  # 기본 UA=15.5/280/0.5 (동기화 완료)
     o = cond_L1.step(BC, par, {}, 0)['outputs']
     q = o['Q_total']
     d = (q - OMC['L1']) / OMC['L1'] * 100
-    print(f"L1 (OMC UA 주입): Py Q={q:.1f}  OMC={OMC['L1']:.1f}  Δ={d:+.2f}%  "
-          f"{'✅ 파라미터 동기화만 필요' if abs(d) < 1 else '❌'}")
+    print(f"L1 (기본 UA, 동기화됨): Py Q={q:.1f}  OMC={OMC['L1']:.1f}  Δ={d:+.2f}%  "
+          f"{'✅' if abs(d) < 1 else '❌'}")
     return abs(d) < 1
 
 

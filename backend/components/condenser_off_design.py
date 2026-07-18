@@ -67,13 +67,13 @@ modelDescription = {
         # 비율: deSH:2ph:SC ≈ 1:6.25:0.625 (응축 영역이 가장 크고, SC는 작은 영역)
         # Total UA ≈ 63 W/K → Cond On★ default geometry와 일치 (Q ≈ 690W @ HPWD 운전점)
         {'name': 'UA_deSH', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Fitting', 'start': 8.0, 'unit': 'W/K',
+         'group': 'Fitting', 'start': 15.5, 'unit': 'W/K',
          'description': 'De-superheat 영역 UA (vapor cooling) — HPWD typical 8 W/K'},
         {'name': 'UA_2ph', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Fitting', 'start': 50.0, 'unit': 'W/K',
+         'group': 'Fitting', 'start': 280.0, 'unit': 'W/K',
          'description': '2-phase (응축) 영역 UA — 보통 가장 큼, HPWD typical 50 W/K'},
         {'name': 'UA_SC', 'causality': 'parameter', 'type': 'Real',
-         'group': 'Fitting', 'start': 5.0, 'unit': 'W/K',
+         'group': 'Fitting', 'start': 0.5, 'unit': 'W/K',
          'description': 'Subcool 영역 UA (liquid cooling) — HPWD typical 5 W/K'},
 
         # epsilon mode
@@ -211,9 +211,9 @@ def step(input, params, state, dt):
     fluid = params.get('fluid', 'R290')
     input_mode = params.get('input_mode', 'UA')
     
-    UA_deSH = float(params.get('UA_deSH', 8.0))
-    UA_2ph = float(params.get('UA_2ph', 50.0))
-    UA_SC = float(params.get('UA_SC', 5.0))
+    UA_deSH = float(params.get('UA_deSH', 15.5))
+    UA_2ph = float(params.get('UA_2ph', 280.0))
+    UA_SC = float(params.get('UA_SC', 0.5))
     eps_deSH_in = float(params.get('eps_deSH', 0.4))
     eps_2ph_in = float(params.get('eps_2ph', 0.85))
     eps_SC_in = float(params.get('eps_SC', 0.3))

@@ -44,12 +44,12 @@ OMC = {'L1': 462.029, 'L2': 462.283, 'L3': 461.743}
 
 
 def verify_L1_with_omc_params():
-    par = {'input_mode': 'UA', 'UA_2ph': 15.9, 'UA_SH': 2.2, 'fluid': 'R290'}
+    par = {'input_mode': 'UA', 'fluid': 'R290'}  # 기본 UA=15.9/2.2 (동기화 완료)
     o = evap_L1.step(BC, par, {}, 0)['outputs']
     q = o['Q_total']
     d = (q - OMC['L1']) / OMC['L1'] * 100
     ok = abs(d) < 1
-    print(f"L1 (OMC UA 주입): Py Q={q:.1f}  OMC={OMC['L1']:.1f}  Δ={d:+.2f}%  "
+    print(f"L1 (기본 UA, 동기화됨): Py Q={q:.1f}  OMC={OMC['L1']:.1f}  Δ={d:+.2f}%  "
           f"{'✅' if ok else '❌'}")
     return ok
 
