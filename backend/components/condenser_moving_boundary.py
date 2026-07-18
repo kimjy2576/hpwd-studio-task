@@ -44,6 +44,7 @@ import CoolProp.CoolProp as CP
 from .correlations import condensation, single_phase, air_side, fin_efficiency, pressure_drop
 # 2상 condensation·공기측은 On(segment march)과 동일 vendor 식 사용 (correlation 라이브러리 통일).
 from _vendor.hx_sim.correlations import h_with_transition as _vendor_h_tp
+from _vendor.hx_sim.correlations import microfin_ef as _microfin_ef
 from _vendor.hx_sim.correlations import compute_j_factor as _vendor_j_factor
 from _vendor.hx_sim.properties import RefrigerantProperties as _VendorRefProps
 from _vendor.hx_sim.properties import MoistAirProperties as _VendorAirProps
@@ -308,6 +309,11 @@ def step(input, params, state, dt):
     FPI = float(params.get('FPI', 22.0))
     k_fin = float(params.get('k_fin', 200.0))
     A_o_face = float(params.get('A_o_face', 0.0135744))
+    # microfin (내부 강화관) — OMC CondenserSS와 동일. smooth면 EF=1.
+    tube_type = params.get('tube_type', 'microfin')
+    n_microfin = int(params.get('n_microfin', 54))
+    e_microfin = float(params.get('e_microfin', 0.15e-3))
+    helix_angle = float(params.get('helix_angle', 15.0))
     corr_cond = params.get('corr_cond', 'shah1979')
     corr_SP = params.get('corr_SP', single_phase.DEFAULT)
     corr_air = params.get('corr_air', 'wang2000_plain')
@@ -396,6 +402,15 @@ def step(input, params, state, dt):
     eta_overall = (A_tube_outer + A_fin_total * eta_fin) / A_o if A_o > 0 else eta_fin
 
     # ── 5. 냉매측 α — zone별 (2상은 On과 동일 vendor condensation 식) ──
+    # microfin 강화계수 EF (OMC와 동일: 매끈관 h × EF). ψ=1+(2·n·e/cosβ)/(πDi).
+    if tube_type == 'microfin' and n_microfin > 0 and e_microfin > 0:
+        _beta = math.radians(helix_angle)
+        _psi = 1.0 + (2.0 * n_microfin * e_microfin / max(math.cos(_beta), 0.1)) / (math.pi * D_i)
+        EF_cond = _microfin_ef('cond', _psi, helix_angle)
+        EF_sgl = _microfin_ef('single', _psi, helix_angle)
+    else:
+        EF_cond = 1.0
+        EF_sgl = 1.0
     _A_cross = math.pi * D_i ** 2 / 4.0
     _G_2ph = (m_dot_ref / max(n_circuits, 1)) / max(_A_cross, 1e-12)
     _ref_obj = _VendorRefProps(fluid)
@@ -404,17 +419,17 @@ def step(input, params, state, dt):
     alpha_2ph = _vendor_h_tp(x=0.5, G=_G_2ph, Di=D_i, q_flux=q_flux_cond_est,
                              ref=_ref_obj, P=P_cond_Pa, mode='cond',
                              hx_type='FT', cond_corr=corr_cond)
-    alpha_2ph *= htc_corr_cond
+    alpha_2ph *= htc_corr_cond * EF_cond   # microfin 강화 (OMC: ×EF_cond)
 
     # 단상(deSH/SC)도 On과 동일 vendor 식 — h_with_transition이 x로 영역 분기
     #   x>1.05 → 과열 vapor Gnielinski / x<0 → 과냉 liquid Gnielinski
     alpha_deSH = _vendor_h_tp(x=1.5, G=_G_2ph, Di=D_i, q_flux=q_flux_cond_est,
                               ref=_ref_obj, P=P_cond_Pa, mode='cond', hx_type='FT')
-    alpha_deSH *= htc_corr_SP
+    alpha_deSH *= htc_corr_SP * EF_sgl     # microfin 강화 (OMC: ×EF_single)
 
     alpha_SC = _vendor_h_tp(x=-0.5, G=_G_2ph, Di=D_i, q_flux=q_flux_cond_est,
                             ref=_ref_obj, P=P_cond_Pa, mode='cond', hx_type='FT')
-    alpha_SC *= htc_corr_SP
+    alpha_SC *= htc_corr_SP * EF_sgl       # microfin 강화 (OMC: ×EF_single)
 
     # ── 6. UA per zone (전체 면적 가정 — cascade 방식) ──
     UA_deSH_full = 1.0 / (1.0 / (alpha_deSH * A_i) + 1.0 / (alpha_air * A_o * eta_overall))
