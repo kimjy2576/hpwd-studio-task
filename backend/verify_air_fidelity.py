@@ -100,6 +100,39 @@ def verify_drum():
     return all(results)
 
 
+def sweep_fan():
+    """팬 3급 유량 스윕 (분석용, 회귀 아님). 전압 기준 통일 비교.
+    L1/L2 dp는 전압, L3는 dP_total(=Pt_fan) 전압 / dP_static(=Ps) 정압.
+    ⚠️ L1/L2는 SI(m), L3는 fan-sim(mm) 단위 — 기하는 같은 팬."""
+    import math
+    g_si = {'D2':0.175,'b2':0.050,'D1':0.120,'b1':0.060,'Z':36,'beta2':145,
+            'beta1':30,'N':3000,'eta_h':0.78,'eta_mech':0.95,'f_inc':0.6,'f_fric':0.8}
+    g_mm = {'D2':175.0,'b2':50.0,'D1':120.0,'b1':60.0,'Z':36,'beta2':145,
+            'beta1':30,'RPM':3000.0}
+    D2, b2, N, rho = 0.175, 0.050, 3000, 1.2
+    U2 = math.pi * D2 * N / 60
+
+    print("── Fan 유량 스윕 (전압 기준, N=3000) ──")
+    print(f"{'m[kg/s]':>8} {'φ':>6} | {'Euler':>7} {'L1':>7} {'L2':>7} {'L3 Pt':>7} {'L3 Ps':>7}"
+          f" | {'L1err':>7} {'L2err':>7} | {'eta':>5}")
+    for m in [0.03, 0.05, 0.08, 0.10, 0.125, 0.15, 0.16, 0.18, 0.20]:
+        inp = {'T_in':20.0, 'omega':0.008, 'm_dot_da':m}
+        o1 = fan_on.step(inp, {**g_si,'fidelity':'L1'}, {}, 0)['outputs']
+        o2 = fan_on.step(inp, {**g_si,'fidelity':'L2'}, {}, 0)['outputs']
+        o3 = fan_on.step(inp, {**g_mm,'fidelity':'L3'}, {}, 0)['outputs']
+        phi = (m/rho) / (math.pi * D2 * b2 * U2)
+        L3t, L3s = o3['dP_total'], o3['dP_static']
+        e1 = (o1['dp']-L3t)/L3t*100
+        e2 = (o2['dp']-L3t)/L3t*100
+        print(f"{m:>8.3f} {phi:>6.3f} | {o1['dp_t']:>7.1f} {o1['dp']:>7.1f} {o2['dp']:>7.1f}"
+              f" {L3t:>7.1f} {L3s:>7.1f} | {e1:>+6.1f}% {e2:>+6.1f}% | {o3['eta']:>5.3f}")
+    print("  → L3 eta가 φ 전범위 평탄(0.63~0.67) → fidelity 격차도 안정")
+    print("     L1 오차 +2.5~-2.1% (η_h=0.78 일괄이 실제 총손실 ~21%와 근접)")
+    print("     L2 오차 +16~+19.5% (입사+마찰만=2.1%, 지배적 스크롤손실 70% 누락)")
+    print("  ⚠️ L2 > L1 오차 — fidelity 사다리 비단조. 중간급이 지배물리를")
+    print("     빠뜨리면 잘 보정된 일괄모델보다 나쁠 수 있음.")
+
+
 if __name__ == '__main__':
     print("=" * 60)
     print("공기측 3컴포넌트 × 3급 GT↔Modelica 검증")
@@ -110,6 +143,9 @@ if __name__ == '__main__':
     print()
     filt_ok = verify_filter()
     print()
+    if '--sweep' in sys.argv:
+        sweep_fan()
+        print()
     print("=" * 60)
     allok = fan_ok and drum_ok and filt_ok
     print(f"종합: {'✅ 전부 통과' if allok else '❌ 실패 항목 있음'}")
