@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HPWD 모델 인벤토리 — 전수조사</title>
+<style>
+  :root{
+    --bg:#0f1117; --panel:#1a1d27; --panel2:#22262f; --ink:#e8eaed; --muted:#9aa0ac;
+    --line:#2d3139; --ok:#34d399; --no:#f87171; --warn:#fbbf24; --dup:#c084fc;
+    --air:#60a5fa; --ref:#f59e0b; --acc:#818cf8;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Pretendard',-apple-system,system-ui,sans-serif;background:var(--bg);color:var(--ink);
+    line-height:1.6;padding:32px;max-width:1400px;margin:0 auto;font-size:14px}
+  h1{font-size:28px;font-weight:800;margin-bottom:6px;letter-spacing:-.02em}
+  h2{font-size:20px;font-weight:700;margin:32px 0 12px;padding-bottom:8px;border-bottom:2px solid var(--line);
+    display:flex;align-items:center;gap:10px}
+  h3{font-size:15px;font-weight:700;margin:18px 0 8px;color:var(--muted)}
+  .sub{color:var(--muted);margin-bottom:20px;font-size:13px}
+  .legend{display:flex;gap:16px;flex-wrap:wrap;background:var(--panel);border:1px solid var(--line);
+    border-radius:10px;padding:12px 16px;margin-bottom:8px;font-size:12px}
+  .legend span{display:inline-flex;align-items:center;gap:6px}
+  .dot{width:10px;height:10px;border-radius:50%;display:inline-block}
+  table{width:100%;border-collapse:collapse;margin:8px 0 4px;background:var(--panel);
+    border-radius:10px;overflow:hidden;font-size:13px}
+  th{background:var(--panel2);text-align:left;padding:9px 12px;font-weight:700;font-size:12px;
+    color:var(--muted);border-bottom:1px solid var(--line)}
+  td{padding:8px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  tr:last-child td{border-bottom:none}
+  code{font-family:'JetBrains Mono',ui-monospace,monospace;background:var(--panel2);
+    padding:1px 6px;border-radius:4px;font-size:12px;color:#c7d2fe}
+  .ok{color:var(--ok);font-weight:700}
+  .no{color:var(--no);font-weight:700}
+  .warn{color:var(--warn);font-weight:700}
+  .dup{color:var(--dup);font-weight:700}
+  .badge{display:inline-block;padding:1px 8px;border-radius:20px;font-size:11px;font-weight:700}
+  .b-air{background:rgba(96,165,250,.15);color:var(--air)}
+  .b-ref{background:rgba(245,158,11,.15);color:var(--ref)}
+  .b-ok{background:rgba(52,211,153,.15);color:var(--ok)}
+  .b-no{background:rgba(248,113,113,.15);color:var(--no)}
+  .b-dup{background:rgba(192,132,252,.15);color:var(--dup)}
+  .note{background:var(--panel);border-left:3px solid var(--acc);border-radius:0 8px 8px 0;
+    padding:12px 16px;margin:10px 0;font-size:13px}
+  .note.warn{border-left-color:var(--warn)}
+  .note.no{border-left-color:var(--no)}
+  .note.dup{border-left-color:var(--dup)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .file{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted)}
+  ul{margin:6px 0 6px 20px}li{margin:3px 0}
+  .matrix td:first-child{font-weight:700;background:var(--panel2)}
+  .big{font-size:16px}
+  @media(max-width:900px){.grid2{grid-template-columns:1fr}body{padding:16px}}
+</style>
+</head>
+<body>
+
+<h1>HPWD 멀티피델리티 모델 인벤토리</h1>
+<div class="sub">전수조사 · OMC(Modelica) + Python 컴포넌트/레벨별 존재 여부, 중복, 조립모델 정리 · 2026-07</div>
+
+<div class="legend">
+  <span><span class="dot" style="background:var(--ok)"></span> 존재·검증</span>
+  <span><span class="dot" style="background:var(--warn)"></span> 존재·미검증</span>
+  <span><span class="dot" style="background:var(--no)"></span> 없음/부적합</span>
+  <span><span class="dot" style="background:var(--dup)"></span> 중복</span>
+  <span><span class="badge b-air">공기측</span></span>
+  <span><span class="badge b-ref">냉매측</span></span>
+</div>
+
+<!-- ═══════════════ 1. 컴포넌트 매트릭스 ═══════════════ -->
+<h2>① 컴포넌트 × 레벨 매트릭스</h2>
+<div class="sub">각 셀 = OMC 모델명 / Python 파일. ✅검증 ⚠️미검증. 알맹이 모델이 정의된 파일도 표기.</div>
+
+<h3><span class="badge b-air">공기측</span> — 모두 <code>HPWDair.mo</code> 정의, Python은 <code>backend/components/</code></h3>
+<table class="matrix">
+<tr><th>컴포넌트</th><th>L1</th><th>L2</th><th>L3</th><th>Python GT</th><th>비고</th></tr>
+<tr><td>Fan (팬)</td>
+  <td><code>Fan_L1</code> <span class="ok">✅</span></td>
+  <td><code>Fan_L2</code> <span class="ok">✅</span></td>
+  <td><code>Fan_L3</code> <span class="ok">✅</span></td>
+  <td><code>fan_on.py</code> L1/L2/L3</td>
+  <td>9칸 GT검증 완료. L2 스크롤손실·정압 규약 반영</td></tr>
+<tr><td>Filter (필터)</td>
+  <td><code>Filter_L1</code> <span class="ok">✅</span></td>
+  <td><code>Filter_L2</code> <span class="ok">✅</span></td>
+  <td><code>Filter_L3</code> <span class="ok">✅</span></td>
+  <td><code>filter_on.py</code> L1/L2/L3</td>
+  <td>Ergun 표준. L3 메쉬 기준 L1/L2 fit</td></tr>
+<tr><td>Drum (드럼)</td>
+  <td><code>Drum_L1</code> <span class="ok">✅</span></td>
+  <td><code>Drum_L2</code> <span class="ok">✅</span></td>
+  <td><code>Drum_L3</code> <span class="ok">✅</span></td>
+  <td><code>drum_on.py</code> L1/L2/L3</td>
+  <td>L3 4경로 누설이 최대 fidelity 효과</td></tr>
+<tr><td>공기코일</td>
+  <td colspan="3"><code>EvapAir_L1</code> / <code>CondAir_L1</code> <span class="warn">L1만</span> — 고정온도(링 전용)</td>
+  <td class="no">— (냉매코일이 대체)</td>
+  <td>커플드에선 냉매 HX가 이 역할</td></tr>
+</table>
+<div class="note ok"><b>공기측 결론:</b> Fan/Filter/Drum 3×3 = 9칸 전부 OMC+Python 존재·검증 완료. 중복 없음. 견고함.</div>
+
+<h3><span class="badge b-ref">냉매측</span> — <code>CmpParts.mo</code>가 3급×4컴포넌트 wrapper, 알맹이는 여러 파일</h3>
+<table class="matrix">
+<tr><th>컴포넌트</th><th>L1 (알맹이 / 파일)</th><th>L2</th><th>L3</th><th>Python GT</th></tr>
+<tr><td>압축기</td>
+  <td><code>Comp_Theoretical</code><br><span class="file">HPWD.mo</span> <span class="ok">✅</span></td>
+  <td><code>Comp_Winandy</code><br><span class="file">HPWD.mo</span> <span class="ok">✅</span></td>
+  <td><code>Comp_Chamber</code><br><span class="file">HPWDon.mo</span> <span class="warn">⚠️</span></td>
+  <td>theoretical/winandy/chamber/ahri .py</td></tr>
+<tr><td>EEV</td>
+  <td><code>EEV_Orifice_ctrl</code><br><span class="file">Cycle.mo</span> <span class="ok">✅</span></td>
+  <td><code>EEV_MB</code><br><span class="file">EevMB.mo</span> <span class="ok">✅</span></td>
+  <td><code>EEV_On</code><br><span class="file">HPWDon.mo</span> <span class="warn">⚠️</span></td>
+  <td>off_design/moving_boundary/on_design .py</td></tr>
+<tr><td>응축기</td>
+  <td><code>Cond_UA_eq</code><br><span class="file">EvapUA.mo</span> <span class="ok">✅</span></td>
+  <td><code>CondenserSS</code><br><span class="file">CondMBe.mo</span> <span class="warn">⚠️</span></td>
+  <td><code>Cond_On_Dyn</code><br><span class="file">HPWDevap.mo</span> <span class="warn">⚠️</span></td>
+  <td>off/moving_boundary/on_design .py</td></tr>
+<tr><td>증발기</td>
+  <td><code>Evap_UA_eq</code><br><span class="file">EvapUA.mo</span> <span class="ok">✅</span></td>
+  <td><code>EvaporatorMBdyn</code><br><span class="file">EvapMBe.mo</span> <span class="warn">⚠️</span></td>
+  <td><code>Evap_On_Dyn</code><br><span class="file">HPWDevap.mo</span> <span class="warn">⚠️</span></td>
+  <td>off/moving_boundary/on_design .py</td></tr>
+</table>
+<div class="note warn"><b>냉매측 결론:</b> 4컴포넌트 × 3급 알맹이 모두 존재. 단, 공기측처럼 Python↔OMC 9칸 GT 1:1 대조는 <b>미완</b>(대부분 ⚠️). L1은 검증됨, L2/L3은 냉매 단독 사이클서 동작 확인 수준.</div>
+
+<!-- ═══════════════ 2. 중복 (핵심) ═══════════════ -->
+<h2><span class="dup">②</span> 중복 개발 — 발견된 것</h2>
+
+<div class="note dup">
+<b class="big dup">🚨 커플용 공기포트 HX가 8종 — 상당수 중복</b><br>
+이게 이번 이력 꼬임의 핵심. 냉매 HX에 공기를 붙이는 방식이 제각각 4번 시도됨:
+</div>
+<table>
+<tr><th>모델</th><th>파일</th><th>베이스</th><th>공기결합</th><th>상태</th></tr>
+<tr><td><code>Evap_coupled</code> / <code>Cond_coupled</code></td><td>Coupled.mo</td>
+  <td>BF 모델 (L1급)</td><td>AirPort</td><td><span class="ok">✅ 사이클 동작</span> (L1 커플드)</td></tr>
+<tr style="background:rgba(192,132,252,.06)"><td><code>EvaporatorMBdyn_cpl</code> / <code>CondenserSS_cpl</code></td><td>CoupledSEMI.mo</td>
+  <td>MBdyn / SS (L2급)</td><td>AirPort</td><td><span class="warn">⚠️ Cycle_SEMI_full서 사용, 미검증</span></td></tr>
+<tr style="background:rgba(248,113,113,.1)"><td><code>EvaporatorMB_cpl</code> / <code>CondenserMB_cpl</code></td><td>EvapMB/CondMB.mo</td>
+  <td>MB 단독검증용</td><td>AirPort</td><td><span class="no">❌ 오늘 신규 — 사이클 부적합</span></td></tr>
+<tr><td><code>Evap_On_Dyn</code> / <code>Cond_On_Dyn</code></td><td>HPWDevap.mo</td>
+  <td>동적 유한체적 (L3)</td><td>공기 변수(방정식결합)</td><td><span class="ok">✅ Cycle_MixHX서 동작</span></td></tr>
+</table>
+<div class="note no">
+<b>내가 오늘 만든 <code>EvaporatorMB_cpl</code>/<code>CondenserMB_cpl</code>은 삼중 낭비:</b>
+<ul>
+<li>① <code>EvaporatorMBdyn_cpl</code>이 <b>이미 존재</b>했는데 모르고 만듦</li>
+<li>② 베이스를 <b>MB 단독검증용</b>(algorithm+HelmholtzMedia record)으로 잘못 골라 사이클에 못 넣음 (OMC adjacency 실패)</li>
+<li>③ 사이클용 정답은 <code>Evap_On_Dyn</code>(순수 der 방정식)이었음</li>
+</ul>
+단독 커플 HX 검증(냉매+공기 경계)엔 유효하나, 폐루프엔 부적합 → <b>보존하되 사이클엔 미사용</b>.
+</div>
+
+<div class="note dup">
+<b>HX 3급 비교 harness 중복:</b> <code>HXCmp.mo</code>(81행) vs <code>CmpParts.mo</code>(148행)<br>
+둘 다 냉매 HX L1/L2/L3 wrapper. 감싸는 알맹이가 다름:
+<ul>
+<li><code>HXCmp</code>: <code>Evap_On</code>/<code>Cond_On</code> (정적 셀-march) + UA매칭 변형(<code>Cond_L2m</code>, <code>Evap_L1n</code>)</li>
+<li><code>CmpParts</code>: <code>Evap_On_Dyn</code>/<code>Cond_On_Dyn</code> (동적) — 이게 최신</li>
+</ul>
+→ HXCmp는 구버전 가능성. 정리 대상.
+</div>
+
+<div class="note dup">
+<b>SS(정상상태) HX 중복:</b> <code>CondMBe.mo</code>의 <code>CondenserSS</code>와 <code>CondenserSSwall</code>(벽 동특성 추가), <code>CycleMBe.mo</code>의 <code>EvaporatorSS</code> — MB 계열이 SS/MBdyn/MB로 여러 변형 존재. 어느 게 canonical인지 불명확.
+</div>
+
+<div class="note no">
+<b class="big no">🚨 패키지명 충돌 — <code>HPWDcycle</code>이 2개 파일에 동명 정의</b><br>
+<ul>
+<li><code>Cycle.mo</code> → <code>package HPWDcycle</code> ("L1 사이클": <code>Volume</code>, <code>EEV_Orifice_ctrl</code>)</li>
+<li><code>HPWDcycle.mo</code> → <code>package HPWDcycle</code> ("L3 사이클": <code>Volume_L3</code>, <code>Cycle_L3_*</code>)</li>
+</ul>
+둘 다 로드하면 나중 파일이 앞 파일을 <b>덮어씀</b> → <code>Volume_L3</code>(HPWDcycle.mo) 또는 <code>EEV_Orifice_ctrl</code>(Cycle.mo) 중 하나가 사라짐.
+<code>CmpCycle.mo</code>에도 "같은 패키지명이라 로컬 복제"한 흔적 有. <b>파일↔패키지 매핑이 깨진 상태</b> — 재출발 시 패키지 이름 정리 필수.
+</div>
+
+<div class="note no">
+<b>깊은 의존성 사슬:</b> <code>Cycle_MixHX_*</code> 로드에 R290Tab→HXCorr→HPWDair→HPWD→EvapUA→HPWDevap→<b>HPWDon</b>(finEffWet 등)→Cycle→HPWDcycle→Control→EevMB→CmpCycle 순 필요. 로드 순서 문서화 안 되어 실행 재현이 어려움.
+</div>
+
+<!-- ═══════════════ 3. 조립 모델 ═══════════════ -->
+<h2>③ 조립(사이클/시스템) 모델 전수</h2>
+
+<h3>공기 링 (공기 단독, 코일=고정온도) — <code>TestAir.mo</code></h3>
+<table>
+<tr><th>모델</th><th>구성</th><th>상태</th></tr>
+<tr><td><code>TestAirRingL1</code></td><td>Drum/Filter/Fan L1 + 필터 + 공기코일 L1</td><td><span class="ok">✅ 동작·검증</span></td></tr>
+<tr><td><code>AirRingL2</code></td><td>L2 전 컴포넌트 + 필터</td><td><span class="ok">✅ 동작·검증</span></td></tr>
+<tr><td><code>AirRingL3</code></td><td>L3 전 컴포넌트 + 필터</td><td><span class="ok">✅ 동작·검증</span></td></tr>
+</table>
+<div class="note ok">공기 3급 링 = 오늘 교란요인 7개 제거 후 공정비교 완료. 가장 신뢰도 높은 조립모델.</div>
+
+<h3>냉매 단독 사이클 — <code>HPWD.mo / Cycle.mo / HPWDcycle.mo / CmpCycle.mo / CycleMBe.mo</code></h3>
+<table>
+<tr><th>모델</th><th>파일</th><th>구성 / 용도</th><th>상태</th></tr>
+<tr><td><code>Cycle_L1</code>, <code>_L1_dyn/ramp/ramp_PI</code></td><td>HPWD/Cycle.mo</td><td>L1 냉매 사이클 변형들</td><td><span class="warn">⚠️</span></td></tr>
+<tr><td><code>Cycle_L3_*</code> (guess/steady/relax/<br>homotopy/coldstart/coldstart_dyn/_PI)</td><td>HPWDcycle.mo</td><td>L3 사이클 초기화 전략 7종<br>(수렴 문제 대응 이력)</td><td><span class="warn">⚠️ 다수</span></td></tr>
+<tr style="background:rgba(129,140,248,.08)"><td><code>Cycle_MixHX_L1comp</code></td><td>CmpCycle.mo</td><td>L3 HX + L1 압축기/EEV</td><td><span class="warn">⚠️ 정답경로</span></td></tr>
+<tr style="background:rgba(129,140,248,.08)"><td><code>Cycle_MixHX_L2comp</code></td><td>CmpCycle.mo</td><td>L3 HX + L2 압축기(Winandy)/EEV(MB)</td><td><span class="warn">⚠️ 정답경로</span></td></tr>
+<tr style="background:rgba(129,140,248,.08)"><td><code>Cycle_MixHX_L3comp</code></td><td>CmpCycle.mo</td><td>L3 HX + L3 압축기/EEV = 기준</td><td><span class="warn">⚠️ 정답경로</span></td></tr>
+<tr><td><code>CycleDyn</code>, <code>CycleDynL2</code>, <code>_PI</code>,<br><code>CycleDynWet</code>, <code>CycleSH</code>, <code>CycleFixedPc</code></td><td>CycleMBe.mo</td><td>MB HX 냉매 사이클 변형들</td><td><span class="warn">⚠️ 다수</span></td></tr>
+</table>
+<div class="note warn"><b>냉매 사이클이 과다:</b> L3 초기화 전략만 7종, MB 변형 6종, MixHX 3종. 수렴 씨름 흔적. <b>canonical 1개씩 선정 필요.</b> <code>Cycle_MixHX_*</code>가 "HX고정+압축기/EEV급변화" 구조로 가장 정리됨.</div>
+
+<h3>커플드 (냉매+공기 결합) — <code>Coupled.mo / CoupledSEMI.mo</code></h3>
+<table>
+<tr><th>모델</th><th>냉매HX</th><th>압축기/EEV</th><th>공기측</th><th>상태</th></tr>
+<tr><td><code>Cycle_coupled_open</code></td><td>BF(L1)</td><td>Theo/Orifice</td><td>prescribed 유량</td><td><span class="ok">✅ 동작</span></td></tr>
+<tr><td><code>Cycle_coupled_closed</code></td><td>BF(L1)</td><td>Theo/Orifice</td><td><span class="badge b-air">L1</span> 폐루프</td><td><span class="ok">✅ 동작</span></td></tr>
+<tr style="background:rgba(251,191,36,.06)"><td><code>Cycle_coupled_closed_L2air</code></td><td class="no">BF(L1)</td><td>Theo/Orifice</td><td><span class="badge b-air">L2</span> 폐루프</td><td><span class="warn">⚠️ 반쪽</span> 공기L2·냉매L1</td></tr>
+<tr style="background:rgba(251,191,36,.06)"><td><code>Cycle_coupled_closed_L3air</code></td><td class="no">BF(L1)</td><td>Theo/Orifice</td><td><span class="badge b-air">L3</span> 폐루프</td><td><span class="warn">⚠️ 반쪽</span> 공기L3·냉매L1</td></tr>
+<tr style="background:rgba(129,140,248,.08)"><td><code>Cycle_SEMI_full</code></td><td>MBdyn/SS_cpl(L2)</td><td>Winandy/MB(L2)</td><td>공기 컴포넌트 有</td><td><span class="warn">⚠️ 미검증</span> — L2 커플 근접</td></tr>
+<tr><td><code>Cycle_SEMI_open</code></td><td>MBdyn/SS_cpl</td><td>Winandy/MB</td><td>prescribed</td><td><span class="warn">⚠️</span></td></tr>
+</table>
+<div class="note no">
+<b>급 불일치가 핵심 문제:</b> <code>_L2air</code>/<code>_L3air</code>는 공기만 L2/L3이고 냉매 HX는 L1(BF). 진짜 급통일 커플드가 없음.<br>
+<b>가장 가까운 후보 = <code>Cycle_SEMI_full</code></b> (CoupledSEMI.mo): Comp_Winandy(L2)+EEV_MB(L2)+MBdyn/SS_cpl HX+공기. 미검증이나 L2 급통일에 근접.
+</div>
+
+<!-- ═══════════════ 4. 재출발 제안 ═══════════════ -->
+<h2>④ 재출발 — 무엇을 canonical로 쌓을까</h2>
+<div class="grid2">
+<div class="note">
+<b class="big">✅ 그대로 신뢰 (재사용)</b>
+<ul>
+<li><b>공기측 9칸</b> (Fan/Filter/Drum × L1/L2/L3) — OMC+Python 검증 완결</li>
+<li><b>공기 링 3급</b> (TestAirRingL1/AirRingL2/AirRingL3) — 공정비교 완료</li>
+<li><b>냉매 알맹이</b> CmpParts wrapper 12종 — 존재 확인</li>
+<li><b>Python GT</b> components/ 20개 + hx_sim vendor</li>
+</ul>
+</div>
+<div class="note warn">
+<b class="big">⚠️ 검증 필요 (미완)</b>
+<ul>
+<li>냉매측 Python↔OMC 9칸 GT 1:1 (공기측처럼)</li>
+<li><code>Cycle_MixHX_L1/L2/L3comp</code> 실동작 확인 (Volume_L3 로드)</li>
+<li><code>Cycle_SEMI_full</code> = L2 급통일 커플드 후보 검증</li>
+</ul>
+</div>
+</div>
+<div class="grid2">
+<div class="note no">
+<b class="big">❌ 정리/폐기 후보</b>
+<ul>
+<li><code>EvaporatorMB_cpl</code>/<code>CondenserMB_cpl</code> (오늘 신규, 사이클 부적합) — 단독검증만 보존</li>
+<li><code>HXCmp.mo</code> — CmpParts와 중복 (구버전 의심)</li>
+<li>L3 사이클 초기화 변형 7종 → 1~2개로</li>
+<li>CycleMBe 변형 6종 → canonical 선정</li>
+</ul>
+</div>
+<div class="note dup">
+<b class="big">🎯 커플드 급통일 정답 경로</b>
+<ul>
+<li>HX: <code>Evap_On_Dyn</code>/<code>Cond_On_Dyn</code> (der 방정식, 사이클 적합)</li>
+<li>또는 <code>Cycle_SEMI_full</code> 기반 확장</li>
+<li>압축기/EEV: CmpParts L1/L2/L3 그대로</li>
+<li>공기: 방정식결합 (<code>cond.T_air_in=evap.T_air_out</code>)</li>
+<li>N ramp로 콜드스타트 초기화</li>
+</ul>
+</div>
+</div>
+
+<div class="note" style="margin-top:24px;border-left-color:var(--ok)">
+<b>한 줄 정리:</b> 공기측은 완결(9칸+링). 냉매측은 알맹이 다 있으나 GT검증·canonical 정리 미완.
+커플드는 공기만 급변하는 반쪽 상태 + 커플HX 8종 난립. 재출발 시 <b>공기측 자산 위에, 냉매는 CmpParts wrapper + Evap_On_Dyn 커플로 급통일</b>하는 게 정공법.
+</div>
+
+</body>
+</html>
