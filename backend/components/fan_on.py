@@ -176,7 +176,8 @@ def _step_L1(input, params, state, dt):
 # L2 — 손실분해 Euler − Incidence − Friction (Modelica Fan_L2 동형)
 # ══════════════════════════════════════════════════════════════
 def _step_L2(input, params, state, dt):
-    """ΔP = Euler − incidence − friction. 상수효율 대신 유량의존 손실. SI."""
+    """ΔP = Euler − incidence − friction − scroll. 상수효율 대신 유량의존 손실. SI.
+    ⚠️ scroll(볼류트 덤프)은 시로코 지배 손실 — 없으면 L2가 L1보다 나쁨."""
     D2 = float(params.get('D2', 0.15))
     b2 = float(params.get('b2', 0.04))
     D1 = float(params.get('D1', 0.075))
@@ -186,6 +187,10 @@ def _step_L2(input, params, state, dt):
     beta1 = float(params.get('beta1', 35.0))
     f_inc = float(params.get('f_inc', 0.6))
     f_fric = float(params.get('f_fric', 0.8))
+    # 스크롤 덤프 손실계수: 볼류트가 회수 못하는 임펠러 출구 동압 비율.
+    #   문헌 통상 0.2~0.3. L3(fan-sim) dP_scroll/(0.5ρc2²)가 φ 전범위
+    #   0.225~0.269(평균 0.248)로 안정 → 상수 0.25 (반올림, 거짓정밀 회피).
+    k_scroll = float(params.get('k_scroll', 0.25))
     eta_mech = float(params.get('eta_mech', 0.95))
     N = float(params.get('N', 3000.0))
 
@@ -210,19 +215,22 @@ def _step_L2(input, params, state, dt):
     sigma = 1 - math.pi * math.sin(beta2_rad) / Z
     ctheta2 = sigma * U2 - cm2 / math.tan(beta2_rad)
     w2 = math.sqrt(cm2**2 + (U2 - ctheta2)**2)
+    c2 = math.sqrt(cm2**2 + ctheta2**2)      # 임펠러 출구 절대속도
 
     dp_euler = rho * U2 * ctheta2
     dp_inc = 0.5 * rho * f_inc * (U1 - cm1 / math.tan(beta1_rad))**2
     dp_fric = 0.5 * rho * f_fric * w2**2
-    dp = dp_euler - dp_inc - dp_fric
+    dp_scroll = k_scroll * 0.5 * rho * c2**2   # 볼류트 덤프 (지배 손실)
+    dp = dp_euler - dp_inc - dp_fric - dp_scroll
     eta_h = dp / dp_euler if dp_euler != 0 else 0.0
     W_sh = rho * V_dot * U2 * ctheta2 / eta_mech
 
     return {'outputs': {
         'dp': dp, 'dp_euler': dp_euler, 'dp_inc': dp_inc, 'dp_fric': dp_fric,
+        'dp_scroll': dp_scroll,
         'eta_h': eta_h, 'P_out': P_in + dp,
         'U2': U2, 'U1': U1, 'cm2': cm2, 'cm1': cm1, 'sigma': sigma,
-        'ctheta2': ctheta2, 'w2': w2,
+        'ctheta2': ctheta2, 'w2': w2, 'c2': c2,
         'V_dot': V_dot, 'm_dot_da': m_dot_da, 'rho': rho, 'W_shaft': W_sh,
         'fidelity': 'L2',
     }, 'newState': {}}

@@ -337,6 +337,11 @@ package HPWDair "HPWD air-side L1 (lumped, 비압축 + dry-air basis)"
     parameter Real beta1 = 35 "blade inlet angle (deg)";
     parameter Real f_inc = 0.6 "incidence loss coefficient";
     parameter Real f_fric = 0.8 "friction loss coefficient (C_f·L/D_h lumped)";
+    parameter Real k_scroll = 0.25
+      "스크롤(볼류트) 덤프 손실계수 — 임펠러 출구 동압 중 미회수 비율.
+       물리: 볼류트가 c2 동압을 정압으로 회수 못하는 몫. 문헌 통상 0.2~0.3.
+       L3(fan-sim) 대비 교정: L3의 dP_scroll/(0.5ρc2²)가 φ 전범위 0.225~0.269
+       (평균 0.248)로 안정 → 상수 0.25 채택. 반올림(거짓 정밀 회피).";
     parameter Real eta_mech = 0.95 "mechanical efficiency";
     parameter Real N = 3000 "rotational speed (rpm)";
 
@@ -347,6 +352,8 @@ package HPWDair "HPWD air-side L1 (lumped, 비압축 + dry-air basis)"
     Modelica.Units.SI.Velocity cm1 "inlet meridional velocity";
     Modelica.Units.SI.Velocity ctheta2 "outlet swirl velocity";
     Modelica.Units.SI.Velocity w2 "outlet relative velocity";
+    Modelica.Units.SI.Velocity c2 "absolute velocity at exit (스크롤 손실용)";
+    Modelica.Units.SI.Pressure dp_scroll "스크롤 덤프 손실";
     Real sigma "Stodola slip factor";
     Modelica.Units.SI.VolumeFlowRate V_dot "volumetric flow";
     Modelica.Units.SI.Density rho "moist-air density (p_ref)";
@@ -388,7 +395,12 @@ package HPWDair "HPWD air-side L1 (lumped, 비압축 + dry-air basis)"
     dp_euler = rho * U2 * ctheta2;
     dp_inc = 0.5 * rho * f_inc * (U1 - cm1 / tan(beta1_rad))^2;   // 설계유량서 0
     dp_fric = 0.5 * rho * f_fric * w2^2;                          // 통로 마찰 ∝ w2²
-    dp = dp_euler - dp_inc - dp_fric;
+    // ── 스크롤(볼류트) 덤프 손실 — 시로코 지배 손실 ──
+    //   L3 분해 결과 스크롤이 총손실의 ~70% (링점서 152.6/216.4 Pa).
+    //   이게 없으면 L2가 L1(일괄효율)보다 나빴음 → 추가로 단조성 회복.
+    c2 = sqrt(cm2^2 + ctheta2^2);          // 임펠러 출구 절대속도
+    dp_scroll = k_scroll * 0.5 * rho * c2^2;
+    dp = dp_euler - dp_inc - dp_fric - dp_scroll;
     eta_h = dp / dp_euler;
     W_sh = rho * V_dot * U2 * ctheta2 / eta_mech;
 
@@ -396,7 +408,8 @@ package HPWDair "HPWD air-side L1 (lumped, 비압축 + dry-air basis)"
 
     // ── stream: 손실열 자체발열 (forward a→b, Δh=손실/rho) ──
     port_a.h_tilde_outflow = inStream(port_b.h_tilde_outflow);
-    port_b.h_tilde_outflow = inStream(port_a.h_tilde_outflow) + (dp_inc + dp_fric) / rho;
+    port_b.h_tilde_outflow = inStream(port_a.h_tilde_outflow)
+        + (dp_inc + dp_fric + dp_scroll) / rho;   // 스크롤 손실도 열로
     port_a.W_outflow = inStream(port_b.W_outflow);
     port_b.W_outflow = inStream(port_a.W_outflow);
   end Fan_L2;
