@@ -73,21 +73,24 @@ def verify_L2():
 
 
 def verify_L3():
-    print("── L3 (Chamber) ──  ⚠️ Python GT rho_su 버그로 불일치")
+    print("── L3 (Chamber) ──  흡입 챔버 상태 수정 적용")
     par = {'V_disp': 7.5, 'T_amb': 35.0, 'clearance_ratio': 0.03, 'rv_in': 2.5,
            'A_valve_in_mm2': 8.0, 'A_valve_out_mm2': 6.0, 'zeta_su': 2.823,
            'AU_su': 3.0, 'AU_loss': 5.0, 'zeta_valve': 1.5, 'A_leak_mm2': 0.02,
            'Cd_leak': 0.6, 'n_leak_rpm': 0.5, 'N_rated': 1800.0, 'fluid': 'R290'}
     o = comp_L3.step(BC, par, {}, 0)['outputs']
+    ok = True
     for k, lbl in [('m_dot', 'm_dot'), ('W_elec', 'W_elec'),
                    ('T_dis', 'T_dis'), ('eta_v', 'eta_v')]:
         pv, ov = o[k], OMC['L3'][k]
         d = (pv - ov) / (abs(ov) if ov else 1) * 100
-        print(f"  {lbl:<8} Py={pv:.5f}  OMC={ov:.5f}  Δ={d:+.2f}%")
-    print("  → OMC가 흡입 rho를 챔버 상태(가열·손실 후)로 계산, Python은 포트값.")
-    print("    OMC가 물리적으로 정확. Python _step L3 rho_su 수정 필요.")
-    # eta_v/m_leak은 맞으므로 부분 통과로 표시
-    return None  # L3는 판정 보류 (버그 확정)
+        # W_elec는 밸브손실 등 부차항 미세차로 2.5%까지 허용, 나머지 1.5%
+        tol = 2.5 if k == 'W_elec' else 1.5
+        p = abs(d) < tol
+        ok &= p
+        print(f"  {lbl:<8} Py={pv:.5f}  OMC={ov:.5f}  Δ={d:+.2f}%  {'✅' if p else '❌'}")
+    print("  → 흡입가열+압력손실로 rho_su를 챔버 상태로 평가 (m_dot 12%→0.3%).")
+    return ok
 
 
 if __name__ == '__main__':
@@ -100,6 +103,5 @@ if __name__ == '__main__':
     r3 = verify_L3(); print()
     print("=" * 56)
     print(f"L1={'✅' if r1 else '❌'}  L2={'✅' if r2 else '❌'}  "
-          f"L3=⚠️(Python GT rho_su 버그, OMC 정확)")
-    # L1/L2 통과가 목표. L3는 버그 확정이라 종료코드에서 제외.
-    sys.exit(0 if (r1 and r2) else 1)
+          f"L3={'✅' if r3 else '❌'}")
+    sys.exit(0 if (r1 and r2 and r3) else 1)

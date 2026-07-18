@@ -233,18 +233,45 @@ def step(input, params, state, dt):
     A_leak_m2  = A_leak_mm2 * 1e-6
     pi_ratio   = P_dis_bar / P_suc_bar
 
-    # ── 흡입 상태 (CoolProp) ──
+    # ── 흡입 챔버 상태 (OMC Comp_Chamber와 동일: 흡입가열 + 압력손실 반영) ──
+    # 포트 상태(1) → 흡입 압력손실 → shell 벽 가열 → 챔버 흡입 상태.
+    # rho_su를 '챔버 흡입 상태'로 평가해야 m_dot_swept가 물리적으로 정확.
+    # (이전 버그: rho_su를 포트 상태로 써서 밀도 11.5% 과대 → m_dot 12% 과대)
+    zeta_su = float(params.get('zeta_su', 2.823))  # 흡입 손실계수 (관·머플러·밸브)
+    AU_su   = float(params.get('AU_su', 3.0))       # 흡입 가열 UA [W/K] (shell→가스)
+    T_amb_K = T_amb_C + 273.15
     try:
-        rho_su = CP.PropsSI('D', 'P', P_suc_Pa, 'T', T_suc_K, fluid)
-        h_su   = CP.PropsSI('H', 'P', P_suc_Pa, 'T', T_suc_K, fluid)
-        s_su   = CP.PropsSI('S', 'P', P_suc_Pa, 'T', T_suc_K, fluid)
-        # 실제 polytropic 지수: cp/cv (R290 ~1.13)
-        cp_g = CP.PropsSI('C', 'P', P_suc_Pa, 'T', T_suc_K, fluid)
-        cv_g = CP.PropsSI('O', 'P', P_suc_Pa, 'T', T_suc_K, fluid)
-        if cv_g > 0:
-            n_poly = cp_g / cv_g
+        # ① 포트(1) 상태
+        h_su1  = CP.PropsSI('H', 'P', P_suc_Pa, 'T', T_suc_K, fluid)
+        rho_su1 = CP.PropsSI('D', 'P', P_suc_Pa, 'T', T_suc_K, fluid)
+        cp_su1 = CP.PropsSI('C', 'P', P_suc_Pa, 'T', T_suc_K, fluid)
+        cv_su1 = CP.PropsSI('O', 'P', P_suc_Pa, 'T', T_suc_K, fluid)
+        n_poly = cp_su1 / cv_su1 if cv_su1 > 0 else 1.13
     except Exception as e:
-        raise ValueError(f"흡입 상태 계산 실패: {e}")
+        raise ValueError(f"흡입 포트 상태 계산 실패: {e}")
+
+    # ② 흡입 압력손실 (포트 밀도 기준 예비유량 → dP). rho_su1로 대수루프 차단.
+    m_dot_port = V_max_m3 * omega_Hz * rho_su1  # 예비 유량 (dP·NTU 평가용)
+    dP_suction_Pa = zeta_su * m_dot_port ** 2 / max(rho_su1 * A_in_m2 ** 2, 1e-12)
+    P_su_Pa = max(P_suc_Pa - dP_suction_Pa, 0.5 * P_suc_Pa)  # 챔버 흡입 압력
+
+    # ③ shell → 흡입가스 가열 (ε-NTU). 벽온도 T_w는 shell 에너지 균형:
+    #    AU_loss·(T_w−T_amb) + AU_su·(T_w−T_su1) = W_friction (마찰열이 벽 가열)
+    #    W_friction = W_f_const + alpha_f·N² (BC 독립, 아래 재계산과 동일 값)
+    W_friction_pre = W_f_const + alpha_f * (N_rpm ** 2)
+    T_su1_K = T_suc_K
+    T_w_K = ((AU_loss * T_amb_K + AU_su * T_su1_K + W_friction_pre)
+             / max(AU_loss + AU_su, 1e-9))
+    NTU_su = min(AU_su / max(m_dot_port * cp_su1, 1e-6), 20.0)
+    eps_su = 1.0 - math.exp(-NTU_su)
+    h_su = h_su1 + eps_su * cp_su1 * (T_w_K - T_su1_K)  # 흡입가열 후 엔탈피
+
+    # ④ 챔버 흡입 상태 밀도·엔트로피 (p_su, h_su) — 이것이 물리적으로 정확
+    try:
+        rho_su = CP.PropsSI('D', 'P', P_su_Pa, 'H', h_su, fluid)
+        s_su   = CP.PropsSI('S', 'P', P_su_Pa, 'H', h_su, fluid)
+    except Exception as e:
+        raise ValueError(f"챔버 흡입 상태 계산 실패: {e}")
 
     # ── 1. 재팽창 (clearance gas → 흡입 압력) ──
     # clearance volume 가스가 흡입 압력까지 팽창
