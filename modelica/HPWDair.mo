@@ -115,6 +115,10 @@ package HPWDair "HPWD air-side L1 (lumped, 비압축 + dry-air basis)"
       "true면 (T,W)를 start값에 고정 초기화";
     parameter Boolean steadyInit = true
       "fixedState=false 일 때 steady (der=0) 초기화";
+    parameter Real UA_amb = 0.0
+      "주위 열손실 UA (W/K). 기본 0 = 무영향(기존 모델 불변).
+       닫힌 커플드계(냉매+공기 모두 폐루프)의 열 배출구로 사용.";
+    parameter Modelica.Units.SI.Temperature T_amb = 298.15 "외기온 (K)";
 
     Modelica.Units.SI.Pressure p(start = MoistAir.p_ref);
     Modelica.Units.SI.Temperature T(
@@ -126,6 +130,7 @@ package HPWDair "HPWD air-side L1 (lumped, 비압축 + dry-air basis)"
 
     Modelica.Units.SI.Density rho_da;
     Modelica.Units.SI.Mass m_da;
+    Modelica.Units.SI.Power Q_amb "주위 손실 열류";
     Modelica.Units.SI.SpecificEnthalpy h_tilde;
 
   equation
@@ -149,9 +154,16 @@ package HPWDair "HPWD air-side L1 (lumped, 비압축 + dry-air basis)"
     m_da * der(W) =
         port_a.m_flow_da * (actualStream(port_a.W_outflow) - W)
       + port_b.m_flow_da * (actualStream(port_b.W_outflow) - W);
+    // 주위 열손실 (기본 0 = 무영향). 닫힌 커플드계의 열 배출구로 사용.
+    //   물리: 캐비닛/덕트가 실내로 잃는 열. 냉매루프+공기루프가 모두 닫힌
+    //   HPWD에선 압축기·팬 일이 갈 곳이 없어 이게 없으면 계가 무한 승온.
+    //   드럼(Drum_L1/L2)의 UA_amb 대신 볼륨에 두는 이유: Drum_L3엔 UA_amb가
+    //   없어 3급 비교 시 열침이 불균등해짐 → 볼륨에 두면 fidelity-중립.
+    Q_amb = UA_amb * (T - T_amb);
     m_da * der(h_tilde) =
         port_a.m_flow_da * (actualStream(port_a.h_tilde_outflow) - h_tilde)
-      + port_b.m_flow_da * (actualStream(port_b.h_tilde_outflow) - h_tilde);
+      + port_b.m_flow_da * (actualStream(port_b.h_tilde_outflow) - h_tilde)
+      - Q_amb;
 
   initial equation
     if fixedState then
