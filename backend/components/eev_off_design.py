@@ -110,9 +110,23 @@ def init_state(params):
 
 
 def _phi(op_frac, c0, c1, c2, c3):
-    """Φ(op) — normalized flow coefficient curve (manufacturer-fitted polynomial)"""
+    """Φ(op) — normalized flow coefficient. 근거불명 큐빅 폴리는 폐기.
+    (하위호환 위해 시그니처 유지하나 c0~c3 미사용. _phi_needle 사용 권장.)"""
+    # 옛 큐빅은 물리 근거 없음 → needle-cone 기본 geometry로 대체.
+    return _phi_needle(op_frac)
+
+
+def _phi_needle(op_frac, D_seat=1.0e-3, stroke_max=1.0e-3,
+                needle_angle_deg=30.0, A_orifice_m2=7.854e-7):
+    """needle-cone 물리 φ = A_throat/A_max = min(A_cone/A_max, 1).
+    A_cone = π·D_seat·(stroke_max·op)·sin(angle). OMC EEV_Orifice_ctrl과 동일 식.
+    L3 EEV_On의 needle-cone geometry에 정합 (근거불명 큐빅 교체, 커밋 e60737e 계열)."""
+    import math as _m
     op = max(0.0, min(1.0, op_frac))
-    return c0 + c1 * op + c2 * op ** 2 + c3 * op ** 3
+    phi_raw = (_m.pi * D_seat * (stroke_max * op)
+               * _m.sin(_m.radians(needle_angle_deg)) / A_orifice_m2)
+    # smooth min(phi_raw, 1) — OMC와 동일 (tanh 대신 sqrt 형태, 수치안정)
+    return 0.5 * (phi_raw + 1.0 - _m.sqrt((phi_raw - 1.0) ** 2 + 1e-6))
 
 
 def step(input, params, state, dt):
