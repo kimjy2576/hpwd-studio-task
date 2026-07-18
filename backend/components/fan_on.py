@@ -113,10 +113,13 @@ def step(input, params, state, dt):
     L1(Euler+Stodola 이론)/L2(손실분해 반경험)는 Modelica Fan_L1/L2와
     동일 SI 식. L3(Meanline 9손실)는 fan-sim 포팅(아래 _step_L3).
     ⚠️ L1/L2는 SI 단위(D2[m], N[rpm]), L3는 fan-sim 단위(mm/°) — 주의.
-    ⚠️ 부호 규약: Modelica 하네스 outlet=-m_fan → 내부 m_flow_da 음수.
-       L1/L2 검증 시 Python도 m_dot_da 음수로 넣어야 일치(cm2 부호가
-       ctheta2에 영향). 동일 BC 검증: dp L1 413.42 / L2 407.23 @ m=-0.05,
-       SI기하 D2=0.15/N=3000, 20°C/W=0.008.
+    ⚠️ 부호 규약: 정방향(+) 유량이 정상. 하네스 outlet의 BoundaryAir_mflow는
+       +m이 정방향(드럼은 inlet이 mflow라 -m이 정방향 — 반대).
+       구 하네스(CmpAir Fan_L1_pt/L2_pt, CmpAirParts)가 -m을 써서 역류
+       (Fan_L3 eta=0)였고, Python도 -로 맞춰 "일치"시킨 오류가 있었음 → 수정됨.
+       동일 BC 검증(통일기하 D2=0.175/b2=0.050/D1=0.120/b1=0.060/Z=36/
+       β2=145/β1=30, N=3000, 20°C/W=0.008, m=+0.05):
+         L1 dp 727.079 ↔ Mod 727.091,  L2 dp 842.905 ↔ Mod 842.919
     """
     fidelity = params.get('fidelity', 'L3')
     if fidelity == 'L1':

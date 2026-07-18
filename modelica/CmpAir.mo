@@ -15,7 +15,9 @@ package CmpAir "공기측 부품 충실도 비교 — 동일 BC에서 Fan(L1/L2)
   model Fan_L1_pt "L1 팬 @ 유량 경계 (dp 응답)"
     HPWDair.BoundaryAir_pTW inlet(p = 101325.0, T = 293.15, W = 0.008);
     HPWDair.Fan_L1 fan(N = 3000);
-    HPWDair.BoundaryAir_mflow outlet(m_flow_da = -m_set, T = 293.15, W = 0.008);
+    HPWDair.BoundaryAir_mflow outlet(m_flow_da = m_set, T = 293.15, W = 0.008);
+    // ⚠️ 부호 수정(-m_set→+m_set): outlet mflow는 +가 정방향.
+    //    -면 역류 → Fan_L3_pt처럼 eta=0/비물리. Fan_L3_pt는 기수정.
     parameter Real m_set = 0.05 "질량유량 [kg_da/s]";
   equation
     connect(inlet.port, fan.port_a);
@@ -25,7 +27,9 @@ package CmpAir "공기측 부품 충실도 비교 — 동일 BC에서 Fan(L1/L2)
   model Fan_L2_pt "L2 팬 @ 유량 경계 (dp 응답)"
     HPWDair.BoundaryAir_pTW inlet(p = 101325.0, T = 293.15, W = 0.008);
     HPWDair.Fan_L2 fan(N = 3000);
-    HPWDair.BoundaryAir_mflow outlet(m_flow_da = -m_set, T = 293.15, W = 0.008);
+    HPWDair.BoundaryAir_mflow outlet(m_flow_da = m_set, T = 293.15, W = 0.008);
+    // ⚠️ 부호 수정(-m_set→+m_set): outlet mflow는 +가 정방향.
+    //    -면 역류 → Fan_L3_pt처럼 eta=0/비물리. Fan_L3_pt는 기수정.
     parameter Real m_set = 0.05 "질량유량 [kg_da/s]";
   equation
     connect(inlet.port, fan.port_a);
