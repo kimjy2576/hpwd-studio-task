@@ -40,33 +40,44 @@ OMC 기준값 (참고):
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
 from components import condenser_off_design as cond_L1
+from components import condenser_moving_boundary as cond_L2
 
 BC = {'P_cond': 9.8762, 'h_in': 651.260, 'm_dot_ref': 0.00206593,
       'T_air_in': 14.474, 'RH_air_in': 99.0, 'V_air_CMM': 2.42}
 OMC = {'L1': 594.404, 'L2': 621.907, 'L3': 633.036}
+GEO = {'D_o': 5.0e-3, 'D_i': 4.6e-3, 'L_tube_total': 5.76, 'N_rows': 6.0,
+       'FPI': 22.0, 'A_o_face': 0.0135744, 'fluid': 'R290'}
 
 
-def verify_L1_with_omc_params():
+def verify_L1():
     """L1 기본 UA가 CmpParts 재피팅값으로 동기화됨 → 기본값으로 일치."""
-    par = {'input_mode': 'UA', 'fluid': 'R290'}  # 기본 UA=15.5/280/0.5 (동기화 완료)
-    o = cond_L1.step(BC, par, {}, 0)['outputs']
+    o = cond_L1.step(BC, {'input_mode': 'UA', 'fluid': 'R290'}, {}, 0)['outputs']
     q = o['Q_total']
     d = (q - OMC['L1']) / OMC['L1'] * 100
-    print(f"L1 (기본 UA, 동기화됨): Py Q={q:.1f}  OMC={OMC['L1']:.1f}  Δ={d:+.2f}%  "
-          f"{'✅' if abs(d) < 1 else '❌'}")
-    return abs(d) < 1
+    ok = abs(d) < 1
+    print(f"L1 (기본 UA, 동기화됨):  Py Q={q:.1f}  OMC={OMC['L1']:.1f}  Δ={d:+.2f}%  {'✅' if ok else '❌'}")
+    return ok
+
+
+def verify_L2():
+    """L2: microfin EF + deSH zone 순서 수정 완료 → 일치."""
+    o = cond_L2.step(BC, GEO, {}, 0)['outputs']
+    q = o['Q_total']
+    d = (q - OMC['L2']) / OMC['L2'] * 100
+    ok = abs(d) < 1
+    print(f"L2 (microfin+deSH 수정): Py Q={q:.1f}  OMC={OMC['L2']:.1f}  Δ={d:+.2f}%  {'✅' if ok else '❌'}")
+    print(f"     Q_deSH={o['Q_deSH']:.1f}(OMC 101) 2ph={o['Q_2ph']:.1f} — deSH zone 복구")
+    return ok
 
 
 if __name__ == '__main__':
     print("=" * 60)
-    print("응축기 3급 Python↔OMC 검증 (진행중)")
+    print("응축기 3급 Python↔OMC 검증")
     print(f"BC: P_c={BC['P_cond']}bar h_in={BC['h_in']} 공기 14.474°C/RH99%")
     print("=" * 60)
-    verify_L1_with_omc_params()
-    print()
-    print("L2 (CondenserSS): microfin EF 적용됨(alpha 일치). deSH zone 판정")
-    print("                  버그 잔존 → Q Δ-11%(수정 전 -15.5%). 별도 수정 대기.")
+    r1 = verify_L1()
+    r2 = verify_L2()
     print("L3 (Cond_On_Dyn): Q Δ-9.1% + 출력 키에 증발기 변수명 (조사 대기)")
     print("=" * 60)
-    print("→ 3급 모두 'Python GT 방치' 패턴. L1은 파라미터, L2는 microfin,")
-    print("  L3는 구조 의심. 압축기 L3·EEV L1과 동일 성격. 수정은 별도 진행.")
+    print(f"L1={'✅' if r1 else '❌'}  L2={'✅' if r2 else '❌'}  L3=⚠️(구조 조사 대기)")
+    sys.exit(0 if (r1 and r2) else 1)

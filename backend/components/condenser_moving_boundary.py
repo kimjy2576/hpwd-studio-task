@@ -522,12 +522,16 @@ def step(input, params, state, dt):
     zeta_SC = max(0.0, 1.0 - zeta_deSH - zeta_2ph)
     for _it in range(40):
         Ta_deSH, Ta_2ph, Ta_SC = _zone_air_temps(zeta_deSH, zeta_2ph, zeta_SC)
-        zeta_2ph_new = _bisect_zeta(lambda z: _Q_2ph(z, Ta_2ph), Q_2ph_demand, 1.0)
+        # 물리적 순서: 냉매 입구가 과열증기이므로 deSH 구간이 먼저 존재(길이 확보).
+        # deSH를 먼저 풀고, 2상은 남은 길이(1-zeta_deSH)만 사용. (이전 버그: 2상을
+        # z_max=1.0로 먼저 풀어 pinch 시 2상이 전체를 먹고 deSH=0이 됨 → deSH 열량 누락)
         if has_deSH:
             zeta_deSH_new = _bisect_zeta(lambda z: _Q_deSH(z, Ta_deSH),
-                                         Q_deSH_demand, max(0.0, 1.0 - zeta_2ph_new))
+                                         Q_deSH_demand, 1.0)
         else:
             zeta_deSH_new = 0.0
+        zeta_2ph_new = _bisect_zeta(lambda z: _Q_2ph(z, Ta_2ph),
+                                    Q_2ph_demand, max(0.0, 1.0 - zeta_deSH_new))
         zeta_SC_new = max(0.0, 1.0 - zeta_deSH_new - zeta_2ph_new)
         if (abs(zeta_deSH_new - zeta_deSH) + abs(zeta_2ph_new - zeta_2ph)
                 + abs(zeta_SC_new - zeta_SC)) < 1e-5:
