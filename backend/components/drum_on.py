@@ -209,14 +209,17 @@ def _step_L1(input, params, state, dt):
     m_flow_da = float(input.get('m_flow_da', input.get('m_dot_air', 0.035)))
 
     # well-mixed 공기 CV 대수해: W_out, T_out
-    #   Lewis: m_evap = h_m·A·(W_s - W_out), h_m = h_a/cp_da
-    #   질량: m_flow·(W_out - W_in) = m_evap
-    #   → W_out 대수 (W_s는 T_cl 함수, 고정)
+    #   Lewis: m_evap = h_m·A·(W_s - W_out)·g_dry, h_m = h_a/cp_da
+    #   g_dry = m_w/(m_w+eps_dry): 잔수 게이트 (Modelica Drum_L1 동형).
+    #     물 없으면 증발 정지 → m_w<0 방지(물리 타당성 가드).
+    #     fidelity 업그레이드 아님 — 항률만 유지, 건조점서 멈출 뿐.
+    #   질량: m_flow·(W_out - W_in) = m_evap → W_out 대수
+    eps_dry = float(params.get('eps_dry', 1e-3))
+    g_dry = m_w / (m_w + eps_dry)
     W_s = _ma_W_sat(T_cl)
     h_m = h_a / _MA_cp_da
-    # m_flow·(W_out-W_in) = h_m·A·(W_s-W_out)
-    # W_out·(m_flow + h_m·A) = m_flow·W_in + h_m·A·W_s
-    hmA = h_m * A_eff
+    # m_flow·(W_out-W_in) = g_dry·h_m·A·(W_s-W_out)
+    hmA = h_m * A_eff * g_dry
     W_out = (m_flow_da * W_in + hmA * W_s) / (m_flow_da + hmA)
     m_evap = hmA * (W_s - W_out)
 

@@ -817,6 +817,8 @@ package HPWDair "HPWD air-side L1 (lumped, 비압축 + dry-air basis)"
     parameter Real UA_amb = 0.0
       "cabinet 외기 열손실 UA (W/K); 0=단열(air 링 기본)";
     parameter Modelica.Units.SI.Temperature T_amb = 298.15 "외기온 (K)";
+    parameter Modelica.Units.SI.Mass eps_dry = 1e-3
+      "잔수 게이트 폭 (kg). →0이면 게이트 없음(원 거동), m_w<0 방지용";
 
     // ── states ──
     Modelica.Units.SI.Mass m_w(
@@ -826,6 +828,7 @@ package HPWDair "HPWD air-side L1 (lumped, 비압축 + dry-air basis)"
       start = Tcl0, fixed = true,
       stateSelect = StateSelect.prefer) "cloth temp (state)";
     Real X "moisture ratio (dry basis)";
+    Real g_dry "잔수 게이트 (0~1, 물리 타당성 가드)";
 
     // ── air-side (quasi-steady, well-mixed bulk = outlet) ──
     Modelica.Units.SI.MassFlowRate m_flow_da(start = 0.05)
@@ -858,9 +861,14 @@ package HPWDair "HPWD air-side L1 (lumped, 비압축 + dry-air basis)"
     T_in = MoistAir.T_from_h(h_in, W_in);
 
     // ── Lewis analogy + 표면포화 증발 (W_air = W_out) ──
+    //   g_dry: 잔수 게이트 (물 없으면 증발 정지). m_w<0 방지 = 물리 타당성 가드.
+    //   ⚠️ fidelity 업그레이드 아님 — L1은 여전히 항률만(감률 없음), 건조점서
+    //      멈출 뿐. Drum_L3 자유수 게이트와 동일 Michaelis-Menten 패턴(연속).
+    //   m_evap을 게이트 → 공기CV·der(m_w) 양쪽 반영 = 질량보존 유지.
     W_s = MoistAir.W_sat(T_cl);
     h_m = h_a / MoistAir.cp_da;
-    m_evap = h_m * A_eff * (W_s - W_out);
+    g_dry = m_w / (m_w + eps_dry);
+    m_evap = h_m * A_eff * (W_s - W_out) * g_dry;
 
     // ── 공기 CV (quasi-steady, well-mixed: T_air=T_out) ──
     m_flow_da * (W_out - W_in) = m_evap;
