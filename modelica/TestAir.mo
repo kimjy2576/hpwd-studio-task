@@ -90,9 +90,14 @@ model TestAirRingL1
   // ── R 컴포넌트 5개 ──
   HPWDair.Drum_L1 drum(
     m_cl_dry = 3.0, c_p_cl = 1500, A_eff = 10, h_a = 50,
-    A_drum = 0.15, K_drum = 30, X0 = 0.6, Tcl0 = 298.15);
+    A_drum = 0.15, K_drum = 30, X0 = 0.6, Tcl0 = 305.0,
+    UA_amb = 0.0, T_amb = 298.15);
+    // BC 통일: Tcl0=305.0, UA_amb=0 (3급 링 공정비교용).
+    // UA_amb=0인 이유: Drum_L3엔 외기손실 파라미터 자체가 없음.
   HPWDair.Filter_L1 filt(
-    A_face = 0.05, r_pleat = 1.0, theta_face = 0, K = 20);
+    A_face = 0.05, r_pleat = 1.0, theta_face = 0, K = 10.2698);
+    // K는 L3 메쉬(MPI15/d_w0.4mm/L0.6mm)를 링 운전점(u=2.28)서 fit
+    // → 3급이 같은 물리필터. L1은 운전점만 정확(고유속 정상운전용).
   HPWDair.Fan_L1 fan(
     D2 = 0.15, b2 = 0.04, Z = 40, beta2 = 150,
     eta_h = 0.78, eta_mech = 0.95, N = 3000);
@@ -133,10 +138,14 @@ model AirRingL2
   HPWDair.Drum_L2 drum(
     m_cl_dry = 3.0, c_p_cl = 1500, A_eff = 10, h_a = 50,
     A_drum = 0.15, K_drum = 30, X0 = 0.6, Tcl0 = 305.0,
-    UA_amb = 100.0, T_amb = 298.15);
+    UA_amb = 0.0, T_amb = 298.15);
+    // BC 통일: UA_amb 100→0 (3급 링 공정비교용). 기존 100은 L2 링
+    // 단독 설정이었으나 L1/L3와 달라 fidelity 차이를 가림.
   HPWDair.Filter_L2 filt(
     A_face = 0.05, r_pleat = 1.0, theta_face = 0,
-    a_visc = 5.0e4, b_inert = 17.0);
+    a_visc = 4.9186e5, b_inert = 5.5091);
+    // a·b는 L3 메쉬(MPI15/d_w0.4mm/L0.6mm) 곡선에 최소자승 fit
+    // → 3급이 같은 물리필터. L2는 전영역 L3 완벽재현(2항=Ergun 동형).
   HPWDair.Fan_L2 fan(
     D2 = 0.15, b2 = 0.04, Z = 40, beta2 = 150,
     eta_mech = 0.95, N = 3000);
