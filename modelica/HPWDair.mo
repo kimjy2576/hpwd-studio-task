@@ -272,6 +272,15 @@ package HPWDair "HPWD air-side L1 (lumped, 비압축 + dry-air basis)"
     parameter Real eta_h = 0.78 "hydraulic efficiency (시로코 ≈0.78)";
     parameter Real eta_mech = 0.95 "mechanical efficiency";
     parameter Real N = 3000 "rotational speed (rpm)";
+    parameter Modelica.Units.SI.Area A_exit = 0.008
+      "팬 토출 유효면적 (m²) — 출구 동압 산정용.
+       포트에는 정압 Ps = dp(전압) - 0.5ρ(V_dot/A_exit)² 를 실음.
+       이유: 링에서 팬은 플레넘(AirVolume, V~0)으로 토출 → 출구 동압이
+       급확대서 소산 → 플레넘이 보는 건 정압. Fan_L3(Ps 출력)와 규약 통일.
+       기본값: L3(fan-sim) 링 운전점(m~0.14) 유효 토출면적 0.00808 반올림.
+       ⚠️ L3는 볼류트를 유량에 맞춰 사이징(A_sc=max(기하,Q/(C2·0.5)))하는
+          fan-sim 설계룰 → 유량적응. L1/L2는 고정기하(실 하드웨어에 정직).
+          → 링 운전범위선 일치, 고유량 off-design선 벌어짐(모델링 차이).";
 
     Modelica.Units.SI.MassFlowRate m_flow_da(start = 0.05)
       "dry-air mass flow (a→b +)";
@@ -283,6 +292,8 @@ package HPWDair "HPWD air-side L1 (lumped, 비압축 + dry-air basis)"
     Modelica.Units.SI.Density rho "moist-air density (p_ref)";
     Modelica.Units.SI.Pressure dp_t "theoretical total pressure rise";
     Modelica.Units.SI.Pressure dp "static pressure rise";
+    Modelica.Units.SI.Pressure Ps "정압 상승 (포트 값 = dp - 출구동압)";
+    Modelica.Units.SI.Pressure Pdyn_exit "출구 동압";
     Modelica.Units.SI.Power W_sh "shaft power";
 
     Real W_op(unit="kg/kg") "inlet humidity ratio (upstream)";
@@ -314,7 +325,10 @@ package HPWDair "HPWD air-side L1 (lumped, 비압축 + dry-air basis)"
     W_sh = rho * V_dot * U2 * ctheta2 / eta_mech;
 
     // ── 압력상승 (fan이 dp를 더함) ──
-    port_b.p = port_a.p + dp;
+    // ── 정압 변환: 포트에는 정압(플레넘 기준). Fan_L3와 규약 통일 ──
+    Pdyn_exit = 0.5 * rho * (V_dot / A_exit)^2;
+    Ps = dp - Pdyn_exit;
+    port_b.p = port_a.p + Ps;
 
     // ── stream: 단열 pass-through (L1: 자체발열 무시) ──
     port_a.h_tilde_outflow = inStream(port_b.h_tilde_outflow);
@@ -344,6 +358,15 @@ package HPWDair "HPWD air-side L1 (lumped, 비압축 + dry-air basis)"
        (평균 0.248)로 안정 → 상수 0.25 채택. 반올림(거짓 정밀 회피).";
     parameter Real eta_mech = 0.95 "mechanical efficiency";
     parameter Real N = 3000 "rotational speed (rpm)";
+    parameter Modelica.Units.SI.Area A_exit = 0.008
+      "팬 토출 유효면적 (m²) — 출구 동압 산정용.
+       포트에는 정압 Ps = dp(전압) - 0.5ρ(V_dot/A_exit)² 를 실음.
+       이유: 링에서 팬은 플레넘(AirVolume, V~0)으로 토출 → 출구 동압이
+       급확대서 소산 → 플레넘이 보는 건 정압. Fan_L3(Ps 출력)와 규약 통일.
+       기본값: L3(fan-sim) 링 운전점(m~0.14) 유효 토출면적 0.00808 반올림.
+       ⚠️ L3는 볼류트를 유량에 맞춰 사이징(A_sc=max(기하,Q/(C2·0.5)))하는
+          fan-sim 설계룰 → 유량적응. L1/L2는 고정기하(실 하드웨어에 정직).
+          → 링 운전범위선 일치, 고유량 off-design선 벌어짐(모델링 차이).";
 
     Modelica.Units.SI.MassFlowRate m_flow_da(start = 0.05) "dry-air mass flow (a→b +)";
     Modelica.Units.SI.Velocity U2 "blade tip speed";
@@ -361,6 +384,8 @@ package HPWDair "HPWD air-side L1 (lumped, 비압축 + dry-air basis)"
     Modelica.Units.SI.Pressure dp_inc "incidence (shock) loss";
     Modelica.Units.SI.Pressure dp_fric "friction loss";
     Modelica.Units.SI.Pressure dp "net static pressure rise";
+    Modelica.Units.SI.Pressure Ps "정압 상승 (포트 값 = dp - 출구동압)";
+    Modelica.Units.SI.Pressure Pdyn_exit "출구 동압";
     Real eta_h "hydraulic efficiency (계산값 dp/dp_euler, 유량의존)";
     Modelica.Units.SI.Power W_sh "shaft power";
 
@@ -404,7 +429,10 @@ package HPWDair "HPWD air-side L1 (lumped, 비압축 + dry-air basis)"
     eta_h = dp / dp_euler;
     W_sh = rho * V_dot * U2 * ctheta2 / eta_mech;
 
-    port_b.p = port_a.p + dp;
+    // ── 정압 변환: 포트에는 정압(플레넘 기준). Fan_L3와 규약 통일 ──
+    Pdyn_exit = 0.5 * rho * (V_dot / A_exit)^2;
+    Ps = dp - Pdyn_exit;
+    port_b.p = port_a.p + Ps;
 
     // ── stream: 손실열 자체발열 (forward a→b, Δh=손실/rho) ──
     port_a.h_tilde_outflow = inStream(port_b.h_tilde_outflow);

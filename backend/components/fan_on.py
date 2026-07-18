@@ -142,6 +142,10 @@ def _step_L1(input, params, state, dt):
     eta_h = float(params.get('eta_h', 0.78))
     eta_mech = float(params.get('eta_mech', 0.95))
     N = float(params.get('N', 3000.0))       # rpm
+    # 팬 토출 유효면적 — 포트에 정압 Ps=dp-0.5ρ(V/A_exit)² 를 싣기 위함.
+    #   링에서 팬은 플레넘(V~0)으로 토출 → 출구 동압 소산 → 정압이 포트값.
+    #   Fan_L3(Ps 출력)와 규약 통일. 기본값=L3 링 운전점 유효면적 0.00808 반올림.
+    A_exit = float(params.get('A_exit', 0.008))
 
     T_in = float(input.get('T_in', 20.0))
     omega = float(input.get('omega', 0.008))
@@ -161,11 +165,14 @@ def _step_L1(input, params, state, dt):
     sigma = 1 - math.pi * math.sin(beta2_rad) / Z
     ctheta2 = sigma * U2 - cm2 / math.tan(beta2_rad)
     dp_t = rho * U2 * ctheta2
-    dp = eta_h * dp_t
+    dp = eta_h * dp_t                          # 전압 상승
+    Pdyn_exit = 0.5 * rho * (V_dot / A_exit)**2
+    Ps = dp - Pdyn_exit                        # 정압 (포트 값)
     W_sh = rho * V_dot * U2 * ctheta2 / eta_mech
 
     return {'outputs': {
-        'dp': dp, 'dp_t': dp_t, 'P_out': P_in + dp,
+        'dp': dp, 'dp_t': dp_t, 'Ps': Ps, 'Pdyn_exit': Pdyn_exit,
+        'P_out': P_in + Ps,
         'U2': U2, 'cm2': cm2, 'sigma': sigma, 'ctheta2': ctheta2,
         'V_dot': V_dot, 'm_dot_da': m_dot_da, 'rho': rho, 'W_shaft': W_sh,
         'fidelity': 'L1',
@@ -193,6 +200,7 @@ def _step_L2(input, params, state, dt):
     k_scroll = float(params.get('k_scroll', 0.25))
     eta_mech = float(params.get('eta_mech', 0.95))
     N = float(params.get('N', 3000.0))
+    A_exit = float(params.get('A_exit', 0.008))   # 토출 유효면적 (정압 변환용)
 
     T_in = float(input.get('T_in', 20.0))
     omega = float(input.get('omega', 0.008))
@@ -221,14 +229,16 @@ def _step_L2(input, params, state, dt):
     dp_inc = 0.5 * rho * f_inc * (U1 - cm1 / math.tan(beta1_rad))**2
     dp_fric = 0.5 * rho * f_fric * w2**2
     dp_scroll = k_scroll * 0.5 * rho * c2**2   # 볼류트 덤프 (지배 손실)
-    dp = dp_euler - dp_inc - dp_fric - dp_scroll
+    dp = dp_euler - dp_inc - dp_fric - dp_scroll   # 전압 상승
+    Pdyn_exit = 0.5 * rho * (V_dot / A_exit)**2
+    Ps = dp - Pdyn_exit                            # 정압 (포트 값)
     eta_h = dp / dp_euler if dp_euler != 0 else 0.0
     W_sh = rho * V_dot * U2 * ctheta2 / eta_mech
 
     return {'outputs': {
         'dp': dp, 'dp_euler': dp_euler, 'dp_inc': dp_inc, 'dp_fric': dp_fric,
-        'dp_scroll': dp_scroll,
-        'eta_h': eta_h, 'P_out': P_in + dp,
+        'dp_scroll': dp_scroll, 'Ps': Ps, 'Pdyn_exit': Pdyn_exit,
+        'eta_h': eta_h, 'P_out': P_in + Ps,
         'U2': U2, 'U1': U1, 'cm2': cm2, 'cm1': cm1, 'sigma': sigma,
         'ctheta2': ctheta2, 'w2': w2, 'c2': c2,
         'V_dot': V_dot, 'm_dot_da': m_dot_da, 'rho': rho, 'W_shaft': W_sh,
