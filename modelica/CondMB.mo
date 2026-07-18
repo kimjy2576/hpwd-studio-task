@@ -437,6 +437,141 @@ package CondMB
     M_holdup := M_deSH + M2_l + M_SC;
   end CondenserMB;
 
+  model CondenserMB_cpl
+    "응축기 MB L2 커플드 — CondenserMB(냉매 단독 검증용)의 공기 포트 개조판.
+     원본은 공기조건이 파라미터였으나 AirPort air_a/air_b로 받아 공기 폐루프와 결합.
+     냉매측 MB 물리는 원본과 동일(condenserMB 함수 그대로). 응축기는 가열·제습없음
+     → 출구 W = 입구 W (응축기서 수분 응축 안 함, RH만 하강). L2 커플드용."
+    package M = HelmholtzMedia.HelmholtzFluids.Propane;
+    HPWD.RefPort port_a "입구 (과열증기)";
+    HPWD.RefPort port_b "출구 (과냉액)";
+    HPWDair.AirPort air_a "공기 입구 (응축기 상류)";
+    HPWDair.AirPort air_b "공기 출구 (가열 후)";
+    parameter Real D_o = 7e-3, D_i = 6.5e-3, L_tube_total = 10, N_tubes = 24;
+    parameter Integer N_rows = 2;
+    parameter Real n_circuits = 2, P_t = 25e-3, P_l = 22e-3, t_fin = 0.12e-3;
+    parameter Real FPI = 12, k_fin = 200, A_o_face = 0.05;
+    parameter Real htc_corr_cond = 1, htc_corr_SP = 1, htc_corr_air = 1, dP_ref = 0.03;
+    parameter Boolean flow_counter = true;
+    // ── 공기 조건 (AirPort 유래; 개조판) ──
+    Modelica.Units.SI.Temperature T_air_in(start = 308.15) "포트서 역산한 공기 입구온도";
+    Real RH_in(start = 0.50) "포트 W서 역산한 상대습도 (0~1)";
+    Real V_air_CMM(start = 2.5) "포트 유량서 산정한 체적유량 (m³/min)";
+    Real W_air_in(start = 0.018) "공기 입구 습도비 (포트)";
+    Real h_air_in(start = 9.0e4) "공기 입구 엔탈피 (포트)";
+    Real m_flow_da_air(start = 0.05) "건공기 질량유량 (포트, kg/s)";
+    Real rho_da_air(start = 1.1) "건공기 밀도";
+    Real Q_total, Q_deSH, Q_2ph, Q_SC "[W]";
+    Real T_ref_out_C, SC_out, quality_out, T_cond_C;
+    Real T_air_out_C, RH_air_out;
+    Real zeta_deSH, zeta_2ph, zeta_SC;
+    Real alpha_2ph, alpha_deSH, alpha_SC, alpha_air, eta_fin;
+    Real M_holdup "[kg]";
+    Real m_dot, P_cond, h_in, h_ref_out;
+  protected
+    M.ThermodynamicState st_l, st_v, st_in, st_lq, st_v5, st_l5, st_out, st_deSHavg, st_SCavg, st_cpv;
+    Real Tcond_K, h_l, h_v, rho_l, rho_v, mu_l, k_l, Pr_l, sig, Pcrit;
+    Real Trefin_K, cpv_mean, cpl_sat, mu_v5, k_v5, Pr_v5, mu_l5, k_l5, Pr_l5;
+    Real Tcpv_K;
+    Real Qt_l, Qd_l, Q2_l, Qs_l, href_l, Pout_l, qual_l, zd_l, z2_l, zs_l, Taout_l, RHout_l;
+    Real a2_l, adeSH_l, aSC_l, aair_l, etaf_l, M2_l;
+    Real rho_deSH, rho_SC, M_deSH, M_SC, V_internal;
+  equation
+    // ══ 공기 포트 → 내부 (개조 핵심, EvaporatorMB_cpl과 동형) ══
+    m_flow_da_air = air_a.m_flow_da;
+    air_a.m_flow_da + air_b.m_flow_da = 0;
+    W_air_in = inStream(air_a.W_outflow);
+    h_air_in = inStream(air_a.h_tilde_outflow);
+    T_air_in = HPWDair.MoistAir.T_from_h(h_air_in, W_air_in);
+    RH_in = min(1.0, max(0.0,
+      (W_air_in*HPWDair.MoistAir.p_ref/(HPWDair.MoistAir.eps + W_air_in))
+      / HPWDair.MoistAir.p_vs(T_air_in)));
+    rho_da_air = HPWDair.MoistAir.rho_da_fn(T_air_in, W_air_in);
+    V_air_CMM = abs(m_flow_da_air)/rho_da_air*60.0;   // 역류 보호(sqrt 음수 방지)
+    m_dot = port_a.m_flow;
+    P_cond = port_a.p;
+    h_in = inStream(port_a.h_outflow);
+    port_a.m_flow + port_b.m_flow = 0;
+    port_b.p = P_cond*(1.0 - dP_ref);
+    port_b.h_outflow = h_ref_out;
+    port_a.h_outflow = inStream(port_b.h_outflow);
+  algorithm
+    Tcond_K := M.saturationTemperature(P_cond);
+    h_l := M.bubbleEnthalpy(M.setSat_p(P_cond));
+    h_v := M.dewEnthalpy(M.setSat_p(P_cond));
+    st_l := M.setState_px(P_cond, 0);
+    st_v := M.setState_px(P_cond, 1);
+    rho_l := st_l.d; rho_v := st_v.d;
+    mu_l := M.dynamicViscosity(st_l);
+    st_lq := M.setState_pT(P_cond, Tcond_K - 0.1);
+    k_l := M.thermalConductivity(st_lq);
+    Pr_l := M.specificHeatCapacityCp(st_lq)*mu_l/k_l;
+    sig := M.surfaceTension(M.setSat_p(P_cond));
+    Pcrit := M.fluidConstants[1].criticalPressure;
+    cpl_sat := M.specificHeatCapacityCp(st_lq);
+    // 입구 냉매온도 (과열이면 SH온도)
+    st_in := M.setState_ph(P_cond, h_in);
+    Trefin_K := M.temperature(st_in);
+    // deSH 평균온도 cp_v (no deSH면 T_cond+0.5로 특이점 회피)
+    Tcpv_K := if Trefin_K > Tcond_K + 0.2 then 0.5*(Trefin_K + Tcond_K) else Tcond_K + 0.5;
+    st_cpv := M.setState_pT(P_cond, Tcpv_K);
+    cpv_mean := M.specificHeatCapacityCp(st_cpv);
+    // deSH Gnielinski 물성 @ T_cond+5
+    st_v5 := M.setState_pT(P_cond, Tcond_K + 5);
+    mu_v5 := M.dynamicViscosity(st_v5); k_v5 := M.thermalConductivity(st_v5);
+    Pr_v5 := M.specificHeatCapacityCp(st_v5)*mu_v5/k_v5;
+    // SC Gnielinski 물성 @ T_cond-5
+    st_l5 := M.setState_pT(P_cond, Tcond_K - 5);
+    mu_l5 := M.dynamicViscosity(st_l5); k_l5 := M.thermalConductivity(st_l5);
+    Pr_l5 := M.specificHeatCapacityCp(st_l5)*mu_l5/k_l5;
+    // MB 계산
+    (Qt_l, Qd_l, Q2_l, Qs_l, href_l, Pout_l, qual_l, zd_l, z2_l, zs_l, Taout_l, RHout_l,
+     a2_l, adeSH_l, aSC_l, aair_l, etaf_l, M2_l)
+     := condenserMB(
+        D_o, D_i, L_tube_total, N_tubes, N_rows, n_circuits, P_t, P_l, t_fin, FPI, k_fin, A_o_face,
+        htc_corr_cond, htc_corr_SP, htc_corr_air, dP_ref, flow_counter,
+        P_cond/1e5, h_in/1000.0, m_dot, T_air_in - 273.15, RH_in*100.0, V_air_CMM,
+        Tcond_K, h_l, h_v, Trefin_K, rho_l, rho_v, mu_l, k_l, Pr_l, sig, Pcrit,
+        cpv_mean, cpl_sat, mu_v5, k_v5, Pr_v5, mu_l5, k_l5, Pr_l5);
+    Q_total := Qt_l; Q_deSH := Qd_l; Q_2ph := Q2_l; Q_SC := Qs_l;
+    h_ref_out := href_l; quality_out := qual_l;
+    zeta_deSH := zd_l; zeta_2ph := z2_l; zeta_SC := zs_l;
+    T_air_out_C := Taout_l; RH_air_out := RHout_l;
+    alpha_2ph := a2_l; alpha_deSH := adeSH_l; alpha_SC := aSC_l; alpha_air := aair_l; eta_fin := etaf_l;
+    T_cond_C := Tcond_K - 273.15;
+    // 출구상태·SC·holdup (결과의존 → model 파생; T_ref_out는 Python처럼 P_cond서 평가)
+    st_out := M.setState_ph(P_cond, h_ref_out);
+    T_ref_out_C := M.temperature(st_out) - 273.15;
+    SC_out := max(0.0, T_cond_C - T_ref_out_C);
+    V_internal := 3.141592653589793*D_i^2/4.0*L_tube_total;
+    // M_deSH (과열 vapor @ 0.5(T_ref_in+T_cond))
+    if zeta_deSH > 1e-6 then
+      st_deSHavg := M.setState_pT(P_cond, 0.5*(Trefin_K + Tcond_K));
+      rho_deSH := st_deSHavg.d;
+      M_deSH := rho_deSH*(zeta_deSH*V_internal);
+    else
+      M_deSH := 0.0;
+    end if;
+    // M_SC (과냉 liquid @ 0.5(T_cond+T_ref_out))
+    if zeta_SC > 1e-6 then
+      st_SCavg := M.setState_pT(P_cond, 0.5*(Tcond_K + (T_ref_out_C + 273.15)));
+      rho_SC := st_SCavg.d;
+      M_SC := rho_SC*(zeta_SC*V_internal);
+    else
+      M_SC := 0.0;
+    end if;
+    M_holdup := M_deSH + M2_l + M_SC;
+  equation
+    // ══ 내부 → 공기 포트 (개조 핵심) ══
+    //   응축기는 가열·제습없음 → 출구 W = 입구 W (수분 응축 안 함).
+    //   함수 출력 Taout_l(°C)만 온도로, W는 입구값 유지.
+    air_a.h_tilde_outflow = HPWDair.MoistAir.h_da_fn(Taout_l + 273.15, W_air_in);
+    air_b.h_tilde_outflow = HPWDair.MoistAir.h_da_fn(Taout_l + 273.15, W_air_in);
+    air_a.W_outflow = W_air_in;
+    air_b.W_outflow = W_air_in;
+    air_b.p = air_a.p;   // 응축기 공기측 ΔP 무시(원본 함수가 별도 산출 안 함)
+  end CondenserMB_cpl;
+
   model CondenserMB_test "FlowSource → 응축기MB → Sink"
     CondMB.CondenserMB cond;
     HPWDhx.FlowSource src(p = 17e5, h = 620e3, m_flow_set = 0.012);
