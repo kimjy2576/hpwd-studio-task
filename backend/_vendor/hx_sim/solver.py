@@ -1004,9 +1004,11 @@ class HXSolver:
         inp = self.inp
         mu = self.air.mu_air(T_air, inp.P_atm)
         Pr = self.air.Pr_air(T_air, inp.P_atm)
-        # 진영님 audit: hardcoded 1006 → CoolProp cp_air at T_air (dry air W=0 가정,
-        # j-factor 기반 h_o = j × G × cp / Pr^(2/3) 식에서 cp 사용)
-        cp = self.air.cp_air(T_air, 0.0, inp.P_atm)
+        # 진영님 audit: hardcoded 1006 → CoolProp cp_air at T_air.
+        # 습공기 cp (RH 반영) — 실제 습한 공기(예: 응축기 RH99%)의 cp는 습도
+        # 의존. 기존 W=0(건공기)은 근사. W_in으로 습공기 cp 사용해 OMC와 정합.
+        _W_ho = self.air.W_from_TRH(T_air, inp.RH_in, inp.P_atm)
+        cp = self.air.cp_air(T_air, _W_ho, inp.P_atm)
 
         corr_id = self.corr["air_j"]
 

@@ -94,6 +94,12 @@ def step(input, params, state, dt):
     # params는 dict (frontend payload). 변형해도 무방하지만 안전을 위해 copy.
     p = dict(params) if params else {}
     p.setdefault('mode', 'cond')
+    # 응축기 실제 형상 (CondMBe.mo 기준): N_rows=6, N_tubes=24, FPI=22.
+    # wrapper 기본이 증발기 형상(N_rows=4, FPI=20)이므로 응축기값으로 오버라이드.
+    # 이를 통해 h_o가 실제 응축기 형상·유동에서 산출됨 (OMC와 정합).
+    p.setdefault('N_rows', 6)
+    p.setdefault('N_tubes_per_row', 4)
+    p.setdefault('FPI', 22.0)
     # P_cond(노출 변수명) → P_evap(내부 solver 키) 매핑.
     # modelDescription은 P_cond으로 노출하나, 공유 evap solver는 P_evap 키를 읽음.
     inp = dict(input) if input else {}
