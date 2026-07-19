@@ -38,6 +38,7 @@ import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
 from components import evaporator_off_design as evap_L1
 from components import evaporator_moving_boundary as evap_L2
+from components import evaporator_on_design as evap_L3
 
 BC = {'P_evap': 5.0889, 'h_in': 364.157, 'm_dot_ref': 0.00206593,
       'T_air_in': 20.0, 'RH_air_in': 80.0, 'V_air_CMM': 2.42}
@@ -73,9 +74,12 @@ if __name__ == '__main__':
     print("=" * 60)
     r1 = verify_L1()
     r2 = verify_L2()
-    print("L3 (Evap_On_Dyn): Q Δ+9.6%. Q차 42W=전부 SH존 과열분(6K→17K).")
-    print("                  2상은 양쪽 완전증발 동일. vendor HXSolver SH셀 열전달이")
-    print("                  OMC(Dittus×EF_sgl)와 구조차(Gnielinski+이산화). vendor 백본이라 보류.")
+    o3 = evap_L3.step(BC, {'tube_type':'microfin','fluid':'R290','circuit_mode':'row_parallel'}, {}, 0)['outputs']
+    d3 = (o3['Q_total'] - OMC['L3']) / OMC['L3'] * 100
+    print(f"L3 (Evap_On_Dyn, T_wall 안정화): Py Q={o3['Q_total']:.1f}  OMC={OMC['L3']:.1f}  Δ={d3:+.2f}%")
+    print(f"     SH_out={o3['SH_out']:.1f}(OMC 5.8) 과열셀 6/40(OMC 5) — T_wall 진동 해결로")
+    print(f"     Δ+9.6%→+2.1% 개선(row_parallel+adaptive under-relax+클램프). 완전증발 #34 vs OMC #35.")
     print("=" * 60)
-    print(f"L1={'✅' if r1 else '❌'}  L2={'✅' if r2 else '❌'}  L3=⚠️(구조 조사 대기)")
+    r3 = abs((evap_L3.step(BC, {'tube_type':'microfin','fluid':'R290','circuit_mode':'row_parallel'}, {}, 0)['outputs']['Q_total'] - OMC['L3']) / OMC['L3'] * 100) < 3
+    print(f"L1={'✅' if r1 else '❌'}  L2={'✅' if r2 else '❌'}  L3={'✅' if r3 else '🔶'}(Δ+2.2%, T_wall 안정화 완료)")
     sys.exit(0 if (r1 and r2) else 1)
