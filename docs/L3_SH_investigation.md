@@ -183,3 +183,47 @@ seg/row serpentine 방향(pathSeg vs pass_idx%2)도 동일.
 - 확실: 공기 그리드 차원이 다름(OMC 2D [row,seg] vs Python 3D [col,seg,row]).
 - 미확증: 위 구조차 → 과열분포차의 정량 인과. 추가 셀추적 필요.
 - 이번 조사서 초기 오진 다수 정정(흐름정렬/물성/dryout 등 모두 동등 판명).
+
+---
+
+## 부록 4: 진짜 근본원인 발견 — dryout 셀 T_wall 수렴 불안정
+
+부록 1~3의 후보(회로/공기그리드/dryout임계값)를 실험으로 모두 배제한 뒤,
+셀별 Q 추적으로 진짜 원인 발견.
+
+### 공기 그리드 차원은 원인 아님 (실험으로 배제)
+vendor solver에 column 공기 병합(OMC 2D 모사) 실험 삽입 → SH 변화 없음
+(13.9K 동일). row_parallel서 모든 column이 대칭이라 병합 무의미.
+→ 공기 그리드 차원(2D vs 3D)은 과열분포 원인 아님 확정.
+
+### 진짜 원인: T_wall 반복 진동 (dryout 셀)
+셀별 Q 추적: 냉매 입구 2상 Q는 OMC와 일치(9.3W). 그러나 dryout 구간
+(x>0.87, h_i=348) 일부 셀에서 Q가 튐 (#18 Q=3.74, #19 Q=6.28 vs 정상 1.8W).
+해당 셀 T_wall 추적 → outer iteration마다 폭주/정상 진동:
+  iter A: Q=1.84 T_w=17.6 is_wet=False
+  iter B: Q=6.94 T_w=45.7(!) is_wet=False Q_lat=3.78(dry인데 잠열!)
+  iter C: Q=1.67 T_w=16.1 is_wet=True
+T_w=45.7°C는 비물리(냉매 2.3°C, 공기 18.3°C 사이 벽이 46°C 불가).
+
+### 메커니즘: wet/dry 순환 + dryout R_i 증폭
+_solve_segment T_wall 갱신: T_w_new = T_ref_eff + Q_total·R_i (evap).
+악순환:
+  1. is_wet = (T_w < T_dp) — T_w에 의존
+  2. wet이면 Q_total = eta_o·h_o·A_o/cp_a·(h_air − h_s_wall(T_w)) — T_w에 의존
+  3. T_w = T_sat + Q_total·R_i — Q에 의존, dryout서 R_i=8.27(h_i=348 낮아 큼)
+  → T_w 상승 시 is_wet 뒤집히고 h_s_wall 급변 → Q 급변 → R_i 증폭으로 T_w 폭주
+  → under-relaxation(alpha)이 못 잡는 진동. 일부 셀 Q 과대 → 냉매 조기 완전증발
+  → 과열 셀 38% (vs OMC 12.5%) → SH 13.9K (vs 5.8K).
+
+### OMC엔 왜 없나
+OMC는 T_w를 전역 DAE(der(T_w))로 음함수 풀이 → 셀간 연립으로 안정.
+Python vendor는 셀별 명시적 T_wall 반복(forward) → dryout 고R_i서 불안정.
+= 수치해법 구조 차이(연립 음함수 vs 셀별 명시반복)가 근본.
+
+### 결론 (최종)
+L3 과열 과대의 진짜 원인 = vendor HXSolver의 dryout 셀 T_wall 명시반복이
+수렴 불안정(wet/dry 순환 × 고R_i 증폭)하여 일부 셀 Q를 과대평가.
+회로·공기그리드·물성·dryout임계값·h_i는 전부 무관(모두 배제됨).
+→ vendor 수정 시: T_wall 반복에 (a)강한 under-relaxation 또는 (b)wet/dry
+  판정 이력 고정 또는 (c)T_w 물리한계 클램프(T_ref≤T_w≤T_air) 필요.
+  단 vendor 백본 수정이라 신중. 당분간 OMC를 L3 기준으로.
