@@ -101,3 +101,49 @@ OMC pathRow=Nr−div(k0,Nseg): 냉매 입구 k0=0→행4, 출구 k0=39→행1.
 순서(회로 토폴로지)가 OMC pathRow와 다른 것** 하나로 수렴.
 - 층위1(병렬수 G): row_parallel로 OMC와 일치시킴(물리적으로 옳음).
 - 층위2(셀 순회): vendor 내부 pathRow 구현 차이 — 이것이 잔여 차이의 전부.
+
+---
+
+## 부록 2: vendor 파라미터 제어 가능성 + 셀 열전달 전수 대조
+
+사용자 요청 — vendor 코드 안 건드리고 파라미터로 셀 순회 조정 가능한지 확인.
+
+### flow_arrangement 파라미터 (counter/parallel)
+vendor generate_circuits(Nr,Nt,mode,flow_arr)가 row 순서 제어:
+  counter → row [Nr-1..0], parallel → row [0..Nr-1].
+그러나 evaporator_on_design L519서 flow_arrangement='counter' 하드코딩,
+params 오버라이드 안 됨. counter/parallel 결과 동일(491.2) 확인.
+
+### 냉매 row 순서는 이미 OMC와 일치
+Python counter 회로0: row [3,2,1,0] 순.
+OMC pathRow=Nr−div(k0,Nseg): 냉매입구k0=0→행4(3), 출구→행1(0). row [3,2,1,0].
+→ 냉매 경로 순서 동일. flow_arrangement가 원인 아님.
+
+### 공기 배분도 유사
+Python col0: cell30(냉매입구 x0.43)서 T_air=17.2°C, cell0(출구 과열)서 T_air=20°C.
+OMC: 냉매입구(row4) T_air=16.8°C, 출구(row1 과열) T_air=20°C.
+→ 냉매 과열부가 신선공기(20°C) 만나는 배치 동일.
+
+### dryout 모델 동일
+Python vendor: x_di=0.669, x_de=0.769 → x>0.77서 factor=0, h=189.
+OMC compute_h_evap_dryout: x_di=max(0.5,min(0.80+0.15·tanh((G-300)/200),0.95))
+  =0.669 (G=31), x_de=0.769. 완전 동일.
+
+### 셀 열전달계수(h_i)도 거의 동일 — 대조 완료
+                Python      OMC
+  2상 저건도    3054        3278 (h_i_c[4,5])
+  dryout 구간   348         346 (h_i_c[3,5])
+  과열          308         312 (h_i_c[1,1])
+→ 열전달계수 양쪽 거의 일치. dryout·alpha 범인 아님.
+
+### 남은 유일한 차이 (미해결)
+면적·물성·공기측·microfin·병렬수·냉매순서·dryout·h_i 전부 동등/유사 확인.
+그럼에도 SH_out Python 13.9K(row_parallel) vs OMC 5.8K, 과열셀 38% vs 12.5%.
+→ 차이는 셀-공기 교차 배분의 미세 구조(2D 공기 그리드 vs OMC T_aen 누적)에
+  국한. vendor solver의 공기 그리드 갱신 순서/방식이 OMC와 미묘하게 달라
+  과열 구간 셀이 신선공기를 과다 접촉하는 것으로 추정. 셀 레벨 완전 대조는
+  추가 조사 필요(현재까지 나머지 모든 물리량은 동등 확인).
+
+### 실무 판정 (불변)
+물리조건 대부분 동등 확인됐으므로 L3 차이는 vendor 공기그리드 이산화 세부에
+국한된 소규모 구조차. OMC를 L3 기준으로, Python L3는 정성용. 최종 실측 검증.
