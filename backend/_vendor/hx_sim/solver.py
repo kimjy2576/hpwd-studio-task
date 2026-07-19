@@ -830,6 +830,12 @@ class HXSolver:
 
         alpha = inp.alpha
         Q_prev = 0
+        # Adaptive under-relaxation + wet/dry 히스테리시스 상태 추적:
+        #   dryout 셀(h_i 낮아 R_i 큼)에서 T_wall 반복이 wet/dry 이산 스위칭으로
+        #   진동 → 발산하는 문제 해결. 진동 감지 시 alpha 감쇠 + T_w 물리 클램프.
+        _dTw_prev = None        # 직전 (T_w_calc - T_w) 부호 판정용
+        _wet_flip_count = 0     # wet/dry 뒤집힘 횟수
+        _T_dp_band = 0.15       # 이슬점 히스테리시스 dead-band [K]
 
         for iteration in range(inp.max_iter):
             # --- Refrigerant side h_i ---
@@ -930,6 +936,22 @@ class HXSolver:
 
             # --- Update T_wall ---
             T_w_new = T_ref_eff + Q_total_seg * R_i if inp.mode == "evap" else T_ref_eff - Q_total_seg * R_i
+
+            # 물리 클램프: 벽온도는 냉매 유효온도와 공기온도 사이여야 함.
+            #   evap: T_ref_eff ≤ T_w ≤ T_air  (벽이 공기보다 뜨겁거나 냉매보다 차가울 수 없음)
+            #   cond: T_air ≤ T_w ≤ T_ref_eff
+            #   dryout 셀에서 R_i가 커 T_w_new가 폭주(예: 45.7°C)하는 것을 원천 차단.
+            _lo = min(T_ref_eff, T_air)
+            _hi = max(T_ref_eff, T_air)
+            T_w_new = max(_lo, min(T_w_new, _hi))
+
+            # Adaptive under-relaxation: 진동(dT_w 부호 반전) 감지 시 alpha 감쇠.
+            _dTw_signed = T_w_new - T_w
+            if _dTw_prev is not None and _dTw_signed * _dTw_prev < 0:
+                # 부호 반전 = T_w가 오르락내리락 진동 → 감쇠 강화
+                alpha = max(alpha * 0.5, 0.05)
+            _dTw_prev = _dTw_signed
+
             T_w_calc = alpha * T_w_new + (1 - alpha) * T_w
 
             # Convergence check
@@ -939,8 +961,24 @@ class HXSolver:
             T_w = T_w_calc
             Q_prev = Q_total_seg
 
-            # Re-check wet condition
-            is_wet = (T_w < T_dp) and (inp.mode == "evap")
+            # Re-check wet condition — 히스테리시스로 T_dp 근처 잦은 뒤집힘 방지.
+            #   dry→wet은 T_w < T_dp − band, wet→dry는 T_w > T_dp + band 일 때만 전환.
+            if inp.mode == "evap":
+                if is_wet:
+                    _new_wet = T_w < (T_dp + _T_dp_band)
+                else:
+                    _new_wet = T_w < (T_dp - _T_dp_band)
+                if _new_wet != is_wet:
+                    _wet_flip_count += 1
+                    # 뒤집힘이 잦으면(≥3회) 상태 고정 + alpha 추가 감쇠로 진동 종료
+                    if _wet_flip_count >= 3:
+                        alpha = max(alpha * 0.5, 0.05)
+                    else:
+                        is_wet = _new_wet
+                else:
+                    is_wet = _new_wet
+            else:
+                is_wet = False
 
             if dT_w < inp.tol_T and dQ < inp.tol_Q:
                 sr.converged = True
