@@ -53,6 +53,9 @@ def solve(fidelity, operating, air_bc, SH_target=None,
     converged = False
     it = 0
     r = None
+    # 적응적 게인: 잔차가 느리게 줄면 게인 증가 (조합 무관 수렴)
+    gp_evap = gain_pevap
+    prev_rSH = None
     for it in range(max_iter):
         r = one_pass(fidelity, _op(P_evap, P_cond, h_suc), air_bc, params_override)
         rm = r['residual']['mass']
@@ -63,14 +66,19 @@ def solve(fidelity, operating, air_bc, SH_target=None,
             converged = True
             break
 
+        # 적응적 게인: SH 잔차가 같은 부호로 느리게 줄면 게인 증가
+        if prev_rSH is not None and abs(rSH) > 0.7 * abs(prev_rSH) and rSH * prev_rSH > 0:
+            gp_evap = min(gp_evap * 1.3, 0.1)   # 상한 0.1 (안정성)
+        prev_rSH = rSH
+
         # 갱신 (완화 + 클램프)
         h_suc = h_suc + alpha_h * (r['h_evap_out'] - h_suc)
         P_cond = min(P_cond_bounds[1], max(P_cond_bounds[0], P_cond + rm * gain_pcond))
-        P_evap = min(P_evap_bounds[1], max(P_evap_bounds[0], P_evap + rSH * gain_pevap))
+        P_evap = min(P_evap_bounds[1], max(P_evap_bounds[0], P_evap + rSH * gp_evap))
 
         if verbose and it % 10 == 0:
             print(f"  it{it}: P_evap={P_evap:.4f} P_cond={P_cond:.4f} "
-                  f"질량={rm:+.6f} 엔탈피={re:+.2f} SH잔차={rSH:+.3f}")
+                  f"질량={rm:+.6f} 엔탈피={re:+.2f} SH잔차={rSH:+.3f} gp={gp_evap:.4f}")
 
     return {
         'converged': converged, 'iterations': it + 1,
