@@ -37,20 +37,32 @@ L3 (Evap_On_Dyn): ⚠️ Q Δ+9.6% (Python이 큼)
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
 from components import evaporator_off_design as evap_L1
+from components import evaporator_moving_boundary as evap_L2
 
 BC = {'P_evap': 5.0889, 'h_in': 364.157, 'm_dot_ref': 0.00206593,
       'T_air_in': 20.0, 'RH_air_in': 80.0, 'V_air_CMM': 2.42}
 OMC = {'L1': 462.029, 'L2': 462.283, 'L3': 461.743}
+GEO = {'D_o': 5.0e-3, 'D_i': 4.6e-3, 'L_tube_total': 3.84, 'N_rows': 4.0,
+       'FPI': 20.0, 'A_o_face': 0.0135744, 'is_wet': True, 'fluid': 'R290'}
 
 
-def verify_L1_with_omc_params():
-    par = {'input_mode': 'UA', 'fluid': 'R290'}  # 기본 UA=15.9/2.2 (동기화 완료)
-    o = evap_L1.step(BC, par, {}, 0)['outputs']
+def verify_L1():
+    o = evap_L1.step(BC, {'input_mode': 'UA', 'fluid': 'R290'}, {}, 0)['outputs']
     q = o['Q_total']
     d = (q - OMC['L1']) / OMC['L1'] * 100
     ok = abs(d) < 1
-    print(f"L1 (기본 UA, 동기화됨): Py Q={q:.1f}  OMC={OMC['L1']:.1f}  Δ={d:+.2f}%  "
-          f"{'✅' if ok else '❌'}")
+    print(f"L1 (기본 UA, 동기화됨):     Py Q={q:.1f}  OMC={OMC['L1']:.1f}  Δ={d:+.2f}%  {'✅' if ok else '❌'}")
+    return ok
+
+
+def verify_L2():
+    """L2: microfin EF + cf_SH(과열존 HTC 보정) 적용 → 일치."""
+    o = evap_L2.step(BC, GEO, {}, 0)['outputs']
+    q = o['Q_total']
+    d = (q - OMC['L2']) / OMC['L2'] * 100
+    ok = abs(d) < 1
+    print(f"L2 (microfin+cf_SH 수정):   Py Q={q:.1f}  OMC={OMC['L2']:.1f}  Δ={d:+.2f}%  {'✅' if ok else '❌'}")
+    print(f"     alpha_SH={o['alpha_r_SH']:.1f}(OMC 42.9) SH_out={o.get('SH_out',0):.1f}(OMC 6.0)")
     return ok
 
 
@@ -59,10 +71,9 @@ if __name__ == '__main__':
     print("증발기 3급 Python↔OMC 검증")
     print(f"BC: P_e={BC['P_evap']}bar h_in={BC['h_in']} 공기 20°C/RH80%")
     print("=" * 60)
-    verify_L1_with_omc_params()
-    print()
-    print("L2 (EvaporatorMBdyn): Q Δ+9.1% (Python 큼, 비등 상관식+microfin)")
-    print("L3 (Evap_On_Dyn):     Q Δ+9.6% (Python 큼, 동일 원인)")
+    r1 = verify_L1()
+    r2 = verify_L2()
+    print("L3 (Evap_On_Dyn): Q Δ+9.6% SH_out 과다 (구조 조사 대기, 응축기 L3와 함께)")
     print("=" * 60)
-    print("→ L1 파라미터 동기화로 일치. L2/L3는 vendor 비등 h 계산 점검 필요.")
-    print("  증발기 3급 자체 일관성은 양호(OMC 462/462/462).")
+    print(f"L1={'✅' if r1 else '❌'}  L2={'✅' if r2 else '❌'}  L3=⚠️(구조 조사 대기)")
+    sys.exit(0 if (r1 and r2) else 1)

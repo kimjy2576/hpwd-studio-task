@@ -37,6 +37,7 @@ from .correlations import boiling, single_phase, air_side, fin_efficiency, press
 # 2상 boiling은 On(segment march)과 동일 식 사용 — vendor 라이브러리 통일.
 # (correlation 라이브러리가 다르면 같은 운전점에서 α가 달라져 Off/On/Semi 정합 불가)
 from _vendor.hx_sim.correlations import h_with_transition as _vendor_h_tp
+from _vendor.hx_sim.correlations import microfin_ef as _microfin_ef
 from _vendor.hx_sim.correlations import compute_j_factor as _vendor_j_factor
 from _vendor.hx_sim.properties import RefrigerantProperties as _VendorRefProps
 from _vendor.hx_sim.properties import MoistAirProperties as _VendorAirProps
@@ -364,6 +365,14 @@ def step(input, params, state, dt):
     FPI = float(params.get('FPI', 20.0))
     k_fin = float(params.get('k_fin', 200.0))
     A_o_face = float(params.get('A_o_face', 0.0135744))
+    # microfin (내부 강화관) + SH zone HTC 보정 — OMC EvaporatorMBdyn과 동일.
+    tube_type = params.get('tube_type', 'microfin')
+    n_microfin = int(params.get('n_microfin', 54))
+    e_microfin = float(params.get('e_microfin', 0.15e-3))
+    helix_angle = float(params.get('helix_angle', 15.0))
+    # cf_SH: 과열존 HTC 보정 (2존 이동경계 vs 셀별 유한체적의 SH 면적배분 구조차 보정,
+    #        L3 유한체적 SH에 정합). OMC cf_SH=0.043과 동일.
+    cf_SH = float(params.get('cf_SH', 0.043))
     eps_over_D = float(params.get('eps_over_D', 0.0))
     # Correlations
     corr_2ph = params.get('corr_2ph', 'chen1966')
@@ -465,13 +474,22 @@ def step(input, params, state, dt):
 
     # 2상 boiling HTC — On(segment march)과 동일한 vendor 식 사용 (정합).
     #   G = ṁ/n_circuits/A_cross (회로 기준 질량유속). vendor 시그니처로 변환.
+    # microfin 강화계수 EF (OMC와 동일: 매끈관 h × EF). ψ=1+(2·n·e/cosβ)/(πDi).
+    if tube_type == 'microfin' and n_microfin > 0 and e_microfin > 0:
+        _beta = math.radians(helix_angle)
+        _psi = 1.0 + (2.0 * n_microfin * e_microfin / max(math.cos(_beta), 0.1)) / (math.pi * D_i)
+        EF_evap = _microfin_ef('evap', _psi, helix_angle)
+        EF_sgl = _microfin_ef('single', _psi, helix_angle)
+    else:
+        EF_evap = 1.0
+        EF_sgl = 1.0
     _A_cross = math.pi * D_i ** 2 / 4.0
     _G_2ph = (m_dot_ref / max(n_circuits, 1)) / max(_A_cross, 1e-12)
     _ref_obj = _VendorRefProps(fluid)
     alpha_2ph = _vendor_h_tp(x=x_avg_2ph, G=_G_2ph, Di=D_i, q_flux=q_flux_2ph_est,
                              ref=_ref_obj, P=P_evap_Pa, mode='evap',
                              hx_type='FT', evap_corr=corr_2ph)
-    alpha_2ph *= htc_corr_2ph
+    alpha_2ph *= htc_corr_2ph * EF_evap    # microfin 강화 (OMC: ×EF_evap)
 
     # SH zone — 평균 온도 추정 (T_evap + 일부 SH)
     T_SH_avg_K = T_evap_K + 10  # 첫 추정
@@ -479,7 +497,7 @@ def step(input, params, state, dt):
                                       P_Pa=P_evap_Pa, T_avg_K=T_SH_avg_K,
                                       m_dot=m_dot_ref / max(n_circuits, 1),
                                       D_i=D_i, fluid=fluid, heating=True)
-    alpha_SH *= htc_corr_SH
+    alpha_SH *= htc_corr_SH * EF_sgl * cf_SH   # microfin 강화 + SH존 보정 (OMC: ×EF_single×cf_SH)
 
     # ── 7. UA per zone (zone 길이 ζ에 비례) ──
     # 1/UA_total = 1/(α_r × A_i × ζ) + 1/(α_air × A_o × η_overall × ζ)
