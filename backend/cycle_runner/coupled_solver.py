@@ -38,7 +38,7 @@ def _rh_from_TW(T_C, W, P=101325.0):
 
 
 def solve(ref_fidelity, air_fidelity, operating, air_inlet,
-          fan_position=None, params_override=None,
+          fan_position=None, params_override=None, air_states=None,
           max_outer=30, tol_air=0.05, alpha_air=0.6, verbose=False):
     """냉매-공기 연성 수렴.
 
@@ -48,10 +48,13 @@ def solve(ref_fidelity, air_fidelity, operating, air_inlet,
       operating: 냉매 초기 {'P_evap','P_cond','N','opening','h_suc','T_amb'}
       air_inlet: 드럼 입구 공기 {'T','RH','W','V_air_CMM','m_dot_air'}
       fan_position: 팬 위치 (None=없음)
+      air_states: 공기 컴포넌트 상태 {'drum': drum_state} (동적 건조 진행용).
+                  None이면 매번 init (정상상태). dynamic_runner가 스텝 간 전달.
 
     Returns:
       dict: {'converged','outer_iter','refrigerant','air','air_bc'}
     """
+    air_states = air_states or {}
     # 초기 air_bc: 드럼 입구 공기를 양 HX에 동일 적용 (첫 추정)
     air_bc = {
         'condenser': {'T_air_in': air_inlet['T'], 'RH_air_in': air_inlet['RH'],
@@ -78,7 +81,7 @@ def solve(ref_fidelity, air_fidelity, operating, air_inlet,
         }
 
         # ── 공기 loop (현재 냉매입구로) ──
-        air_res = air_pass(air_fidelity, air_inlet, {}, hx_ref,
+        air_res = air_pass(air_fidelity, air_inlet, air_states, hx_ref,
                            fan_position=fan_position, params_override=params_override)
         path = air_res['path']
         traj = air_res['trajectory']
