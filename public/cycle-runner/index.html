@@ -229,38 +229,89 @@ function FanSlot({ pos, active, onClick }) {
 }
 
 // ── 운전 조건 입력 ──
-function OperatingInputs({ op, setOp }) {
-  const fields = [
-    { key: 'N', label: '압축기 rpm', unit: 'rpm', min: 0, max: 3600 },
-    { key: 'opening', label: 'EEV 개도', unit: '%', min: 0, max: 100 },
-    { key: 'T_air', label: '드럼 입구 공기온도', unit: '°C', min: 10, max: 60 },
-    { key: 'RH_air', label: '드럼 입구 습도', unit: '%', min: 0, max: 100 },
-  ];
+const FABRIC_OPTIONS = [
+  { v: 'cotton', label: '면(cotton)' },
+  { v: 'poly', label: '폴리(poly)' },
+  { v: 'mixed', label: '혼방(mixed)' },
+];
+
+function NumberField({ label, value, unit, min, max, step, onChange }) {
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 p-6">
-      <h3 className="text-sm font-bold text-slate-700 mb-4">운전 조건</h3>
-      <div className="grid grid-cols-2 gap-4">
-        {fields.map(f => (
-          <div key={f.key}>
-            <label className="block text-xs text-slate-500 mb-1">{f.label}</label>
-            <div className="flex items-center gap-1.5">
-              <input
-                type="number"
-                value={op[f.key]}
-                min={f.min} max={f.max}
-                onChange={e => setOp({ ...op, [f.key]: parseFloat(e.target.value) })}
-                className="mono w-full text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 focus:border-blue-400 focus:outline-none"
-              />
-              <span className="mono text-xs text-slate-400 w-8">{f.unit}</span>
-            </div>
-          </div>
-        ))}
+    <div>
+      <label className="block text-xs text-slate-500 mb-1">{label}</label>
+      <div className="flex items-center gap-1.5">
+        <input
+          type="number" value={value} min={min} max={max} step={step || 'any'}
+          onChange={e => onChange(parseFloat(e.target.value))}
+          className="mono w-full text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 focus:border-blue-400 focus:outline-none"
+        />
+        <span className="mono text-xs text-slate-400 w-9 shrink-0">{unit}</span>
       </div>
-      <div className="mt-4 pt-4 border-t border-slate-100">
+    </div>
+  );
+}
+
+function OperatingInputs({ op, setOp }) {
+  const set = (k, v) => setOp({ ...op, [k]: v });
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 p-6 space-y-5">
+      <h3 className="text-sm font-bold text-slate-700">운전 조건</h3>
+
+      {/* 구동 (rpm) */}
+      <div>
+        <div className="mono text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-2">구동 속도</div>
+        <div className="grid grid-cols-3 gap-3">
+          <NumberField label="압축기" value={op.comp_rpm} unit="rpm" min={0} max={7200} onChange={v => set('comp_rpm', v)} />
+          <NumberField label="팬" value={op.fan_rpm} unit="rpm" min={0} max={6000} onChange={v => set('fan_rpm', v)} />
+          <NumberField label="드럼" value={op.drum_rpm} unit="rpm" min={0} max={120} onChange={v => set('drum_rpm', v)} />
+        </div>
+      </div>
+
+      {/* 제어 (SH 타겟 → EEV PI) */}
+      <div>
+        <div className="mono text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-2">제어 목표</div>
+        <div className="grid grid-cols-2 gap-3">
+          <NumberField label="과열도 타겟 (EEV PI)" value={op.SH_target} unit="K" min={0} max={30} onChange={v => set('SH_target', v)} />
+          <div className="flex items-end pb-1.5">
+            <span className="mono text-[10px] text-slate-400 leading-tight">EEV 개도는 SH 타겟을<br />추종해 PI 제어됩니다</span>
+          </div>
+        </div>
+      </div>
+
+      {/* 드럼 (포 무게 + IMC + 직물) */}
+      <div>
+        <div className="mono text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-2">드럼 초기 조건</div>
+        <div className="grid grid-cols-3 gap-3">
+          <NumberField label="건조 포 무게" value={op.M_dry} unit="kg" min={0.1} max={15} step={0.1} onChange={v => set('M_dry', v)} />
+          <NumberField label="초기 함수율 (IMC)" value={op.X0} unit="kg/kg" min={0} max={2} step={0.05} onChange={v => set('X0', v)} />
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">직물</label>
+            <select
+              value={op.fabric}
+              onChange={e => set('fabric', e.target.value)}
+              className="mono w-full text-sm border border-slate-200 rounded-lg px-2 py-1.5 focus:border-blue-400 focus:outline-none bg-white"
+            >
+              {FABRIC_OPTIONS.map(f => <option key={f.v} value={f.v}>{f.label}</option>)}
+            </select>
+          </div>
+        </div>
+        <p className="mono text-[10px] text-slate-400 mt-1.5">
+          드럼 입구 공기는 응축기 출구에서 연성으로 자동 결정됩니다 (별도 입력 불필요)
+        </p>
+      </div>
+
+      {/* 동적 시뮬레이션 */}
+      <div className="pt-4 border-t border-slate-100">
         <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
-          <input type="checkbox" checked={op.dynamic} onChange={e => setOp({ ...op, dynamic: e.target.checked })} className="accent-blue-600" />
+          <input type="checkbox" checked={op.dynamic} onChange={e => set('dynamic', e.target.checked)} className="accent-blue-600" />
           동적 시뮬레이션 (콜드스타트 — 정지→기동→정상운전)
         </label>
+        {op.dynamic && (
+          <div className="mt-3 pl-6 grid grid-cols-2 gap-3">
+            <NumberField label="초기 냉매 평형압력" value={op.P_equalize} unit="bar" min={1} max={20} step={0.1} onChange={v => set('P_equalize', v)} />
+            <NumberField label="기동 ramp 시간" value={op.ramp_time} unit="s" min={0} max={600} step={10} onChange={v => set('ramp_time', v)} />
+          </div>
+        )}
       </div>
     </div>
   );
@@ -340,7 +391,12 @@ function CycleRunner() {
   const [refFid, setRefFid] = useState({ compressor: 3, condenser: 3, eev: 3, evaporator: 3 });
   const [airFid, setAirFid] = useState({ drum: 1, filter: 1, evaporator: 3, condenser: 3, fan: 3 });
   const [fanPosition, setFanPosition] = useState(null);
-  const [op, setOp] = useState({ N: 1800, opening: 23.6, T_air: 30, RH_air: 40, dynamic: false });
+  const [op, setOp] = useState({
+    comp_rpm: 1800, fan_rpm: 3000, drum_rpm: 45,
+    SH_target: 8.6,
+    M_dry: 3.0, X0: 0.6, fabric: 'cotton',
+    dynamic: false, P_equalize: 7.0, ramp_time: 60,
+  });
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState(null);
 
