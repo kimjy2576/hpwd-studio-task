@@ -1146,7 +1146,7 @@ ReactDOM.render(<App />, document.getElementById('app'));
     let compiled;
     try {
       const result = Babel.transform(jsxText, {
-        presets: ['env', 'react'],
+        presets: [['react', { runtime: 'classic' }]],
         filename: 'app.jsx',
       });
       compiled = result.code;
