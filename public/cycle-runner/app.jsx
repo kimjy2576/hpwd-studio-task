@@ -248,7 +248,7 @@ function OperatingInputs({ op, setOp }) {
         <div className="mono text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-2">드럼 초기 조건</div>
         <div className="grid grid-cols-3 gap-3">
           <NumberField label="건조 포 무게" value={op.M_dry} unit="kg" min={0.1} max={15} step={0.1} onChange={v => set('M_dry', v)} />
-          <NumberField label="초기 함수율 (IMC)" value={op.X0} unit="kg/kg" min={0} max={2} step={0.05} onChange={v => set('X0', v)} />
+          <NumberField label="초기 함수율 (IMC)" value={op.X0_pct} unit="%" min={0} max={200} step={5} onChange={v => set('X0_pct', v)} />
           <div>
             <label className="block text-xs text-slate-500 mb-1">직물</label>
             <select
@@ -275,6 +275,8 @@ function OperatingInputs({ op, setOp }) {
           <div className="mt-3 pl-6 grid grid-cols-2 gap-3">
             <NumberField label="초기 냉매 평형압력" value={op.P_equalize} unit="bar" min={1} max={20} step={0.1} onChange={v => set('P_equalize', v)} />
             <NumberField label="기동 ramp 시간" value={op.ramp_time} unit="s" min={0} max={600} step={10} onChange={v => set('ramp_time', v)} />
+            <NumberField label="총 해석 시간" value={op.t_end} unit="s" min={10} max={7200} step={60} onChange={v => set('t_end', v)} />
+            <NumberField label="시간 스텝 (dt)" value={op.dt} unit="s" min={1} max={600} step={10} onChange={v => set('dt', v)} />
           </div>
         )}
       </div>
@@ -345,7 +347,7 @@ function MiniChart({ data }) {
       {data.map((d, i) => (
         <circle key={i} cx={px(d.t)} cy={py(d.X_dry)} r="2.5" fill="var(--accent)" />
       ))}
-      <text x={pad} y={h - 2} className="mono" fontSize="9" fill="#94a3b8">건조율</text>
+      <text x={pad} y={h - 2} className="mono" fontSize="9" fill="#94a3b8">함수율 {(ymax * 100).toFixed(0)}→{(ymin * 100).toFixed(0)}%</text>
       <text x={w - 40} y={h - 2} className="mono" fontSize="9" fill="#94a3b8">{xmax}s</text>
     </svg>
   );
@@ -359,8 +361,8 @@ function CycleRunner() {
   const [op, setOp] = useState({
     comp_rpm: 1800, fan_rpm: 3000, drum_rpm: 45,
     SH_target: 8.6,
-    M_dry: 3.0, X0: 0.6, fabric: 'cotton',
-    dynamic: false, P_equalize: 7.0, ramp_time: 60,
+    M_dry: 3.0, X0_pct: 60, fabric: 'cotton',
+    dynamic: false, P_equalize: 7.0, ramp_time: 60, t_end: 1800, dt: 60,
   });
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState(null);
@@ -372,6 +374,26 @@ function CycleRunner() {
   const runCycle = () => {
     setRunning(true);
     setResult(null);
+
+    // 백엔드 cycle_runner 전달 payload (6단계 API 연결 시 이 형식으로 POST)
+    // 단위 변환: 함수율 %→kg/kg (X0_pct/100)
+    const payload = {
+      ref_fidelity: refFid,        // {compressor,condenser,eev,evaporator: 1/2/3}
+      air_fidelity: airFid,        // {drum,filter,fan,evaporator,condenser}
+      fan_position: fanPosition,   // int | null
+      operating: {
+        comp_rpm: op.comp_rpm, fan_rpm: op.fan_rpm, drum_rpm: op.drum_rpm,
+        SH_target: op.SH_target,   // EEV PI 제어 목표
+        M_dry: op.M_dry, X0: op.X0_pct / 100, fabric: op.fabric,  // %→kg/kg
+      },
+      dynamic: op.dynamic,
+      dynamic_opts: op.dynamic ? {
+        P_equalize: op.P_equalize, ramp_time: op.ramp_time,
+        t_end: op.t_end, dt: op.dt,
+      } : null,
+    };
+    // TODO(6단계): fetch('/run_cycle_runner', {method:'POST', body: JSON.stringify(payload)})
+
     setTimeout(() => {
       // 샘플 결과 (백엔드 cycle_runner 반환 형식)
       const sample = {
@@ -382,13 +404,16 @@ function CycleRunner() {
         m_dot: 0.00206 + Math.random() * 0.0001,
         Q_cond: 570 + Math.random() * 20,
         Q_evap: 460 + Math.random() * 20,
-        SH: 8.6 + Math.random() * 1,
+        SH: op.SH_target + (Math.random() - 0.5) * 0.3,
       };
       if (op.dynamic) {
-        sample.trajectory = [
-          { t: 0, X_dry: null }, { t: 60, X_dry: 0.600 }, { t: 120, X_dry: 0.599 },
-          { t: 180, X_dry: 0.598 }, { t: 240, X_dry: 0.597 }, { t: 300, X_dry: 0.596 },
-        ].filter(d => d.X_dry !== null);
+        // 샘플 궤적 (해석 시간 t_end까지 dt 간격, 건조율 %)
+        const nPts = Math.min(12, Math.floor(op.t_end / op.dt));
+        const X0 = op.X0_pct / 100;
+        sample.trajectory = Array.from({ length: nPts }, (_, i) => ({
+          t: (i + 1) * op.dt,
+          X_dry: Math.max(0, X0 - i * 0.001),
+        }));
       }
       setResult(sample);
       setRunning(false);
