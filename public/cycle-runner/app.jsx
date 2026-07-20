@@ -1,4 +1,52 @@
-const { useState, useMemo } = React;
+const { useState, useMemo, useRef, useEffect } = React;
+
+// ── AppSwitcher (좌측 상단 탭 네비게이션 — 다른 스튜디오로 이동) ──
+function AppSwitcher({ current }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDocClick = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', onDocClick);
+    return () => document.removeEventListener('mousedown', onDocClick);
+  }, [open]);
+  const apps = [
+    { id: 'studio',            label: 'HPWD Studio',       desc: '시뮬 캔버스',   href: '/' },
+    { id: 'cycle-runner',      label: 'Cycle Runner',      desc: '사이클 조합·실행', href: '/cycle-runner/' },
+    { id: 'component-studio',  label: 'Component Studio',  desc: '컴포넌트 작성', href: '/component-studio/' },
+    { id: 'calibration-studio', label: 'Calibration Studio', desc: 'Calibration & Validation', href: '/calibration-studio/' },
+    { id: 'on-design-studio',  label: 'On-Design Studio',  desc: 'On-design 모델 설계', href: '/on-design-studio/' },
+    { id: 'model-docs',        label: 'Model Docs',        desc: '수학적 모델링 문서', href: '/model-docs/' },
+  ];
+  const active = apps.find(a => a.id === current) || apps[0];
+  return (
+    <div className="relative" ref={ref}>
+      <button onClick={() => setOpen(o => !o)} className="flex items-center gap-2 px-2 py-1 rounded hover:bg-slate-100 transition-colors">
+        <div className="w-2 h-2 rounded-sm bg-cyan-600 shrink-0" />
+        <span className="font-bold text-slate-900 tracking-wide text-[11px]">{active.label}</span>
+        <span className="text-slate-400 text-[9px]">▾</span>
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full mt-1 z-50 bg-white border border-slate-200 rounded-lg shadow-xl w-56 p-1">
+          {apps.map(a => {
+            const isActive = a.id === current;
+            return (
+              <button key={a.id}
+                onClick={() => { if (!isActive) window.location.href = a.href; }}
+                className={`w-full text-left px-2.5 py-1.5 rounded flex items-start gap-2 transition-colors ${isActive ? 'bg-cyan-50 cursor-default' : 'hover:bg-slate-50'}`}>
+                <span className={`mt-0.5 w-3 text-center text-[11px] ${isActive ? 'text-cyan-700' : 'text-slate-300'}`}>{isActive ? '●' : '○'}</span>
+                <div className="flex-1 min-w-0">
+                  <div className={`font-semibold text-[12px] ${isActive ? 'text-cyan-900' : 'text-slate-800'}`}>{a.label}</div>
+                  <div className="text-[10px] text-slate-500">{a.desc}</div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ── 컴포넌트 정의 (냉매 4 + 공기 3) ──
 const REF_COMPONENTS = [
@@ -293,6 +341,12 @@ function CycleRunner() {
 
   return (
     <div className="min-h-screen">
+      {/* 탭 네비게이션 바 */}
+      <div className="bg-white border-b border-slate-100">
+        <div className="max-w-6xl mx-auto px-6 py-1.5">
+          <AppSwitcher current="cycle-runner" />
+        </div>
+      </div>
       {/* 헤더 */}
       <header className="bg-white border-b border-slate-200 sticky top-0 z-10">
         <div className="max-w-6xl mx-auto px-6 py-3.5 flex items-center justify-between">
