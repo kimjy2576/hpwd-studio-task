@@ -973,6 +973,208 @@ function FanView({ onBack }) {
 }
 
 // ── 드럼 도면 ──
+/* ═══════════════════════════════════════════════════════════════════
+   Drum 3D View — 회전 원통 드럼 + 리프터 + 텀블링 포
+   ═══════════════════════════════════════════════════════════════════ */
+function Drum3DModel({ p }) {
+  const mountRef = React.useRef(null);
+
+  React.useEffect(() => {
+    if (!mountRef.current || typeof THREE === 'undefined') return;
+    const mount = mountRef.current;
+    const w = mount.clientWidth || 600, h = mount.clientHeight || 400;
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0xf1f5f9);
+    const camera = new THREE.PerspectiveCamera(50, w / h, 1, 5000);
+    camera.position.set(350, 250, 400);
+    camera.lookAt(0, 0, 0);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(w, h);
+    renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
+    mount.appendChild(renderer.domElement);
+
+    scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+    const dir = new THREE.DirectionalLight(0xffffff, 0.8);
+    dir.position.set(200, 400, 300); scene.add(dir);
+    const dir2 = new THREE.DirectionalLight(0xffffff, 0.3);
+    dir2.position.set(-150, -80, -200); scene.add(dir2);
+
+    const grp = new THREE.Group();
+    scene.add(grp);
+
+    // 형상 (mm) — drum_radius/length를 화면 스케일 (m→mm×1000)
+    const R = (p.drum_radius || 0.28) * 1000;
+    const L = (p.drum_length || 0.35) * 1000;
+    const nLifter = p.nLifter || 3;
+    const fillFrac = p.fill_frac || 0.4;
+
+    // 드럼 원통 (반투명, 옆으로 누운 방향 = z축)
+    const drumMat = new THREE.MeshPhongMaterial({ color: 0xa855f7, shininess: 40, transparent: true, opacity: 0.18, side: THREE.DoubleSide });
+    const drumGeo = new THREE.CylinderGeometry(R, R, L, 48, 1, true);
+    const drum = new THREE.Mesh(drumGeo, drumMat);
+    drum.rotation.x = Math.PI / 2;  // 눕히기 (축이 z방향)
+    grp.add(drum);
+
+    // 뒷판 (perforated rear)
+    const rearMat = new THREE.MeshPhongMaterial({ color: 0x9333ea, shininess: 50, transparent: true, opacity: 0.3, side: THREE.DoubleSide });
+    const rearGeo = new THREE.CircleGeometry(R, 48);
+    const rear = new THREE.Mesh(rearGeo, rearMat);
+    rear.position.z = -L / 2;
+    grp.add(rear);
+
+    // 리프터 (baffle, 내벽 돌기 3개)
+    const lifterMat = new THREE.MeshPhongMaterial({ color: 0x7e22ce, shininess: 60 });
+    for (let i = 0; i < nLifter; i++) {
+      const ang = (i / nLifter) * Math.PI * 2;
+      const lifterGeo = new THREE.BoxGeometry(R * 0.15, R * 0.15, L * 0.9);
+      const lifter = new THREE.Mesh(lifterGeo, lifterMat);
+      lifter.position.set((R - R * 0.08) * Math.cos(ang), (R - R * 0.08) * Math.sin(ang), 0);
+      lifter.rotation.z = ang;
+      grp.add(lifter);
+    }
+
+    // 텀블링 포 (fabric load, 하단에 뭉친 구들)
+    const clothMat = new THREE.MeshPhongMaterial({ color: 0xfbbf24, shininess: 20 });
+    const nCloth = Math.round(12 * fillFrac / 0.4);
+    for (let i = 0; i < nCloth; i++) {
+      const cr = R * (0.15 + Math.random() * 0.15);
+      const cAng = Math.PI + (Math.random() - 0.5) * 1.6;  // 하단 위주
+      const cRad = R * (0.3 + Math.random() * 0.4);
+      const clothGeo = new THREE.SphereGeometry(cr, 8, 6);
+      const cloth = new THREE.Mesh(clothGeo, clothMat);
+      cloth.position.set(cRad * Math.cos(cAng), cRad * Math.sin(cAng), (Math.random() - 0.5) * L * 0.7);
+      grp.add(cloth);
+    }
+
+    // 회전 축
+    const axisMat = new THREE.MeshPhongMaterial({ color: 0x581c87 });
+    const axisGeo = new THREE.CylinderGeometry(R * 0.04, R * 0.04, L * 1.2, 16);
+    const axis = new THREE.Mesh(axisGeo, axisMat);
+    axis.rotation.x = Math.PI / 2;
+    grp.add(axis);
+
+    // 드래그 회전 + 줌
+    let dragging = false, px = 0, py = 0, rotX = 0.35, rotY = 0.7;
+    const onDown = (e) => { dragging = true; px = e.clientX; py = e.clientY; };
+    const onMove = (e) => {
+      if (!dragging) return;
+      rotY += (e.clientX - px) * 0.008;
+      rotX += (e.clientY - py) * 0.008;
+      rotX = Math.max(-1.4, Math.min(1.4, rotX));
+      px = e.clientX; py = e.clientY;
+    };
+    const onUp = () => { dragging = false; };
+    renderer.domElement.addEventListener('mousedown', onDown);
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    const onWheel = (e) => {
+      e.preventDefault();
+      const d = camera.position.length();
+      const nd = Math.max(200, Math.min(1000, d + e.deltaY * 0.5));
+      camera.position.multiplyScalar(nd / d);
+    };
+    renderer.domElement.addEventListener('wheel', onWheel, { passive: false });
+
+    let raf;
+    const animate = () => {
+      raf = requestAnimationFrame(animate);
+      const camR = camera.position.length();
+      camera.position.set(
+        camR * Math.sin(rotY) * Math.cos(rotX),
+        camR * Math.sin(rotX),
+        camR * Math.cos(rotY) * Math.cos(rotX)
+      );
+      camera.lookAt(0, 0, 0);
+      renderer.render(scene, camera);
+    };
+    animate();
+
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      renderer.domElement.removeEventListener('wheel', onWheel);
+      if (mount.contains(renderer.domElement)) mount.removeChild(renderer.domElement);
+      renderer.dispose();
+    };
+  }, [p.drum_radius, p.drum_length, p.nLifter, p.fill_frac]);
+
+  return <div ref={mountRef} className="w-full h-full" style={{ minHeight: '400px', cursor: 'grab' }} />;
+}
+
+/* ───── Drum Front View — 정면 (원형 드럼 + 리프터 + 포) ───── */
+function DrumFrontView({ p }) {
+  const cx = 170, cy = 165;
+  const R = 130;
+  const nLifter = p.nLifter || 3;
+  const fillFrac = p.fill_frac || 0.4;
+  const fillH = R * 2 * fillFrac;
+
+  return (
+    <svg viewBox="0 0 340 340" className="w-full h-full">
+      {/* 드럼 외벽 */}
+      <circle cx={cx} cy={cy} r={R} fill="#faf5ff" stroke="#a855f7" strokeWidth="2.5" />
+      {/* 포 (하단 채움, 곡선) */}
+      <path d={`M ${cx - R} ${cy + R - fillH} Q ${cx} ${cy + R - fillH + 20} ${cx + R} ${cy + R - fillH} L ${cx + R} ${cy + R} A ${R} ${R} 0 0 1 ${cx - R} ${cy + R} Z`}
+        fill="#fef3c7" stroke="#f59e0b" strokeWidth="1" opacity="0.6" clipPath="url(#drumClip)" />
+      <defs><clipPath id="drumClip"><circle cx={cx} cy={cy} r={R} /></clipPath></defs>
+      {/* 리프터 */}
+      {Array.from({ length: nLifter }).map((_, i) => {
+        const ang = (i / nLifter) * Math.PI * 2 - Math.PI / 2;
+        const x1 = cx + (R - 18) * Math.cos(ang), y1 = cy + (R - 18) * Math.sin(ang);
+        const x2 = cx + R * Math.cos(ang), y2 = cy + R * Math.sin(ang);
+        // 리프터 삼각형
+        const perpA = ang + Math.PI / 2;
+        const wx = 10 * Math.cos(perpA), wy = 10 * Math.sin(perpA);
+        return <path key={i} d={`M ${x2} ${y2} L ${x1 + wx} ${y1 + wy} L ${x1 - wx} ${y1 - wy} Z`} fill="#7e22ce" opacity="0.8" />;
+      })}
+      {/* 회전 방향 화살표 */}
+      <path d={`M ${cx + R + 15} ${cy} A ${R + 15} ${R + 15} 0 0 1 ${cx} ${cy - R - 15}`} fill="none" stroke="#a855f7" strokeWidth="1.5" markerEnd="url(#drArrow)" opacity="0.6" />
+      <defs><marker id="drArrow" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="#a855f7" /></marker></defs>
+      {/* 중심축 */}
+      <circle cx={cx} cy={cy} r="6" fill="#581c87" />
+      {/* 치수 */}
+      <line x1={cx} y1={cy} x2={cx + R} y2={cy} stroke="#475569" strokeWidth="0.7" strokeDasharray="2 2" />
+      <text x={cx + R / 2} y={cy - 4} fontSize="9" fill="#a855f7" fontFamily="monospace" textAnchor="middle">R={(p.drum_radius * 1000).toFixed(0)}mm</text>
+      <text x="10" y="16" fontSize="10" fill="#475569" fontFamily="monospace">Front · 리프터 {nLifter} · 채움 {(fillFrac * 100).toFixed(0)}%</text>
+      <text x="10" y="330" fontSize="9" fill="#94a3b8" fontFamily="monospace">텀블링 드럼 (포 낙하 · NTU-ε 건조)</text>
+    </svg>
+  );
+}
+
+/* ───── Drum Side View — 측면 (원통 길이방향 + 공기 흐름) ───── */
+function DrumSideView({ p }) {
+  const cx = 170, cy = 165;
+  const R = 100;
+  const scale = R / ((p.drum_radius || 0.28) * 1000);
+  const L = (p.drum_length || 0.35) * 1000 * scale;
+
+  return (
+    <svg viewBox="0 0 340 340" className="w-full h-full">
+      {/* 원통 측면 (직사각형 + 양끝 타원) */}
+      <rect x={cx - L / 2} y={cy - R} width={L} height={R * 2} fill="#faf5ff" stroke="#a855f7" strokeWidth="2" />
+      <ellipse cx={cx - L / 2} cy={cy} rx="14" ry={R} fill="#f3e8ff" stroke="#9333ea" strokeWidth="1.5" />
+      <ellipse cx={cx + L / 2} cy={cy} rx="14" ry={R} fill="none" stroke="#a855f7" strokeWidth="1.5" strokeDasharray="3 2" opacity="0.5" />
+      {/* 뒷판 타공 (rear holes) */}
+      {Array.from({ length: 5 }).map((_, i) => (
+        <circle key={i} cx={cx - L / 2} cy={cy - R * 0.6 + i * R * 0.3} r="3" fill="none" stroke="#9333ea" strokeWidth="1" opacity="0.5" />
+      ))}
+      {/* 공기 흐름 (뒷판 유입 → 앞판 배출) */}
+      <line x1={cx - L / 2 - 35} y1={cy} x2={cx - L / 2 - 8} y2={cy} stroke="#0891b2" strokeWidth="2" markerEnd="url(#dsArrow)" />
+      <line x1={cx + L / 2 + 8} y1={cy} x2={cx + L / 2 + 35} y2={cy} stroke="#0891b2" strokeWidth="1.5" strokeDasharray="3 2" markerEnd="url(#dsArrow)" opacity="0.5" />
+      <defs><marker id="dsArrow" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="#0891b2" /></marker></defs>
+      {/* 축 */}
+      <line x1={cx - L / 2 - 20} y1={cy} x2={cx + L / 2 + 20} y2={cy} stroke="#581c87" strokeWidth="2" opacity="0.4" />
+      {/* 치수 */}
+      <line x1={cx - L / 2} y1={cy + R + 12} x2={cx + L / 2} y2={cy + R + 12} stroke="#475569" strokeWidth="0.7" />
+      <text x={cx} y={cy + R + 24} fontSize="9" fill="#a855f7" fontFamily="monospace" textAnchor="middle">L={(p.drum_length * 1000).toFixed(0)}mm</text>
+      <text x="10" y="16" fontSize="10" fill="#475569" fontFamily="monospace">Side · 원통 길이방향 (공기 뒤→앞)</text>
+      <text x="10" y="330" fontSize="9" fill="#94a3b8" fontFamily="monospace">뒷판 타공 유입 · 텀블링 건조</text>
+    </svg>
+  );
+}
+
 function DrumSchematic({ p }) {
   const cx = 160, cy = 150, R = 110;
   const fillH = R * 2 * (p.fill_frac || 0.4);
@@ -994,21 +1196,54 @@ function DrumSchematic({ p }) {
 }
 
 function DrumView({ onBack }) {
-  const [p, setP] = useState({ M_dry: 3.0, fill_frac: 0.4, RPM: 45, A_eff: 10, h_a: 50, fabric: 'cotton' });
+  const [p, setP] = useState({
+    drum_radius: 0.28, drum_length: 0.35, nLifter: 3,
+    M_dry: 3.0, fill_frac: 0.4, RPM: 45, A_eff: 10, h_a: 50, fabric: 'cotton',
+  });
   const set = (k, v) => setP({ ...p, [k]: v });
+  const [vizSub, setVizSub] = useState(0);  // 0=3D, 1=Front, 2=Side
+
   const sidebar = (
     <div>
       <AirSectionLabel>드럼 형상</AirSectionLabel>
-      <Slider label="포 무게" sublabel="[kg] M_dry" value={p.M_dry} min={0.5} max={12} step={0.1} decimals={1} color="purple" onChange={v => set('M_dry', v)} />
-      <Slider label="채움율" sublabel="fill" value={p.fill_frac} min={0.1} max={0.8} step={0.05} decimals={2} color="purple" onChange={v => set('fill_frac', v)} />
-      <Slider label="RPM" sublabel="[rpm] 회전" value={p.RPM} min={0} max={120} step={1} decimals={0} color="purple" onChange={v => set('RPM', v)} />
+      <Slider label="반경 R" sublabel="[m] drum_radius" value={p.drum_radius} min={0.15} max={0.4} step={0.005} decimals={3} color="purple" onChange={v => set('drum_radius', v)} />
+      <Slider label="길이 L" sublabel="[m] drum_length" value={p.drum_length} min={0.2} max={0.6} step={0.005} decimals={3} color="purple" onChange={v => set('drum_length', v)} />
+      <Slider label="리프터 수" sublabel="nLifter" value={p.nLifter} min={2} max={6} step={1} decimals={0} color="purple" onChange={v => set('nLifter', v)} />
+      <AirSectionLabel>부하·운전</AirSectionLabel>
+      <Slider label="포 무게" sublabel="[kg] M_dry" value={p.M_dry} min={0.5} max={12} step={0.1} decimals={1} color="amber" onChange={v => set('M_dry', v)} />
+      <Slider label="채움율" sublabel="fill" value={p.fill_frac} min={0.1} max={0.8} step={0.05} decimals={2} color="amber" onChange={v => set('fill_frac', v)} />
+      <Slider label="RPM" sublabel="[rpm] 회전" value={p.RPM} min={0} max={120} step={1} decimals={0} color="amber" onChange={v => set('RPM', v)} />
       <AirSectionLabel>열전달</AirSectionLabel>
       <Slider label="A_eff" sublabel="[m²] 증발면적" value={p.A_eff} min={1} max={30} step={0.5} decimals={1} color="cyan" onChange={v => set('A_eff', v)} />
       <Slider label="h_a" sublabel="[W/m²K]" value={p.h_a} min={10} max={150} step={5} decimals={0} color="cyan" onChange={v => set('h_a', v)} />
     </div>
   );
+
+  const viz = (
+    <div className="w-full h-full flex flex-col">
+      <div className="flex gap-2 mb-3 shrink-0">
+        {['3D model', 'Front view', 'Side view'].map((label, idx) => (
+          <button key={label} onClick={() => setVizSub(idx)}
+            className={`px-3 py-1.5 text-[12px] font-semibold rounded transition-colors ${
+              vizSub === idx ? 'bg-purple-600 text-white' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+            }`}>{label}</button>
+        ))}
+      </div>
+      <div className="flex-1 bg-white rounded-lg border border-slate-200 overflow-hidden">
+        {vizSub === 0 && <Drum3DModel p={p} />}
+        {vizSub === 1 && <div className="w-full h-full flex items-center justify-center p-4"><div className="w-full max-w-[440px] aspect-square"><DrumFrontView p={p} /></div></div>}
+        {vizSub === 2 && <div className="w-full h-full flex items-center justify-center p-4"><div className="w-full max-w-[440px] aspect-square"><DrumSideView p={p} /></div></div>}
+      </div>
+      <div className="text-[10px] font-mono text-slate-400 mt-2 text-center shrink-0">
+        {vizSub === 0 && '3D — 드래그 회전, 스크롤 줌 · 회전 원통 + 리프터 + 텀블링 포'}
+        {vizSub === 1 && 'Front — 원형 드럼 + 리프터 + 포 채움 (NTU-ε 건조)'}
+        {vizSub === 2 && 'Side — 원통 길이방향 + 뒷판 타공 공기 흐름'}
+      </div>
+    </div>
+  );
+
   return <AirViewShell title="Drum · 텀블링 드럼" subtitle="Tumbling Drum · On-design" icon="🛢" color="#9333ea" onBack={onBack}
-    sidebar={sidebar} schematic={<DrumSchematic p={p} />} caption="드럼 정면 (리프터 3 · 포 텀블링) · NTU-ε 건조" />;
+    sidebar={sidebar} schematic={viz} viewLabel="3D model + 2D views" fullViz={true} caption={null} />;
 }
 
 // ── 필터 도면 ──
