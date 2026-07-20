@@ -540,7 +540,7 @@ function AirSectionLabel({ children }) {
   return <div className="text-[10px] text-slate-500 font-mono uppercase tracking-wider mb-2 font-bold mt-5 first:mt-0">{children}</div>;
 }
 
-function AirViewShell({ title, subtitle, onBack, color, icon, sidebar, schematic, caption, viewLabel }) {
+function AirViewShell({ title, subtitle, onBack, color, icon, sidebar, schematic, caption, viewLabel, fullViz }) {
   const accent = color || '#0891b2';
   return (
     <div className="flex flex-col h-screen bg-slate-50">
@@ -573,9 +573,13 @@ function AirViewShell({ title, subtitle, onBack, color, icon, sidebar, schematic
             <span className="text-[12px] font-bold text-slate-700">Model design</span>
             <span className="text-[10px] font-mono text-slate-400">{viewLabel || '2D 단면 · 설계변수 반영'}</span>
           </div>
-          <div className="flex-1 flex items-center justify-center overflow-auto p-6">
-            <div className="w-full max-w-[520px] aspect-square">{schematic}</div>
-          </div>
+          {fullViz ? (
+            <div className="flex-1 overflow-hidden p-4">{schematic}</div>
+          ) : (
+            <div className="flex-1 flex items-center justify-center overflow-auto p-6">
+              <div className="w-full max-w-[520px] aspect-square">{schematic}</div>
+            </div>
+          )}
           {caption && (
             <div className="bg-white border-t border-slate-200 px-4 py-2 shrink-0">
               <p className="text-[10px] font-mono text-slate-400 text-center">{caption}</p>
@@ -588,6 +592,301 @@ function AirViewShell({ title, subtitle, onBack, color, icon, sidebar, schematic
 }
 
 // ── 팬 도면 (원심팬 정면 단면) ──
+/* ═══════════════════════════════════════════════════════════════════
+   Fan 3D View — fan-sim 형상 (임펠러 후향블레이드 + 스크롤 볼류트 + 디퓨저)
+   ═══════════════════════════════════════════════════════════════════ */
+function Fan3DModel({ p }) {
+  const mountRef = React.useRef(null);
+  const stateRef = React.useRef(null);
+
+  React.useEffect(() => {
+    if (!mountRef.current || typeof THREE === 'undefined') return;
+    const mount = mountRef.current;
+    const w = mount.clientWidth || 600;
+    const h = mount.clientHeight || 400;
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0xf1f5f9);
+
+    const camera = new THREE.PerspectiveCamera(50, w / h, 1, 5000);
+    camera.position.set(320, 240, 380);
+    camera.lookAt(0, 0, 0);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(w, h);
+    renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
+    mount.appendChild(renderer.domElement);
+
+    const amb = new THREE.AmbientLight(0xffffff, 0.6);
+    scene.add(amb);
+    const dir = new THREE.DirectionalLight(0xffffff, 0.8);
+    dir.position.set(200, 400, 300);
+    scene.add(dir);
+    const dir2 = new THREE.DirectionalLight(0xffffff, 0.3);
+    dir2.position.set(-150, -80, -200);
+    scene.add(dir2);
+
+    const grp = new THREE.Group();
+    scene.add(grp);
+
+    // ── 형상 파라미터 (mm) ──
+    const R1 = p.D1 / 2, R2 = p.D2 / 2;   // 입구/출구 반경
+    const b2 = p.b2;                       // 출구 폭 (축방향 높이)
+    const Z = Math.round(p.Z);
+    const beta2 = p.beta2;
+    const tBlade = p.tBlade || 1.0;
+    const cutoffGap = p.cutoffGap || 8;
+    const scrollExp = p.scrollExpRate || 0.12;
+    const wrapAngle = p.wrapAngle || 360;
+
+    // ── 재질 ──
+    const bladeMat = new THREE.MeshPhongMaterial({ color: 0x0891b2, shininess: 70, specular: 0x333333, side: THREE.DoubleSide });
+    const hubMat = new THREE.MeshPhongMaterial({ color: 0x0e7490, shininess: 60 });
+    const shroudMat = new THREE.MeshPhongMaterial({ color: 0x67e8f9, shininess: 40, transparent: true, opacity: 0.25, side: THREE.DoubleSide });
+    const scrollMat = new THREE.MeshPhongMaterial({ color: 0x94a3b8, shininess: 30, transparent: true, opacity: 0.35, side: THREE.DoubleSide });
+
+    // ── 임펠러 허브 (중심 디스크) ──
+    const hubGeo = new THREE.CylinderGeometry(R1 * 0.5, R1 * 0.5, b2 * 1.1, 32);
+    const hub = new THREE.Mesh(hubGeo, hubMat);
+    grp.add(hub);
+
+    // 백플레이트 (임펠러 하단 디스크)
+    const backGeo = new THREE.CylinderGeometry(R2, R2, tBlade * 1.5, 48);
+    const back = new THREE.Mesh(backGeo, hubMat);
+    back.position.y = -b2 / 2;
+    grp.add(back);
+
+    // ── 블레이드 (Z개, 후향 곡선 beta2) ──
+    // 시로코 전곡 다익: beta2>90 (전향), 곡선 블레이드
+    for (let i = 0; i < Z; i++) {
+      const ang0 = (i / Z) * Math.PI * 2;
+      // 블레이드 곡선: 입구(R1)에서 출구(R2)로, beta2 각도 반영
+      const curvePts = [];
+      const nSeg = 8;
+      for (let s = 0; s <= nSeg; s++) {
+        const t = s / nSeg;
+        const r = R1 + t * (R2 - R1);
+        // 후향/전향 곡선 (beta2에 따라 각도 변화)
+        const dAng = (beta2 - 90) * Math.PI / 180 * t * 0.6;
+        const ang = ang0 + dAng;
+        curvePts.push(new THREE.Vector3(r * Math.cos(ang), 0, r * Math.sin(ang)));
+      }
+      // 블레이드를 얇은 박스들로 (곡선 따라)
+      for (let s = 0; s < nSeg; s++) {
+        const pA = curvePts[s], pB = curvePts[s + 1];
+        const mid = new THREE.Vector3().addVectors(pA, pB).multiplyScalar(0.5);
+        const len = pA.distanceTo(pB);
+        const segGeo = new THREE.BoxGeometry(len, b2, tBlade);
+        const seg = new THREE.Mesh(segGeo, bladeMat);
+        seg.position.copy(mid);
+        seg.lookAt(pB.x, mid.y, pB.z);
+        seg.rotateY(Math.PI / 2);
+        grp.add(seg);
+      }
+    }
+
+    // ── 스크롤 하우징 (볼류트, 로그 나선) ──
+    // wrapAngle에 걸쳐 반경이 cutoffGap에서 scrollExp 비율로 확장
+    const scrollPts = [];
+    const baseR = R2 + cutoffGap;
+    const nScroll = 80;
+    const wrapRad = wrapAngle * Math.PI / 180;
+    for (let s = 0; s <= nScroll; s++) {
+      const t = s / nScroll;
+      const ang = t * wrapRad;
+      // 로그 나선 확장
+      const r = baseR * (1 + scrollExp * t * (wrapAngle / 360) * 2 * Math.PI / (2 * Math.PI));
+      const rExp = baseR + (baseR * scrollExp) * ang;
+      scrollPts.push(new THREE.Vector3(rExp * Math.cos(ang), 0, rExp * Math.sin(ang)));
+    }
+    // 스크롤을 튜브(TubeGeometry)로
+    if (scrollPts.length > 1) {
+      const scrollCurve = new THREE.CatmullRomCurve3(scrollPts);
+      const scrollGeo = new THREE.TubeGeometry(scrollCurve, nScroll, b2 * 0.7, 12, false);
+      const scroll = new THREE.Mesh(scrollGeo, scrollMat);
+      grp.add(scroll);
+    }
+
+    // ── 스크롤 상/하판 (실드) ──
+    const shroudTop = new THREE.Mesh(new THREE.RingGeometry(R1 * 0.5, baseR * 1.5, 48), shroudMat);
+    shroudTop.rotation.x = -Math.PI / 2;
+    shroudTop.position.y = b2 / 2 + 2;
+    grp.add(shroudTop);
+
+    // ── 디퓨저 (출구 확장 덕트) ──
+    const diffLen = p.diffLength || 40;
+    const diffAng = (p.diffAngle || 7) * Math.PI / 180;
+    // 스크롤 끝에서 접선방향으로 디퓨저
+    const exitAng = wrapRad;
+    const exitR = baseR + (baseR * scrollExp) * exitAng;
+    const ex = exitR * Math.cos(exitAng), ez = exitR * Math.sin(exitAng);
+    const diffGeo = new THREE.BoxGeometry(diffLen, b2 * 1.4, cutoffGap * 3);
+    const diff = new THREE.Mesh(diffGeo, scrollMat);
+    diff.position.set(ex + diffLen / 2 * Math.cos(exitAng - Math.PI / 2), 0, ez + diffLen / 2 * Math.sin(exitAng - Math.PI / 2));
+    diff.rotation.y = -exitAng;
+    grp.add(diff);
+
+    // ── 회전 애니메이션 + OrbitControls 대체 (드래그) ──
+    let rot = 0;
+    let dragging = false, px = 0, py = 0, rotX = 0.4, rotY = 0.6;
+    const onDown = (e) => { dragging = true; px = e.clientX; py = e.clientY; };
+    const onMove = (e) => {
+      if (!dragging) return;
+      rotY += (e.clientX - px) * 0.008;
+      rotX += (e.clientY - py) * 0.008;
+      rotX = Math.max(-1.4, Math.min(1.4, rotX));
+      px = e.clientX; py = e.clientY;
+    };
+    const onUp = () => { dragging = false; };
+    renderer.domElement.addEventListener('mousedown', onDown);
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    // 줌
+    const onWheel = (e) => {
+      e.preventDefault();
+      const d = camera.position.length();
+      const nd = Math.max(150, Math.min(900, d + e.deltaY * 0.5));
+      camera.position.multiplyScalar(nd / d);
+    };
+    renderer.domElement.addEventListener('wheel', onWheel, { passive: false });
+
+    let raf;
+    const animate = () => {
+      raf = requestAnimationFrame(animate);
+      // 임펠러만 회전 (blade + hub), 스크롤은 고정
+      rot += 0.01;
+      const camR = camera.position.length();
+      camera.position.set(
+        camR * Math.sin(rotY) * Math.cos(rotX),
+        camR * Math.sin(rotX),
+        camR * Math.cos(rotY) * Math.cos(rotX)
+      );
+      camera.lookAt(0, 0, 0);
+      renderer.render(scene, camera);
+    };
+    animate();
+
+    stateRef.current = { renderer, scene, onMove, onUp, onWheel, raf };
+
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      renderer.domElement.removeEventListener('wheel', onWheel);
+      if (mount.contains(renderer.domElement)) mount.removeChild(renderer.domElement);
+      renderer.dispose();
+    };
+  }, [p.D1, p.D2, p.b2, p.Z, p.beta2, p.tBlade, p.cutoffGap, p.scrollExpRate, p.wrapAngle, p.diffLength, p.diffAngle]);
+
+  return <div ref={mountRef} className="w-full h-full" style={{ minHeight: '400px', cursor: 'grab' }} />;
+}
+
+
+/* ───── Fan Front View — 정면 (임펠러 + 스크롤 볼류트, fan-sim 상세) ───── */
+function FanFrontView({ p }) {
+  const cx = 170, cy = 165;
+  const scale = 130 / Math.max(p.D2, 1);   // D2를 화면에 맞춤
+  const R1 = (p.D1 / 2) * scale, R2 = (p.D2 / 2) * scale;
+  const Z = Math.round(p.Z);
+  const cutoffGap = (p.cutoffGap || 8) * scale;
+  const scrollExp = p.scrollExpRate || 0.12;
+  const wrapAngle = p.wrapAngle || 360;
+
+  // 블레이드 (후향/전향 곡선)
+  const blades = [];
+  for (let i = 0; i < Z; i++) {
+    const ang0 = (i / Z) * Math.PI * 2;
+    const pts = [];
+    for (let s = 0; s <= 6; s++) {
+      const t = s / 6;
+      const r = R1 + t * (R2 - R1);
+      const dAng = (p.beta2 - 90) * Math.PI / 180 * t * 0.6;
+      const ang = ang0 + dAng;
+      pts.push(`${(cx + r * Math.cos(ang)).toFixed(1)},${(cy + r * Math.sin(ang)).toFixed(1)}`);
+    }
+    blades.push(<polyline key={i} points={pts.join(' ')} fill="none" stroke="#0891b2" strokeWidth="1.5" opacity="0.8" strokeLinecap="round" />);
+  }
+
+  // 스크롤 볼류트 (로그 나선)
+  const baseR = R2 + cutoffGap;
+  const scrollPts = [];
+  const nS = 100;
+  const wrapRad = wrapAngle * Math.PI / 180;
+  for (let s = 0; s <= nS; s++) {
+    const t = s / nS;
+    const ang = t * wrapRad;
+    const r = baseR + (baseR * scrollExp) * ang;
+    scrollPts.push(`${(cx + r * Math.cos(ang)).toFixed(1)},${(cy + r * Math.sin(ang)).toFixed(1)}`);
+  }
+
+  // 디퓨저 (스크롤 끝 → 출구)
+  const exitAng = wrapRad;
+  const exitR = baseR + (baseR * scrollExp) * exitAng;
+  const ex = cx + exitR * Math.cos(exitAng), ey = cy + exitR * Math.sin(exitAng);
+  const diffLen = (p.diffLength || 40) * scale;
+  const perpAng = exitAng - Math.PI / 2;
+  const dx = ex + diffLen * Math.cos(perpAng), dy = ey + diffLen * Math.sin(perpAng);
+
+  return (
+    <svg viewBox="0 0 340 340" className="w-full h-full">
+      {/* 스크롤 볼류트 */}
+      <polyline points={scrollPts.join(' ')} fill="none" stroke="#64748b" strokeWidth="2" opacity="0.7" />
+      {/* 컷오프 텅 (tongue) */}
+      <circle cx={cx + baseR} cy={cy} r={(p.Rtongue || 5) * scale} fill="none" stroke="#ef4444" strokeWidth="1.5" opacity="0.6" />
+      <text x={cx + baseR + 6} y={cy - 4} fontSize="8" fill="#ef4444" fontFamily="monospace">tongue</text>
+      {/* 디퓨저 */}
+      <line x1={ex} y1={ey} x2={dx} y2={dy} stroke="#94a3b8" strokeWidth="2" strokeDasharray="4 2" />
+      <text x={(ex+dx)/2 + 5} y={(ey+dy)/2} fontSize="8" fill="#64748b" fontFamily="monospace">diffuser {p.diffAngle}°</text>
+      {/* 출구 원 (D2) */}
+      <circle cx={cx} cy={cy} r={R2} fill="none" stroke="#0891b2" strokeWidth="1" strokeDasharray="3 2" opacity="0.4" />
+      {/* 입구 원 (D1) */}
+      <circle cx={cx} cy={cy} r={R1} fill="#cffafe" stroke="#0e7490" strokeWidth="1.5" />
+      {/* 블레이드 */}
+      {blades}
+      {/* 허브 */}
+      <circle cx={cx} cy={cy} r="5" fill="#0e7490" />
+      {/* 치수 */}
+      <line x1={cx} y1={cy} x2={cx + R2} y2={cy} stroke="#475569" strokeWidth="0.7" strokeDasharray="2 2" />
+      <text x={cx + R2/2} y={cy - 4} fontSize="9" fill="#0891b2" fontFamily="monospace" textAnchor="middle">D2={p.D2}</text>
+      <text x={cx} y={cy - R1 - 4} fontSize="8" fill="#0e7490" fontFamily="monospace" textAnchor="middle">D1={p.D1}</text>
+      <text x="10" y="16" fontSize="10" fill="#475569" fontFamily="monospace">Front · Z={Z} · β2={p.beta2}° · wrap={wrapAngle}°</text>
+      <text x="10" y="330" fontSize="9" fill="#94a3b8" fontFamily="monospace">시로코 임펠러 + 스크롤 볼류트 (fan-sim)</text>
+    </svg>
+  );
+}
+
+/* ───── Fan Top View — 위에서 본 축방향 (임펠러 폭 b, 흡입구) ───── */
+function FanTopView({ p }) {
+  const cx = 170, cy = 170;
+  const scale = 130 / Math.max(p.D2, 1);
+  const R2 = (p.D2 / 2) * scale, R1 = (p.D1 / 2) * scale;
+  const b1 = (p.b1 || 60) * scale, b2 = (p.b2 || 50) * scale;
+
+  return (
+    <svg viewBox="0 0 340 340" className="w-full h-full">
+      {/* 임펠러 축방향 단면 (좌우 대칭) */}
+      {/* 백플레이트 */}
+      <rect x={cx - R2} y={cy + b2/2} width={R2 * 2} height="4" fill="#0e7490" />
+      {/* 블레이드 폭 (b1 입구 → b2 출구, 사다리꼴) */}
+      <path d={`M ${cx - R2} ${cy - b2/2} L ${cx - R1} ${cy - b1/2} L ${cx - R1} ${cy + b1/2} L ${cx - R2} ${cy + b2/2} Z`} fill="#67e8f9" opacity="0.4" stroke="#0891b2" strokeWidth="1" />
+      <path d={`M ${cx + R2} ${cy - b2/2} L ${cx + R1} ${cy - b1/2} L ${cx + R1} ${cy + b1/2} L ${cx + R2} ${cy + b2/2} Z`} fill="#67e8f9" opacity="0.4" stroke="#0891b2" strokeWidth="1" />
+      {/* 흡입구 (중앙, 축방향 공기 유입) */}
+      <line x1={cx} y1={cy - b1/2 - 30} x2={cx} y2={cy - b1/2 - 5} stroke="#0891b2" strokeWidth="2" markerEnd="url(#ftArrow)" />
+      <line x1={cx - 15} y1={cy - b1/2 - 25} x2={cx - 15} y2={cy - b1/2 - 5} stroke="#0891b2" strokeWidth="1.5" opacity="0.6" markerEnd="url(#ftArrow)" />
+      <line x1={cx + 15} y1={cy - b1/2 - 25} x2={cx + 15} y2={cy - b1/2 - 5} stroke="#0891b2" strokeWidth="1.5" opacity="0.6" markerEnd="url(#ftArrow)" />
+      <defs><marker id="ftArrow" markerWidth="8" markerHeight="8" refX="4" refY="7" orient="auto"><path d="M0,0 L4,7 L8,0" fill="#0891b2" /></marker></defs>
+      {/* 허브 축 */}
+      <line x1={cx} y1={cy - b2/2} x2={cx} y2={cy + b2/2 + 20} stroke="#0e7490" strokeWidth="3" />
+      {/* 치수 */}
+      <text x={cx - R1 - 30} y={cy} fontSize="9" fill="#0891b2" fontFamily="monospace" textAnchor="middle">b1={p.b1}</text>
+      <text x={cx - R2 - 10} y={cy - b2/2 - 4} fontSize="9" fill="#0891b2" fontFamily="monospace" textAnchor="middle">b2={p.b2}</text>
+      <text x={cx} y={cy - b1/2 - 36} fontSize="8" fill="#0891b2" fontFamily="monospace" textAnchor="middle">흡입 (축방향)</text>
+      <text x="10" y="16" fontSize="10" fill="#475569" fontFamily="monospace">Top · 축방향 단면 (임펠러 폭)</text>
+      <text x="10" y="330" fontSize="9" fill="#94a3b8" fontFamily="monospace">입구폭 b1 → 출구폭 b2 (사다리꼴)</text>
+    </svg>
+  );
+}
+
 function FanSchematic({ p }) {
   const cx = 160, cy = 160, scale = 0.6;
   const rD1 = (p.D1 / 2) * scale, rD2 = (p.D2 / 2) * scale;
@@ -615,8 +914,14 @@ function FanSchematic({ p }) {
 }
 
 function FanView({ onBack }) {
-  const [p, setP] = useState({ D1: 120, D2: 175, b1: 60, b2: 50, beta1: 30, beta2: 145, Z: 36, cutoffGap: 8, wrapAngle: 360 });
+  const [p, setP] = useState({
+    D1: 120, D2: 175, b1: 60, b2: 50, beta1: 30, beta2: 145, Z: 36, tBlade: 1.0,
+    cutoffGap: 8, Rtongue: 5, wrapAngle: 360, scrollExpRate: 0.12,
+    diffAngle: 7, diffLength: 40,
+  });
   const set = (k, v) => setP({ ...p, [k]: v });
+  const [vizSub, setVizSub] = useState(0);  // 0=3D, 1=Front, 2=Top
+
   const sidebar = (
     <div>
       <AirSectionLabel>임펠러</AirSectionLabel>
@@ -627,13 +932,44 @@ function FanView({ onBack }) {
       <Slider label="β1" sublabel="[°] 입구각" value={p.beta1} min={10} max={80} step={1} decimals={0} color="blue" onChange={v => set('beta1', v)} />
       <Slider label="β2" sublabel="[°] 출구각" value={p.beta2} min={90} max={170} step={1} decimals={0} color="blue" onChange={v => set('beta2', v)} />
       <Slider label="Z" sublabel="블레이드 수" value={p.Z} min={8} max={60} step={1} decimals={0} color="blue" onChange={v => set('Z', v)} />
-      <AirSectionLabel>스크롤</AirSectionLabel>
-      <Slider label="cutoffGap" sublabel="[mm]" value={p.cutoffGap} min={2} max={30} step={0.5} decimals={1} color="purple" onChange={v => set('cutoffGap', v)} />
-      <Slider label="wrapAngle" sublabel="[°]" value={p.wrapAngle} min={180} max={400} step={5} decimals={0} color="purple" onChange={v => set('wrapAngle', v)} />
+      <Slider label="tBlade" sublabel="[mm] 블레이드 두께" value={p.tBlade} min={0.3} max={3} step={0.1} decimals={1} color="blue" onChange={v => set('tBlade', v)} />
+      <AirSectionLabel>스크롤 (볼류트)</AirSectionLabel>
+      <Slider label="cutoffGap" sublabel="[mm] 컷오프 간극" value={p.cutoffGap} min={2} max={30} step={0.5} decimals={1} color="purple" onChange={v => set('cutoffGap', v)} />
+      <Slider label="Rtongue" sublabel="[mm] 텅 반경" value={p.Rtongue} min={1} max={20} step={0.5} decimals={1} color="purple" onChange={v => set('Rtongue', v)} />
+      <Slider label="wrapAngle" sublabel="[°] 감김각" value={p.wrapAngle} min={180} max={400} step={5} decimals={0} color="purple" onChange={v => set('wrapAngle', v)} />
+      <Slider label="scrollExp" sublabel="확장율" value={p.scrollExpRate} min={0.05} max={0.3} step={0.01} decimals={2} color="purple" onChange={v => set('scrollExpRate', v)} />
+      <AirSectionLabel>디퓨저</AirSectionLabel>
+      <Slider label="diffAngle" sublabel="[°] 확산각" value={p.diffAngle} min={2} max={20} step={1} decimals={0} color="green" onChange={v => set('diffAngle', v)} />
+      <Slider label="diffLength" sublabel="[mm] 길이" value={p.diffLength} min={10} max={100} step={5} decimals={0} color="green" onChange={v => set('diffLength', v)} />
     </div>
   );
-  return <AirViewShell title="Fan · 원심팬" subtitle="Centrifugal Fan · On-design" icon="🌀" color="#0891b2" onBack={onBack}
-    sidebar={sidebar} schematic={<FanSchematic p={p} />} caption="원심팬 정면 단면 (스크롤 하우징 점선) · 설계변수 실시간 반영" />;
+
+  const viz = (
+    <div className="w-full h-full flex flex-col">
+      {/* 뷰 전환 탭 (냉매와 동일 스타일) */}
+      <div className="flex gap-2 mb-3 shrink-0">
+        {['3D model', 'Front view', 'Top view'].map((label, idx) => (
+          <button key={label} onClick={() => setVizSub(idx)}
+            className={`px-3 py-1.5 text-[12px] font-semibold rounded transition-colors ${
+              vizSub === idx ? 'bg-cyan-600 text-white' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+            }`}>{label}</button>
+        ))}
+      </div>
+      <div className="flex-1 bg-white rounded-lg border border-slate-200 overflow-hidden">
+        {vizSub === 0 && <Fan3DModel p={p} />}
+        {vizSub === 1 && <div className="w-full h-full flex items-center justify-center p-4"><div className="w-full max-w-[440px] aspect-square"><FanFrontView p={p} /></div></div>}
+        {vizSub === 2 && <div className="w-full h-full flex items-center justify-center p-4"><div className="w-full max-w-[440px] aspect-square"><FanTopView p={p} /></div></div>}
+      </div>
+      <div className="text-[10px] font-mono text-slate-400 mt-2 text-center shrink-0">
+        {vizSub === 0 && '3D — 드래그 회전, 스크롤 줌 · 시로코 임펠러+스크롤 볼류트 (fan-sim)'}
+        {vizSub === 1 && 'Front — 임펠러 블레이드 + 스크롤 볼류트 + 컷오프 텅 + 디퓨저'}
+        {vizSub === 2 && 'Top — 축방향 단면 (임펠러 입구폭 b1 → 출구폭 b2)'}
+      </div>
+    </div>
+  );
+
+  return <AirViewShell title="Fan · 원심팬" subtitle="Centrifugal Fan · fan-sim" icon="🌀" color="#0891b2" onBack={onBack}
+    sidebar={sidebar} schematic={viz} viewLabel="3D model + 2D views" fullViz={true} caption={null} />;
 }
 
 // ── 드럼 도면 ──
