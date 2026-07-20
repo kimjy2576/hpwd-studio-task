@@ -66,11 +66,22 @@ def solve(ref_fidelity, air_fidelity, operating, air_inlet,
     converged = False
     ref_res = None
     air_res = None
+    # warm start: operating을 복사해 매 outer 후 수렴값으로 갱신
+    #   (냉매 사이클을 매번 초기값에서 재수렴하지 않고 이전 outer 결과에서 이어감)
+    #   max_iter는 충분히 유지 — warm start로 실제 iteration은 자연히 줄어듦
+    op_ws = dict(operating)
     for outer in range(max_outer):
-        # ── 냉매 사이클 수렴 (현재 air_bc로) ──
-        ref_res = refrigerant_solve(ref_fidelity, operating, air_bc,
-                                    params_override=params_override, max_iter=100)
+        # ── 냉매 사이클 수렴 (현재 air_bc + warm-started operating) ──
+        ref_res = refrigerant_solve(ref_fidelity, op_ws, air_bc,
+                                    params_override=params_override, max_iter=100,
+                                    tol_mass=1e-5, tol_enthalpy=1.0, tol_SH=0.1)
         s = ref_res['state']
+
+        # 다음 outer용 warm start: 수렴된 냉매 상태를 operating에 반영
+        op_ws = dict(op_ws)
+        op_ws['P_evap'] = ref_res['P_evap']
+        op_ws['P_cond'] = ref_res['P_cond']
+        op_ws['h_suc'] = ref_res['h_suc']
 
         # HX 냉매입구 추출 → 공기 loop용
         hx_ref = {
