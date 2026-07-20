@@ -268,26 +268,45 @@ function CoupledCycle({ fid, setFid, fanPosition, setFanPosition, running, onEdi
         <span className="mono text-[9px] text-slate-400">↕ 증발기·응축기에서 냉매↔공기 열교환 ↕</span>
       </div>
 
-      {/* 공기 루프 (하단) — drum → filter → fan → evap → cond → drum */}
+      {/* 공기 루프 (하단) — drum → filter → evap → cond → drum, 팬은 임의 위치 */}
       <div>
-        <div className="mono text-[10px] font-semibold uppercase tracking-wide mb-2" style={{color:'var(--accent)'}}>공기 루프</div>
-        <div className="flex items-center justify-center gap-1.5 flex-wrap">
-          <Node ck="drum" label="드럼" en="Drum" color="var(--accent)" icon="🛢" />
-          <Arrow color="var(--accent)" dir="right" />
-          <Node ck="filter" label="필터" en="Filter" color="var(--amber)" icon="▦" />
-          <Arrow color="var(--accent)" dir="right" />
-          <FanSlotInline active={fanPosition !== null} onClick={() => setFanPosition(fanPosition === null ? 2 : null)} onEdit={() => onEditParams('fan')} fid={fid} setFid={setFid} />
-          <Arrow color="var(--accent)" dir="right" />
-          <div className="px-2.5 py-2 rounded-lg border-2 border-dashed bg-slate-50 min-w-[100px] text-center" style={{borderColor:'var(--evap)'}}>
-            <div className="text-[12px] font-bold text-slate-700">증발기</div>
-            <div className="mono text-[8px] text-slate-400">(공유 · 위 참조)</div>
-          </div>
-          <Arrow color="var(--accent)" dir="right" />
-          <div className="px-2.5 py-2 rounded-lg border-2 border-dashed bg-slate-50 min-w-[100px] text-center" style={{borderColor:'var(--cond)'}}>
-            <div className="text-[12px] font-bold text-slate-700">응축기</div>
-            <div className="mono text-[8px] text-slate-400">(공유 · 위 참조)</div>
-          </div>
-          <div className="mono text-[10px] shrink-0" style={{color:'var(--accent)'}}>↺ drum</div>
+        <div className="flex items-center justify-between mb-2">
+          <span className="mono text-[10px] font-semibold uppercase tracking-wide" style={{color:'var(--accent)'}}>공기 루프</span>
+          <span className="mono text-[9px] text-slate-400">
+            {fanPosition === null ? '팬 미배치 — 슬롯(+) 클릭해 배치' : `팬 위치: 슬롯 ${fanPosition}`}
+            {fanPosition !== null && (
+              <button onClick={() => setFanPosition(null)} className="ml-2 text-red-400 hover:text-red-600">팬 제거</button>
+            )}
+          </span>
+        </div>
+        <div className="flex items-center justify-center gap-1 flex-wrap">
+          {/* AIR_CORE 각 컴포넌트 사이에 팬 슬롯 (0~4 위치) */}
+          {AIR_CORE.map((c, i) => (
+            <React.Fragment key={c.key}>
+              {/* 팬 슬롯 (컴포넌트 앞) */}
+              {fanPosition === i
+                ? <FanNode onEdit={() => onEditParams('fan')} onRemove={() => setFanPosition(null)} fid={fid} setFid={setFid} />
+                : <FanSlotBtn onClick={() => setFanPosition(i)} />}
+              <Arrow color="var(--accent)" dir="right" />
+              {/* 코어 컴포넌트 */}
+              {(c.key === 'evaporator' || c.key === 'condenser')
+                ? (
+                  <div className="px-2.5 py-2 rounded-lg border-2 border-dashed bg-slate-50 min-w-[96px] text-center shrink-0"
+                    style={{borderColor: c.key === 'evaporator' ? 'var(--evap)' : 'var(--cond)'}}>
+                    <div className="text-[12px] font-bold text-slate-700">{c.label}</div>
+                    <div className="mono text-[8px] text-slate-400">(공유 · 위 참조)</div>
+                  </div>
+                )
+                : <Node ck={c.key} label={c.label} en={c.en}
+                    color={c.key === 'filter' ? 'var(--amber)' : 'var(--accent)'}
+                    icon={c.key === 'drum' ? '🛢' : '▦'} />}
+            </React.Fragment>
+          ))}
+          {/* 마지막 슬롯 (응축기 뒤) */}
+          {fanPosition === AIR_CORE.length
+            ? <FanNode onEdit={() => onEditParams('fan')} onRemove={() => setFanPosition(null)} fid={fid} setFid={setFid} />
+            : <FanSlotBtn onClick={() => setFanPosition(AIR_CORE.length)} />}
+          <span className="mono text-[10px] shrink-0 ml-1" style={{color:'var(--accent)'}}>↺</span>
         </div>
       </div>
 
@@ -301,25 +320,27 @@ function CoupledCycle({ fid, setFid, fanPosition, setFanPosition, running, onEdi
   );
 }
 
-// 팬 슬롯 인라인 (공기 루프 내 팬 배치)
-function FanSlotInline({ active, onClick, onEdit, fid, setFid }) {
-  if (!active) {
-    return (
-      <button onClick={onClick} title="팬 배치"
-        className="fan-slot shrink-0 px-3 py-2 rounded-lg border-2 border-dashed border-slate-300 text-slate-400 bg-white hover:bg-blue-50 min-w-[80px]">
-        <div className="text-sm">+ 팬</div>
-      </button>
-    );
-  }
+// 팬 슬롯 (빈 — 클릭해 팬 배치)
+function FanSlotBtn({ onClick }) {
   return (
-    <div className="node bg-white rounded-xl border-2 p-2.5 min-w-[100px]" style={{borderColor:'var(--accent)'}}>
+    <button onClick={onClick} title="여기에 팬 배치"
+      className="fan-slot shrink-0 w-7 h-14 rounded-lg border-2 border-dashed border-slate-300 text-slate-300 bg-white hover:bg-blue-50 hover:border-blue-400 hover:text-blue-500 flex items-center justify-center text-sm">
+      +
+    </button>
+  );
+}
+
+// 팬 노드 (배치됨 — fidelity + 편집 + 제거)
+function FanNode({ onEdit, onRemove, fid, setFid }) {
+  return (
+    <div className="node bg-white rounded-xl border-2 p-2.5 min-w-[100px] shrink-0" style={{borderColor:'var(--accent)'}}>
       <div className="flex items-center gap-1 mb-1.5">
         <span className="text-base" style={{color:'var(--accent)'}}>🌀</span>
         <div className="flex-1 min-w-0">
           <div className="text-[12px] font-bold text-slate-800">팬</div>
         </div>
         <button onClick={onEdit} title="설계변수" className="text-xs" style={{color:'var(--accent)'}}>⚙</button>
-        <button onClick={onClick} title="제거" className="text-xs text-slate-300 hover:text-red-500">×</button>
+        <button onClick={onRemove} title="제거" className="text-xs text-slate-300 hover:text-red-500">×</button>
       </div>
       <FidelitySelector value={fid.fan} onChange={v => setFid('fan', v)} />
     </div>

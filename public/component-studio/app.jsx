@@ -222,7 +222,7 @@ function AppSwitcher({ current }) {
 /* ───────────── Topbar ───────────── */
 function Topbar({ identity }) {
   return (
-    <div className="bg-white border-b border-slate-200 px-6 py-3 flex items-center justify-between shrink-0">
+    <div className="bg-white border-b border-slate-200 px-4 py-2 flex items-center justify-between shrink-0">
       <div className="flex items-center gap-4">
         <AppSwitcher current="component-studio" />
         <div className="w-px h-5 bg-slate-200"></div>

@@ -3445,7 +3445,7 @@ function HPWDStudio() {
          style={{ fontFamily: "'Inter', 'Pretendard', -apple-system, sans-serif" }}>
 
       {/* Menubar */}
-      <div className="h-9 bg-white border-b border-slate-200 flex items-center px-4 gap-4 text-[11px] shrink-0">
+      <div className="bg-white border-b border-slate-200 px-4 py-2 flex items-center gap-4 shrink-0 text-[11px]">
         <AppSwitcher current="studio" />
         <div className="text-slate-400 text-[10px]">세탁기차세대플랫폼Task · 김진영 선임</div>
         <div className="flex-1"></div>
@@ -5446,7 +5446,7 @@ function AppSwitcher({ current }) {
         className="flex items-center gap-2 px-2 py-1 rounded hover:bg-slate-100 transition-colors"
       >
         <div className="w-2 h-2 rounded-sm bg-cyan-600 shrink-0"/>
-        <span className="font-bold text-slate-900 tracking-wide text-[11px]">{active.label}</span>
+        <span className="font-bold text-slate-900 tracking-wide text-sm">{active.label}</span>
         <span className="text-slate-400 text-[9px]">▾</span>
       </button>
 

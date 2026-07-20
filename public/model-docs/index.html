@@ -47,12 +47,12 @@ code, .mono { font-family: 'JetBrains Mono', monospace; }
 
 /* ════════ Top Bar ════════ */
 .topbar {
-  height: 44px;
   background: var(--paper);
   border-bottom: 1px solid var(--line);
   display: flex;
   align-items: center;
-  padding: 0 16px;
+  padding: 8px 16px;
+  min-height: 44px;
   gap: 16px;
   flex-shrink: 0;
 }
@@ -107,8 +107,8 @@ code, .mono { font-family: 'JetBrains Mono', monospace; }
 }
 .app-btn:hover { background: var(--line-soft); }
 .app-dot { width: 8px; height: 8px; border-radius: 2px; background: var(--accent); }
-.app-name { font-size: 12px; font-weight: 700; letter-spacing: 0.5px; color: var(--ink); }
-.app-arrow { font-size: 9px; color: var(--muted); }
+.app-name { font-size: 14px; line-height: 1.43; font-weight: 700; letter-spacing: 0.5px; color: var(--ink); }
+.app-arrow { font-size: 10px; color: var(--muted); }
 
 .app-menu {
   position: absolute;
@@ -118,7 +118,7 @@ code, .mono { font-family: 'JetBrains Mono', monospace; }
   border: 1px solid var(--line);
   border-radius: 8px;
   box-shadow: 0 8px 24px rgba(0,0,0,0.08);
-  min-width: 220px;
+  min-width: 240px;
   padding: 4px;
   display: none;
   z-index: 100;
