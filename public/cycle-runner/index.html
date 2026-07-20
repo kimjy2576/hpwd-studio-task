@@ -121,7 +121,7 @@ function ParamPanel({ comp, compLabel, fidelity, values, onChange, onClose }) {
         {isL3 && (
           <div className="mx-5 mt-3 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg flex items-center justify-between">
             <span className="text-[11px] text-blue-700">L3 상세 형상은 On-Design Studio에서 도면으로 설계</span>
-            <a href="/on-design-studio/" className="mono text-[11px] font-semibold text-blue-600 hover:underline shrink-0 ml-2">열기 →</a>
+            <a href={`/on-design-studio/?part=${comp}`} className="mono text-[11px] font-semibold text-blue-600 hover:underline shrink-0 ml-2">열기 →</a>
           </div>
         )}
 

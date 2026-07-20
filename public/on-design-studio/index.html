@@ -741,14 +741,18 @@ function FinTubeHXView({ mode = 'evap', onBack }) {
   const [tubeMaterial, setTubeMaterial] = useState('Cu');
   const [finMaterial, setFinMaterial] = useState('Al');
   
-  // Tube
-  const [D_o, setDo] = useState(7.0);     // mm
-  const [D_i, setDi] = useState(6.5);     // mm
-  const [L_tube, setLtube] = useState(400); // mm per tube
+  // ── 백엔드 default 반영 (modelDescription 기준, mm 단위 변환) ──
+  //   증발기(EvapMBe.mo): N_rows=4, FPI=20 · 응축기(CondMBe.mo): N_rows=6, FPI=22
+  //   공통 형상: D_o=5, D_i=4.6, P_t=14.14, P_l=10, t_fin=0.11, L_tube(W)=240 (mm)
+  const _isCond = mode === 'cond';
+  // Tube (백엔드 m → UI mm)
+  const [D_o, setDo] = useState(5.0);     // mm (백엔드 0.005)
+  const [D_i, setDi] = useState(4.6);     // mm (백엔드 0.0046)
+  const [L_tube, setLtube] = useState(240); // mm (백엔드 W=0.24)
   
   // Fin
-  const [FPI, setFPI] = useState(12);
-  const [t_fin, setTfin] = useState(0.12); // mm
+  const [FPI, setFPI] = useState(_isCond ? 22 : 20);   // 응축기 22 / 증발기 20
+  const [t_fin, setTfin] = useState(0.11); // mm (백엔드 0.00011)
   const [fin_type, setFinType] = useState('plain');  // plain/wavy/louver/slit
   const [edge_type, setEdgeType] = useState('rounded');  // sharp/rounded/chamfered
   // Wavy params (fin_type='wavy' 일 때만)
@@ -763,16 +767,16 @@ function FinTubeHXView({ mode = 'evap', onBack }) {
   //   • N_rows ("행")    = 공기 흐름 방향 깊이 (longitudinal, P_l pitch)
   //   • N_columns ("열") = 공기 흐름 수직 방향 (transverse, P_t pitch)
   //   • N_tubes = N_rows × N_columns (derived, 자동 계산)
-  const [N_rows, setNrows] = useState(2);
-  const [N_columns, setNcolumns] = useState(12);
+  const [N_rows, setNrows] = useState(_isCond ? 6 : 4);   // 응축기 6 / 증발기 4
+  const [N_columns, setNcolumns] = useState(4);           // N_tubes_per_row=4
   const N_tubes = N_rows * N_columns;  // derived
   const setNtubes = (n) => {
     // legacy compat — N_tubes 직접 set 호출 시 N_columns로 변환
     const cols = N_rows > 0 ? Math.max(1, Math.round(n / N_rows)) : n;
     setNcolumns(cols);
   };
-  const [P_t, setPt] = useState(25.0);  // mm
-  const [P_l, setPl] = useState(22.0);  // mm
+  const [P_t, setPt] = useState(14.14);  // mm (백엔드 0.01414)
+  const [P_l, setPl] = useState(10.0);   // mm (백엔드 0.01)
   // Circuit mode (preset 4개 + custom)
   const [circuit_mode, setCircuitMode] = useState('single');  // row_parallel/serpentine_2/serpentine_4/single/custom
   
@@ -3398,12 +3402,12 @@ function RollingPiston3D({ R_c_mm, R_p_mm, H_mm, t_vane_mm, theta_deg,
    ═══════════════════════════════════════════════════════════════════ */
 function CompressorView({ onBack }) {
   // ─── Chamber 1-Cycle Fitting params ───
-  const [clearance_ratio, setClearance] = useState(0.04); // -
+  const [clearance_ratio, setClearance] = useState(0.03); // - (백엔드 default)
   const [rv_in, setRvin] = useState(2.5);               // -
   const [A_valve_in_mm2, setAvIn] = useState(8.0);      // mm²
   const [A_valve_out_mm2, setAvOut] = useState(6.0);    // mm²
-  const [N_rated, setNrated] = useState(3000);          // rpm
-  const [eta_motor, setEtaMotor] = useState(0.92);
+  const [N_rated, setNrated] = useState(1800);          // rpm (백엔드 default)
+  const [eta_motor, setEtaMotor] = useState(0.90);      // (백엔드 default)
   const [eta_inv, setEtaInv] = useState(0.95);
   
   // ─── Rotary geometry (compressor-sim의 RollingPiston* 함수 호환) ───
@@ -4383,7 +4387,7 @@ function EEVView({ onBack }) {
   // Geometry (L3 핵심)
   const [needle_profile, setNeedleProfile] = useState('cone');
   const [needle_angle, setNeedleAngle] = useState(30.0);  // deg (반각)
-  const [D_seat_mm, setDseat] = useState(2.0);             // mm
+  const [D_seat_mm, setDseat] = useState(1.0);             // mm (백엔드 0.001m)
   const [stroke_max_mm, setStrokeMax] = useState(1.0);     // mm
   // D_orifice_max는 D_seat과 동일 (needle이 hole에서 빠져나오면 유효 통로 = seat hole)
   const [L_inlet_mm, setLin] = useState(30.0);             // mm (시각화)
@@ -4392,7 +4396,7 @@ function EEVView({ onBack }) {
   
   // Choke + Fitting
   const [choke_ratio, setChokeRatio] = useState(0.5);
-  const [Cd_base, setCdBase] = useState(0.72);
+  const [Cd_base, setCdBase] = useState(0.70);             // (백엔드 default)
   const [Re_transition, setReTrans] = useState(1000.0);
   const [cf_A, setCfA] = useState(1.0);
   
@@ -5211,7 +5215,14 @@ function EEVView({ onBack }) {
    Top App
    ═══════════════════════════════════════════════════════════════════ */
 function App() {
-  const [selected, setSelected] = useState(null);
+  const [selected, setSelected] = useState(() => {
+    // 딥링크: URL ?part=xxx 로 특정 부품 바로 열기 (Cycle Runner에서 링크)
+    try {
+      const part = new URLSearchParams(window.location.search).get('part');
+      const valid = ['evaporator', 'condenser', 'compressor', 'eev', 'fan', 'drum', 'filter'];
+      return valid.includes(part) ? part : null;
+    } catch (e) { return null; }
+  });
 
   // System view
   if (!selected) {
