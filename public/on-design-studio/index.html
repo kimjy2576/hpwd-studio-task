@@ -1306,6 +1306,204 @@ function FilterSchematic({ p }) {
   );
 }
 
+/* ═══════════════════════════════════════════════════════════════════
+   Filter 3D View — 형상 프레임(원형/직사각형) + 메쉬 그리드
+   ═══════════════════════════════════════════════════════════════════ */
+function Filter3DModel({ p }) {
+  const mountRef = React.useRef(null);
+
+  React.useEffect(() => {
+    if (!mountRef.current || typeof THREE === 'undefined') return;
+    const mount = mountRef.current;
+    const w = mount.clientWidth || 600;
+    const h = mount.clientHeight || 400;
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0xf1f5f9);
+
+    const camera = new THREE.PerspectiveCamera(50, w / h, 1, 5000);
+    camera.position.set(280, 200, 320);
+    camera.lookAt(0, 0, 0);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(w, h);
+    renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
+    mount.appendChild(renderer.domElement);
+
+    const amb = new THREE.AmbientLight(0xffffff, 0.65);
+    scene.add(amb);
+    const dir = new THREE.DirectionalLight(0xffffff, 0.75);
+    dir.position.set(200, 400, 300);
+    scene.add(dir);
+
+    const grp = new THREE.Group();
+    scene.add(grp);
+
+    const isRect = p.shape === 'rectangular';
+    const L_thick = (p.L_thick || 0.6) * 20;  // 두께 (시각적 과장)
+    const MPI = p.MPI || 15;
+
+    // 프레임 재질
+    const frameMat = new THREE.MeshPhongMaterial({ color: 0xd97706, shininess: 50 });
+    const meshMat = new THREE.LineBasicMaterial({ color: 0xf59e0b, transparent: true, opacity: 0.6 });
+
+    let W, H;  // 화면 크기 (mm → scene)
+    if (isRect) {
+      W = (p.W || 200) * 0.6; H = (p.H || 100) * 0.6;
+    } else {
+      W = (p.D_major || 250) * 0.6; H = (p.D_minor || 250) * 0.6;
+    }
+
+    // ── 프레임 (테두리) ──
+    if (isRect) {
+      // 직사각형 프레임 (4개 막대)
+      const barT = 6;
+      const frames = [
+        [W, barT, L_thick, 0, H/2, 0], [W, barT, L_thick, 0, -H/2, 0],
+        [barT, H, L_thick, W/2, 0, 0], [barT, H, L_thick, -W/2, 0, 0],
+      ];
+      frames.forEach(([fw, fh, fd, x, y, z]) => {
+        const m = new THREE.Mesh(new THREE.BoxGeometry(fw, fh, fd), frameMat);
+        m.position.set(x, y, z);
+        grp.add(m);
+      });
+    } else {
+      // 원형/타원 프레임 (TorusGeometry, 타원은 scale)
+      const torus = new THREE.Mesh(new THREE.TorusGeometry(W/2, 4, 12, 48), frameMat);
+      torus.scale.set(1, H/W, 1);  // 타원 비율
+      grp.add(torus);
+    }
+
+    // ── 메쉬 그리드 (와이어) ──
+    const meshN = Math.max(4, Math.min(16, Math.round(MPI / 2)));
+    const gridGrp = new THREE.Group();
+    for (let i = 0; i <= meshN; i++) {
+      const t = i / meshN;
+      // 수직선
+      const xLine = -W/2 + t * W;
+      if (isRect || Math.abs(xLine) < W/2) {
+        const yExtent = isRect ? H/2 : (H/2) * Math.sqrt(Math.max(0, 1 - (xLine/(W/2))**2));
+        const geo = new THREE.BufferGeometry().setFromPoints([
+          new THREE.Vector3(xLine, -yExtent, 0), new THREE.Vector3(xLine, yExtent, 0)
+        ]);
+        gridGrp.add(new THREE.Line(geo, meshMat));
+      }
+      // 수평선
+      const yLine = -H/2 + t * H;
+      const xExtent = isRect ? W/2 : (W/2) * Math.sqrt(Math.max(0, 1 - (yLine/(H/2))**2));
+      const geo2 = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(-xExtent, yLine, 0), new THREE.Vector3(xExtent, yLine, 0)
+      ]);
+      gridGrp.add(new THREE.Line(geo2, meshMat));
+    }
+    grp.add(gridGrp);
+
+    // ── 공기 흐름 화살표 (관통) ──
+    const arrowMat = new THREE.MeshPhongMaterial({ color: 0x0891b2 });
+    for (let ax = -1; ax <= 1; ax++) {
+      for (let ay = -1; ay <= 1; ay++) {
+        const cone = new THREE.Mesh(new THREE.ConeGeometry(4, 12, 8), arrowMat);
+        cone.position.set(ax * W/3, ay * H/3, L_thick + 15);
+        cone.rotation.x = Math.PI / 2;
+        grp.add(cone);
+      }
+    }
+
+    // 드래그 회전 + 줌
+    let dragging = false, px = 0, py = 0, rotX = 0.3, rotY = 0.5;
+    const onDown = (e) => { dragging = true; px = e.clientX; py = e.clientY; };
+    const onMove = (e) => {
+      if (!dragging) return;
+      rotY += (e.clientX - px) * 0.008;
+      rotX += (e.clientY - py) * 0.008;
+      rotX = Math.max(-1.4, Math.min(1.4, rotX));
+      px = e.clientX; py = e.clientY;
+    };
+    const onUp = () => { dragging = false; };
+    renderer.domElement.addEventListener('mousedown', onDown);
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    const onWheel = (e) => {
+      e.preventDefault();
+      const d = camera.position.length();
+      const nd = Math.max(120, Math.min(700, d + e.deltaY * 0.4));
+      camera.position.multiplyScalar(nd / d);
+    };
+    renderer.domElement.addEventListener('wheel', onWheel, { passive: false });
+
+    let raf;
+    const animate = () => {
+      raf = requestAnimationFrame(animate);
+      const camR = camera.position.length();
+      camera.position.set(
+        camR * Math.sin(rotY) * Math.cos(rotX),
+        camR * Math.sin(rotX),
+        camR * Math.cos(rotY) * Math.cos(rotX)
+      );
+      camera.lookAt(0, 0, 0);
+      renderer.render(scene, camera);
+    };
+    animate();
+
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      renderer.domElement.removeEventListener('wheel', onWheel);
+      if (mount.contains(renderer.domElement)) mount.removeChild(renderer.domElement);
+      renderer.dispose();
+    };
+  }, [p.shape, p.W, p.H, p.D_major, p.D_minor, p.MPI, p.L_thick]);
+
+  return <div ref={mountRef} className="w-full h-full" style={{ minHeight: '400px', cursor: 'grab' }} />;
+}
+
+/* ───── Filter Side View — 측면 (두께방향 메쉬 층 + 공기 관통) ───── */
+function FilterSideView({ p }) {
+  const cx = 170, cy = 165;
+  const isRect = p.shape === 'rectangular';
+  const faceH = isRect ? (p.H || 100) : (p.D_minor || 250);
+  const scale = 180 / Math.max(faceH, 1);
+  const H = faceH * scale;
+  const thick = (p.L_thick || 0.6) * scale * 15;  // 두께 과장
+  const MPI = p.MPI || 15;
+  const meshN = Math.max(4, Math.min(14, Math.round(MPI / 2)));
+
+  // 메쉬 층 (두께방향 격자)
+  const vlines = [];
+  for (let i = 0; i <= 3; i++) {
+    const x = cx - thick/2 + (i/3) * thick;
+    vlines.push(<line key={`v${i}`} x1={x} y1={cy - H/2} x2={x} y2={cy + H/2} stroke="#f59e0b" strokeWidth="0.8" opacity="0.5" />);
+  }
+  const hlines = [];
+  for (let j = 0; j <= meshN; j++) {
+    const y = cy - H/2 + (j/meshN) * H;
+    hlines.push(<line key={`h${j}`} x1={cx - thick/2} y1={y} x2={cx + thick/2} y2={y} stroke="#f59e0b" strokeWidth="0.8" opacity="0.5" />);
+  }
+
+  return (
+    <svg viewBox="0 0 340 340" className="w-full h-full">
+      {/* 필터 두께 단면 */}
+      <rect x={cx - thick/2} y={cy - H/2} width={thick} height={H} fill="#fffbeb" stroke="#d97706" strokeWidth="2" />
+      {vlines}{hlines}
+      {/* 공기 유입 (좌) */}
+      {[-1, 0, 1].map(i => (
+        <line key={`in${i}`} x1={cx - thick/2 - 45} y1={cy + i * 55} x2={cx - thick/2 - 8} y2={cy + i * 55} stroke="#0891b2" strokeWidth="2.5" markerEnd="url(#fsArr)" />
+      ))}
+      {/* 공기 유출 (우, 압력강하 후 약하게) */}
+      {[-1, 0, 1].map(i => (
+        <line key={`out${i}`} x1={cx + thick/2 + 8} y1={cy + i * 55} x2={cx + thick/2 + 45} y2={cy + i * 55} stroke="#0891b2" strokeWidth="1.5" strokeDasharray="3 2" opacity="0.5" markerEnd="url(#fsArr)" />
+      ))}
+      <defs><marker id="fsArr" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="#0891b2" /></marker></defs>
+      {/* 치수 */}
+      <line x1={cx - thick/2} y1={cy + H/2 + 12} x2={cx + thick/2} y2={cy + H/2 + 12} stroke="#475569" strokeWidth="0.7" />
+      <text x={cx} y={cy + H/2 + 24} fontSize="9" fill="#d97706" fontFamily="monospace" textAnchor="middle">L={p.L_thick}mm</text>
+      <text x="10" y="16" fontSize="10" fill="#475569" fontFamily="monospace">Side · 두께방향 메쉬 · 공기 관통</text>
+      <text x="10" y="330" fontSize="9" fill="#94a3b8" fontFamily="monospace">Ergun 압력강하 (선경 {p.d_w}mm · MPI {MPI})</text>
+    </svg>
+  );
+}
+
 function FilterView({ onBack }) {
   const [p, setP] = useState({
     shape: 'rectangular',           // rectangular | circular
@@ -1313,6 +1511,7 @@ function FilterView({ onBack }) {
     D_major: 250, D_minor: 250,     // 원형/타원 [mm]
     MPI: 15, d_w: 0.4, L_thick: 0.6, // 메쉬: 인치당수/선경/두께
   });
+  const [vizSub, setVizSub] = useState(0);  // 0=3D, 1=Front, 2=Side
   const set = (k, v) => setP({ ...p, [k]: v });
   const isRect = p.shape === 'rectangular';
 
@@ -1346,8 +1545,31 @@ function FilterView({ onBack }) {
       <Slider label="두께 L" sublabel="[mm]" value={p.L_thick} min={0.2} max={5} step={0.1} decimals={1} color="green" onChange={v => set('L_thick', v)} />
     </div>
   );
+  const viz = (
+    <div className="w-full h-full flex flex-col">
+      <div className="flex gap-2 mb-3 shrink-0">
+        {['3D model', 'Front view', 'Side view'].map((label, idx) => (
+          <button key={label} onClick={() => setVizSub(idx)}
+            className={`px-3 py-1.5 text-[12px] font-semibold rounded transition-colors ${
+              vizSub === idx ? 'bg-amber-600 text-white' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+            }`}>{label}</button>
+        ))}
+      </div>
+      <div className="flex-1 bg-white rounded-lg border border-slate-200 overflow-hidden">
+        {vizSub === 0 && <Filter3DModel p={p} />}
+        {vizSub === 1 && <div className="w-full h-full flex items-center justify-center p-4"><div className="w-full max-w-[440px] aspect-square"><FilterSchematic p={p} /></div></div>}
+        {vizSub === 2 && <div className="w-full h-full flex items-center justify-center p-4"><div className="w-full max-w-[440px] aspect-square"><FilterSideView p={p} /></div></div>}
+      </div>
+      <div className="text-[10px] font-mono text-slate-400 mt-2 text-center shrink-0">
+        {vizSub === 0 && '3D — 드래그 회전, 스크롤 줌 · 형상 프레임 + 메쉬 그리드 + 공기 관통'}
+        {vizSub === 1 && 'Front — 형상(원형/직사각형) 면 + 메쉬 격자'}
+        {vizSub === 2 && 'Side — 두께방향 메쉬 층 · Ergun 압력강하'}
+      </div>
+    </div>
+  );
+
   return <AirViewShell title="Filter · 다공 필터" subtitle="Porous Filter · On-design" icon="▦" color="#d97706" onBack={onBack}
-    sidebar={sidebar} schematic={<FilterSchematic p={p} />} caption="필터 면 (형상+메쉬 반영 · Ergun 압력강하)" />;
+    sidebar={sidebar} schematic={viz} viewLabel="3D model + 2D views" fullViz={true} caption={null} />;
 }
 
 /* ═══════════════════════════════════════════════════════════════════
