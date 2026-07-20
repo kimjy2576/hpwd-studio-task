@@ -48,6 +48,102 @@ function AppSwitcher({ current }) {
   );
 }
 
+// ── 설계변수 패널 (컴포넌트 클릭 시 fidelity별 변수 편집) ──
+// 백엔드 modelDescription 메타 (window.COMPONENT_PARAM_META) 사용.
+function ParamPanel({ comp, compLabel, fidelity, values, onChange, onClose }) {
+  const META = (typeof window !== 'undefined' && window.COMPONENT_PARAM_META) || {};
+  const params = (META[comp] && META[comp][String(fidelity)]) || [];
+
+  // group별 분류 (Material/Operating/Geometry/Fitting/General)
+  const byGroup = {};
+  params.forEach(p => {
+    const g = p.group || 'General';
+    (byGroup[g] = byGroup[g] || []).push(p);
+  });
+  const groupOrder = ['Material', 'Operating', 'Geometry', 'Fitting', 'General'];
+  const groups = Object.keys(byGroup).sort((a, b) => {
+    const ia = groupOrder.indexOf(a), ib = groupOrder.indexOf(b);
+    return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+  });
+
+  const isL3 = fidelity === 3;
+  const val = (name, def) => (values && name in values) ? values[name] : def;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        {/* 헤더 */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+          <div>
+            <h3 className="text-base font-bold text-slate-800">{compLabel} 설계변수</h3>
+            <p className="mono text-[11px] text-slate-400">L{fidelity} · {params.length}개 파라미터</p>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
+        </div>
+
+        {/* L3 안내 (형상 → On-Design Studio) */}
+        {isL3 && (
+          <div className="mx-5 mt-3 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg flex items-center justify-between">
+            <span className="text-[11px] text-blue-700">L3 상세 형상은 On-Design Studio에서 도면으로 설계</span>
+            <a href="/on-design-studio/" className="mono text-[11px] font-semibold text-blue-600 hover:underline shrink-0 ml-2">열기 →</a>
+          </div>
+        )}
+
+        {/* 변수 목록 (group별) */}
+        <div className="flex-1 overflow-y-auto px-5 py-3">
+          {params.length === 0 && (
+            <p className="text-sm text-slate-400 text-center py-8">이 fidelity는 설계변수가 없습니다</p>
+          )}
+          {groups.map(g => (
+            <div key={g} className="mb-4">
+              <div className="mono text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-2">{g}</div>
+              <div className="space-y-2">
+                {byGroup[g].map(p => (
+                  <ParamRow key={p.name} p={p} value={val(p.name, p.start)}
+                    onChange={v => onChange(p.name, v)} />
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* 푸터 */}
+        <div className="px-5 py-3 border-t border-slate-100 flex justify-end gap-2">
+          <button onClick={onClose} className="text-sm text-slate-500 hover:text-slate-700 px-4 py-2">닫기</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ParamRow({ p, value, onChange }) {
+  const isString = p.type === 'String' || typeof p.start === 'string';
+  const hasOptions = Array.isArray(p.options) && p.options.length > 0;
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <div className="min-w-0 flex-1">
+        <div className="flex items-baseline gap-1.5">
+          <span className="mono text-[12px] font-semibold text-slate-700">{p.name}</span>
+          {p.unit && p.unit !== '-' && <span className="mono text-[10px] text-slate-400">[{p.unit}]</span>}
+        </div>
+        {p.desc && <div className="text-[10px] text-slate-400 truncate">{p.desc}</div>}
+      </div>
+      {hasOptions ? (
+        <select value={value} onChange={e => onChange(e.target.value)}
+          className="mono text-[12px] border border-slate-200 rounded px-2 py-1 bg-white w-32 shrink-0 focus:border-blue-400 focus:outline-none">
+          {p.options.map(o => <option key={o} value={o}>{o}</option>)}
+        </select>
+      ) : isString ? (
+        <input type="text" value={value} onChange={e => onChange(e.target.value)}
+          className="mono text-[12px] text-right border border-slate-200 rounded px-2 py-1 w-32 shrink-0 focus:border-blue-400 focus:outline-none" />
+      ) : (
+        <input type="number" value={value} onChange={e => onChange(parseFloat(e.target.value))}
+          className="mono text-[12px] text-right border border-slate-200 rounded px-2 py-1 w-28 shrink-0 focus:border-blue-400 focus:outline-none" />
+      )}
+    </div>
+  );
+}
+
 // ── 컴포넌트 정의 (냉매 4 + 공기 3) ──
 const REF_COMPONENTS = [
   { key: 'compressor', label: '압축기', en: 'Compressor', color: 'var(--comp)', icon: '⊙' },
@@ -92,7 +188,7 @@ function FidelitySelector({ value, onChange }) {
 }
 
 // ── 냉매 사이클 다이어그램 (2×2 배치, 순환 화살표) ──
-function RefrigerantCycle({ fidelity, setFid, running }) {
+function RefrigerantCycle({ fidelity, setFid, running, onEditParams }) {
   // 배치: 압축기(좌하) → 응축기(좌상) → EEV(우상) → 증발기(우하) → 압축기
   const positions = {
     compressor: { row: 2, col: 1 },
@@ -115,10 +211,12 @@ function RefrigerantCycle({ fidelity, setFid, running }) {
           >
             <div className="flex items-center gap-2 mb-2">
               <span className="text-lg" style={{ color: c.color }}>{c.icon}</span>
-              <div>
+              <div className="flex-1">
                 <div className="text-sm font-bold text-slate-800">{c.label}</div>
                 <div className="mono text-[10px] text-slate-400">{c.en}</div>
               </div>
+              <button onClick={() => onEditParams(c.key)} title="설계변수 편집"
+                className="text-slate-300 hover:text-slate-600 text-sm px-1" style={{ color: c.color }}>⚙</button>
             </div>
             <FidelitySelector value={fidelity[c.key]} onChange={v => setFid(c.key, v)} />
           </div>
@@ -135,7 +233,7 @@ function RefrigerantCycle({ fidelity, setFid, running }) {
 }
 
 // ── 공기 경로 (팬 삽입 가능) ──
-function AirPath({ fidelity, setFid, fanPosition, setFanPosition, running }) {
+function AirPath({ fidelity, setFid, fanPosition, setFanPosition, running, onEditParams }) {
   // 팬 슬롯: 각 코어 컴포넌트 사이 + 양끝 (0 ~ AIR_CORE.length)
   const slots = [];
   for (let i = 0; i <= AIR_CORE.length; i++) slots.push(i);
@@ -147,13 +245,22 @@ function AirPath({ fidelity, setFid, fanPosition, setFanPosition, running }) {
         <span className="mono text-[11px] text-slate-400">드럼 → 필터 → 증발기 → 응축기 (고정) · 팬 위치 가변</span>
       </div>
       <div className="flex items-center gap-1.5 overflow-x-auto pb-2">
-        {AIR_CORE.map((c, i) => (
+        {AIR_CORE.map((c, i) => {
+          // 증발기/응축기는 냉매 루프에서 편집 (공기 루프선 드럼/필터만 ⚙)
+          const editable = c.key === 'drum' || c.key === 'filter';
+          return (
           <React.Fragment key={i}>
             {/* 팬 슬롯 (컴포넌트 앞) */}
             <FanSlot pos={i} active={fanPosition === i} onClick={setFanPosition} />
             {/* 코어 컴포넌트 */}
             <div className="shrink-0 bg-slate-50 rounded-lg border border-slate-200 px-3 py-2.5 min-w-[92px]">
-              <div className="text-xs font-bold text-slate-700 mb-1.5 text-center">{c.label}</div>
+              <div className="flex items-center justify-center gap-1 mb-1.5">
+                <span className="text-xs font-bold text-slate-700">{c.label}</span>
+                {editable && (
+                  <button onClick={() => onEditParams(c.key)} title="설계변수"
+                    className="text-slate-300 hover:text-slate-600 text-[11px]">⚙</button>
+                )}
+              </div>
               <div className="flex justify-center">
                 <FidelitySelector
                   value={fidelity[c.key] || 1}
@@ -162,10 +269,18 @@ function AirPath({ fidelity, setFid, fanPosition, setFanPosition, running }) {
               </div>
             </div>
           </React.Fragment>
-        ))}
+          );
+        })}
         {/* 마지막 슬롯 (응축기 뒤) */}
         <FanSlot pos={AIR_CORE.length} active={fanPosition === AIR_CORE.length} onClick={setFanPosition} />
       </div>
+      {/* 팬 설계변수 (팬 배치 시) */}
+      {fanPosition !== null && (
+        <div className="mt-2">
+          <button onClick={() => onEditParams('fan')}
+            className="mono text-[11px] text-blue-600 hover:underline">⚙ 팬 설계변수 편집</button>
+        </div>
+      )}
       <div className="flex items-center gap-3 mt-3">
         <button
           onClick={() => setFanPosition(null)}
@@ -367,8 +482,25 @@ function CycleRunner() {
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState(null);
 
+  // 설계변수 패널 상태 + 컴포넌트별 파라미터 오버라이드
+  const [editComp, setEditComp] = useState(null);   // 열린 컴포넌트 key (null=닫힘)
+  const [paramValues, setParamValues] = useState({}); // {comp: {fidelity: {name: value}}}
+
   const setRefFidKey = (k, v) => setRefFid({ ...refFid, [k]: v });
   const setAirFidKey = (k, v) => setAirFid({ ...airFid, [k]: v });
+
+  // 컴포넌트 fidelity (냉매/공기 통합 조회)
+  const compFidelity = (comp) => (comp in refFid) ? refFid[comp] : (airFid[comp] || 1);
+  const COMP_LABELS = { compressor: '압축기', condenser: '응축기', eev: '팽창밸브', evaporator: '증발기', fan: '팬', drum: '드럼', filter: '필터' };
+
+  // 파라미터 값 조회/변경 (comp+fidelity별)
+  const getParamVals = (comp, fid) => (paramValues[comp] && paramValues[comp][fid]) || {};
+  const setParamVal = (comp, fid, name, value) => {
+    setParamValues(prev => ({
+      ...prev,
+      [comp]: { ...(prev[comp] || {}), [fid]: { ...((prev[comp] || {})[fid] || {}), [name]: value } },
+    }));
+  };
 
   // 샘플 실행 (실제로는 백엔드 API 호출)
   const runCycle = () => {
@@ -456,11 +588,11 @@ function CycleRunner() {
       <main className="max-w-6xl mx-auto px-6 py-6 grid lg:grid-cols-2 gap-5">
         {/* 좌: 사이클 구성 */}
         <div className="space-y-5">
-          <RefrigerantCycle fidelity={refFid} setFid={setRefFidKey} running={running} />
+          <RefrigerantCycle fidelity={refFid} setFid={setRefFidKey} running={running} onEditParams={setEditComp} />
           <AirPath
             fidelity={airFid} setFid={setAirFidKey}
             fanPosition={fanPosition} setFanPosition={setFanPosition}
-            running={running}
+            running={running} onEditParams={setEditComp}
           />
         </div>
         {/* 우: 조건 + 결과 */}
@@ -469,6 +601,18 @@ function CycleRunner() {
           <ResultsPanel result={result} running={running} />
         </div>
       </main>
+
+      {/* 설계변수 패널 (컴포넌트 클릭 시) */}
+      {editComp && (
+        <ParamPanel
+          comp={editComp}
+          compLabel={COMP_LABELS[editComp] || editComp}
+          fidelity={compFidelity(editComp)}
+          values={getParamVals(editComp, compFidelity(editComp))}
+          onChange={(name, value) => setParamVal(editComp, compFidelity(editComp), name, value)}
+          onClose={() => setEditComp(null)}
+        />
+      )}
 
       <footer className="max-w-6xl mx-auto px-6 py-4 text-center">
         <p className="mono text-[10px] text-slate-300">
