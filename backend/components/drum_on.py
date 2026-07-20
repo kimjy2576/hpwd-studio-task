@@ -380,9 +380,20 @@ def _step_L3(input, params, state, dt):
     hA_multiplier = float(params.get("hA_multiplier", 1.0))
     bypass_multiplier = float(params.get("bypass_multiplier", 1.0))
 
-    # 입구 공기
-    T_air = float(input.get("T_air", 60.0))
-    omega_air = float(input.get("omega_air", 0.010))
+    # 입구 공기 (air_loop은 T_air_in/RH_air_in, 단독 호출은 T_air/omega_air)
+    T_air = float(input.get("T_air", input.get("T_air_in", 60.0)))
+    # omega: omega_air 직접 또는 RH_air_in+T로 환산
+    if "omega_air" in input:
+        omega_air = float(input["omega_air"])
+    elif "W_in" in input:
+        omega_air = float(input["W_in"])
+    elif "RH_air_in" in input:
+        _rh = float(input["RH_air_in"])
+        _Psat = 611.2 * math.exp(17.62 * T_air / (243.12 + T_air))
+        _Pw = (_rh / 100.0) * _Psat
+        omega_air = 0.622 * _Pw / max(101325.0 - _Pw, 1.0)
+    else:
+        omega_air = 0.010
     m_dot_air = float(input.get("m_dot_air", 0.035))
 
     # 상태 언팩
