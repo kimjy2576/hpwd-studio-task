@@ -224,114 +224,144 @@ function FidelitySelector({ value, onChange }) {
   );
 }
 
-// ── 냉매 사이클 다이어그램 (2×2 배치, 순환 화살표) ──
-function RefrigerantCycle({ fidelity, setFid, running, onEditParams }) {
-  // 배치: 압축기(좌하) → 응축기(좌상) → EEV(우상) → 증발기(우하) → 압축기
-  const positions = {
-    compressor: { row: 2, col: 1 },
-    condenser:  { row: 1, col: 1 },
-    eev:        { row: 1, col: 2 },
-    evaporator: { row: 2, col: 2 },
-  };
-  return (
-    <div className="relative bg-white rounded-2xl border border-slate-200 p-6">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-sm font-bold text-slate-700">냉매 루프</h3>
-        <span className="mono text-[11px] text-slate-400">압축기 → 응축기 → 팽창밸브 → 증발기 (고정)</span>
+// ══════════════════════════════════════════════════════════════
+// 커플드 사이클 다이어그램 (Coupled.mo 위상)
+//   냉매 루프: comp → cond → eev → evap → comp (상단 사각 순환)
+//   공기 루프: drum → filter → fan → evap → cond → drum (하단)
+//   evap/cond = 두 루프 교차 컴포넌트 (한 몸, fidelity 하나)
+// ══════════════════════════════════════════════════════════════
+function CoupledCycle({ fid, setFid, fanPosition, setFanPosition, running, onEditParams }) {
+  // 컴포넌트 노드 (fidelity 선택 + ⚙)
+  const Node = ({ ck, label, en, color, icon, wide }) => (
+    <div className={`node bg-white rounded-xl border-2 p-2.5 ${wide ? 'min-w-[140px]' : 'min-w-[112px]'}`}
+      style={{ borderColor: color }}>
+      <div className="flex items-center gap-1.5 mb-1.5">
+        {icon && <span className="text-base" style={{ color }}>{icon}</span>}
+        <div className="flex-1 min-w-0">
+          <div className="text-[13px] font-bold text-slate-800 leading-tight">{label}</div>
+          <div className="mono text-[9px] text-slate-400">{en}</div>
+        </div>
+        <button onClick={() => onEditParams(ck)} title="설계변수"
+          className="text-sm px-0.5" style={{ color }}>⚙</button>
       </div>
-      <div className="grid grid-cols-2 gap-x-16 gap-y-6 relative">
-        {REF_COMPONENTS.map(c => (
-          <div
-            key={c.key}
-            className="node bg-white rounded-xl border-2 p-3.5"
-            style={{ borderColor: c.color, gridRow: positions[c.key].row, gridColumn: positions[c.key].col }}
-          >
-            <div className="flex items-center gap-2 mb-2">
-              <span className="text-lg" style={{ color: c.color }}>{c.icon}</span>
-              <div className="flex-1">
-                <div className="text-sm font-bold text-slate-800">{c.label}</div>
-                <div className="mono text-[10px] text-slate-400">{c.en}</div>
-              </div>
-              <button onClick={() => onEditParams(c.key)} title="설계변수 편집"
-                className="text-slate-300 hover:text-slate-600 text-sm px-1" style={{ color: c.color }}>⚙</button>
-            </div>
-            <FidelitySelector value={fidelity[c.key]} onChange={v => setFid(c.key, v)} />
-          </div>
-        ))}
-      </div>
-      {/* 순환 방향 표시 */}
-      <div className="flex justify-center mt-4">
-        <span className={`mono text-[11px] px-2 py-0.5 rounded ${running ? 'bg-blue-50 text-blue-600' : 'bg-slate-50 text-slate-400'}`}>
-          {running ? '⟳ 냉매 순환 중' : '⟳ 순환 (정지)'}
-        </span>
-      </div>
+      <FidelitySelector value={fid[ck]} onChange={v => setFid(ck, v)} />
     </div>
   );
-}
 
-// ── 공기 경로 (팬 삽입 가능) ──
-function AirPath({ fidelity, setFid, fanPosition, setFanPosition, running, onEditParams }) {
-  // 팬 슬롯: 각 코어 컴포넌트 사이 + 양끝 (0 ~ AIR_CORE.length)
-  const slots = [];
-  for (let i = 0; i <= AIR_CORE.length; i++) slots.push(i);
+  // 공유 컴포넌트(evap/cond) — 냉매+공기 교차 표시
+  const SharedNode = ({ ck, label, en, color, icon }) => (
+    <div className="node bg-gradient-to-br from-white to-slate-50 rounded-xl border-2 border-dashed p-2.5 min-w-[128px] relative"
+      style={{ borderColor: color }}>
+      <div className="absolute -top-2 left-1/2 -translate-x-1/2 px-1.5 py-0.5 bg-white rounded-full border text-[8px] mono font-semibold"
+        style={{ borderColor: color, color }}>냉매+공기</div>
+      <div className="flex items-center gap-1.5 mb-1.5 mt-1">
+        <span className="text-base" style={{ color }}>{icon}</span>
+        <div className="flex-1 min-w-0">
+          <div className="text-[13px] font-bold text-slate-800 leading-tight">{label}</div>
+          <div className="mono text-[9px] text-slate-400">{en}</div>
+        </div>
+        <button onClick={() => onEditParams(ck)} title="설계변수"
+          className="text-sm px-0.5" style={{ color }}>⚙</button>
+      </div>
+      <FidelitySelector value={fid[ck]} onChange={v => setFid(ck, v)} />
+    </div>
+  );
+
+  const Arrow = ({ color, dir }) => (
+    <div className="flex items-center justify-center shrink-0" style={{ color }}>
+      <span className="text-lg">{dir === 'down' ? '↓' : dir === 'up' ? '↑' : dir === 'left' ? '←' : '→'}</span>
+    </div>
+  );
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 p-6">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-sm font-bold text-slate-700">공기 루프</h3>
-        <span className="mono text-[11px] text-slate-400">드럼 → 필터 → 증발기 → 응축기 (고정) · 팬 위치 가변</span>
-      </div>
-      <div className="flex items-center gap-1.5 overflow-x-auto pb-2">
-        {AIR_CORE.map((c, i) => {
-          // 증발기/응축기는 냉매 루프에서 편집 (공기 루프선 드럼/필터만 ⚙)
-          const editable = c.key === 'drum' || c.key === 'filter';
-          return (
-          <React.Fragment key={i}>
-            {/* 팬 슬롯 (컴포넌트 앞) */}
-            <FanSlot pos={i} active={fanPosition === i} onClick={setFanPosition} />
-            {/* 코어 컴포넌트 */}
-            <div className="shrink-0 bg-slate-50 rounded-lg border border-slate-200 px-3 py-2.5 min-w-[92px]">
-              <div className="flex items-center justify-center gap-1 mb-1.5">
-                <span className="text-xs font-bold text-slate-700">{c.label}</span>
-                {editable && (
-                  <button onClick={() => onEditParams(c.key)} title="설계변수"
-                    className="text-slate-300 hover:text-slate-600 text-[11px]">⚙</button>
-                )}
-              </div>
-              <div className="flex justify-center">
-                <FidelitySelector
-                  value={fidelity[c.key] || 1}
-                  onChange={v => setFid(c.key, v)}
-                />
-              </div>
-            </div>
-          </React.Fragment>
-          );
-        })}
-        {/* 마지막 슬롯 (응축기 뒤) */}
-        <FanSlot pos={AIR_CORE.length} active={fanPosition === AIR_CORE.length} onClick={setFanPosition} />
-      </div>
-      {/* 팬 설계변수 (팬 배치 시) */}
-      {fanPosition !== null && (
-        <div className="mt-2">
-          <button onClick={() => onEditParams('fan')}
-            className="mono text-[11px] text-blue-600 hover:underline">⚙ 팬 설계변수 편집</button>
+      <div className="flex items-center justify-between mb-1">
+        <h3 className="text-sm font-bold text-slate-700">커플드 사이클</h3>
+        <div className="flex items-center gap-3">
+          <span className="mono text-[10px] flex items-center gap-1"><span className="w-2.5 h-0.5 inline-block" style={{background:'var(--cond)'}}></span>냉매</span>
+          <span className="mono text-[10px] flex items-center gap-1"><span className="w-2.5 h-0.5 inline-block" style={{background:'var(--accent)'}}></span>공기</span>
         </div>
-      )}
-      <div className="flex items-center gap-3 mt-3">
-        <button
-          onClick={() => setFanPosition(null)}
-          className={`mono text-[11px] px-2 py-1 rounded border ${fanPosition === null ? 'bg-slate-100 border-slate-300 text-slate-600' : 'border-slate-200 text-slate-400 hover:bg-slate-50'}`}
-        >
-          팬 없음
-        </button>
-        <span className="mono text-[11px] text-slate-400">
-          {fanPosition === null ? '팬 미배치' : `팬 위치: 슬롯 ${fanPosition}`}
+      </div>
+      <p className="mono text-[10px] text-slate-400 mb-4">증발기·응축기는 냉매/공기 공유 (한 몸)</p>
+
+      {/* 냉매 루프 (상단) — comp → cond → eev → evap → comp 순환 */}
+      <div className="mb-2">
+        <div className="mono text-[10px] font-semibold uppercase tracking-wide mb-2" style={{color:'var(--cond)'}}>냉매 루프 (폐회로)</div>
+        <div className="flex items-center justify-center gap-2 flex-wrap">
+          <Node ck="compressor" label="압축기" en="Compressor" color="var(--comp)" icon="⊙" />
+          <Arrow color="var(--cond)" dir="right" />
+          <SharedNode ck="condenser" label="응축기" en="Condenser" color="var(--cond)" icon="▤" />
+          <Arrow color="var(--cond)" dir="right" />
+          <Node ck="eev" label="팽창밸브" en="EEV" color="var(--eev)" icon="◇" />
+          <Arrow color="var(--cond)" dir="right" />
+          <SharedNode ck="evaporator" label="증발기" en="Evaporator" color="var(--evap)" icon="▤" />
+          <div className="mono text-[10px] shrink-0" style={{color:'var(--cond)'}}>↺ comp</div>
+        </div>
+      </div>
+
+      {/* 교차 표시 (냉매 evap/cond ↕ 공기 evap/cond) */}
+      <div className="flex items-center justify-center gap-2 py-1 opacity-60">
+        <span className="mono text-[9px] text-slate-400">↕ 증발기·응축기에서 냉매↔공기 열교환 ↕</span>
+      </div>
+
+      {/* 공기 루프 (하단) — drum → filter → fan → evap → cond → drum */}
+      <div>
+        <div className="mono text-[10px] font-semibold uppercase tracking-wide mb-2" style={{color:'var(--accent)'}}>공기 루프</div>
+        <div className="flex items-center justify-center gap-1.5 flex-wrap">
+          <Node ck="drum" label="드럼" en="Drum" color="var(--accent)" icon="🛢" />
+          <Arrow color="var(--accent)" dir="right" />
+          <Node ck="filter" label="필터" en="Filter" color="var(--amber)" icon="▦" />
+          <Arrow color="var(--accent)" dir="right" />
+          <FanSlotInline active={fanPosition !== null} onClick={() => setFanPosition(fanPosition === null ? 2 : null)} onEdit={() => onEditParams('fan')} fid={fid} setFid={setFid} />
+          <Arrow color="var(--accent)" dir="right" />
+          <div className="px-2.5 py-2 rounded-lg border-2 border-dashed bg-slate-50 min-w-[100px] text-center" style={{borderColor:'var(--evap)'}}>
+            <div className="text-[12px] font-bold text-slate-700">증발기</div>
+            <div className="mono text-[8px] text-slate-400">(공유 · 위 참조)</div>
+          </div>
+          <Arrow color="var(--accent)" dir="right" />
+          <div className="px-2.5 py-2 rounded-lg border-2 border-dashed bg-slate-50 min-w-[100px] text-center" style={{borderColor:'var(--cond)'}}>
+            <div className="text-[12px] font-bold text-slate-700">응축기</div>
+            <div className="mono text-[8px] text-slate-400">(공유 · 위 참조)</div>
+          </div>
+          <div className="mono text-[10px] shrink-0" style={{color:'var(--accent)'}}>↺ drum</div>
+        </div>
+      </div>
+
+      {/* 순환 상태 */}
+      <div className="flex justify-center mt-4">
+        <span className={`mono text-[11px] px-2 py-0.5 rounded ${running ? 'bg-blue-50 text-blue-600' : 'bg-slate-50 text-slate-400'}`}>
+          {running ? '⟳ 사이클 순환 중' : '⟳ 순환 (정지)'}
         </span>
       </div>
     </div>
   );
 }
+
+// 팬 슬롯 인라인 (공기 루프 내 팬 배치)
+function FanSlotInline({ active, onClick, onEdit, fid, setFid }) {
+  if (!active) {
+    return (
+      <button onClick={onClick} title="팬 배치"
+        className="fan-slot shrink-0 px-3 py-2 rounded-lg border-2 border-dashed border-slate-300 text-slate-400 bg-white hover:bg-blue-50 min-w-[80px]">
+        <div className="text-sm">+ 팬</div>
+      </button>
+    );
+  }
+  return (
+    <div className="node bg-white rounded-xl border-2 p-2.5 min-w-[100px]" style={{borderColor:'var(--accent)'}}>
+      <div className="flex items-center gap-1 mb-1.5">
+        <span className="text-base" style={{color:'var(--accent)'}}>🌀</span>
+        <div className="flex-1 min-w-0">
+          <div className="text-[12px] font-bold text-slate-800">팬</div>
+        </div>
+        <button onClick={onEdit} title="설계변수" className="text-xs" style={{color:'var(--accent)'}}>⚙</button>
+        <button onClick={onClick} title="제거" className="text-xs text-slate-300 hover:text-red-500">×</button>
+      </div>
+      <FidelitySelector value={fid.fan} onChange={v => setFid('fan', v)} />
+    </div>
+  );
+}
+
 
 function FanSlot({ pos, active, onClick }) {
   return (
@@ -507,8 +537,15 @@ function MiniChart({ data }) {
 
 // ── 메인 앱 ──
 function CycleRunner() {
-  const [refFid, setRefFid] = useState({ compressor: 3, condenser: 3, eev: 3, evaporator: 3 });
-  const [airFid, setAirFid] = useState({ drum: 1, filter: 1, evaporator: 3, condenser: 3, fan: 3 });
+  // 통합 fidelity — evap/cond는 냉매·공기 공유(한 몸), 하나만 지정
+  //   refOnly: compressor, eev (냉매 전용)
+  //   airOnly: drum, filter, fan (공기 전용)
+  //   shared:  evaporator, condenser (냉매+공기 교차 컴포넌트)
+  const [fid, setFid] = useState({
+    compressor: 3, eev: 3,           // 냉매 전용
+    drum: 1, filter: 1, fan: 3,      // 공기 전용
+    evaporator: 3, condenser: 3,     // 공유 (교차)
+  });
   const [fanPosition, setFanPosition] = useState(null);
   const [op, setOp] = useState({
     comp_rpm: 1800, fan_rpm: 3000, drum_rpm: 45,
@@ -523,19 +560,21 @@ function CycleRunner() {
   const [editComp, setEditComp] = useState(null);   // 열린 컴포넌트 key (null=닫힘)
   const [paramValues, setParamValues] = useState({}); // {comp: {fidelity: {name: value}}}
 
-  const setRefFidKey = (k, v) => setRefFid({ ...refFid, [k]: v });
-  const setAirFidKey = (k, v) => setAirFid({ ...airFid, [k]: v });
+  const setFidKey = (k, v) => setFid({ ...fid, [k]: v });
 
-  // 컴포넌트 fidelity (냉매/공기 통합 조회)
-  const compFidelity = (comp) => (comp in refFid) ? refFid[comp] : (airFid[comp] || 1);
+  // 컴포넌트 fidelity 조회 (통합)
+  const compFidelity = (comp) => fid[comp] || 1;
   const COMP_LABELS = { compressor: '압축기', condenser: '응축기', eev: '팽창밸브', evaporator: '증발기', fan: '팬', drum: '드럼', filter: '필터' };
 
+  // 냉매 fidelity 표시용 (comp/cond/eev/evap)
+  const refFidStr = ['compressor', 'condenser', 'eev', 'evaporator'].map(k => `L${fid[k]}`).join('·');
+
   // 파라미터 값 조회/변경 (comp+fidelity별)
-  const getParamVals = (comp, fid) => (paramValues[comp] && paramValues[comp][fid]) || {};
-  const setParamVal = (comp, fid, name, value) => {
+  const getParamVals = (comp, f) => (paramValues[comp] && paramValues[comp][f]) || {};
+  const setParamVal = (comp, f, name, value) => {
     setParamValues(prev => ({
       ...prev,
-      [comp]: { ...(prev[comp] || {}), [fid]: { ...((prev[comp] || {})[fid] || {}), [name]: value } },
+      [comp]: { ...(prev[comp] || {}), [f]: { ...((prev[comp] || {})[f] || {}), [name]: value } },
     }));
   };
 
@@ -545,10 +584,16 @@ function CycleRunner() {
     setResult(null);
 
     // 백엔드 cycle_runner 전달 payload (6단계 API 연결 시 이 형식으로 POST)
-    // 단위 변환: 함수율 %→kg/kg (X0_pct/100)
+    // evap/cond는 공유 fidelity → ref/air 양쪽에 동일값 전달 (한 몸)
     const payload = {
-      ref_fidelity: refFid,        // {compressor,condenser,eev,evaporator: 1/2/3}
-      air_fidelity: airFid,        // {drum,filter,fan,evaporator,condenser}
+      ref_fidelity: {
+        compressor: fid.compressor, condenser: fid.condenser,
+        eev: fid.eev, evaporator: fid.evaporator,
+      },
+      air_fidelity: {
+        drum: fid.drum, filter: fid.filter, fan: fid.fan,
+        evaporator: fid.evaporator, condenser: fid.condenser,  // 공유값 동일
+      },
       fan_position: fanPosition,   // int | null
       operating: {
         comp_rpm: op.comp_rpm, fan_rpm: op.fan_rpm, drum_rpm: op.drum_rpm,
@@ -592,12 +637,12 @@ function CycleRunner() {
   return (
     <div className="min-h-screen">
       {/* 메뉴바 (다른 탭과 통일 — 전체 폭, border-b, AppSwitcher+상태+실행) */}
-      <div className="h-9 bg-white border-b border-slate-200 flex items-center px-4 gap-4 text-[11px] shrink-0">
+      <div className="bg-white border-b border-slate-200 px-4 py-2 flex items-center gap-4">
         <AppSwitcher current="cycle-runner" />
-        <div className="text-slate-400 text-[10px]">Cycle Runner · 컴포넌트별 fidelity 자유 조합</div>
+        <div className="text-[11px] text-slate-500">Cycle Runner · 컴포넌트별 fidelity 자유 조합</div>
         <div className="flex-1"></div>
-        <span className="mono text-[11px] text-slate-500 hidden sm:block">
-          냉매 {Object.values(refFid).map(v => `L${v}`).join('·')}
+        <span className="text-[11px] text-slate-500 font-mono hidden sm:block">
+          냉매 {refFidStr}
         </span>
         <div className={`px-2 py-0.5 rounded-full text-[10px] font-medium border ${
           running ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-50 text-slate-500 border-slate-200'
@@ -607,11 +652,11 @@ function CycleRunner() {
       </div>
 
       {/* 툴바 (실행 버튼 — 다른 탭 툴바와 통일) */}
-      <div className="h-11 bg-slate-50 border-b border-slate-200 flex items-center px-4 gap-3 shrink-0">
+      <div className="bg-slate-50 border-b border-slate-200 px-4 py-2 flex items-center gap-3">
         <div className="flex items-center gap-2">
           <div className="w-6 h-6 rounded-md bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center text-white text-sm font-bold">⟳</div>
           <span className="text-sm font-bold text-slate-800">Cycle Runner</span>
-          <span className="mono text-[10px] text-slate-400">HPWD R290</span>
+          <span className="text-[10px] text-slate-400 font-mono">HPWD R290</span>
         </div>
         <div className="flex-1"></div>
         <button
@@ -623,18 +668,15 @@ function CycleRunner() {
         </button>
       </div>
 
-      <main className="max-w-6xl mx-auto px-6 py-6 grid lg:grid-cols-2 gap-5">
-        {/* 좌: 사이클 구성 */}
-        <div className="space-y-5">
-          <RefrigerantCycle fidelity={refFid} setFid={setRefFidKey} running={running} onEditParams={setEditComp} />
-          <AirPath
-            fidelity={airFid} setFid={setAirFidKey}
-            fanPosition={fanPosition} setFanPosition={setFanPosition}
-            running={running} onEditParams={setEditComp}
-          />
-        </div>
-        {/* 우: 조건 + 결과 */}
-        <div className="space-y-5">
+      <main className="max-w-6xl mx-auto px-6 py-6 space-y-5">
+        {/* 커플드 사이클 (냉매+공기 통합, evap/cond 공유) */}
+        <CoupledCycle
+          fid={fid} setFid={setFidKey}
+          fanPosition={fanPosition} setFanPosition={setFanPosition}
+          running={running} onEditParams={setEditComp}
+        />
+        {/* 조건 + 결과 (2열) */}
+        <div className="grid lg:grid-cols-2 gap-5">
           <OperatingInputs op={op} setOp={setOp} />
           <ResultsPanel result={result} running={running} />
         </div>
