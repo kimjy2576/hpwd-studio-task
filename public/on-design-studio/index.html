@@ -217,7 +217,6 @@ function AppSwitcher({ current }) {
     { id: 'component-studio',   label: 'Component Studio',    desc: '컴포넌트 작성',          href: '/component-studio/' },
     { id: 'calibration-studio', label: 'Calibration Studio',  desc: 'Calibration & Validation', href: '/calibration-studio/' },
     { id: 'on-design-studio',   label: 'On-Design Studio',    desc: 'On-design 모델 설계',    href: '/on-design-studio/' },
-    { id: 'air-on-design',    label: 'Air On-Design',    desc: '공기 부품 설계', href: '/air-on-design/' },
     { id: 'model-docs',         label: 'Model Docs',          desc: '수학적 모델링 문서',     href: '/model-docs/' },
   ];
   const active = apps.find(a => a.id === current) || apps[0];
@@ -449,6 +448,33 @@ const COMPONENTS = [
     color: 'green',
     available: true,
   },
+  {
+    id: 'fan',
+    label: 'Fan',
+    type: 'Centrifugal Fan (Air)',
+    desc: '원심팬 — 임펠러/스크롤/디퓨저 형상, On-design 성능',
+    icon: '🌀',
+    color: 'cyan',
+    available: true,
+  },
+  {
+    id: 'drum',
+    label: 'Drum',
+    type: 'Tumbling Drum (Air)',
+    desc: '텀블링 드럼 — 포 건조, NTU-ε 열전달, Froude',
+    icon: '🛢',
+    color: 'purple',
+    available: true,
+  },
+  {
+    id: 'filter',
+    label: 'Filter',
+    type: 'Porous Filter (Air)',
+    desc: '다공 필터 — Ergun/Darcy 압력강하',
+    icon: '▦',
+    color: 'amber',
+    available: true,
+  },
 ];
 
 function SystemView({ onSelect }) {
@@ -503,6 +529,172 @@ function SystemView({ onSelect }) {
       </div>
     </div>
   );
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Air Component Views — 팬 / 드럼 / 필터 (Sidebar + 형상 도면)
+   냉매 부품과 동일 레이아웃. 백엔드 fan_on/drum_on/filter_on L1-L3 대응.
+   ═══════════════════════════════════════════════════════════════════ */
+
+function AirSectionLabel({ children }) {
+  return <div className="text-[10px] font-mono font-semibold text-slate-400 uppercase tracking-wide mt-4 mb-2 first:mt-0">{children}</div>;
+}
+
+function AirViewShell({ title, subtitle, onBack, color, sidebar, schematic, caption }) {
+  return (
+    <div className="min-h-screen bg-slate-50">
+      <div className="bg-white border-b border-slate-200 px-4 py-2 flex items-center gap-3">
+        <AppSwitcher current="on-design-studio" />
+        <button onClick={onBack} className="text-[12px] text-blue-600 hover:underline">← 부품 목록</button>
+        <div className="text-[11px] text-slate-500">{title}</div>
+        <div className="flex-1"></div>
+        <BackendStatus />
+      </div>
+      <div className="max-w-6xl mx-auto p-6 grid grid-cols-[320px_1fr] gap-5">
+        <div className="bg-white rounded-xl border border-slate-200 p-5">
+          <h3 className="text-sm font-bold text-slate-700 mb-1">{title}</h3>
+          <p className="text-[11px] text-slate-400 mb-4">{subtitle}</p>
+          {sidebar}
+        </div>
+        <div className="bg-white rounded-xl border border-slate-200 p-5 flex flex-col">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-bold text-slate-700">형상 도면</h3>
+            <span className="text-[10px] font-mono text-slate-400">2D 단면 · 설계변수 반영</span>
+          </div>
+          <div className="flex-1 flex items-center justify-center bg-slate-50 rounded-lg min-h-[380px]">
+            <div className="w-full max-w-[440px] aspect-square">{schematic}</div>
+          </div>
+          <p className="text-[10px] font-mono text-slate-400 mt-3 text-center">{caption}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── 팬 도면 (원심팬 정면 단면) ──
+function FanSchematic({ p }) {
+  const cx = 160, cy = 160, scale = 0.6;
+  const rD1 = (p.D1 / 2) * scale, rD2 = (p.D2 / 2) * scale;
+  const blades = [];
+  for (let i = 0; i < p.Z; i++) {
+    const ang = (i / p.Z) * 2 * Math.PI;
+    const x1 = cx + rD1 * Math.cos(ang), y1 = cy + rD1 * Math.sin(ang);
+    const angOut = ang + (p.beta2 - 90) * Math.PI / 180 * 0.3;
+    const x2 = cx + rD2 * Math.cos(angOut), y2 = cy + rD2 * Math.sin(angOut);
+    blades.push(<path key={i} d={`M ${x1.toFixed(1)} ${y1.toFixed(1)} Q ${((x1 + x2) / 2 + (y2 - y1) * 0.2).toFixed(1)} ${((y1 + y2) / 2 - (x2 - x1) * 0.2).toFixed(1)} ${x2.toFixed(1)} ${y2.toFixed(1)}`} stroke="#0891b2" strokeWidth="2" fill="none" strokeLinecap="round" opacity="0.85" />);
+  }
+  return (
+    <svg viewBox="0 0 320 320" className="w-full h-full">
+      <circle cx={cx} cy={cy} r={rD2 + 18 + p.cutoffGap * scale} fill="#ecfeff" stroke="#a5f3fc" strokeWidth="1.5" strokeDasharray="4 3" />
+      <circle cx={cx} cy={cy} r={rD2} fill="none" stroke="#06b6d4" strokeWidth="1.5" opacity="0.5" />
+      <circle cx={cx} cy={cy} r={rD1} fill="#cffafe" stroke="#0891b2" strokeWidth="1.5" />
+      {blades}
+      <circle cx={cx} cy={cy} r="6" fill="#0e7490" />
+      <line x1={cx} y1={cy} x2={cx + rD2} y2={cy} stroke="#64748b" strokeWidth="0.8" strokeDasharray="2 2" />
+      <text x={cx + rD2 / 2} y={cy - 4} fontSize="9" fill="#0891b2" fontFamily="monospace" textAnchor="middle">D2={p.D2}</text>
+      <text x={cx} y={cy - rD1 - 4} fontSize="9" fill="#0e7490" fontFamily="monospace" textAnchor="middle">D1={p.D1}</text>
+      <text x="10" y="16" fontSize="10" fill="#475569" fontFamily="monospace">Z={p.Z} · β2={p.beta2}°</text>
+    </svg>
+  );
+}
+
+function FanView({ onBack }) {
+  const [p, setP] = useState({ D1: 120, D2: 175, b1: 60, b2: 50, beta1: 30, beta2: 145, Z: 36, cutoffGap: 8, wrapAngle: 360 });
+  const set = (k, v) => setP({ ...p, [k]: v });
+  const sidebar = (
+    <div>
+      <AirSectionLabel>임펠러</AirSectionLabel>
+      <Slider label="D1" sublabel="[mm] 입구경" value={p.D1} min={50} max={250} step={1} decimals={0} color="cyan" onChange={v => set('D1', v)} />
+      <Slider label="D2" sublabel="[mm] 출구경" value={p.D2} min={80} max={350} step={1} decimals={0} color="cyan" onChange={v => set('D2', v)} />
+      <Slider label="b1" sublabel="[mm] 입구폭" value={p.b1} min={10} max={120} step={1} decimals={0} color="cyan" onChange={v => set('b1', v)} />
+      <Slider label="b2" sublabel="[mm] 출구폭" value={p.b2} min={10} max={120} step={1} decimals={0} color="cyan" onChange={v => set('b2', v)} />
+      <Slider label="β1" sublabel="[°] 입구각" value={p.beta1} min={10} max={80} step={1} decimals={0} color="blue" onChange={v => set('beta1', v)} />
+      <Slider label="β2" sublabel="[°] 출구각" value={p.beta2} min={90} max={170} step={1} decimals={0} color="blue" onChange={v => set('beta2', v)} />
+      <Slider label="Z" sublabel="블레이드 수" value={p.Z} min={8} max={60} step={1} decimals={0} color="blue" onChange={v => set('Z', v)} />
+      <AirSectionLabel>스크롤</AirSectionLabel>
+      <Slider label="cutoffGap" sublabel="[mm]" value={p.cutoffGap} min={2} max={30} step={0.5} decimals={1} color="purple" onChange={v => set('cutoffGap', v)} />
+      <Slider label="wrapAngle" sublabel="[°]" value={p.wrapAngle} min={180} max={400} step={5} decimals={0} color="purple" onChange={v => set('wrapAngle', v)} />
+    </div>
+  );
+  return <AirViewShell title="Fan · 원심팬" subtitle="Centrifugal Fan (fan_on L1-L3)" onBack={onBack}
+    sidebar={sidebar} schematic={<FanSchematic p={p} />} caption="원심팬 정면 단면 (스크롤 하우징 점선) · 설계변수 실시간 반영" />;
+}
+
+// ── 드럼 도면 ──
+function DrumSchematic({ p }) {
+  const cx = 160, cy = 150, R = 110;
+  const fillH = R * 2 * (p.fill_frac || 0.4);
+  return (
+    <svg viewBox="0 0 320 320" className="w-full h-full">
+      <circle cx={cx} cy={cy} r={R} fill="#faf5ff" stroke="#a855f7" strokeWidth="2.5" />
+      {[0, 120, 240].map(a => {
+        const rad = a * Math.PI / 180;
+        const x1 = cx + (R - 2) * Math.cos(rad), y1 = cy + (R - 2) * Math.sin(rad);
+        const x2 = cx + (R - 20) * Math.cos(rad), y2 = cy + (R - 20) * Math.sin(rad);
+        return <line key={a} x1={x1} y1={y1} x2={x2} y2={y2} stroke="#9333ea" strokeWidth="3" strokeLinecap="round" />;
+      })}
+      <path d={`M ${cx - R * 0.9} ${cy + R - fillH} Q ${cx} ${cy + R - fillH + 20} ${cx + R * 0.9} ${cy + R - fillH} L ${cx + R * 0.7} ${cy + R * 0.7} Q ${cx} ${cy + R} ${cx - R * 0.7} ${cy + R * 0.7} Z`} fill="#d8b4fe" opacity="0.6" />
+      <circle cx={cx} cy={cy} r="5" fill="#7e22ce" />
+      <text x="10" y="16" fontSize="10" fill="#475569" fontFamily="monospace">포 {p.M_dry}kg · {p.fabric} · {p.RPM}rpm</text>
+      <text x={cx} y={cy - R - 6} fontSize="9" fill="#9333ea" fontFamily="monospace" textAnchor="middle">⌀ drum · Fr 텀블링</text>
+    </svg>
+  );
+}
+
+function DrumView({ onBack }) {
+  const [p, setP] = useState({ M_dry: 3.0, fill_frac: 0.4, RPM: 45, A_eff: 10, h_a: 50, fabric: 'cotton' });
+  const set = (k, v) => setP({ ...p, [k]: v });
+  const sidebar = (
+    <div>
+      <AirSectionLabel>드럼 형상</AirSectionLabel>
+      <Slider label="포 무게" sublabel="[kg] M_dry" value={p.M_dry} min={0.5} max={12} step={0.1} decimals={1} color="purple" onChange={v => set('M_dry', v)} />
+      <Slider label="채움율" sublabel="fill" value={p.fill_frac} min={0.1} max={0.8} step={0.05} decimals={2} color="purple" onChange={v => set('fill_frac', v)} />
+      <Slider label="RPM" sublabel="[rpm] 회전" value={p.RPM} min={0} max={120} step={1} decimals={0} color="purple" onChange={v => set('RPM', v)} />
+      <AirSectionLabel>열전달</AirSectionLabel>
+      <Slider label="A_eff" sublabel="[m²] 증발면적" value={p.A_eff} min={1} max={30} step={0.5} decimals={1} color="cyan" onChange={v => set('A_eff', v)} />
+      <Slider label="h_a" sublabel="[W/m²K]" value={p.h_a} min={10} max={150} step={5} decimals={0} color="cyan" onChange={v => set('h_a', v)} />
+    </div>
+  );
+  return <AirViewShell title="Drum · 텀블링 드럼" subtitle="Tumbling Drum (drum_on L1-L3)" onBack={onBack}
+    sidebar={sidebar} schematic={<DrumSchematic p={p} />} caption="드럼 정면 (리프터 3 · 포 텀블링) · NTU-ε 건조" />;
+}
+
+// ── 필터 도면 ──
+function FilterSchematic({ p }) {
+  const x0 = 60, y0 = 70, w = 200, h = 180;
+  return (
+    <svg viewBox="0 0 320 320" className="w-full h-full">
+      <rect x={x0} y={y0} width={w} height={h} fill="#fffbeb" stroke="#d97706" strokeWidth="2" rx="4" />
+      {Array.from({ length: 8 }).map((_, i) => Array.from({ length: 7 }).map((_, j) => (
+        <circle key={`${i}-${j}`} cx={x0 + 20 + i * 22} cy={y0 + 20 + j * 22} r="4" fill="none" stroke="#f59e0b" strokeWidth="1" opacity="0.5" />
+      )))}
+      {[0, 1, 2].map(i => (
+        <g key={i}>
+          <line x1={x0 - 40} y1={y0 + 40 + i * 50} x2={x0 - 8} y2={y0 + 40 + i * 50} stroke="#0891b2" strokeWidth="2" markerEnd="url(#odfArrow)" />
+          <line x1={x0 + w + 8} y1={y0 + 40 + i * 50} x2={x0 + w + 40} y2={y0 + 40 + i * 50} stroke="#0891b2" strokeWidth="1.5" strokeDasharray="3 2" markerEnd="url(#odfArrow)" opacity="0.5" />
+        </g>
+      ))}
+      <defs><marker id="odfArrow" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="#0891b2" /></marker></defs>
+      <text x={x0 + w / 2} y={y0 - 8} fontSize="9" fill="#d97706" fontFamily="monospace" textAnchor="middle">면적 {p.area}m² · 두께 {p.thickness}mm</text>
+      <text x="10" y="16" fontSize="10" fill="#475569" fontFamily="monospace">다공도 ε={p.porosity}</text>
+    </svg>
+  );
+}
+
+function FilterView({ onBack }) {
+  const [p, setP] = useState({ area: 0.0136, thickness: 10, porosity: 0.9, media: 'nonwoven' });
+  const set = (k, v) => setP({ ...p, [k]: v });
+  const sidebar = (
+    <div>
+      <AirSectionLabel>필터 형상</AirSectionLabel>
+      <Slider label="면적" sublabel="[m²]" value={p.area} min={0.005} max={0.1} step={0.005} decimals={3} color="amber" onChange={v => set('area', v)} />
+      <Slider label="두께" sublabel="[mm]" value={p.thickness} min={1} max={50} step={1} decimals={0} color="amber" onChange={v => set('thickness', v)} />
+      <AirSectionLabel>다공 매질</AirSectionLabel>
+      <Slider label="다공도" sublabel="ε" value={p.porosity} min={0.3} max={0.98} step={0.01} decimals={2} color="green" onChange={v => set('porosity', v)} />
+    </div>
+  );
+  return <AirViewShell title="Filter · 다공 필터" subtitle="Porous Filter (filter_on L1-L3)" onBack={onBack}
+    sidebar={sidebar} schematic={<FilterSchematic p={p} />} caption="필터 단면 (공기 관통 · Ergun 압력강하)" />;
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -5049,6 +5241,15 @@ function App() {
   }
   if (selected === 'eev') {
     return <EEVView onBack={() => setSelected(null)} />;
+  }
+  if (selected === 'fan') {
+    return <FanView onBack={() => setSelected(null)} />;
+  }
+  if (selected === 'drum') {
+    return <DrumView onBack={() => setSelected(null)} />;
+  }
+  if (selected === 'filter') {
+    return <FilterView onBack={() => setSelected(null)} />;
   }
 
   return (

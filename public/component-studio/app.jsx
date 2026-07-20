@@ -175,7 +175,6 @@ function AppSwitcher({ current }) {
     { id: 'component-studio', label: 'Component Studio', desc: '컴포넌트 작성', href: '/component-studio/' },
     { id: 'calibration-studio', label: 'Calibration Studio', desc: 'Calibration & Validation', href: '/calibration-studio/' },
     { id: 'on-design-studio',   label: 'On-Design Studio',   desc: 'On-design 모델 설계',    href: '/on-design-studio/' },
-    { id: 'air-on-design',    label: 'Air On-Design',    desc: '공기 부품 설계', href: '/air-on-design/' },
   ];
   const active = apps.find(a => a.id === current) || apps[0];
 
