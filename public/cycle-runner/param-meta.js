@@ -3160,143 +3160,219 @@ window.COMPONENT_PARAM_META = {
 "filter": {
 "1": [
 {
-"name": "K",
-"start": 20.0,
+"name": "shape",
+"start": "rectangular",
 "unit": "-",
-"group": "General",
-"desc": "",
+"group": "Geometry",
+"desc": "필터 면 형상",
+"type": "String",
+"options": [
+"rectangular",
+"circular"
+]
+},
+{
+"name": "W",
+"start": 200.0,
+"unit": "mm",
+"group": "Geometry",
+"desc": "가로 (직사각형)",
 "type": "Real"
 },
 {
-"name": "A_face",
-"start": 0.05,
-"unit": "-",
-"group": "General",
-"desc": "",
+"name": "H",
+"start": 100.0,
+"unit": "mm",
+"group": "Geometry",
+"desc": "세로 (직사각형)",
+"type": "Real"
+},
+{
+"name": "D_major",
+"start": 250.0,
+"unit": "mm",
+"group": "Geometry",
+"desc": "장축 (원형/타원)",
+"type": "Real"
+},
+{
+"name": "D_minor",
+"start": 250.0,
+"unit": "mm",
+"group": "Geometry",
+"desc": "단축 (원형/타원)",
+"type": "Real"
+},
+{
+"name": "K",
+"start": 20.0,
+"unit": "1/m",
+"group": "Fitting",
+"desc": "압력강하 계수",
 "type": "Real"
 },
 {
 "name": "r_pleat",
 "start": 1.0,
 "unit": "-",
-"group": "General",
-"desc": "",
-"type": "Real"
-},
-{
-"name": "theta_face",
-"start": 0.0,
-"unit": "-",
-"group": "General",
-"desc": "",
-"type": "Real"
-},
-{
-"name": "fidelity",
-"start": "L1",
-"unit": "-",
-"group": "General",
-"desc": "",
+"group": "Geometry",
+"desc": "주름비",
 "type": "Real"
 }
 ],
 "2": [
 {
+"name": "shape",
+"start": "rectangular",
+"unit": "-",
+"group": "Geometry",
+"desc": "필터 면 형상",
+"type": "String",
+"options": [
+"rectangular",
+"circular"
+]
+},
+{
+"name": "W",
+"start": 200.0,
+"unit": "mm",
+"group": "Geometry",
+"desc": "가로",
+"type": "Real"
+},
+{
+"name": "H",
+"start": 100.0,
+"unit": "mm",
+"group": "Geometry",
+"desc": "세로",
+"type": "Real"
+},
+{
+"name": "D_major",
+"start": 250.0,
+"unit": "mm",
+"group": "Geometry",
+"desc": "장축",
+"type": "Real"
+},
+{
+"name": "D_minor",
+"start": 250.0,
+"unit": "mm",
+"group": "Geometry",
+"desc": "단축",
+"type": "Real"
+},
+{
 "name": "a_visc",
 "start": 50000.0,
 "unit": "-",
-"group": "General",
-"desc": "",
+"group": "Fitting",
+"desc": "점성 계수",
 "type": "Real"
 },
 {
 "name": "b_inert",
 "start": 17.0,
 "unit": "-",
-"group": "General",
-"desc": "",
-"type": "Real"
-},
-{
-"name": "A_face",
-"start": 0.05,
-"unit": "-",
-"group": "General",
-"desc": "",
+"group": "Fitting",
+"desc": "관성 계수",
 "type": "Real"
 },
 {
 "name": "r_pleat",
 "start": 1.0,
 "unit": "-",
-"group": "General",
-"desc": "",
-"type": "Real"
-},
-{
-"name": "theta_face",
-"start": 0.0,
-"unit": "-",
-"group": "General",
-"desc": "",
-"type": "Real"
-},
-{
-"name": "fidelity",
-"start": "L1",
-"unit": "-",
-"group": "General",
-"desc": "",
+"group": "Geometry",
+"desc": "주름비",
 "type": "Real"
 }
 ],
 "3": [
 {
+"name": "shape",
+"start": "rectangular",
+"unit": "-",
+"group": "Geometry",
+"desc": "필터 면 형상",
+"type": "String",
+"options": [
+"rectangular",
+"circular"
+]
+},
+{
+"name": "W",
+"start": 200.0,
+"unit": "mm",
+"group": "Geometry",
+"desc": "가로 (직사각형)",
+"type": "Real"
+},
+{
+"name": "H",
+"start": 100.0,
+"unit": "mm",
+"group": "Geometry",
+"desc": "세로 (직사각형)",
+"type": "Real"
+},
+{
+"name": "D_major",
+"start": 250.0,
+"unit": "mm",
+"group": "Geometry",
+"desc": "장축 (원형/타원)",
+"type": "Real"
+},
+{
+"name": "D_minor",
+"start": 250.0,
+"unit": "mm",
+"group": "Geometry",
+"desc": "단축 (원형/타원, =장축이면 원)",
+"type": "Real"
+},
+{
+"name": "MPI",
+"start": 15.0,
+"unit": "1/inch",
+"group": "Mesh",
+"desc": "인치당 메쉬 수 (mesh per inch)",
+"type": "Real"
+},
+{
+"name": "d_w",
+"start": 0.4,
+"unit": "mm",
+"group": "Mesh",
+"desc": "선경 (wire diameter)",
+"type": "Real"
+},
+{
+"name": "L_thick",
+"start": 0.6,
+"unit": "mm",
+"group": "Mesh",
+"desc": "메쉬 두께",
+"type": "Real"
+},
+{
 "name": "cf_ergun",
 "start": 1.0,
 "unit": "-",
-"group": "General",
-"desc": "",
-"type": "Real"
-},
-{
-"name": "layers",
-"start": "[",
-"unit": "-",
-"group": "General",
-"desc": "",
-"type": "Real"
-},
-{
-"name": "A_face",
-"start": 0.05,
-"unit": "-",
-"group": "General",
-"desc": "",
+"group": "Fitting",
+"desc": "Ergun 거칠기 보정",
 "type": "Real"
 },
 {
 "name": "r_pleat",
 "start": 1.0,
 "unit": "-",
-"group": "General",
-"desc": "",
-"type": "Real"
-},
-{
-"name": "theta_face",
-"start": 0.0,
-"unit": "-",
-"group": "General",
-"desc": "",
-"type": "Real"
-},
-{
-"name": "fidelity",
-"start": "L1",
-"unit": "-",
-"group": "General",
-"desc": "",
+"group": "Geometry",
+"desc": "주름비 (1=평면)",
 "type": "Real"
 }
 ]

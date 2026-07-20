@@ -661,40 +661,106 @@ function DrumView({ onBack }) {
 
 // ── 필터 도면 ──
 function FilterSchematic({ p }) {
-  const x0 = 60, y0 = 70, w = 200, h = 180;
+  const cx = 160, cy = 155;
+  const isRect = p.shape === 'rectangular';
+  // 치수 → 화면 스케일 (긴 쪽을 ~190px에 맞춤)
+  const longMm = isRect ? Math.max(p.W, p.H) : Math.max(p.D_major, p.D_minor);
+  const scale = 190 / Math.max(longMm, 1);
+  // 메쉬 격자 밀도 (MPI 반영 — 대략 시각화)
+  const meshN = Math.max(4, Math.min(14, Math.round(p.MPI / 2)));
+
+  let frame, clipId = 'filterClip';
+  let wPx, hPx;
+  if (isRect) {
+    wPx = p.W * scale; hPx = p.H * scale;
+    frame = <rect x={cx - wPx/2} y={cy - hPx/2} width={wPx} height={hPx} fill="#fffbeb" stroke="#d97706" strokeWidth="2" rx="4" />;
+  } else {
+    wPx = p.D_major * scale; hPx = p.D_minor * scale;
+    frame = <ellipse cx={cx} cy={cy} rx={wPx/2} ry={hPx/2} fill="#fffbeb" stroke="#d97706" strokeWidth="2" />;
+  }
+
+  // 메쉬 격자 (프레임 안에 clip)
+  const gridLines = [];
+  const step = Math.max(wPx, hPx) / meshN;
+  for (let i = 1; i < meshN; i++) {
+    const x = cx - wPx/2 + i * (wPx/meshN);
+    gridLines.push(<line key={`v${i}`} x1={x} y1={cy-hPx/2} x2={x} y2={cy+hPx/2} stroke="#f59e0b" strokeWidth="0.7" opacity="0.5" />);
+  }
+  for (let j = 1; j < meshN; j++) {
+    const y = cy - hPx/2 + j * (hPx/meshN);
+    gridLines.push(<line key={`h${j}`} x1={cx-wPx/2} y1={y} x2={cx+wPx/2} y2={y} stroke="#f59e0b" strokeWidth="0.7" opacity="0.5" />);
+  }
+
+  const dimLabel = isRect ? `${p.W}×${p.H} mm` : (p.D_major === p.D_minor ? `⌀${p.D_major} mm` : `${p.D_major}×${p.D_minor} mm (타원)`);
+
   return (
     <svg viewBox="0 0 320 320" className="w-full h-full">
-      <rect x={x0} y={y0} width={w} height={h} fill="#fffbeb" stroke="#d97706" strokeWidth="2" rx="4" />
-      {Array.from({ length: 8 }).map((_, i) => Array.from({ length: 7 }).map((_, j) => (
-        <circle key={`${i}-${j}`} cx={x0 + 20 + i * 22} cy={y0 + 20 + j * 22} r="4" fill="none" stroke="#f59e0b" strokeWidth="1" opacity="0.5" />
-      )))}
-      {[0, 1, 2].map(i => (
+      <defs>
+        <clipPath id={clipId}>
+          {isRect
+            ? <rect x={cx - wPx/2} y={cy - hPx/2} width={wPx} height={hPx} rx="4" />
+            : <ellipse cx={cx} cy={cy} rx={wPx/2} ry={hPx/2} />}
+        </clipPath>
+        <marker id="odfArrow2" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="#0891b2" /></marker>
+      </defs>
+      {frame}
+      <g clipPath={`url(#${clipId})`}>{gridLines}</g>
+      {/* 공기 관통 화살표 */}
+      {[-1, 0, 1].map(i => (
         <g key={i}>
-          <line x1={x0 - 40} y1={y0 + 40 + i * 50} x2={x0 - 8} y2={y0 + 40 + i * 50} stroke="#0891b2" strokeWidth="2" markerEnd="url(#odfArrow)" />
-          <line x1={x0 + w + 8} y1={y0 + 40 + i * 50} x2={x0 + w + 40} y2={y0 + 40 + i * 50} stroke="#0891b2" strokeWidth="1.5" strokeDasharray="3 2" markerEnd="url(#odfArrow)" opacity="0.5" />
+          <line x1={cx - wPx/2 - 42} y1={cy + i * 42} x2={cx - wPx/2 - 8} y2={cy + i * 42} stroke="#0891b2" strokeWidth="2" markerEnd="url(#odfArrow2)" />
+          <line x1={cx + wPx/2 + 8} y1={cy + i * 42} x2={cx + wPx/2 + 42} y2={cy + i * 42} stroke="#0891b2" strokeWidth="1.5" strokeDasharray="3 2" markerEnd="url(#odfArrow2)" opacity="0.5" />
         </g>
       ))}
-      <defs><marker id="odfArrow" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="#0891b2" /></marker></defs>
-      <text x={x0 + w / 2} y={y0 - 8} fontSize="9" fill="#d97706" fontFamily="monospace" textAnchor="middle">면적 {p.area}m² · 두께 {p.thickness}mm</text>
-      <text x="10" y="16" fontSize="10" fill="#475569" fontFamily="monospace">다공도 ε={p.porosity}</text>
+      <text x={cx} y={cy - hPx/2 - 8} fontSize="9" fill="#d97706" fontFamily="monospace" textAnchor="middle">{dimLabel} · MPI {p.MPI}</text>
+      <text x="10" y="16" fontSize="10" fill="#475569" fontFamily="monospace">{isRect ? '직사각형' : (p.D_major===p.D_minor ? '원형' : '타원')} · 선경 {p.d_w}mm</text>
+      <text x="10" y="310" fontSize="9" fill="#94a3b8" fontFamily="monospace">필터 면 (공기 관통 · Ergun 압력강하)</text>
     </svg>
   );
 }
 
 function FilterView({ onBack }) {
-  const [p, setP] = useState({ area: 0.0136, thickness: 10, porosity: 0.9, media: 'nonwoven' });
+  const [p, setP] = useState({
+    shape: 'rectangular',           // rectangular | circular
+    W: 200, H: 100,                 // 직사각형 [mm]
+    D_major: 250, D_minor: 250,     // 원형/타원 [mm]
+    MPI: 15, d_w: 0.4, L_thick: 0.6, // 메쉬: 인치당수/선경/두께
+  });
   const set = (k, v) => setP({ ...p, [k]: v });
+  const isRect = p.shape === 'rectangular';
+
   const sidebar = (
     <div>
-      <AirSectionLabel>필터 형상</AirSectionLabel>
-      <Slider label="면적" sublabel="[m²]" value={p.area} min={0.005} max={0.1} step={0.005} decimals={3} color="amber" onChange={v => set('area', v)} />
-      <Slider label="두께" sublabel="[mm]" value={p.thickness} min={1} max={50} step={1} decimals={0} color="amber" onChange={v => set('thickness', v)} />
-      <AirSectionLabel>다공 매질</AirSectionLabel>
-      <Slider label="다공도" sublabel="ε" value={p.porosity} min={0.3} max={0.98} step={0.01} decimals={2} color="green" onChange={v => set('porosity', v)} />
+      <AirSectionLabel>면 형상</AirSectionLabel>
+      {/* 형상 선택 토글 */}
+      <div className="flex gap-1 bg-slate-100 rounded-md p-0.5 mb-3">
+        {[['rectangular', '직사각형'], ['circular', '원형/타원']].map(([val, lbl]) => (
+          <button key={val} onClick={() => set('shape', val)}
+            className={`flex-1 px-2 py-1.5 text-[12px] font-semibold rounded transition-colors ${
+              p.shape === val ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+            }`}>{lbl}</button>
+        ))}
+      </div>
+      {isRect ? (
+        <>
+          <Slider label="가로 W" sublabel="[mm]" value={p.W} min={50} max={500} step={5} decimals={0} color="amber" onChange={v => set('W', v)} />
+          <Slider label="세로 H" sublabel="[mm]" value={p.H} min={50} max={500} step={5} decimals={0} color="amber" onChange={v => set('H', v)} />
+        </>
+      ) : (
+        <>
+          <Slider label="장축 D_major" sublabel="[mm]" value={p.D_major} min={50} max={500} step={5} decimals={0} color="amber" onChange={v => set('D_major', v)} />
+          <Slider label="단축 D_minor" sublabel="[mm] (=장축→원)" value={p.D_minor} min={50} max={500} step={5} decimals={0} color="amber" onChange={v => set('D_minor', v)} />
+        </>
+      )}
+
+      <AirSectionLabel>메쉬 (선경·MPI)</AirSectionLabel>
+      <Slider label="MPI" sublabel="[1/inch] 인치당 메쉬" value={p.MPI} min={5} max={60} step={1} decimals={0} color="cyan" onChange={v => set('MPI', v)} />
+      <Slider label="선경 d_w" sublabel="[mm] wire경" value={p.d_w} min={0.1} max={1.0} step={0.05} decimals={2} color="cyan" onChange={v => set('d_w', v)} />
+      <Slider label="두께 L" sublabel="[mm]" value={p.L_thick} min={0.2} max={5} step={0.1} decimals={1} color="green" onChange={v => set('L_thick', v)} />
     </div>
   );
-  return <AirViewShell title="Filter · 다공 필터" subtitle="Porous Filter (filter_on L1-L3)" onBack={onBack}
-    sidebar={sidebar} schematic={<FilterSchematic p={p} />} caption="필터 단면 (공기 관통 · Ergun 압력강하)" />;
+  return <AirViewShell title="Filter · 다공 필터" subtitle="Porous Filter (filter_on L3 — 메쉬 기하)" onBack={onBack}
+    sidebar={sidebar} schematic={<FilterSchematic p={p} />} caption="필터 면 (형상+메쉬 반영 · Ergun 압력강하)" />;
 }
 
 /* ═══════════════════════════════════════════════════════════════════

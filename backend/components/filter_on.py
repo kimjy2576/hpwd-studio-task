@@ -48,9 +48,32 @@ def init_state(params):
     return {}
 
 
+def _face_area(params):
+    """면 형상 → 면 면적 A_face [m²] 도출.
+      shape='circular'   : 타원/원 — A = π/4 · D_major · D_minor (원은 두 값 동일)
+      shape='rectangular': 직사각형 — A = W · H (가로세로 비율 자유)
+      shape 미지정        : A_face 직접 사용 (하위호환)
+    입력 치수는 mm로 받아 m로 변환 (D_major/D_minor/W/H).
+    """
+    shape = params.get("shape", None)
+    if shape == "circular" or shape == "elliptical":
+        # 타원(원 포함): 장축·단축 [mm] → m
+        D_major = float(params.get("D_major", 250.0)) / 1000.0  # mm→m
+        D_minor = float(params.get("D_minor", D_major * 1000.0)) / 1000.0
+        return math.pi / 4.0 * D_major * D_minor
+    elif shape == "rectangular":
+        # 직사각형: 가로·세로 [mm] → m
+        W = float(params.get("W", 200.0)) / 1000.0  # mm→m
+        H = float(params.get("H", 100.0)) / 1000.0
+        return W * H
+    else:
+        # 하위호환: A_face 직접 (m²)
+        return float(params.get("A_face", 0.05))
+
+
 def _media_velocity(input, params):
     """3급 공통: 면 기하 → media velocity u, 밀도/점도 반환."""
-    A_face = float(params.get("A_face", 0.05))
+    A_face = _face_area(params)   # 형상 기반 도출 (또는 A_face 직접)
     r_pleat = float(params.get("r_pleat", 1.0))
     theta_face = float(params.get("theta_face", 0.0))
 
@@ -151,9 +174,18 @@ def _dp_L3(u, rho, mu, params):
     # 건조기 린트필터: 얇은 성긴 플라스틱 메쉬 (구멍 커서 공기 잘 통과, 린트만 포집).
     #   MPI~15-30(성긴), d_w~0.3-0.4mm(굵은 wire), L~0.5-0.6mm(얇은 단층).
     #   ⚠️ HEPA급(MPI 200)은 d_w·MPI>1로 ε 음수. 린트용 성긴값 필수.
-    layers = params.get("layers", [
-        {"MPI": 15.0, "d_w": 0.0004, "L": 0.0006},   # 단일 린트 메쉬 (대표값)
-    ])
+    #
+    # layers 우선순위:
+    #   1) params['layers'] 명시 → 그대로 (다층 지원)
+    #   2) 없으면 최상위 MPI/d_w/L_thick(선경·두께 mm)로 단층 구성 (UI 편의)
+    if "layers" in params and params["layers"]:
+        layers = params["layers"]
+    else:
+        # UI 최상위 파라미터: MPI[1/inch], d_w(선경)[mm], L_thick(두께)[mm]
+        MPI_top = float(params.get("MPI", 15.0))
+        d_w_top = float(params.get("d_w", 0.4)) / 1000.0      # mm→m
+        L_top = float(params.get("L_thick", 0.6)) / 1000.0    # mm→m
+        layers = [{"MPI": MPI_top, "d_w": d_w_top, "L": L_top}]
 
     dp_tot = 0.0
     layer_dp = []
