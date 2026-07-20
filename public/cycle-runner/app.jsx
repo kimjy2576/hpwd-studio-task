@@ -21,22 +21,23 @@ function AppSwitcher({ current }) {
   const active = apps.find(a => a.id === current) || apps[0];
   return (
     <div className="relative" ref={ref}>
-      <button onClick={() => setOpen(o => !o)} className="flex items-center gap-2 px-2 py-1 rounded hover:bg-slate-100 transition-colors">
-        <div className="w-2 h-2 rounded-sm bg-cyan-600 shrink-0" />
-        <span className="font-bold text-slate-900 tracking-wide text-[11px]">{active.label}</span>
-        <span className="text-slate-400 text-[9px]">▾</span>
+      <button onClick={() => setOpen(o => !o)}
+        className="flex items-center gap-2 px-2 py-1 rounded hover:bg-slate-100 transition-colors">
+        <div className="w-2 h-2 rounded-sm bg-blue-600 shrink-0"></div>
+        <span className="font-bold text-slate-900 tracking-wide text-sm">{active.label}</span>
+        <span className="text-slate-400 text-[10px]">▾</span>
       </button>
       {open && (
-        <div className="absolute left-0 top-full mt-1 z-50 bg-white border border-slate-200 rounded-lg shadow-xl w-56 p-1">
+        <div className="absolute left-0 top-full mt-1 z-50 bg-white border border-slate-200 rounded-lg shadow-xl w-60 p-1">
           {apps.map(a => {
             const isActive = a.id === current;
             return (
               <button key={a.id}
                 onClick={() => { if (!isActive) window.location.href = a.href; }}
-                className={`w-full text-left px-2.5 py-1.5 rounded flex items-start gap-2 transition-colors ${isActive ? 'bg-cyan-50 cursor-default' : 'hover:bg-slate-50'}`}>
-                <span className={`mt-0.5 w-3 text-center text-[11px] ${isActive ? 'text-cyan-700' : 'text-slate-300'}`}>{isActive ? '●' : '○'}</span>
+                className={`w-full text-left px-2.5 py-1.5 rounded flex items-start gap-2 transition-colors ${isActive ? 'bg-blue-50 cursor-default' : 'hover:bg-slate-50'}`}>
+                <span className={`mt-0.5 w-3 text-center text-[11px] ${isActive ? 'text-blue-700' : 'text-slate-300'}`}>{isActive ? '●' : '○'}</span>
                 <div className="flex-1 min-w-0">
-                  <div className={`font-semibold text-[12px] ${isActive ? 'text-cyan-900' : 'text-slate-800'}`}>{a.label}</div>
+                  <div className={`font-semibold text-[12px] ${isActive ? 'text-blue-900' : 'text-slate-800'}`}>{a.label}</div>
                   <div className="text-[10px] text-slate-500">{a.desc}</div>
                 </div>
               </button>
@@ -554,36 +555,37 @@ function CycleRunner() {
 
   return (
     <div className="min-h-screen">
-      {/* 탭 네비게이션 바 */}
-      <div className="bg-white border-b border-slate-100">
-        <div className="max-w-6xl mx-auto px-6 py-1.5">
-          <AppSwitcher current="cycle-runner" />
+      {/* 메뉴바 (다른 탭과 통일 — 전체 폭, border-b, AppSwitcher+상태+실행) */}
+      <div className="h-9 bg-white border-b border-slate-200 flex items-center px-4 gap-4 text-[11px] shrink-0">
+        <AppSwitcher current="cycle-runner" />
+        <div className="text-slate-400 text-[10px]">Cycle Runner · 컴포넌트별 fidelity 자유 조합</div>
+        <div className="flex-1"></div>
+        <span className="mono text-[11px] text-slate-500 hidden sm:block">
+          냉매 {Object.values(refFid).map(v => `L${v}`).join('·')}
+        </span>
+        <div className={`px-2 py-0.5 rounded-full text-[10px] font-medium border ${
+          running ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-50 text-slate-500 border-slate-200'
+        }`}>
+          {running ? '● 실행 중' : '○ 대기'}
         </div>
       </div>
-      {/* 헤더 */}
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-10">
-        <div className="max-w-6xl mx-auto px-6 py-3.5 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center text-white font-bold">⟳</div>
-            <div>
-              <h1 className="text-base font-bold text-slate-800">Cycle Runner</h1>
-              <p className="mono text-[10px] text-slate-400">HPWD R290 · 컴포넌트별 fidelity 자유 조합</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="mono text-[11px] text-slate-400 hidden sm:block">
-              냉매 {Object.values(refFid).map(v => `L${v}`).join('·')}
-            </span>
-            <button
-              onClick={runCycle}
-              disabled={running}
-              className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-semibold px-5 py-2 rounded-lg flex items-center gap-2"
-            >
-              {running ? <><span className="animate-spin">⟳</span> 실행 중</> : <>▶ 실행</>}
-            </button>
-          </div>
+
+      {/* 툴바 (실행 버튼 — 다른 탭 툴바와 통일) */}
+      <div className="h-11 bg-slate-50 border-b border-slate-200 flex items-center px-4 gap-3 shrink-0">
+        <div className="flex items-center gap-2">
+          <div className="w-6 h-6 rounded-md bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center text-white text-sm font-bold">⟳</div>
+          <span className="text-sm font-bold text-slate-800">Cycle Runner</span>
+          <span className="mono text-[10px] text-slate-400">HPWD R290</span>
         </div>
-      </header>
+        <div className="flex-1"></div>
+        <button
+          onClick={runCycle}
+          disabled={running}
+          className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-semibold px-5 py-1.5 rounded-lg flex items-center gap-2"
+        >
+          {running ? <><span className="animate-spin">⟳</span> 실행 중</> : <>▶ 실행</>}
+        </button>
+      </div>
 
       <main className="max-w-6xl mx-auto px-6 py-6 grid lg:grid-cols-2 gap-5">
         {/* 좌: 사이클 구성 */}
