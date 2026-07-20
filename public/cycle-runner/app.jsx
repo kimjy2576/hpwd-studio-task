@@ -1,0 +1,345 @@
+const { useState, useMemo } = React;
+
+// ── 컴포넌트 정의 (냉매 4 + 공기 3) ──
+const REF_COMPONENTS = [
+  { key: 'compressor', label: '압축기', en: 'Compressor', color: 'var(--comp)', icon: '⊙' },
+  { key: 'condenser',  label: '응축기', en: 'Condenser',  color: 'var(--cond)', icon: '▤' },
+  { key: 'eev',        label: '팽창밸브', en: 'EEV',       color: 'var(--eev)',  icon: '◇' },
+  { key: 'evaporator', label: '증발기', en: 'Evaporator', color: 'var(--evap)', icon: '▤' },
+];
+
+const AIR_CORE = [
+  { key: 'drum',       label: '드럼',   en: 'Drum' },
+  { key: 'filter',     label: '필터',   en: 'Filter' },
+  { key: 'evaporator', label: '증발기', en: 'Evaporator' },
+  { key: 'condenser',  label: '응축기', en: 'Condenser' },
+];
+
+const FIDELITY = [
+  { v: 1, label: 'L1', desc: 'off-design (상수/UA)' },
+  { v: 2, label: 'L2', desc: 'moving-boundary' },
+  { v: 3, label: 'L3', desc: 'on-design (셀별)' },
+];
+
+// fidelity 세그먼트 색상
+const fidColor = (v) => ({ 1: '#64748b', 2: '#0891b2', 3: '#2563eb' }[v]);
+
+// ── fidelity 세그먼트 선택기 ──
+function FidelitySelector({ value, onChange }) {
+  return (
+    <div className="inline-flex rounded-lg bg-slate-100 p-0.5">
+      {FIDELITY.map(f => (
+        <button
+          key={f.v}
+          onClick={() => onChange(f.v)}
+          title={f.desc}
+          className={`fid-seg mono text-xs font-semibold px-2.5 py-1 rounded-md ${value === f.v ? 'on' : 'text-slate-500 hover:text-slate-700'}`}
+          style={value === f.v ? { background: fidColor(f.v) } : {}}
+        >
+          {f.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ── 냉매 사이클 다이어그램 (2×2 배치, 순환 화살표) ──
+function RefrigerantCycle({ fidelity, setFid, running }) {
+  // 배치: 압축기(좌하) → 응축기(좌상) → EEV(우상) → 증발기(우하) → 압축기
+  const positions = {
+    compressor: { row: 2, col: 1 },
+    condenser:  { row: 1, col: 1 },
+    eev:        { row: 1, col: 2 },
+    evaporator: { row: 2, col: 2 },
+  };
+  return (
+    <div className="relative bg-white rounded-2xl border border-slate-200 p-6">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-sm font-bold text-slate-700">냉매 루프</h3>
+        <span className="mono text-[11px] text-slate-400">압축기 → 응축기 → 팽창밸브 → 증발기 (고정)</span>
+      </div>
+      <div className="grid grid-cols-2 gap-x-16 gap-y-6 relative">
+        {REF_COMPONENTS.map(c => (
+          <div
+            key={c.key}
+            className="node bg-white rounded-xl border-2 p-3.5"
+            style={{ borderColor: c.color, gridRow: positions[c.key].row, gridColumn: positions[c.key].col }}
+          >
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-lg" style={{ color: c.color }}>{c.icon}</span>
+              <div>
+                <div className="text-sm font-bold text-slate-800">{c.label}</div>
+                <div className="mono text-[10px] text-slate-400">{c.en}</div>
+              </div>
+            </div>
+            <FidelitySelector value={fidelity[c.key]} onChange={v => setFid(c.key, v)} />
+          </div>
+        ))}
+      </div>
+      {/* 순환 방향 표시 */}
+      <div className="flex justify-center mt-4">
+        <span className={`mono text-[11px] px-2 py-0.5 rounded ${running ? 'bg-blue-50 text-blue-600' : 'bg-slate-50 text-slate-400'}`}>
+          {running ? '⟳ 냉매 순환 중' : '⟳ 순환 (정지)'}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+// ── 공기 경로 (팬 삽입 가능) ──
+function AirPath({ fidelity, setFid, fanPosition, setFanPosition, running }) {
+  // 팬 슬롯: 각 코어 컴포넌트 사이 + 양끝 (0 ~ AIR_CORE.length)
+  const slots = [];
+  for (let i = 0; i <= AIR_CORE.length; i++) slots.push(i);
+
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 p-6">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-sm font-bold text-slate-700">공기 루프</h3>
+        <span className="mono text-[11px] text-slate-400">드럼 → 필터 → 증발기 → 응축기 (고정) · 팬 위치 가변</span>
+      </div>
+      <div className="flex items-center gap-1.5 overflow-x-auto pb-2">
+        {AIR_CORE.map((c, i) => (
+          <React.Fragment key={i}>
+            {/* 팬 슬롯 (컴포넌트 앞) */}
+            <FanSlot pos={i} active={fanPosition === i} onClick={setFanPosition} />
+            {/* 코어 컴포넌트 */}
+            <div className="shrink-0 bg-slate-50 rounded-lg border border-slate-200 px-3 py-2.5 min-w-[92px]">
+              <div className="text-xs font-bold text-slate-700 mb-1.5 text-center">{c.label}</div>
+              <div className="flex justify-center">
+                <FidelitySelector
+                  value={fidelity[c.key] || 1}
+                  onChange={v => setFid(c.key, v)}
+                />
+              </div>
+            </div>
+          </React.Fragment>
+        ))}
+        {/* 마지막 슬롯 (응축기 뒤) */}
+        <FanSlot pos={AIR_CORE.length} active={fanPosition === AIR_CORE.length} onClick={setFanPosition} />
+      </div>
+      <div className="flex items-center gap-3 mt-3">
+        <button
+          onClick={() => setFanPosition(null)}
+          className={`mono text-[11px] px-2 py-1 rounded border ${fanPosition === null ? 'bg-slate-100 border-slate-300 text-slate-600' : 'border-slate-200 text-slate-400 hover:bg-slate-50'}`}
+        >
+          팬 없음
+        </button>
+        <span className="mono text-[11px] text-slate-400">
+          {fanPosition === null ? '팬 미배치' : `팬 위치: 슬롯 ${fanPosition}`}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function FanSlot({ pos, active, onClick }) {
+  return (
+    <button
+      onClick={() => onClick(pos)}
+      title={`슬롯 ${pos}에 팬 배치`}
+      className={`fan-slot shrink-0 w-8 h-8 rounded-full border-2 border-dashed flex items-center justify-center ${active ? 'active border-blue-500' : 'border-slate-300 text-slate-400 bg-white'}`}
+    >
+      <span className="text-sm">{active ? '✦' : '+'}</span>
+    </button>
+  );
+}
+
+// ── 운전 조건 입력 ──
+function OperatingInputs({ op, setOp }) {
+  const fields = [
+    { key: 'N', label: '압축기 rpm', unit: 'rpm', min: 0, max: 3600 },
+    { key: 'opening', label: 'EEV 개도', unit: '%', min: 0, max: 100 },
+    { key: 'T_air', label: '드럼 입구 공기온도', unit: '°C', min: 10, max: 60 },
+    { key: 'RH_air', label: '드럼 입구 습도', unit: '%', min: 0, max: 100 },
+  ];
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 p-6">
+      <h3 className="text-sm font-bold text-slate-700 mb-4">운전 조건</h3>
+      <div className="grid grid-cols-2 gap-4">
+        {fields.map(f => (
+          <div key={f.key}>
+            <label className="block text-xs text-slate-500 mb-1">{f.label}</label>
+            <div className="flex items-center gap-1.5">
+              <input
+                type="number"
+                value={op[f.key]}
+                min={f.min} max={f.max}
+                onChange={e => setOp({ ...op, [f.key]: parseFloat(e.target.value) })}
+                className="mono w-full text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 focus:border-blue-400 focus:outline-none"
+              />
+              <span className="mono text-xs text-slate-400 w-8">{f.unit}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="mt-4 pt-4 border-t border-slate-100">
+        <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
+          <input type="checkbox" checked={op.dynamic} onChange={e => setOp({ ...op, dynamic: e.target.checked })} className="accent-blue-600" />
+          동적 시뮬레이션 (콜드스타트 — 정지→기동→정상운전)
+        </label>
+      </div>
+    </div>
+  );
+}
+
+// ── 결과 패널 (샘플 데이터) ──
+function ResultsPanel({ result, running }) {
+  if (!result) {
+    return (
+      <div className="bg-white rounded-2xl border border-slate-200 p-6 flex flex-col items-center justify-center min-h-[280px] text-center">
+        <div className="text-4xl mb-3 opacity-20">⟳</div>
+        <p className="text-sm text-slate-400">사이클을 실행하면 결과가 여기 표시됩니다</p>
+        <p className="mono text-[11px] text-slate-300 mt-1">P_evap · P_cond · Q · COP · 궤적</p>
+      </div>
+    );
+  }
+  const metrics = [
+    { label: '증발압력', value: result.P_evap, unit: 'bar', color: 'var(--evap)' },
+    { label: '응축압력', value: result.P_cond, unit: 'bar', color: 'var(--cond)' },
+    { label: '냉매유량', value: result.m_dot, unit: 'kg/s', color: 'var(--comp)' },
+    { label: '응축열량', value: result.Q_cond, unit: 'W', color: 'var(--cond)' },
+    { label: '증발열량', value: result.Q_evap, unit: 'W', color: 'var(--evap)' },
+    { label: '과열도', value: result.SH, unit: 'K', color: 'var(--eev)' },
+  ];
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 p-6">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-sm font-bold text-slate-700">결과</h3>
+        <span className={`mono text-[11px] px-2 py-0.5 rounded ${result.converged ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'}`}>
+          {result.converged ? `✓ 수렴 (${result.iterations}회)` : '~ 미수렴'}
+        </span>
+      </div>
+      <div className="grid grid-cols-3 gap-3">
+        {metrics.map(m => (
+          <div key={m.label} className="bg-slate-50 rounded-xl p-3">
+            <div className="text-[11px] text-slate-500 mb-1">{m.label}</div>
+            <div className="mono text-lg font-bold" style={{ color: m.color }}>
+              {typeof m.value === 'number' ? m.value.toFixed(m.unit === 'kg/s' ? 5 : m.unit === 'bar' ? 3 : 1) : '—'}
+            </div>
+            <div className="mono text-[10px] text-slate-400">{m.unit}</div>
+          </div>
+        ))}
+      </div>
+      {result.trajectory && (
+        <div className="mt-4 pt-4 border-t border-slate-100">
+          <div className="text-xs font-semibold text-slate-600 mb-2">동적 궤적 (건조 진행)</div>
+          <MiniChart data={result.trajectory} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── 미니 궤적 차트 (SVG, 샘플) ──
+function MiniChart({ data }) {
+  const w = 320, h = 80, pad = 4;
+  const xs = data.map(d => d.t);
+  const ys = data.map(d => d.X_dry ?? 0);
+  const xmax = Math.max(...xs), ymin = Math.min(...ys), ymax = Math.max(...ys);
+  const px = t => pad + (t / xmax) * (w - 2 * pad);
+  const py = x => h - pad - ((x - ymin) / (ymax - ymin || 1)) * (h - 2 * pad);
+  const path = data.map((d, i) => `${i ? 'L' : 'M'}${px(d.t).toFixed(1)},${py(d.X_dry).toFixed(1)}`).join(' ');
+  return (
+    <svg width={w} height={h} className="w-full">
+      <path d={path} fill="none" stroke="var(--accent)" strokeWidth="2" />
+      {data.map((d, i) => (
+        <circle key={i} cx={px(d.t)} cy={py(d.X_dry)} r="2.5" fill="var(--accent)" />
+      ))}
+      <text x={pad} y={h - 2} className="mono" fontSize="9" fill="#94a3b8">건조율</text>
+      <text x={w - 40} y={h - 2} className="mono" fontSize="9" fill="#94a3b8">{xmax}s</text>
+    </svg>
+  );
+}
+
+// ── 메인 앱 ──
+function CycleRunner() {
+  const [refFid, setRefFid] = useState({ compressor: 3, condenser: 3, eev: 3, evaporator: 3 });
+  const [airFid, setAirFid] = useState({ drum: 1, filter: 1, evaporator: 3, condenser: 3, fan: 3 });
+  const [fanPosition, setFanPosition] = useState(null);
+  const [op, setOp] = useState({ N: 1800, opening: 23.6, T_air: 30, RH_air: 40, dynamic: false });
+  const [running, setRunning] = useState(false);
+  const [result, setResult] = useState(null);
+
+  const setRefFidKey = (k, v) => setRefFid({ ...refFid, [k]: v });
+  const setAirFidKey = (k, v) => setAirFid({ ...airFid, [k]: v });
+
+  // 샘플 실행 (실제로는 백엔드 API 호출)
+  const runCycle = () => {
+    setRunning(true);
+    setResult(null);
+    setTimeout(() => {
+      // 샘플 결과 (백엔드 cycle_runner 반환 형식)
+      const sample = {
+        converged: true,
+        iterations: op.dynamic ? 6 : 22,
+        P_evap: 5.055 + Math.random() * 0.1,
+        P_cond: 9.9 + Math.random() * 0.3,
+        m_dot: 0.00206 + Math.random() * 0.0001,
+        Q_cond: 570 + Math.random() * 20,
+        Q_evap: 460 + Math.random() * 20,
+        SH: 8.6 + Math.random() * 1,
+      };
+      if (op.dynamic) {
+        sample.trajectory = [
+          { t: 0, X_dry: null }, { t: 60, X_dry: 0.600 }, { t: 120, X_dry: 0.599 },
+          { t: 180, X_dry: 0.598 }, { t: 240, X_dry: 0.597 }, { t: 300, X_dry: 0.596 },
+        ].filter(d => d.X_dry !== null);
+      }
+      setResult(sample);
+      setRunning(false);
+    }, 900);
+  };
+
+  return (
+    <div className="min-h-screen">
+      {/* 헤더 */}
+      <header className="bg-white border-b border-slate-200 sticky top-0 z-10">
+        <div className="max-w-6xl mx-auto px-6 py-3.5 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center text-white font-bold">⟳</div>
+            <div>
+              <h1 className="text-base font-bold text-slate-800">Cycle Runner</h1>
+              <p className="mono text-[10px] text-slate-400">HPWD R290 · 컴포넌트별 fidelity 자유 조합</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="mono text-[11px] text-slate-400 hidden sm:block">
+              냉매 {Object.values(refFid).map(v => `L${v}`).join('·')}
+            </span>
+            <button
+              onClick={runCycle}
+              disabled={running}
+              className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-semibold px-5 py-2 rounded-lg flex items-center gap-2"
+            >
+              {running ? <><span className="animate-spin">⟳</span> 실행 중</> : <>▶ 실행</>}
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <main className="max-w-6xl mx-auto px-6 py-6 grid lg:grid-cols-2 gap-5">
+        {/* 좌: 사이클 구성 */}
+        <div className="space-y-5">
+          <RefrigerantCycle fidelity={refFid} setFid={setRefFidKey} running={running} />
+          <AirPath
+            fidelity={airFid} setFid={setAirFidKey}
+            fanPosition={fanPosition} setFanPosition={setFanPosition}
+            running={running}
+          />
+        </div>
+        {/* 우: 조건 + 결과 */}
+        <div className="space-y-5">
+          <OperatingInputs op={op} setOp={setOp} />
+          <ResultsPanel result={result} running={running} />
+        </div>
+      </main>
+
+      <footer className="max-w-6xl mx-auto px-6 py-4 text-center">
+        <p className="mono text-[10px] text-slate-300">
+          UI 프로토타입 · 결과는 샘플 데이터 · 백엔드 cycle_runner 연동 예정
+        </p>
+      </footer>
+    </div>
+  );
+}
