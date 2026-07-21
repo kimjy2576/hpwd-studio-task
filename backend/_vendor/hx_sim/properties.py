@@ -7,6 +7,36 @@ from functools import lru_cache
 import math
 
 # ============================================================
+# 전역 물성 캐시 (프로세스 수명 유지 — step/outer 간 재사용)
+# ============================================================
+# 인스턴스별 self._cache는 HXSolver가 step마다 재생성되어 리셋됨.
+# 물성은 (fluid, 물성종류, 양자화P/T)의 순수 함수이므로 전역 캐시 안전:
+# 같은 입력 → 항상 같은 CoolProp 출력. 양자화 덕에 키 종류가 제한적
+# (P 1kPa 단위, T 0.2K 단위)이라 무한 증가하지 않음. 만일을 대비해
+# 크기 상한(_GCACHE_MAX)에서 가장 오래된 항목부터 정리.
+_GCACHE: dict = {}          # {(fluid, key, P_q[, T_q]): value|dict}
+_GCACHE_MAX = 200_000       # 항목 상한 (양자화로 실제론 훨씬 적음)
+
+
+def _gcache_get(ck):
+    return _GCACHE.get(ck)
+
+
+def _gcache_put(ck, val):
+    if len(_GCACHE) >= _GCACHE_MAX:
+        # 초과 시 앞쪽(오래된) 10% 제거 — dict는 삽입순 유지(3.7+)
+        for k in list(_GCACHE.keys())[:_GCACHE_MAX // 10]:
+            _GCACHE.pop(k, None)
+    _GCACHE[ck] = val
+    return val
+
+
+def clear_property_cache():
+    """전역 물성 캐시 비우기 (테스트/벤치마크용)."""
+    _GCACHE.clear()
+
+
+# ============================================================
 # Refrigerant Properties
 # ============================================================
 
@@ -40,18 +70,20 @@ class RefrigerantProperties:
         self.T_cache_res = 0.2      # 단상물성 T 양자화 [K]
 
     def _cached(self, key, P, fn):
-        """Cache wrapper — P를 P_cache_res로 양자화해 인접 셀이 캐시 공유.
+        """Cache wrapper — P를 P_cache_res로 양자화, 전역 캐시 사용.
 
-        양자화된 대표 P_q에서 fn(P_q)를 호출 → 같은 구간 셀은 정확히 동일한
-        지점에서 계산된 값을 재사용 (일관성 보장). P_cache_res=1이면
-        기존 동작(1Pa 반올림)과 사실상 동일.
+        키에 fluid 포함 → 여러 냉매 혼용 안전. 양자화된 대표 P_q에서
+        fn(P_q) 호출 → 같은 구간 셀은 동일 지점 값 재사용 (일관성).
+        전역 캐시라 step/outer 간에도 유지 (인스턴스 재생성 무관).
+        P_cache_res=1이면 기존 동작(1Pa)과 사실상 동일.
         """
         res = getattr(self, 'P_cache_res', 1.0)
         P_q = round(P / res) * res
-        ck = (key, P_q)
-        if ck not in self._cache:
-            self._cache[ck] = fn(P_q)
-        return self._cache[ck]
+        ck = (self.fluid, key, P_q)
+        v = _gcache_get(ck)
+        if v is None:
+            v = _gcache_put(ck, fn(P_q))
+        return v
 
     # ------ saturation ------
     def T_sat(self, P: float) -> float:
@@ -107,25 +139,26 @@ class RefrigerantProperties:
     def props_single(self, T: float, P: float) -> dict:
         """Single-phase properties at T [K], P [Pa].
 
-        T/P를 양자화해 인접 셀이 캐시 공유 (단상물성은 T에 둔감,
-        T 0.2K 양자화 → rho 0.046%/cp 0.007%/mu 0.029%). 양자화된
-        T_q/P_q에서 CoolProp 호출 → 같은 구간 셀은 동일 지점 값 재사용.
+        T/P 양자화 + 전역 캐시 (fluid 포함 키). 단상물성은 T에 둔감
+        (T 0.2K 양자화 → rho 0.046%/cp 0.007%/mu 0.029%). step/outer 간
+        재사용. 양자화된 T_q/P_q에서 CoolProp 호출.
         """
         T_res = getattr(self, 'T_cache_res', 0.1)
         P_res = getattr(self, 'P_cache_res', 1.0)
         T_q = round(T / T_res) * T_res
         P_q = round(P / P_res) * P_res
-        ck = ("props_single", T_q, P_q)
-        if ck not in self._cache:
-            self._cache[ck] = {
+        ck = (self.fluid, "props_single", T_q, P_q)
+        v = _gcache_get(ck)
+        if v is None:
+            v = _gcache_put(ck, {
                 "rho": CP.PropsSI("D", "T", T_q, "P", P_q, self.fluid),
                 "mu": CP.PropsSI("V", "T", T_q, "P", P_q, self.fluid),
                 "k": CP.PropsSI("L", "T", T_q, "P", P_q, self.fluid),
                 "cp": CP.PropsSI("C", "T", T_q, "P", P_q, self.fluid),
                 "Pr": CP.PropsSI("Prandtl", "T", T_q, "P", P_q, self.fluid),
                 "h": CP.PropsSI("H", "T", T_q, "P", P_q, self.fluid),
-            }
-        return self._cache[ck]
+            })
+        return v
 
     # ------ Lockhart-Martinelli parameter ------
     def Xtt(self, x: float, P: float) -> float:
