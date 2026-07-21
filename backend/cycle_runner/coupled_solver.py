@@ -39,7 +39,7 @@ def _rh_from_TW(T_C, W, P=101325.0):
 
 def solve(ref_fidelity, air_fidelity, operating, air_inlet,
           fan_position=None, params_override=None, air_states=None,
-          max_outer=30, tol_air=0.05, alpha_air=0.6, verbose=False):
+          SH_target=None, max_outer=30, tol_air=0.05, alpha_air=0.6, verbose=False):
     """냉매-공기 연성 수렴.
 
     Args:
@@ -50,6 +50,8 @@ def solve(ref_fidelity, air_fidelity, operating, air_inlet,
       fan_position: 팬 위치 (None=없음)
       air_states: 공기 컴포넌트 상태 {'drum': drum_state} (동적 건조 진행용).
                   None이면 매번 init (정상상태). dynamic_runner가 스텝 간 전달.
+      SH_target: 목표 과열도 [K] (EEV PI 제어). None이면 opening 고정.
+                 지정 시 저rpm/부하변화에서 SH를 유지 (비물리적 SH 폭증 방지).
 
     Returns:
       dict: {'converged','outer_iter','refrigerant','air','air_bc'}
@@ -73,6 +75,7 @@ def solve(ref_fidelity, air_fidelity, operating, air_inlet,
     for outer in range(max_outer):
         # ── 냉매 사이클 수렴 (현재 air_bc + warm-started operating) ──
         ref_res = refrigerant_solve(ref_fidelity, op_ws, air_bc,
+                                    SH_target=SH_target,
                                     params_override=params_override, max_iter=100,
                                     tol_mass=1e-5, tol_enthalpy=1.0, tol_SH=0.1)
         s = ref_res['state']

@@ -166,6 +166,7 @@ def _run_job(job_id: str, req: CycleRunRequest):
                     req.ref_fidelity, req.air_fidelity, engine_op, air_inlet,
                     fan_position=req.fan_position,
                     params_override=override,
+                    SH_target=SH_target,
                 )
             result = _serialize_steady(res)
 
