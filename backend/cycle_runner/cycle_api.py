@@ -117,7 +117,27 @@ def _run_job(job_id: str, req: CycleRunRequest):
 
         engine_op = _to_engine_operating(req.operating)
         air_inlet = _to_air_inlet(req.operating)
-        override = req.params_override or {}
+        override = dict(req.params_override or {})
+
+        # 드럼 운전조건(fabric/M_dry/X0)을 params_override['drum']에 주입
+        #   coupled_solver.solve는 이들을 operating이 아닌 드럼 params로 받음
+        op = req.operating
+        drum_params = dict(override.get('drum', {}))
+        if 'M_dry' in op:
+            drum_params.setdefault('M_dry', op['M_dry'])
+        if 'X0' in op:
+            drum_params.setdefault('X0', op['X0'])
+            drum_params.setdefault('X_init', op['X0'])  # 키 변형 대비
+        if 'fabric' in op:
+            # UI fabric 명칭 → 백엔드 프리셋 (cotton/poly/mixed) 매핑
+            _fabric_map = {
+                'cotton': 'cotton', 'poly': 'poly', 'polyester': 'poly',
+                'mixed': 'mixed', 'wool': 'mixed', 'synthetic': 'poly',
+            }
+            fab = _fabric_map.get(str(op['fabric']).lower(), 'cotton')  # 미지원→cotton 폴백
+            drum_params.setdefault('fabric', fab)
+        if drum_params:
+            override['drum'] = drum_params
 
         # SH_target (EEV PI 제어 목표) — operating에서
         SH_target = req.operating.get('SH_target', None)
