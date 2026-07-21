@@ -57,6 +57,20 @@ except Exception as e:
     import traceback
     traceback.print_exc()
 
+# ─── Cycle Runner router 등록 (/cycle/* — Python cycle_runner, 비동기 job) ──
+# Modelica 기반 /run_cycle 과 별개. coupled_solver/dynamic_runner를 job으로 노출.
+_cycle_status = {'mounted': False, 'error': None}
+try:
+    from cycle_runner.cycle_api import cycle_router
+    app.include_router(cycle_router)
+    _cycle_status['mounted'] = True
+    print("[OK]   Cycle Runner router mounted at /cycle/*")
+except Exception as e:
+    _cycle_status['error'] = f"{type(e).__name__}: {e}"
+    print(f"[WARN] Cycle Runner router 마운트 실패: {_cycle_status['error']}")
+    import traceback
+    traceback.print_exc()
+
 # ─── Modelica 브릿지 (canvas→.mo→omc) — 로컬 dev 전용 ────────────────
 # import는 omc 불필요(안전). 실제 실행 시에만 omc 필요 → 배포본(omc 없음)은
 # /compute_modelica 호출 시 친절한 에러만 반환하고 /compute(Python)는 정상 동작.
