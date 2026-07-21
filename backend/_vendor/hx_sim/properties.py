@@ -145,6 +145,12 @@ class RefrigerantProperties:
 # Moist Air Properties (psychrometrics)
 # ============================================================
 
+# 물 증발잠열 h_fg(T) 모듈 전역 캐시 (T 0.2K 양자화).
+# wet-coil 증발기가 셀별 wall T로 h_fg_water를 수천 회 호출 → 양자화 캐시로
+# CoolProp Water 상태방정식 호출 급감. 양자화 T_q에서 정확히 계산 (값 불변).
+_H_FG_WATER_CACHE: dict = {}
+
+
 class MoistAirProperties:
     """Moist air property calculations using CoolProp HAPropsSI.
     
@@ -263,11 +269,22 @@ class MoistAirProperties:
         진영님 audit: solver.py에서 hardcoded '2501000' (water h_fg @ 0°C) 사용.
         실제로는 T에 따라 변함 (10°C 2477 kJ/kg, 50°C 2382 kJ/kg).
         wet coil에서 평균 wall T로 호출.
+
+        성능: wet-coil 증발기는 셀별 wall T로 이 함수를 수천 회 호출
+        (H|T,Q Water 2118회 = 증발기 L3 CoolProp의 75%). h_fg_water는
+        온도에 완만 (0.2K 차 → 0.0194% 변화)하므로 T를 0.2K 양자화해
+        모듈 전역 캐시. 양자화된 T_q에서 정확히 CoolProp 호출 (물성값 불변).
         """
+        T_q = round(T / 0.2) * 0.2   # 0.2K 양자화 (오차 <0.02%)
+        cached = _H_FG_WATER_CACHE.get(T_q)
+        if cached is not None:
+            return cached
         try:
-            h_v = CP.PropsSI("H", "T", T, "Q", 1, "Water")
-            h_l = CP.PropsSI("H", "T", T, "Q", 0, "Water")
-            return h_v - h_l
+            h_v = CP.PropsSI("H", "T", T_q, "Q", 1, "Water")
+            h_l = CP.PropsSI("H", "T", T_q, "Q", 0, "Water")
+            val = h_v - h_l
+            _H_FG_WATER_CACHE[T_q] = val
+            return val
         except Exception as e:
             raise RuntimeError(
                 f"CoolProp 'Water' h_fg 호출 실패 (T={T:.1f}K): {e}"
