@@ -219,20 +219,32 @@ def _serialize_steady(res: dict) -> dict:
 
 
 def _serialize_dynamic(res: dict) -> dict:
-    """dynamic_runner.run 결과 → UI용 (궤적 포함)."""
+    """dynamic_runner.run 결과 → UI용 (궤적 포함).
+
+    trajectory 스텝 키: t, N, P_evap, P_cond, m_dot, Q_cond, Q_evap, X_dry, phase.
+    시계열 배열(그래프용) + 최종 스텝 요약.
+    """
     traj = res.get('trajectory', res.get('history', []))
-    # 궤적을 시계열 배열로 (그래프용)
     series = {}
     if traj and isinstance(traj, list):
-        keys = ['t', 'P_evap', 'P_cond', 'm_dot', 'Q_cond', 'Q_evap', 'COP', 'X', 'SMER']
-        for k in keys:
-            vals = [pt.get(k) for pt in traj if isinstance(pt, dict) and k in pt]
-            if vals:
+        # 그래프용 시계열 (실제 존재 키만)
+        num_keys = ['t', 'N', 'P_evap', 'P_cond', 'm_dot', 'Q_cond', 'Q_evap', 'X_dry']
+        for k in num_keys:
+            vals = [pt.get(k) for pt in traj if isinstance(pt, dict)]
+            # None 아닌 값이 하나라도 있으면 포함
+            if any(v is not None for v in vals):
                 series[k] = vals
+        # phase는 문자열 시계열 (상태 전환 표시)
+        phases = [pt.get('phase') for pt in traj if isinstance(pt, dict)]
+        if any(p is not None for p in phases):
+            series['phase'] = phases
+
     final = traj[-1] if traj else {}
     return {
         'kind': 'dynamic',
-        'converged': res.get('converged', True),
+        'converged': res.get('converged_steps', 0) == res.get('total_steps', 1),
+        'converged_steps': res.get('converged_steps', 0),
+        'total_steps': res.get('total_steps', len(traj) if isinstance(traj, list) else 0),
         'n_steps': len(traj) if isinstance(traj, list) else 0,
         'series': series,
         'final': {k: (float(v) if isinstance(v, (int, float)) else v)
