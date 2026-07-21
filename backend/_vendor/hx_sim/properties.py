@@ -27,60 +27,77 @@ class RefrigerantProperties:
         self.T_crit = CP.PropsSI("Tcrit", self.fluid)
         self.M = CP.PropsSI("M", self.fluid)  # molar mass [kg/mol]
         self._cache = {}  # property cache keyed by (method_name, P_rounded)
+        # ── 캐시 양자화 해상도 (성능) ──────────────────────────────
+        # HX 셀별로 압력강하(셀당 ~1.6kPa)로 P가 미세하게 달라 캐시 미스가
+        # 잦음. 포화물성은 압력에, 단상물성은 온도에 매우 둔감하므로
+        # 캐시 키를 양자화하면 인접 셀이 같은 키를 공유해 CoolProp 호출↓.
+        # 검증(R290): P 1kPa 양자화 → T_sat 20mK/rho_l 0.006%/h_fg 0.011%,
+        #             T 0.2K 양자화 → rho 0.046%/cp 0.007%/mu 0.029%.
+        # 모두 <0.05% (N_seg 축소 0.1~0.5%보다 작음). ground-truth 물성값
+        # 자체는 불변 — 양자화된 P/T 지점에서 CoolProp을 정확히 호출.
+        # 되돌리려면 P_cache_res=1.0, T_cache_res=0.1로 설정 (기존 동작).
+        self.P_cache_res = 1000.0   # 포화물성 P 양자화 [Pa] (1kPa)
+        self.T_cache_res = 0.2      # 단상물성 T 양자화 [K]
 
     def _cached(self, key, P, fn):
-        """Cache wrapper — rounds P to 1 Pa to avoid float issues."""
-        P_r = round(P, 0)
-        ck = (key, P_r)
+        """Cache wrapper — P를 P_cache_res로 양자화해 인접 셀이 캐시 공유.
+
+        양자화된 대표 P_q에서 fn(P_q)를 호출 → 같은 구간 셀은 정확히 동일한
+        지점에서 계산된 값을 재사용 (일관성 보장). P_cache_res=1이면
+        기존 동작(1Pa 반올림)과 사실상 동일.
+        """
+        res = getattr(self, 'P_cache_res', 1.0)
+        P_q = round(P / res) * res
+        ck = (key, P_q)
         if ck not in self._cache:
-            self._cache[ck] = fn()
+            self._cache[ck] = fn(P_q)
         return self._cache[ck]
 
     # ------ saturation ------
     def T_sat(self, P: float) -> float:
-        return self._cached("T_sat", P, lambda: CP.PropsSI("T", "P", P, "Q", 0, self.fluid))
+        return self._cached("T_sat", P, lambda Pq: CP.PropsSI("T", "P", Pq, "Q", 0, self.fluid))
 
     def P_sat(self, T: float) -> float:
         return CP.PropsSI("P", "T", T, "Q", 0, self.fluid)
 
     # ------ two-phase ------
     def h_fg(self, P: float) -> float:
-        return self._cached("h_fg", P, lambda: (
-            CP.PropsSI("H", "P", P, "Q", 1, self.fluid) -
-            CP.PropsSI("H", "P", P, "Q", 0, self.fluid)))
+        return self._cached("h_fg", P, lambda Pq: (
+            CP.PropsSI("H", "P", Pq, "Q", 1, self.fluid) -
+            CP.PropsSI("H", "P", Pq, "Q", 0, self.fluid)))
 
     def rho_l(self, P: float) -> float:
-        return self._cached("rho_l", P, lambda: CP.PropsSI("D", "P", P, "Q", 0, self.fluid))
+        return self._cached("rho_l", P, lambda Pq: CP.PropsSI("D", "P", Pq, "Q", 0, self.fluid))
 
     def rho_v(self, P: float) -> float:
-        return self._cached("rho_v", P, lambda: CP.PropsSI("D", "P", P, "Q", 1, self.fluid))
+        return self._cached("rho_v", P, lambda Pq: CP.PropsSI("D", "P", Pq, "Q", 1, self.fluid))
 
     def mu_l(self, P: float) -> float:
-        return self._cached("mu_l", P, lambda: CP.PropsSI("V", "P", P, "Q", 0, self.fluid))
+        return self._cached("mu_l", P, lambda Pq: CP.PropsSI("V", "P", Pq, "Q", 0, self.fluid))
 
     def mu_v(self, P: float) -> float:
-        return self._cached("mu_v", P, lambda: CP.PropsSI("V", "P", P, "Q", 1, self.fluid))
+        return self._cached("mu_v", P, lambda Pq: CP.PropsSI("V", "P", Pq, "Q", 1, self.fluid))
 
     def k_l(self, P: float) -> float:
-        return self._cached("k_l", P, lambda: CP.PropsSI("L", "P", P, "Q", 0, self.fluid))
+        return self._cached("k_l", P, lambda Pq: CP.PropsSI("L", "P", Pq, "Q", 0, self.fluid))
 
     def k_v(self, P: float) -> float:
-        return self._cached("k_v", P, lambda: CP.PropsSI("L", "P", P, "Q", 1, self.fluid))
+        return self._cached("k_v", P, lambda Pq: CP.PropsSI("L", "P", Pq, "Q", 1, self.fluid))
 
     def cp_l(self, P: float) -> float:
-        return self._cached("cp_l", P, lambda: CP.PropsSI("C", "P", P, "Q", 0, self.fluid))
+        return self._cached("cp_l", P, lambda Pq: CP.PropsSI("C", "P", Pq, "Q", 0, self.fluid))
 
     def cp_v(self, P: float) -> float:
-        return self._cached("cp_v", P, lambda: CP.PropsSI("C", "P", P, "Q", 1, self.fluid))
+        return self._cached("cp_v", P, lambda Pq: CP.PropsSI("C", "P", Pq, "Q", 1, self.fluid))
 
     def Pr_l(self, P: float) -> float:
-        return self._cached("Pr_l", P, lambda: CP.PropsSI("Prandtl", "P", P, "Q", 0, self.fluid))
+        return self._cached("Pr_l", P, lambda Pq: CP.PropsSI("Prandtl", "P", Pq, "Q", 0, self.fluid))
 
     def Pr_v(self, P: float) -> float:
-        return self._cached("Pr_v", P, lambda: CP.PropsSI("Prandtl", "P", P, "Q", 1, self.fluid))
+        return self._cached("Pr_v", P, lambda Pq: CP.PropsSI("Prandtl", "P", Pq, "Q", 1, self.fluid))
 
     def sigma(self, P: float) -> float:
-        return self._cached("sigma", P, lambda: CP.PropsSI("I", "P", P, "Q", 0, self.fluid))
+        return self._cached("sigma", P, lambda Pq: CP.PropsSI("I", "P", Pq, "Q", 0, self.fluid))
 
     def P_r(self, P: float) -> float:
         """Reduced pressure P/P_crit."""
@@ -88,16 +105,25 @@ class RefrigerantProperties:
 
     # ------ single-phase ------
     def props_single(self, T: float, P: float) -> dict:
-        """Single-phase properties at T [K], P [Pa]."""
-        ck = ("props_single", round(T, 1), round(P, 0))
+        """Single-phase properties at T [K], P [Pa].
+
+        T/P를 양자화해 인접 셀이 캐시 공유 (단상물성은 T에 둔감,
+        T 0.2K 양자화 → rho 0.046%/cp 0.007%/mu 0.029%). 양자화된
+        T_q/P_q에서 CoolProp 호출 → 같은 구간 셀은 동일 지점 값 재사용.
+        """
+        T_res = getattr(self, 'T_cache_res', 0.1)
+        P_res = getattr(self, 'P_cache_res', 1.0)
+        T_q = round(T / T_res) * T_res
+        P_q = round(P / P_res) * P_res
+        ck = ("props_single", T_q, P_q)
         if ck not in self._cache:
             self._cache[ck] = {
-                "rho": CP.PropsSI("D", "T", T, "P", P, self.fluid),
-                "mu": CP.PropsSI("V", "T", T, "P", P, self.fluid),
-                "k": CP.PropsSI("L", "T", T, "P", P, self.fluid),
-                "cp": CP.PropsSI("C", "T", T, "P", P, self.fluid),
-                "Pr": CP.PropsSI("Prandtl", "T", T, "P", P, self.fluid),
-                "h": CP.PropsSI("H", "T", T, "P", P, self.fluid),
+                "rho": CP.PropsSI("D", "T", T_q, "P", P_q, self.fluid),
+                "mu": CP.PropsSI("V", "T", T_q, "P", P_q, self.fluid),
+                "k": CP.PropsSI("L", "T", T_q, "P", P_q, self.fluid),
+                "cp": CP.PropsSI("C", "T", T_q, "P", P_q, self.fluid),
+                "Pr": CP.PropsSI("Prandtl", "T", T_q, "P", P_q, self.fluid),
+                "h": CP.PropsSI("H", "T", T_q, "P", P_q, self.fluid),
             }
         return self._cache[ck]
 
