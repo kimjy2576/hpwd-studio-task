@@ -100,6 +100,9 @@ def step(input, params, state, dt):
     p.setdefault('N_rows', 6)
     p.setdefault('N_tubes_per_row', 4)
     p.setdefault('FPI', 22.0)
+    # 코일 깊이 D = N_rows×P_l = 6×10mm. 미지정 시 evap 기본(0.04)이 남아
+    # 공기측 면적 35% 과소 → 2상 Q -15% (2026-07-23 셀 대조 하네스로 규명).
+    p.setdefault('D', 0.06)
     # P_cond(노출 변수명) → P_evap(내부 solver 키) 매핑.
     # modelDescription은 P_cond으로 노출하나, 공유 evap solver는 P_evap 키를 읽음.
     inp = dict(input) if input else {}

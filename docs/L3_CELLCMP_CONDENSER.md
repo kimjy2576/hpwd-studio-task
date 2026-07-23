@@ -1,0 +1,65 @@
+# L3 셀 단위 대조 — 응축기 갭 폐합 (2026-07-23)
+
+## 결론
+
+**응축기 OMC↔Python 갭 +11.9% → +0.2%로 폐합.**
+원인 = `condenser_on_design.py` step()의 `D`(코일 깊이) setdefault 누락.
+N_rows=6/FPI=22는 오버라이드됐으나 D가 evap 기본 0.04 m로 잔류
+→ 공기측 면적 35% 과소 (실효 A_o비 0.635) → 실BC에서 2상 Q −15%.
+수정: `p.setdefault('D', 0.06)` 1줄 (N_rows×P_l=6×10 mm).
+
+핸드오프 §2의 "+67%/+27% 미규명"은 스테일 — h_o 하드코딩 오류가
+7/19에 이미 수정됨(`00bc635`, `b75f62b`). 본 세션은 그 잔여 갭을 대조함.
+
+## BC (CmpParts 응축기 조건)
+
+P_c 9.8762 bar / h_in 651.260 kJ/kg / ṁ 2.06593 g/s /
+공기 14.474 °C, RH 0.99, 2.42 CMM. OMC `CmpParts.Cond_L3`(Cond_On_Dyn,
+t=500 정착, t≥398 불변) vs Python `condenser_on_design.step()`.
+
+## 결과 (컬럼당 W)
+
+| 단계 | OMC | PY | 갭 | 비고 |
+|---|---|---|---|---|
+| 회로 정렬 전 (PY single) | 551.4 | 566.5(전체) | −2.7% | 가짜 일치 — G 4배·경로 240셀 오차 상쇄 |
+| 회로 정렬 (row_parallel) | 551.4 | 492.7 | **+11.9%** | 진짜 갭 노출 |
+| 구간분해: 과열 21셀 | 25.4 | 25.7 | −1.1% | 일치 |
+| 구간분해: 2상 39셀 | 112.5 | 97.5 | **+15.3%** | 갭 전체 위치 |
+| 등온공기(풍량×1000) 2상 | 174.0 | 172.1 | +1.1% | 냉매측 무죄 판정 |
+| **D=0.06 수정 후 (전체)** | **551.4** | **552.4** | **+0.2%** | 폐합 |
+
+## 측정으로 배제된 후보 (핸드오프 §2 표 대응)
+
+| 후보 | 판정 | 근거 측정 |
+|---|---|---|
+| 냉매 기준상태 / T_sat | 무죄 | 2상 T_ref 양쪽 26.4 °C 동일, PY P_local 스팬 0.0036 bar (T_sat 0.01 K) |
+| h_i 디스패치·microfin EF | 무죄 | 2상 h_i −3% 수준 일치, UA 합성 0~7% |
+| 벽온도 처리 | 무죄 | OMC Q_ref=Q_air=h·A·ΔT 검산 완전 일치, PY T_wall 역산 A_i비 0.996 |
+| 공기 유량·(ṁcp) | 무죄 | PY (ṁcp)_eff 1.261 vs OMC 1.225 W/K (+3%, rho 산출차) |
+| h_o / eta_o | 무죄 | 151.0/0.893 vs 152.4/0.887 (1% 미만) |
+| **면적 (A_o_seg)** | **유죄** | **PY 실효 A_o비 0.635 = D 0.04/0.06의 핀면적비 0.654와 정합** |
+
+## 진단 시그니처 (재발 시 참조)
+
+- 풍량 스윕에서 갭이 봉우리형(×0.5 +6.9%, ×2 +22.5%, ×1000 +1.1%):
+  저풍량=공기 열용량 병목, 등온=냉매측 병목이라 면적 오차가 중간 풍량에서만 노출.
+- 등온화로 갭 소멸 = 공기측(면적·h_o·eta_o) 용의, 잔존 = 냉매측 용의.
+
+## 방법론 (하네스)
+
+1. OMC: `CmpParts.Cond_L3` simulate, variableFilter로 `h_i/T_ref/xq/Q_ref/Q_air/T_w/T_aen[k]` CSV.
+   final parameter(h_o 등)는 res/init.xml 모두 미출력 → .mos에서 동일 함수 체인 직접 평가.
+2. Python: GT 무수정 — `HXSolver.solve` monkey-patch로 `step()` 경유 segments 캡처.
+3. 정렬: 회로모드 row_parallel 통일(Modelica Nt=4 병렬 컬럼 대응) 필수.
+   Python segments는 격자순 → (row,seg) 경로 후보 8종 전수 x·T_ref 단조 검증으로 재구성
+   (채택: row_rev=1, serpentine, phase=0 = OMC pathRow/pathSeg와 동위상).
+4. 판정: 구간분해(과열/2상) → 등온공기 결정실험 → (ṁcp)_eff·실효면적 셀별 역산.
+
+스크립트: 세션 스크래치(/tmp/cellcmp)에서 검증 — 증발기 확장 시 `verify/`로 정리 예정.
+
+## 남은 것
+
+- 증발기: OMC−PY −2.1%, SH 6.0 vs 8.6 K (row_parallel 정렬 후). 동일 하네스로 대조 예정.
+- 증발기 Python vendor dryout T_wall 반복 진동(`a243da2`) 미수정 — single 회로에서
+  SH 17.45 K 관측(row_parallel 8.6 K), 진동 재현·수정 여부 별도 판단.
+- `00bc635` 기록의 "OMC 570 ≈ PY 565 일치"는 single+D=0.04 이중 오차의 우연 — 폐기.
