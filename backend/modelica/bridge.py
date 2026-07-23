@@ -36,6 +36,15 @@ _WORK = os.environ.get("HPWD_MODELICA_WORK",
 
 _fs = lambda p: p.replace("\\", "/")   # omc .mos 문자열은 '/'만 안전 (Windows)
 
+# ── 적분기 선택 ──
+# 기본은 dassl(기존 동작 유지). 습/건 전이가 있는 증발기 동특성 모델은 dassl로
+# 사실상 못 돌고(2026-07-23 실측: 40셀 >150s 미완주, 80셀 미완주),
+# gbode로는 1~4s에 완주하며 값은 소수 3자리까지 일치함.
+# 다만 사이클/커플드 모델에서는 미측정이라 기본값을 아직 바꾸지 않음.
+# 실험/전환은 환경변수로: HPWD_OMC_SOLVER=gbode (또는 ida)
+# 측정 근거: docs/L3_CELLCMP_EVAPORATOR.md
+_SOLVER = os.environ.get("HPWD_OMC_SOLVER", "dassl")
+
 
 def _omc_bin():
     """omc 실행 파일 경로 결정. $OMC_BIN(omc.exe 전체 경로)이 있으면 우선 사용,
@@ -386,7 +395,7 @@ def run_cycle(model='Cycle_L1_ramp_PI', stop_time=120.0, tolerance=1e-6,
            f'loadFile("{_fs(HELMHOLTZ_PATH)}"); getErrorString();\n'
            f'{loads}'
            f'simulate(HPWDcycle.{model}, stopTime={float(stop_time):.6g}, '
-           f'numberOfIntervals={int(intervals)}, method="dassl", '
+           f'numberOfIntervals={int(intervals)}, method="{_SOLVER}", '
            f'tolerance={float(tolerance):.3g}, outputFormat="csv"); getErrorString();\n')
     open(os.path.join(wdir, 'run.mos'), 'w').write(mos)
     r = subprocess.run([_omc_bin(), "run.mos"], cwd=wdir,
@@ -597,7 +606,7 @@ def run_canvas_cycle(topology, settings, raw_params=True):
            f'{loads}'
            f'loadFile("{_fs(os.path.join(wdir, "GenCycle.mo"))}"); getErrorString();\n'
            f'simulate(GenCycle.Cycle_gen, stopTime={stop:.6g}, '
-           f'numberOfIntervals={intervals}, method="dassl", '
+           f'numberOfIntervals={intervals}, method="{_SOLVER}", '
            f'tolerance={tol:.3g}, outputFormat="csv"); getErrorString();\n')
     open(os.path.join(wdir, 'run.mos'), 'w').write(mos)
     r = subprocess.run([_omc_bin(), "run.mos"], cwd=wdir,
@@ -798,7 +807,7 @@ def run_air_cycle(topology, settings, raw_params=True):
            f'{loads}'
            f'loadFile("{_fs(os.path.join(wdir, "GenAirCycle.mo"))}"); getErrorString();\n'
            f'simulate(GenAirCycle.AirCycle_gen, stopTime={stop:.6g}, '
-           f'numberOfIntervals={intervals}, method="dassl", '
+           f'numberOfIntervals={intervals}, method="{_SOLVER}", '
            f'tolerance={tol:.3g}, outputFormat="csv"); getErrorString();\n')
     open(os.path.join(wdir, 'run.mos'), 'w').write(mos)
     r = subprocess.run([_omc_bin(), "run.mos"], cwd=wdir,
@@ -887,7 +896,7 @@ def run_coupled_cycle(model='Cycle_coupled_closed', stop_time=180.0, tolerance=1
            f'loadFile("{_fs(HELMHOLTZ_PATH)}"); getErrorString();\n'
            f'{loads}'
            f'simulate(HPWDcpl.{model}, stopTime={float(stop_time):.6g}, '
-           f'numberOfIntervals={int(intervals)}, method="dassl", '
+           f'numberOfIntervals={int(intervals)}, method="{_SOLVER}", '
            f'tolerance={float(tolerance):.3g}, outputFormat="csv"); getErrorString();\n')
     open(os.path.join(wdir, 'run.mos'), 'w').write(mos)
     r = subprocess.run([_omc_bin(), "run.mos"], cwd=wdir,
@@ -1034,7 +1043,7 @@ def run_cycle_l2(model='CycleDynL2', stop_time=120.0, tolerance=1e-6,
            f'loadFile("{_fs(HELMHOLTZ_PATH)}"); getErrorString();\n'
            f'{loads}'
            f'simulate({target}, stopTime={float(stop_time):.6g}, '
-           f'numberOfIntervals={int(intervals)}, method="dassl", '
+           f'numberOfIntervals={int(intervals)}, method="{_SOLVER}", '
            f'tolerance={float(tolerance):.3g}, outputFormat="csv"); getErrorString();\n')
     open(os.path.join(wdir, 'run.mos'), 'w').write(mos)
     r = subprocess.run([_omc_bin(), "run.mos"], cwd=wdir,
@@ -1092,7 +1101,7 @@ def run_cycle_l3(model='Cycle_L3_coldstart_dyn', stop_time=120.0, tolerance=1e-6
         f'{loads}'
         # 단일 simulate (콜드스타트: rest init은 fixed=true라 trivial, warm-start 불필요)
         f'simulate(HPWDcycle.{model}, stopTime={float(stop_time):.6g}, '
-        f'numberOfIntervals={int(intervals)}, method="dassl", '
+        f'numberOfIntervals={int(intervals)}, method="{_SOLVER}", '
         f'tolerance={float(tolerance):.3g}, outputFormat="csv"); getErrorString();\n')
     open(os.path.join(wdir, 'run.mos'), 'w').write(mos)
     r = subprocess.run([_omc_bin(), "run.mos"], cwd=wdir,
@@ -1291,7 +1300,7 @@ def run_canvas_coupled_cycle(ref_topology, air_topology, settings=None,
            f'{loads}'
            f'loadFile("{_fs(os.path.join(wdir, "GenCoupled.mo"))}"); getErrorString();\n'
            f'simulate(GenCoupled.Coupled_gen, stopTime={float(stop_time):.6g}, '
-           f'numberOfIntervals={int(intervals)}, method="dassl", '
+           f'numberOfIntervals={int(intervals)}, method="{_SOLVER}", '
            f'tolerance={float(tolerance):.3g}, outputFormat="csv"); getErrorString();\n')
     open(os.path.join(wdir, 'run.mos'), 'w').write(mos)
     r = subprocess.run([_omc_bin(), "run.mos"], cwd=wdir,

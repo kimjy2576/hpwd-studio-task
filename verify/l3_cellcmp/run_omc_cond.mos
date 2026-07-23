@@ -1,0 +1,18 @@
+// L3 셀 대조 — OMC Cond_L3 (Cond_On_Dyn, CmpParts BC) 정착 후 셀값 덤프
+// 실행: cd /tmp/omc_cond && omc /home/claude/repo/verify/l3_cellcmp/run_omc_cond.mos
+loadModel(Modelica); getErrorString();
+loadFile("/home/claude/repo/modelica/HPWD.mo"); getErrorString();
+loadFile("/home/claude/repo/modelica/R290Tab.mo"); getErrorString();
+loadFile("/home/claude/repo/modelica/HXCorr.mo"); getErrorString();
+loadFile("/home/claude/repo/modelica/HPWDon.mo"); getErrorString();
+loadFile("/home/claude/repo/modelica/HPWDevap.mo"); getErrorString();
+loadFile("/home/claude/repo/modelica/EvapUA.mo"); getErrorString();
+loadFile("/home/claude/repo/modelica/EevMB.mo"); getErrorString();
+loadFile("/home/claude/repo/modelica/HPWDcycle.mo"); getErrorString();
+loadFile("/home/claude/repo/modelica/CondMBe.mo"); getErrorString();
+loadFile("/home/claude/repo/modelica/EvapMBe.mo"); getErrorString();
+loadFile("/home/claude/repo/modelica/CmpParts.mo"); getErrorString();
+simulate(CmpParts.Cond_L3, stopTime=500, numberOfIntervals=10,
+  outputFormat="csv",
+  variableFilter="cond\\.(h_i|T_ref|xq|Q_ref|Q_air|T_w|h_ref)\\[[0-9]+\\]|cond\\.T_aen\\[[0-9]+,[0-9]+\\]|cond\\.(Q_total|h_out|x_out|T_air_out|h_o|eta_o_dry|A_i_seg|A_o_seg|cp_a_dry|P|m_ref_col|G_ref|h_in|T_satC|hl|hv|h_fg|EF_2ph|EF_sgl|psi_mf)");
+getErrorString();
