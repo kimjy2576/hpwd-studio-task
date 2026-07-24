@@ -753,12 +753,12 @@ package R290Tab "R290 tabulated media — (p,h) basis, 2상 안전, 미분가능
   function idxP
     input Real p; output Integer i;
   algorithm
-    i := min(max(integer(floor((min(max(p,P0),P1)-P0)/dP))+1,1),nP-1);
+    i := noEvent(min(max(integer(floor((min(max(p,P0),P1)-P0)/dP))+1,1),nP-1)) "noEvent: 격자 인덱스는 순수 조회 — 이벤트 생성 금지(셀별 압력 시 240셀 이벤트 폭발)";
   end idxP;
   function idxH
     input Real h; output Integer j;
   algorithm
-    j := min(max(integer(floor((min(max(h,H0),H1)-H0)/dH))+1,1),nH-1);
+    j := noEvent(min(max(integer(floor((min(max(h,H0),H1)-H0)/dH))+1,1),nH-1)) "noEvent: 동일 사유";
   end idxH;
   function lin1
     input Real F[nP]; input Real p; output Real y;
