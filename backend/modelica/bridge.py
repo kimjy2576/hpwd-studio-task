@@ -37,13 +37,21 @@ _WORK = os.environ.get("HPWD_MODELICA_WORK",
 _fs = lambda p: p.replace("\\", "/")   # omc .mos 문자열은 '/'만 안전 (Windows)
 
 # ── 적분기 선택 ──
-# 기본은 dassl(기존 동작 유지). 습/건 전이가 있는 증발기 동특성 모델은 dassl로
-# 사실상 못 돌고(2026-07-23 실측: 40셀 >150s 미완주, 80셀 미완주),
-# gbode로는 1~4s에 완주하며 값은 소수 3자리까지 일치함.
-# 다만 사이클/커플드 모델에서는 미측정이라 기본값을 아직 바꾸지 않음.
-# 실험/전환은 환경변수로: HPWD_OMC_SOLVER=gbode (또는 ida)
+# 기본 ida. 2026-07-23 실측(6개 모델 × 3솔버, 값은 전 조합 일치, 최대편차 0.0002%):
+#   모델                        dassl   ida    gbode
+#   Cond_On_Dyn(60셀)            0s     0s     1s
+#   Evap_On_Dyn n10(40셀)        실패   25s    1s
+#   Evap_On_Dyn n20(80셀)        실패   196s   4s
+#   Cycle_L3_coldstart_dyn       2s     1s     실패(비선형 대수계)
+#   Cycle_coupled_closed/open    0s     0s     0s
+# ida만 전 모델 성공 — dassl은 습코일 증발기 동특성(습/건 전이 강성)에서 미완주,
+# gbode는 사이클의 비선형 대수계를 못 풀고 t≈0.002s에 실패.
+# 사이클은 ida가 dassl보다 빠르고(2s→1s), 커플드는 동일. 캔버스 생성 모델에
+# L3 동적 증발기가 포함될 경우 dassl은 죽으므로 ida가 안전.
+# gbode는 단품 세밀격자 연구용 opt-in (그 영역에선 ida 대비 25~50배).
+# 전환: HPWD_OMC_SOLVER=dassl|gbode|ida
 # 측정 근거: docs/L3_CELLCMP_EVAPORATOR.md
-_SOLVER = os.environ.get("HPWD_OMC_SOLVER", "dassl")
+_SOLVER = os.environ.get("HPWD_OMC_SOLVER", "ida")
 
 
 def _omc_bin():

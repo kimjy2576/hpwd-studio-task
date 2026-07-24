@@ -101,11 +101,37 @@ IDA + KLU  : stopTime=600 → 196 s 완주 (-s=ida -idaLS=klu)
 
 값은 **전 솔버 소수 3자리까지 완전 일치** (정확도 희생 없음).
 
-| 모델 | 상태수 | dassl | ida | ida+klu | **gbode** |
+| 모델 | 상태수 | dassl | ida | ida+klu | gbode |
 |---|---|---|---|---|---|
 | Cond_On_Dyn (60셀) | 120 | 0 s | 0 s | — | 1 s |
-| Evap_On_Dyn n10 (40셀) | 80 | >150 s 미완주 | 25 s | 26 s | **1 s** |
-| Evap_On_Dyn n20 (80셀) | 160 | 미완주 | — | 196 s | **4 s** |
+| Evap_On_Dyn n10 (40셀) | 80 | **실패** (>150 s) | 25 s | 26 s | **1 s** |
+| Evap_On_Dyn n20 (80셀) | 160 | **실패** | — | 196 s | **4 s** |
+| Cycle_L3_coldstart_dyn | — | 2 s | **1 s** | — | **실패** |
+| Cycle_coupled_closed | — | 0 s | 0 s | — | 0 s |
+| Cycle_coupled_open | — | 0 s | 0 s | — | 0 s |
+
+**ida만 전 모델 성공.** gbode는 사이클의 비선형 대수계를 못 풀고 t≈0.002 s에 실패
+(`Solving non-linear system 1795 failed`), dassl은 습코일 증발기 동특성에서 미완주.
+값은 전 조합 일치(사이클 4자리, 커플드 최대편차 0.0002 %).
+
+가르는 것은 단품/시스템이 아니라 **비선형 대수계 유무**:
+동특성 재구성 후의 단품 HX는 순수 ODE(상태 h_ref·T_w에서 전부 명시적)라 gbode의
+bi-rate가 유효하고, 사이클·커플드는 압력·유량 대수 구속이 있어 DAE 솔버(ida/dassl)가 필요함.
+본 저장소에서는 둘이 우연히 일치하지만 일반 규칙은 아님.
+
+### 회귀 검증 — tanh 수정이 사이클에 미친 영향
+
+수정 전(`3f57e49`) 대비 `Cycle_L3_coldstart_dyn` t=120 s, dassl:
+
+| 변수 | 수정 전 | 수정 후 | 차 |
+|---|---|---|---|
+| Pc_bar | 10.4520 | 10.4513 | −0.01 % |
+| Pe_bar | 6.2432 | 6.2428 | −0.01 % |
+| Q_cond | 597.32 | 597.38 | +0.01 % |
+| Q_evap | 414.55 | 414.55 | −0.00 % |
+| W_comp | 146.31 | 146.31 | −0.00 % |
+
+회귀 없음. (SH=0.000은 수정 전에도 동일 — 이 모델의 기존 상태이며 별건)
 
 셀 수가 아니라 **모델 성격**이 가름 — 응축기는 상태가 더 많은데도 dassl로 문제 없음.
 증발기만 다른 점은 (i) 습핀 b 증폭으로 습/건 셀의 벽 시간상수 τ=C/(hA)가 집단으로 갈림,
@@ -125,9 +151,11 @@ gbode의 bi-rate(이중속도) 적분이 여기에 유효한 것으로 **추정*
 같은 annotation을 **최상위 모델**(`NsegVar.Evap_n10`)에 붙이자 컴파일 포함 **27 s** 완주.
 
 → 스튜디오는 `backend/modelica/bridge.py`의 `_SOLVER`로 일괄 지정
-(`method="{_SOLVER}"`, 7곳). 기본값은 기존 동작 유지를 위해 `dassl`,
-전환은 `HPWD_OMC_SOLVER=gbode`. 사이클·커플드 모델 솔버는 **미측정**이라
-기본값 변경은 측정 후로 보류.
+(`method="{_SOLVER}"`, 7곳). **기본값 `ida`** (전 모델 성공하는 유일 솔버),
+전환은 `HPWD_OMC_SOLVER=dassl|gbode|ida`.
+gbode는 단품 세밀격자 연구용 opt-in.
+미측정 공백: `GenCycle`/`GenAirCycle`은 캔버스에서 런타임 생성되어 정적 측정 불가
+(구조가 유사한 커플드 사이클에서 ida 정상).
 
 ## 발견 2 — Python vendor 습/건 플래그 진동 (`a243da2` 시그니처 재현)
 
