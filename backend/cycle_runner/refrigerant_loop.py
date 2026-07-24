@@ -55,11 +55,16 @@ def one_pass(fidelity, operating, air_bc, params_override=None):
     # h_suc[kJ/kg] → T_suc[°C] 로 환산해 함께 전달.
     fluid_ref = po.get('compressor', {}).get('fluid', 'R290')
     T_suc = CP.PropsSI('T', 'P', P_evap * 1e5, 'H', h_suc * 1e3, fluid_ref) - 273.15
+    # T_amb는 압축기가 params에서 읽는다(쉘 방열 AU_loss). input으로만 넘기면
+    # 무시되어 25.0°C 고정이 됨 — 2026-07-24 실측(15/25/45°C에서 m_dot·h_dis·W 불변).
+    # params_override가 명시했으면 그쪽을 존중(setdefault).
+    p_comp = _params('compressor')
+    p_comp.setdefault('T_amb', T_amb)
     comp_mod = get_component('refrigerant', 'compressor', fidelity['compressor'])
     r_comp = comp_mod.step(
         {'P_suc': P_evap, 'P_dis': P_cond, 'h_suc': h_suc, 'T_suc': T_suc,
          'N': N, 'T_amb': T_amb},
-        _params('compressor'), {}, 0)['outputs']
+        p_comp, {}, 0)['outputs']
     m_dot = r_comp['m_dot']
     h_dis = r_comp['h_dis']
 
