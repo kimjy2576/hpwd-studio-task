@@ -25,6 +25,55 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     k := pp*Nseg + j;
   end cellK;
 
+  // ── 일반 회로 배치 (Ncol개 컬럼을 한 회로로 묶는 사행) ──
+  // Ncol=1 이면 위 pathRow/pathSeg/cellK 와 정확히 동일 (2026-07-24 검증: dP=dS=dK=0).
+  // Ncol=2/4/Nt → Python hx_sim geometry.py 의 serpentine_2/4/single 과 동일 위상:
+  //   짝수 컬럼은 행 Nr→1(역류), 홀수 컬럼은 1→Nr(병류), 세그는 pass마다 반전.
+  //   공기 스트림 sc = (컬럼-1)*Nseg + seg 로 평탄화 → 공기 배열은 2D 유지.
+  function pathCell "path index k0(0-based) → (행 p, 공기스트림 sc), 둘 다 1-based"
+    input Integer k0, Nr, Nseg, Ncol;
+    output Integer p, sc;
+  protected
+    Integer cpc, ic, kc, ir, j, seg;
+  algorithm
+    cpc := Nr*Nseg;
+    ic  := div(k0, cpc);
+    kc  := mod(k0, cpc);
+    ir  := div(kc, Nseg);
+    j   := mod(kc, Nseg);
+    p   := if mod(ic, 2) == 0 then Nr - ir else ir + 1;
+    seg := if mod(ir, 2) == 0 then j + 1 else Nseg - j;
+    sc  := ic*Nseg + seg;
+  end pathCell;
+
+  function pathCellP "p만 반환 (파라미터 배열 초기화용)"
+    input Integer k0, Nr, Nseg, Ncol; output Integer p;
+  protected
+    Integer sc;
+  algorithm
+    (p, sc) := pathCell(k0, Nr, Nseg, Ncol);
+  end pathCellP;
+
+  function pathCellS "sc만 반환"
+    input Integer k0, Nr, Nseg, Ncol; output Integer sc;
+  protected
+    Integer p;
+  algorithm
+    (p, sc) := pathCell(k0, Nr, Nseg, Ncol);
+  end pathCellS;
+
+  function buildKOf "역매핑 (p,sc) → path index (0-based)"
+    input Integer Nr, Nseg, Ncol;
+    output Integer kOf[Nr,Nseg*Ncol];
+  protected
+    Integer p, sc;
+  algorithm
+    for k0 in 0:(Nr*Nseg*Ncol - 1) loop
+      (p, sc) := pathCell(k0, Nr, Nseg, Ncol);
+      kOf[p, sc] := k0;
+    end for;
+  end buildKOf;
+
   model Evap_On_Column "증발기 1컬럼 2D — Nr행×N_seg세그, 동적 습/건, 공기 행진행"
     // ⚠ HXGeom 미전환 (2026-07-23). 사유 두 가지:
     //   (1) 저장소 내 참조 없음 — 고아 모델
@@ -579,7 +628,7 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
       기본값은 V_air_CMM × 해당 HX 입구조건 밀도 (단품 검증 BC 규약, Python GT와 0.05% 일치).
       ※ 직렬 덕트(증발기→응축기)로 결합할 때는 건공기 질량이 보존돼야 하므로
         상류에서 계산된 질량유량을 직접 지정할 것.";
-    final parameter Real m_air_seg=HXGeom.m_air_seg(m_air_total, Nt, Nseg) "(col,seg)당 공기유량 [kg/s]";
+    final parameter Real m_air_seg=m_air_total/(Ncirc*Nsc) "(col,seg)당 공기유량 [kg/s]";
     // ── 1차 형상 (임의 구성 비교의 입력; 파생량은 HXGeom이 산출) ──
     parameter Real W_coil=0.24 "튜브 길이 = 코일 폭 [m]";
     parameter Real H_coil=Nt*P_t "코일 높이 [m] — 기본 Nt·P_t (튜브 열 수 바꾸면 자동 추종)";
@@ -604,6 +653,9 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     final parameter Real j_air_ho=HXCorr.j_wang2000_plain(Re_Dc_ho, Nr, Dc, P_t, P_l, FPI, fin_t);
     final parameter Real h_o=j_air_ho*G_air_ho*cp_a_ho/Pr_a_ho^(2.0/3.0) "공기측 HTC [W/m2K] (형상·유동서 산출)";
     parameter Integer Nr=4, Nseg=10, Nt=4;
+    parameter Integer Ncol=1 "한 회로에 묶는 컬럼 수 (1=row_parallel, 2/4=serpentine_n, Nt=single)";
+    final parameter Integer Ncirc=div(Nt, Ncol) "병렬 회로 수";
+    final parameter Integer Nsc=Nseg*Ncol "회로당 공기 스트림 수 (=(컬럼,세그) 평탄화)";
     parameter Real Di=0.0046 "튜브 내경 [m]";
     parameter Real k_fin=200.0 "핀 열전도율 [W/mK]";
     parameter Real fin_t=0.11e-3 "핀 두께 [m]";
@@ -621,14 +673,14 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     parameter Real A_cs=Modelica.Constants.pi*Di^2/4.0;
     parameter Real K_bend=0.75 "U-bend 손실계수";
     parameter Real L_seg=A_i_seg/(Modelica.Constants.pi*Di) "세그 길이 [m]";
-    parameter Real L_path=M*L_seg "컬럼 냉매경로 길이 [m]";
+    parameter Real L_path=M*L_seg "회로 냉매경로 길이 [m]";
     parameter Real Wi=HXCorr.W_humid(T_air_in, RH_in, Patm);
     parameter Real T_dp=HXCorr.Tdp_corr(Wi, Patm);
     parameter Real eta_o_dry=HPWDon.finEffWet(h_o, 1.0, Dc, Xm, XL, k_fin, fin_t, A_fin_ratio);
-    parameter Integer M=Nr*Nseg;
-    parameter Integer rowOf[M]={pathRow(k - 1, Nr, Nseg) for k in 1:M};
-    parameter Integer segOf[M]={pathSeg(k - 1, Nr, Nseg) for k in 1:M};
-    parameter Integer kOf[Nr,Nseg]={{cellK(p, s, Nr, Nseg) for s in 1:Nseg} for p in 1:Nr};
+    parameter Integer M=Nr*Nsc;
+    parameter Integer rowOf[M]={pathCellP(k - 1, Nr, Nseg, Ncol) for k in 1:M};
+    parameter Integer segOf[M]={pathCellS(k - 1, Nr, Nseg, Ncol) for k in 1:M} "공기 스트림 인덱스 sc";
+    parameter Integer kOf[Nr,Nsc]=buildKOf(Nr, Nseg, Ncol);
     // micro-fin 내부강화 (EF, 기하만 의존 → parameter). smooth면 ψ=1 → EF=1.
     parameter String tube_type="microfin" "튜브 내면: smooth / microfin";
     parameter Integer n_microfin=54 "(microfin) 내부 핀 개수";
@@ -659,19 +711,19 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     Real P, m_ref_col, G_ref, h_in;
     Real T_satC, hl, hv, h_fg, mu_l, k_l, cp_l, Pr_l, rho_l, rho_v, mu_v, P_r;
     Real muv, kv, cpv, Prv, h_v_gni;
-    Real xq_c[Nr,Nseg], T_ref_c[Nr,Nseg], h_i_c[Nr,Nseg], cp_a[Nr,Nseg], h_air_c[Nr,Nseg];
-    Real eta_o[Nr,Nseg], b[Nr,Nseg], T_fin[Nr,Nseg], Q_air_c[Nr,Nseg], Q_ref_c[Nr,Nseg], Q_lat_c[Nr,Nseg];
-    Real w_wet[Nr,Nseg](each min=0.0, each max=1.0) "습윤 가중 (0=건, 1=습) — 이벤트 없는 연속 전이";
-    Real Q_sens_c[Nr,Nseg] "공기→벽 현열 [W] (잠열 분리용)";
-    Real T_aen[Nr + 1,Nseg](each start=30.0, each min=-30.0, each max=80.0);
-    Real W_aen[Nr + 1,Nseg](each start=0.017, each min=0.0, each max=0.1);
+    Real xq_c[Nr,Nsc], T_ref_c[Nr,Nsc], h_i_c[Nr,Nsc], cp_a[Nr,Nsc], h_air_c[Nr,Nsc];
+    Real eta_o[Nr,Nsc], b[Nr,Nsc], T_fin[Nr,Nsc], Q_air_c[Nr,Nsc], Q_ref_c[Nr,Nsc], Q_lat_c[Nr,Nsc];
+    Real w_wet[Nr,Nsc](each min=0.0, each max=1.0) "습윤 가중 (0=건, 1=습) — 이벤트 없는 연속 전이";
+    Real Q_sens_c[Nr,Nsc] "공기→벽 현열 [W] (잠열 분리용)";
+    Real T_aen[Nr + 1,Nsc](each start=30.0, each min=-30.0, each max=80.0);
+    Real W_aen[Nr + 1,Nsc](each start=0.017, each min=0.0, each max=0.1);
     Real Q_ref[M];
     Real Q_total, Q_lat_total, h_out, x_out, T_air_out, W_air_out, SH;
     Real x_in_q, dp_fric, dp_accel, dp_bend, dp_total, rho_mix, x_mid;
   equation
     P=port_a.p;
     port_a.m_flow + port_b.m_flow=0;
-    m_ref_col=port_a.m_flow/Nt;
+    m_ref_col=port_a.m_flow/Ncirc "회로당 냉매유량";
     G_ref=m_ref_col/A_cs;
     h_in=inStream(port_a.h_outflow);
     T_satC=R290Tab.Tsat(P) - 273.15; hl=R290Tab.hl(P); hv=R290Tab.hv(P); h_fg=hv - hl;
@@ -680,12 +732,12 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     muv=R290Tab.muv(P); kv=R290Tab.kv(P); cpv=R290Tab.cpv(P); Prv=cpv*muv/kv;
     h_v_gni=HXCorr.gnielinski(G_ref*Di/muv, Prv, kv, Di);
     // 공기 입구 (행 1)
-    for s in 1:Nseg loop
+    for s in 1:Nsc loop
       T_aen[1,s]=T_air_in; W_aen[1,s]=Wi;
     end for;
     // 셀별 (공기 march 순서 p,s) — 상태 h_ref,T_w 로부터 전부 명시적
     for p in 1:Nr loop
-      for s in 1:Nseg loop
+      for s in 1:Nsc loop
         xq_c[p,s]=(h_ref[kOf[p,s] + 1] - hl)/h_fg;
         T_ref_c[p,s]=R290Tab.T_ph(P, h_ref[kOf[p,s] + 1]) - 273.15;
         w_wet[p,s]=0.5*(1.0 + tanh((T_dp - T_w[kOf[p,s] + 1])/dT_wet)) "습윤 가중 — 계단 대신 연속 전이";
@@ -720,19 +772,19 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     for k in 2:M loop
       M_cell*der(h_ref[k])=m_ref_col*(h_ref[k - 1] - h_ref[k]) + Q_ref[k];
     end for;
-    Q_total=Nt*sum(Q_ref); Q_lat_total=Nt*sum(Q_lat_c);
+    Q_total=Ncirc*sum(Q_ref); Q_lat_total=Ncirc*sum(Q_lat_c);
     h_out=h_ref[M];
     x_out=(h_out - hl)/h_fg;
     SH=max(R290Tab.T_ph(P, h_out) - R290Tab.Tsat(P), 0.0) "출구 과열도 [K]";
-    T_air_out=sum(T_aen[Nr + 1,s] for s in 1:Nseg)/Nseg;
-    W_air_out=sum(W_aen[Nr + 1,s] for s in 1:Nseg)/Nseg "출구 절대습도 [kg/kg] (제습 반영) → 응축기 입력";
+    T_air_out=sum(T_aen[Nr + 1,s] for s in 1:Nsc)/Nsc;
+    W_air_out=sum(W_aen[Nr + 1,s] for s in 1:Nsc)/Nsc "출구 절대습도 [kg/kg] (제습 반영) → 응축기 입력";
     // 냉매측 dp (명시적)
     x_in_q=(h_in - hl)/h_fg;
     dp_fric=HXCorr.msh_2phase(rho_l, mu_l, rho_v, mu_v, x_in_q, min(x_out, 0.999), m_ref_col, Di, L_path, 40);
     dp_accel=HXCorr.acceleration_dp(rho_l, rho_v, x_in_q, min(x_out, 0.999), m_ref_col, Di);
     x_mid=(x_in_q + min(x_out, 0.999))/2.0;
     rho_mix=1.0/(x_mid/rho_v + (1.0 - x_mid)/rho_l);
-    dp_bend=(Nr - 1)*K_bend*G_ref^2/(2.0*rho_mix);
+    dp_bend=(Nr*Ncol - 1)*K_bend*G_ref^2/(2.0*rho_mix);
     dp_total=dp_fric + dp_accel + dp_bend + K_lam*m_ref_col "+ 층류 정규화";
     port_b.p=P - dp_total;
     port_b.h_outflow=h_out;
