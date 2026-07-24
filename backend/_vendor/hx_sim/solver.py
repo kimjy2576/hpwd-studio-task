@@ -825,17 +825,21 @@ class HXSolver:
         T_ref_g = T_ref if (x_ref >= 1.0 and T_ref > T_sat_K0 + 0.05) or (x_ref <= 0.0 and T_ref < T_sat_K0 - 0.05) else T_sat_K0
         T_w = (T_air + T_ref_g) / 2
 
-        # Check wet/dry
-        is_wet = (T_w < T_dp) and (inp.mode == "evap")
+        # 습/건 — 연속 가중 (2026-07-24). 이산 플래그 + 히스테리시스 dead-band는
+        #   T_w가 사실상 같은 셀들이 초기추정에 따라 습/건이 갈리는 이중안정성을 낳았음
+        #   (실측: T_w−T_dp = −0.04~−0.11 K 셀은 습, −0.06~−0.08 K 셀은 건).
+        #   w_wet은 T_w의 단일값 함수라 이 이중안정성이 원리적으로 불가능.
+        #   Modelica Evap_On_Dyn과 동일 처방·동일 dT_wet (극한 일치 검증됨).
+        _dT_wet = getattr(inp, "dT_wet", 0.2)   # 전이대 [K]
+        _wwet = lambda Tw: (0.5 * (1.0 + math.tanh((T_dp - Tw) / _dT_wet))
+                            if inp.mode == "evap" else 0.0)
+        w_wet = _wwet(T_w)
+        is_wet = w_wet > 0.5                    # 진단·보고용
 
         alpha = inp.alpha
         Q_prev = 0
-        # Adaptive under-relaxation + wet/dry 히스테리시스 상태 추적:
-        #   dryout 셀(h_i 낮아 R_i 큼)에서 T_wall 반복이 wet/dry 이산 스위칭으로
-        #   진동 → 발산하는 문제 해결. 진동 감지 시 alpha 감쇠 + T_w 물리 클램프.
+        # Adaptive under-relaxation + T_w 물리 클램프는 유지 (dryout 셀 R_i 폭주 대비).
         _dTw_prev = None        # 직전 (T_w_calc - T_w) 부호 판정용
-        _wet_flip_count = 0     # wet/dry 뒤집힘 횟수
-        _T_dp_band = 0.15       # 이슬점 히스테리시스 dead-band [K]
 
         for iteration in range(inp.max_iter):
             # --- Refrigerant side h_i ---
@@ -862,18 +866,16 @@ class HXSolver:
                     _mf_regime = "cond" if inp.mode == "cond" else "evap"
                 h_i *= microfin_ef(_mf_regime, _psi, _spec.helix_angle, x=x_ref, G=G_ref)
 
-            # --- Fin efficiency ---
-            if is_wet:
-                b = self._compute_b_factor(T_w, T_air, W_air, h_o)
-                if inp.hx_type == "FT":
-                    _, eta_o = self.geo.fin_efficiency_wet(h_o, b)
-                else:
-                    _, eta_o = self.geo.fin_efficiency_wet_straight(h_o, b)
+            # --- Fin efficiency (습 가중 블렌딩; b→1 이면 건식과 정확 일치) ---
+            if inp.mode == "evap":
+                _b_full = self._compute_b_factor(T_w, T_air, W_air, h_o)
+                b = 1.0 + w_wet * (_b_full - 1.0)
             else:
-                if inp.hx_type == "FT":
-                    _, eta_o = self.geo.fin_efficiency_schmidt(h_o)
-                else:
-                    _, eta_o = self.geo.fin_efficiency_straight(h_o)
+                b = 1.0
+            if inp.hx_type == "FT":
+                _, eta_o = self.geo.fin_efficiency_wet(h_o, b)
+            else:
+                _, eta_o = self.geo.fin_efficiency_wet_straight(h_o, b)
 
             # --- Thermal resistances ---
             R_o = 1.0 / (eta_o * h_o * A_o_seg) if (eta_o * h_o * A_o_seg) > 0 else 1e6
@@ -919,16 +921,17 @@ class HXSolver:
             # 기존 humidity-차 방식(Q_lat ∝ W_air−Ws(T_w))은 wall이 따뜻하면
             #   제습이 죽는 악순환 → CoilDesigner/EnergyPlus 표준인 enthalpy potential로 교체.
             Q_lat = 0
-            if is_wet and inp.mode == "evap":
+            if inp.mode == "evap":
+                # 습(엔탈피 포텐셜)과 건(현열)을 w_wet으로 블렌딩 — 이산 분기 제거
                 cp_a = self.air.cp_air(T_air, W_air, inp.P_atm)
                 h_air = self.air.h_simple(T_air, W_air, inp.P_atm)
                 Ws_wall = self.air.Ws_from_T(T_w, inp.P_atm)
                 h_s_wall = self.air.h_simple(T_w, Ws_wall, inp.P_atm)  # 표면 포화 enthalpy
-                # enthalpy potential — 전체(sensible+latent) 열전달
-                Q_total_seg = max(eta_o * h_o * A_o_seg / cp_a * (h_air - h_s_wall), 0.0)
-                # sensible 분해 (공기 → 표면 현열)
-                Q_air = max(eta_o * h_o * A_o_seg * (T_air - T_w), 0.0)
-                Q_lat = max(Q_total_seg - Q_air, 0.0)
+                Q_wet = max(eta_o * h_o * A_o_seg / cp_a * (h_air - h_s_wall), 0.0)
+                Q_sens = max(eta_o * h_o * A_o_seg * (T_air - T_w), 0.0)
+                Q_total_seg = w_wet * Q_wet + (1.0 - w_wet) * Q_sens
+                Q_air = Q_sens
+                Q_lat = w_wet * max(Q_total_seg - Q_sens, 0.0)
             else:
                 # Dry: sensible only (직렬 저항 UA)
                 Q_air = UA * dT if dT > 0 else 0
@@ -961,24 +964,9 @@ class HXSolver:
             T_w = T_w_calc
             Q_prev = Q_total_seg
 
-            # Re-check wet condition — 히스테리시스로 T_dp 근처 잦은 뒤집힘 방지.
-            #   dry→wet은 T_w < T_dp − band, wet→dry는 T_w > T_dp + band 일 때만 전환.
-            if inp.mode == "evap":
-                if is_wet:
-                    _new_wet = T_w < (T_dp + _T_dp_band)
-                else:
-                    _new_wet = T_w < (T_dp - _T_dp_band)
-                if _new_wet != is_wet:
-                    _wet_flip_count += 1
-                    # 뒤집힘이 잦으면(≥3회) 상태 고정 + alpha 추가 감쇠로 진동 종료
-                    if _wet_flip_count >= 3:
-                        alpha = max(alpha * 0.5, 0.05)
-                    else:
-                        is_wet = _new_wet
-                else:
-                    is_wet = _new_wet
-            else:
-                is_wet = False
+            # 습 가중 재계산 — T_w의 단일값 함수이므로 이중안정성 없음
+            w_wet = _wwet(T_w)
+            is_wet = w_wet > 0.5
 
             if dT_w < inp.tol_T and dQ < inp.tol_Q:
                 sr.converged = True
