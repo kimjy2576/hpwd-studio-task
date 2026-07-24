@@ -550,6 +550,7 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     Real P, m_ref_col, G_ref, h_in;
     Real T_satC, hl, hv, h_fg, mu_l, k_l, cp_l, Pr_l, rho_l, rho_v, mu_v, k_v, cp_v, Pr_v, P_r;
     Real T_ref[M], xq[M], h_i[M], Q_ref[M], Q_air[M];
+    Real w2p[M] "2상 가중 (0=단상, 1=2상)";
     Real xc[M] "클램프된 quality (noEvent — 이벤트 생성 회피)";
     Real T_aen[Nr + 1,Nsc](each start=27.0);
     Real Q_total, h_out, x_out, T_air_out, x_in_q, dp_fric, dp_bend, dp_total, rho_mix, x_mid;
@@ -569,7 +570,11 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
       // 국소 압력 효과는 T_sat 1차 보정으로 반영 (T_ph 는 상수 P 로 호출해
       // 2D 보간 활성화를 피함 — 셀별 P 를 T_ph 에 넣으면 240셀 보간이 매 스텝
       // 살아남아 시뮬이 2.5s -> 분 단위로 폭증함, 2026-07-24 실측).
-      T_ref[k]=R290Tab.T_ph(P, h_ref[k]) - 273.15 - R290Tab.Tsat_d(P, dp_total*k/M);
+      // 2상 가중 — 압력 하강의 온도 효과는 포화 구간에서만 유효.
+      // 과열/과냉에서는 T 가 P 에 거의 무관하므로 보정을 끈다(tanh 로 연속 전이).
+      w2p[k]=0.25*(1.0 + tanh(xq[k]/0.03))*(1.0 + tanh((1.0 - xq[k])/0.03));
+      T_ref[k]=R290Tab.T_ph(P, h_ref[k]) - 273.15
+               - w2p[k]*R290Tab.Tsat_d(P, dp_total*k/M);
       xq[k]=(h_ref[k] - hl)/h_fg;
       h_i[k]=HPWDon.hi_dispatch_cond(xq[k], G_ref, Di, mu_l, k_l, Pr_l, mu_v, k_v, Pr_v, P_r)*(EF_sgl + (EF_2ph - EF_sgl)*(0.25*(1.0 + tanh(xq[k]/0.03))*(1.0 + tanh((1.0 - xq[k])/0.03))));
       Q_ref[k]=h_i[k]*A_i_seg*(T_ref[k] - T_w[k]);
