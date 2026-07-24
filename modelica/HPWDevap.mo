@@ -473,7 +473,7 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
       기본값은 V_air_CMM × 해당 HX 입구조건 밀도 (단품 검증 BC 규약, Python GT와 0.05% 일치).
       ※ 직렬 덕트(증발기→응축기)로 결합할 때는 건공기 질량이 보존돼야 하므로
         상류에서 계산된 질량유량을 직접 지정할 것.";
-    final parameter Real m_air_seg=HXGeom.m_air_seg(m_air_total, Nt, Nseg) "(col,seg)당 공기유량 [kg/s]";
+    final parameter Real m_air_seg=m_air_total/(Ncirc*Nsc) "(col,seg)당 공기유량 [kg/s]";
     // ── 1차 형상 (임의 구성 비교의 입력; 파생량은 HXGeom이 산출) ──
     parameter Real W_coil=0.24 "튜브 길이 = 코일 폭 [m]";
     parameter Real H_coil=Nt*P_t "코일 높이 [m] — 기본 Nt·P_t (튜브 열 수 바꾸면 자동 추종)";
@@ -500,6 +500,10 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     // Colburn: h_o = j·G·cp/Pr^(2/3). 하드코딩 302.17(BC 불일치 오류) 대체.
     final parameter Real h_o=j_air_ho*G_air_ho*cp_a_ho/Pr_a_ho^(2.0/3.0) "공기측 HTC [W/m2K] (형상·유동서 산출)";
     parameter Integer Nr=6, Nseg=10, Nt=4;
+    parameter Integer Ncol=Nt "한 회로에 묶는 컬럼 수 (1=row_parallel, Nt=single).
+      실물 응축기는 6R4C 단일 회로이므로 기본값 Nt (2026-07-24 사양 확인).";
+    final parameter Integer Ncirc=div(Nt, Ncol) "병렬 회로 수";
+    final parameter Integer Nsc=Nseg*Ncol "회로당 공기 스트림 수";
     parameter Real Di=0.0046 "튜브 내경 [m]";
     parameter Real k_fin=200.0 "핀 열전도율 [W/mK]";
     parameter Real fin_t=0.11e-3 "핀 두께 [m]";
@@ -518,10 +522,10 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     parameter Real K_bend=0.75, L_seg=A_i_seg/(Modelica.Constants.pi*Di), L_path=Nr*Nseg*L_seg;
     Real cp_a_dry "습공기 cp (Wi 의존)";
     parameter Real eta_o_dry=HPWDon.finEffWet(h_o, 1.0, Dc, Xm, XL, k_fin, fin_t, A_fin_ratio);
-    parameter Integer M=Nr*Nseg;
-    parameter Integer rowOf[M]={pathRow(k - 1, Nr, Nseg) for k in 1:M};
-    parameter Integer segOf[M]={pathSeg(k - 1, Nr, Nseg) for k in 1:M};
-    parameter Integer kOf[Nr,Nseg]={{cellK(p, s, Nr, Nseg) for s in 1:Nseg} for p in 1:Nr};
+    parameter Integer M=Nr*Nsc;
+    parameter Integer rowOf[M]={pathCellP(k - 1, Nr, Nseg, Ncol) for k in 1:M};
+    parameter Integer segOf[M]={pathCellS(k - 1, Nr, Nseg, Ncol) for k in 1:M} "공기 스트림 sc";
+    parameter Integer kOf[Nr,Nsc]=buildKOf(Nr, Nseg, Ncol);
     // micro-fin 내부강화 (EF, 기하만 의존 → parameter). smooth면 ψ=1 → EF=1.
     parameter String tube_type="microfin" "튜브 내면: smooth / microfin";
     parameter Integer n_microfin=54 "(microfin) 내부 핀 개수";
@@ -546,13 +550,13 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     Real P, m_ref_col, G_ref, h_in;
     Real T_satC, hl, hv, h_fg, mu_l, k_l, cp_l, Pr_l, rho_l, rho_v, mu_v, k_v, cp_v, Pr_v, P_r;
     Real T_ref[M], xq[M], h_i[M], Q_ref[M], Q_air[M];
-    Real T_aen[Nr + 1,Nseg](each start=27.0);
+    Real T_aen[Nr + 1,Nsc](each start=27.0);
     Real Q_total, h_out, x_out, T_air_out, x_in_q, dp_fric, dp_bend, dp_total, rho_mix, x_mid;
   equation
       cp_a_dry=HXCorr.cp_air_moist(Wi) "입구 습도에 따른 습공기 cp";
     P=port_a.p;
     port_a.m_flow + port_b.m_flow=0;
-    m_ref_col=port_a.m_flow/Nt;
+    m_ref_col=port_a.m_flow/Ncirc "회로당 냉매유량";
     G_ref=m_ref_col/A_cs;
     h_in=inStream(port_a.h_outflow);
     T_satC=R290Tab.Tsat(P) - 273.15; hl=R290Tab.hl(P); hv=R290Tab.hv(P); h_fg=hv - hl;
@@ -572,11 +576,11 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
       M_cell*der(h_ref[k])=m_ref_col*(h_ref[k - 1] - h_ref[k]) - Q_ref[k];
     end for;
     // 공기측 march (행 방향) + Q_air (벽→공기)
-    for s in 1:Nseg loop
+    for s in 1:Nsc loop
       T_aen[1,s]=T_air_in;
     end for;
     for p in 1:Nr loop
-      for s in 1:Nseg loop
+      for s in 1:Nsc loop
         Q_air[kOf[p,s] + 1]=eta_o_dry*h_o*A_o_seg*(T_w[kOf[p,s] + 1] - T_aen[p,s]);
         T_aen[p + 1,s]=T_aen[p,s] + Q_air[kOf[p,s] + 1]/(m_air_seg*cp_a_dry);
       end for;
@@ -585,16 +589,16 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     for k in 1:M loop
       C_wall_cell*der(T_w[k])=Q_ref[k] - Q_air[k];
     end for;
-    Q_total=Nt*sum(Q_ref);
+    Q_total=Ncirc*sum(Q_ref);
     h_out=h_ref[M];
     x_out=(h_out - hl)/h_fg;
-    T_air_out=sum(T_aen[Nr + 1,s] for s in 1:Nseg)/Nseg;
+    T_air_out=sum(T_aen[Nr + 1,s] for s in 1:Nsc)/Nsc;
     // dp (명시적 — 미분 불필요)
     x_in_q=(h_in - hl)/h_fg;
     dp_fric=HXCorr.msh_2phase(rho_l, mu_l, rho_v, mu_v, max(x_out, 0.001), min(x_in_q, 0.999), m_ref_col, Di, L_path, 40);
     x_mid=(min(x_in_q, 1.0) + max(x_out, 0.0))/2.0;
     rho_mix=1.0/(x_mid/rho_v + (1.0 - x_mid)/rho_l);
-    dp_bend=(Nr - 1)*K_bend*G_ref^2/(2.0*rho_mix);
+    dp_bend=(Nr*Ncol - 1)*K_bend*G_ref^2/(2.0*rho_mix);
     dp_total=dp_fric + dp_bend + K_lam*m_ref_col "+ 층류 정규화";
     port_b.p=P - dp_total;
     port_b.h_outflow=h_out;
@@ -653,7 +657,8 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     final parameter Real j_air_ho=HXCorr.j_wang2000_plain(Re_Dc_ho, Nr, Dc, P_t, P_l, FPI, fin_t);
     final parameter Real h_o=j_air_ho*G_air_ho*cp_a_ho/Pr_a_ho^(2.0/3.0) "공기측 HTC [W/m2K] (형상·유동서 산출)";
     parameter Integer Nr=4, Nseg=10, Nt=4;
-    parameter Integer Ncol=1 "한 회로에 묶는 컬럼 수 (1=row_parallel, 2/4=serpentine_n, Nt=single)";
+    parameter Integer Ncol=Nt "한 회로에 묶는 컬럼 수 (1=row_parallel, 2/4=serpentine_n, Nt=single).
+      실물 증발기는 4R4C 단일 회로이므로 기본값 Nt (2026-07-24 사양 확인).";
     final parameter Integer Ncirc=div(Nt, Ncol) "병렬 회로 수";
     final parameter Integer Nsc=Nseg*Ncol "회로당 공기 스트림 수 (=(컬럼,세그) 평탄화)";
     parameter Real Di=0.0046 "튜브 내경 [m]";
