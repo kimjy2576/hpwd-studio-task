@@ -50,7 +50,9 @@ def get_component(domain, comp, fidelity):
 # 컴포넌트별 기본 params (fidelity별 필수 설정). L3 HX는 microfin/circuit 필요.
 DEFAULT_PARAMS = {
     ('condenser', 3):  {'tube_type': 'microfin', 'fluid': 'R290', 'circuit_mode': 'single'},
-    ('evaporator', 3): {'tube_type': 'microfin', 'fluid': 'R290', 'circuit_mode': 'row_parallel'},
+    # 실물은 증발기 4R4C · 응축기 6R4C 모두 **단일 회로**(2026-07-24 사양 확인).
+    # 이전에는 증발기만 row_parallel 로 덮어써서 질량유속이 1/4 로 과소했음.
+    ('evaporator', 3): {'tube_type': 'microfin', 'fluid': 'R290', 'circuit_mode': 'single'},
     ('condenser', 2):  {'fluid': 'R290'},
     ('evaporator', 2): {'fluid': 'R290'},
 }
