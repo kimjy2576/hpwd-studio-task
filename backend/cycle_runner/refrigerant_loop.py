@@ -17,6 +17,8 @@ registry로 각 컴포넌트를 fidelity별 조회해 순서대로 연결.
 단위: P는 bar, h는 kJ/kg (컴포넌트가 그대로 받음).
 """
 
+import CoolProp.CoolProp as CP
+
 from .registry import get_component, default_params
 
 
@@ -46,10 +48,17 @@ def one_pass(fidelity, operating, air_bc, params_override=None):
     h_suc = operating['h_suc']
     T_amb = operating.get('T_amb', 35.0)
 
-    # ── 1. 압축기 (P_suc=P_evap, P_dis=P_cond, h_suc) ──
+    # ── 1. 압축기 (P_suc=P_evap, P_dis=P_cond, 흡입상태) ──
+    # 압축기 3종(theoretical/winandy/chamber)은 모두 T_suc를 읽고 h_suc는 읽지 않는다.
+    # 2026-07-24 이전에는 h_suc만 넘겨서 T_suc가 기본값 5.0°C로 고정 → 압축기가
+    # 증발기 출구와 무관해지는 연성 단절 결함이 있었음(h_suc를 바꿔도 m_dot 불변 실측).
+    # h_suc[kJ/kg] → T_suc[°C] 로 환산해 함께 전달.
+    fluid_ref = po.get('compressor', {}).get('fluid', 'R290')
+    T_suc = CP.PropsSI('T', 'P', P_evap * 1e5, 'H', h_suc * 1e3, fluid_ref) - 273.15
     comp_mod = get_component('refrigerant', 'compressor', fidelity['compressor'])
     r_comp = comp_mod.step(
-        {'P_suc': P_evap, 'P_dis': P_cond, 'h_suc': h_suc, 'N': N, 'T_amb': T_amb},
+        {'P_suc': P_evap, 'P_dis': P_cond, 'h_suc': h_suc, 'T_suc': T_suc,
+         'N': N, 'T_amb': T_amb},
         _params('compressor'), {}, 0)['outputs']
     m_dot = r_comp['m_dot']
     h_dis = r_comp['h_dis']
