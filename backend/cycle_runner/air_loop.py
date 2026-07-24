@@ -14,6 +14,8 @@ HX(증발기/응축기)는 냉매측도 필요 → coupled_solver에서 냉매 �
 단위: T [°C], RH [%], W [kg/kg], V_air_CMM [m³/min].
 """
 
+import CoolProp.CoolProp as CP
+
 from .registry import get_component, default_params
 
 # 공기 루프 고정 코어 순서 (팬 제외)
@@ -36,6 +38,39 @@ def _air_out_state(comp_kind, inp_state, outputs):
         W = inp_state.get('W')        # W 미출력 시 입구 보존
     RH = outputs.get('RH_air_out', inp_state.get('RH'))
     return {'T': T, 'W': W, 'RH': RH, 'V_air_CMM': inp_state['V_air_CMM']}
+
+
+def _cin_for(comp, air, m_dot_air, P_air=101325.0):
+    """컴포넌트별 입력 키 규약 변환.
+
+    냉매측 HX는 T_air_in / RH_air_in / V_air_CMM 를 쓰지만, 공기 3종은 규약이 다르다:
+      drum   : T_in[°C] 또는 T_in_K, W_in[kg/kg], m_flow_da[kg/s 건공기]
+               (L3 경로는 T_air_in / RH_air_in / W_in 도 읽음)
+      filter : T_in[°C], omega[kg/kg], m_dot_da[kg/s 건공기], P_in[Pa]
+      fan    : T_in[°C], omega[kg/kg], m_dot_da 또는 V_dot[m³/s], P_in[Pa]
+
+    ⚠ fan/filter의 'omega'는 회전속도가 아니라 **절대습도**다 (기본값 0.008~0.010).
+    ⚠ m_dot_da 는 **건공기** 유량 — 습공기 유량에서 1/(1+W) 로 환산.
+
+    2026-07-24 이전에는 HX용 키(T_air_in 등)를 그대로 넘겨 drum 일부를 빼고
+    전부 기본값으로 동작했음. 실측: fan dp가 599.71 로 고정(공기온도 20/40/60°C
+    무관), filter V_dot 이 실제 0.0403 대신 기본값 0.03.
+    """
+    if comp in ('evaporator', 'condenser'):
+        return {'T_air_in': air['T'], 'RH_air_in': air['RH'],
+                'V_air_CMM': air['V_air_CMM'], 'm_dot_air': m_dot_air}
+    W = air.get('W')
+    if W is None:
+        W = CP.HAPropsSI('W', 'T', air['T'] + 273.15, 'R',
+                         max(min(air['RH'] / 100.0, 1.0), 1e-4), 'P', P_air)
+    m_da = m_dot_air / (1.0 + W)
+    if comp == 'drum':
+        return {'T_in': air['T'], 'W_in': W, 'm_flow_da': m_da,
+                'm_dot_air': m_dot_air, 'T_air_in': air['T'], 'RH_air_in': air['RH']}
+    # filter / fan — 'omega' = 절대습도
+    return {'T_in': air['T'], 'omega': W, 'm_dot_da': m_da,
+            'P_in': P_air, 'RH_in': air['RH'],
+            'V_dot': m_da * (1.0 + W) / 1.2}
 
 
 def one_pass(fidelity, air_inlet, states, hx_refrigerant, fan_position=None,
@@ -83,8 +118,7 @@ def one_pass(fidelity, air_inlet, states, hx_refrigerant, fan_position=None,
 
     for comp in path:
         # 공기측 입력 (통일 상태 → 컴포넌트 입력 키)
-        cin = {'T_air_in': air['T'], 'RH_air_in': air['RH'],
-               'V_air_CMM': air['V_air_CMM'], 'm_dot_air': m_dot_air}
+        cin = _cin_for(comp, air, m_dot_air)
 
         if comp in ('evaporator', 'condenser'):
             # HX: 냉매측 BC 병합 (P_cond→응축기, P_evap→증발기)
