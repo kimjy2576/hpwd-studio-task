@@ -435,13 +435,15 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
   protected
     Real h_2ph, w;
   algorithm
+    // 이벤트 없는 연속 블렌딩 (2026-07-24).
+    // 기존 max/min + if/elseif 는 셀마다 상태이벤트를 만들어, x_out 이 1.0 을
+    // 통과하는 콜드스타트 구간(t~55s)에서 여러 셀이 동시에 경계를 넘나들며
+    // 이벤트가 폭발 -> 사이클 진행 정지. h_2ph 는 클램프된 x 로 계산하므로
+    // 전 구간에서 안전하게 평가 가능하다.
     h_2ph := compute_h_evap_dryout(min(x, 0.999), G, Di, q_flux,
                                    mu_l, k_l, Pr_l, rho_l, rho_v, mu_v, P_r, M_mol, h_v);
-    w := max(0.0, min((x - 0.90)/0.15, 1.0));
-    h_i := if x < 0.90 then compute_h_evap_dryout(x, G, Di, q_flux,
-                                                  mu_l, k_l, Pr_l, rho_l, rho_v, mu_v, P_r, M_mol, h_v)
-           elseif x <= 1.05 then (1.0 - w)*h_2ph + w*h_v
-           else h_v;
+    w := 0.5*(1.0 + tanh((x - 0.975)/0.04)) "0.90~1.05 중심 0.975, 폭 ~0.04";
+    h_i := (1.0 - w)*h_2ph + w*h_v;
   end hi_dispatch_evap;
 
   model TestDispatch "위상 디스패치 h_i(x) 스윕 — Python 대조"

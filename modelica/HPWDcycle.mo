@@ -241,11 +241,11 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     parameter Modelica.Units.SI.Volume V_node = 2e-3 "노드 체적 [m3]";
     HPWDon.Comp_Chamber comp(V_disp_cm3=7.5);
     Volume_L3 vol1(V=V_node, p_start=p_rest, h_start=h_rest, fixedState=true);
-    HPWDevap.Cond_On_Dyn cond(h_ref_start=h_rest, T_w_start=25.0);
+    HPWDevap.Cond_On_Dyn cond(Nseg=3, h_ref_start=h_rest, T_w_start=25.0);
     Volume_L3 vol2(V=V_node, p_start=p_rest, h_start=h_rest, fixedState=true);
     HPWDon.EEV_On eev(D_seat=1.0e-3, stroke_max=1.0e-3);
     Volume_L3 vol3(V=V_node, p_start=p_rest, h_start=h_rest, fixedState=true);
-    HPWDevap.Evap_On_Dyn evap(h_ref_start=h_rest, T_w_start=35.0);
+    HPWDevap.Evap_On_Dyn evap(Nseg=3, h_ref_start=h_rest, T_w_start=35.0);
     Volume_L3 vol4(V=V_node, p_start=p_rest, h_start=h_rest, fixedState=true);
     Modelica.Blocks.Sources.TimeTable Nsig(table=[
         0.0,    0.0;
@@ -284,20 +284,26 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
   model Cycle_L3_coldstart_PI "L3 동적 콜드스타트 + EEV PI(SH 제어) — starved 해소, 현실 운전점 수렴"
     parameter Real N_final = 1800.0 "최종 회전수 [rpm]";
     parameter Real SH_target = 6.0 "목표 과열도 [K]";
-    parameter Modelica.Units.SI.Pressure p_rest = 12.5e5
-      "정지 균압. h_rest와 함께 충전 결정. 12.5b + h_rest=575e3에서 SH=6.00K/개도 40.1% 정착(EF·기하 sync 후 재검증). 구 주석의 '개도 100% 포화'는 제로플로우 홀드 파탄 + 옛 HX 기준이라 무효";
-    parameter Modelica.Units.SI.SpecificEnthalpy h_rest = 575e3
-      "정지 엔탈피=충전 proxy. 575e3에서 PI가 SH=6.00K를 개도 40.1%로 정착 추종(t=200 수렴 확인, 실제 staged ramp). 590e3은 진동 큼. step3서 L1/L2 충전 매칭 시 미세조정";
-    parameter Modelica.Units.SI.Volume V_node = 2e-3;
+    parameter Modelica.Units.SI.Pressure p_rest = 8.365e5
+      "20°C 포화압. 충전 100g / 시스템 총체적 414.1cc -> rho=241.5 kg/m3, x=0.040 (2026-07-24 실물 대조).
+       구값 12.5e5 는 T_sat 36.1°C 로 공기(20°C)보다 뜨거워 Q_evap 음수·x_out 1.0 고착을 유발했음";
+    parameter Modelica.Units.SI.SpecificEnthalpy h_rest = 265.5e3
+      "정지 엔탈피 = hl + x*hfg @8.365bar, x=0.040 (hl 251.6 / hv 595.9 kJ/kg).
+       구값 575e3 은 x=0.886 로 거의 증기 — 충전 100g 과 불일치";
+    // 노드 체적 = 실제 배관 + 부속 (2026-07-24 실물). 구값 2e-3 x4 = 8L 는 시스템의 98% 로 20배 과대.
+    parameter Modelica.Units.SI.Volume V_n1 = 1.832e-5 "압축기→응축기 1.0m (1/4\" 동관)";
+    parameter Modelica.Units.SI.Volume V_n2 = 9.99e-6  "응축기→EEV 0.2m + 응축기 리턴밴드 6.33cc";
+    parameter Modelica.Units.SI.Volume V_n3 = 3.66e-6  "EEV→증발기 0.2m";
+    parameter Modelica.Units.SI.Volume V_n4 = 2.226e-4 "증발기→압축기 1.0m + 어큐 200cc + 증발기 밴드 4.24cc";
     HPWDon.Comp_Chamber comp(V_disp_cm3=7.5);
-    Volume_L3 vol1(V=V_node, p_start=p_rest, h_start=h_rest, fixedState=true);
-    HPWDevap.Cond_On_Dyn cond(h_ref_start=h_rest, T_w_start=25.0);
-    Volume_L3 vol2(V=V_node, p_start=p_rest, h_start=h_rest, fixedState=true);
+    Volume_L3 vol1(V=V_n1, p_start=p_rest, h_start=h_rest, fixedState=true);
+    HPWDevap.Cond_On_Dyn cond(Nseg=3, h_ref_start=h_rest, T_w_start=20.0);
+    Volume_L3 vol2(V=V_n2, p_start=p_rest, h_start=h_rest, fixedState=true);
     HPWDon.EEV_On eev(D_seat=1.0e-3, stroke_max=1.0e-3);
-    Volume_L3 vol3(V=V_node, p_start=p_rest, h_start=h_rest, fixedState=true);
-    HPWDevap.Evap_On_Dyn evap(h_ref_start=h_rest, T_w_start=35.0);
-    Volume_L3 vol4(V=V_node, p_start=p_rest, h_start=h_rest, fixedState=true);
-    HPWDctrl.PI_Controller ctrl(SH_target=SH_target, Kp=1.0, Ki=0.3, opening_init=12.0, opening_min=3.0, I(fixed=true));
+    Volume_L3 vol3(V=V_n3, p_start=p_rest, h_start=h_rest, fixedState=true);
+    HPWDevap.Evap_On_Dyn evap(Nseg=3, h_ref_start=h_rest, T_w_start=20.0);
+    Volume_L3 vol4(V=V_n4, p_start=p_rest, h_start=h_rest, fixedState=true);
+    HPWDctrl.PI_Controller ctrl(SH_target=SH_target, Kp=1.0, Ki=0.3, opening_init=12.0, opening_min=6.0, I(fixed=true));
     Modelica.Blocks.Sources.TimeTable Nsig(table=[
         0.0,    0.0;
         1.0,    300.0;

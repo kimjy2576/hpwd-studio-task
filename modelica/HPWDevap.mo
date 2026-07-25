@@ -289,7 +289,8 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     Q_total=Nt*sum(Q); Q_lat_total=Nt*sum(Q_lat);
     h_out=hpath[M + 1];
     x_out=(h_out - hl)/h_fg;
-    SH=max(R290Tab.T_ph(P, h_out) - R290Tab.Tsat(P), 0.0) "증발기 출구 과열도 [K]";
+    SH=0.5*((R290Tab.T_ph(P, h_out) - R290Tab.Tsat(P))
+            + sqrt((R290Tab.T_ph(P, h_out) - R290Tab.Tsat(P))^2 + 1e-4)) "증발기 출구 과열도 [K] (smooth max)";
     T_air_out=sum(T_aen[Nr + 1,s] for s in 1:Nseg)/Nseg;
     // 냉매측 dp: 2상 마찰(MSH) + 가속 + U-bend
     x_in_q=(h_in - hl)/h_fg;
@@ -383,7 +384,8 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     final parameter Real A_fin_ratio=HXGeom.finRatio(W_coil, H_coil, D_coil, Nr, Nt, FPI, Do, fin_t);
     parameter Real Patm=101325.0, Pcrit=4.2512e6, M_mol=44.0956;
     parameter Real A_cs=Modelica.Constants.pi*Di^2/4.0;
-    parameter Real K_bend=0.75, L_seg=A_i_seg/(Modelica.Constants.pi*Di), L_path=Nr*Nseg*L_seg;
+    parameter Real K_bend=0.75, L_seg=A_i_seg/(Modelica.Constants.pi*Di), L_path=Nr*Nseg*L_seg
+      "⚠ 정상판은 Ncol 미도입(병렬 가정) — 단일회로 전환 시 M*L_seg+L_bend 로 수정 필요";
     parameter Real Wi=HXCorr.W_humid(T_air_in, RH_in, Patm);
     parameter Real cp_a_dry=HXCorr.cp_air_moist(Wi) "건공기 cp (응축기는 dry)";
     parameter Real eta_o_dry=HPWDon.finEffWet(h_o, 1.0, Dc, Xm, XL, k_fin, fin_t, A_fin_ratio);
@@ -481,7 +483,7 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     parameter Real Do=0.005 "튜브 외경 [m]";
     // ── 공기측 h_o — 하드코딩(302.17, BC 불일치 오류) 제거, 형상·유동서 산출 ──
     parameter Real P_t=14.14e-3, P_l=10e-3 "튜브 피치 (transverse/longitudinal) [m]";
-    parameter Real FPI=22.0 "핀 밀도 [fins/inch]";
+    parameter Real FPI=20.0 "핀 밀도 [fins/inch]";
     final parameter Real A_o_face=HXGeom.A_face(W_coil, H_coil) "공기측 전면적 [m2]";
     parameter Real V_air_CMM=2.42 "공기 체적유량 [CMM] — 열전달·h_o 공통 단일 소스";
     parameter Real RH_ho=0.99 "h_o 산출용 공기 상대습도";
@@ -519,7 +521,13 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     final parameter Real A_fin_ratio=HXGeom.finRatio(W_coil, H_coil, D_coil, Nr, Nt, FPI, Do, fin_t);
     parameter Real Patm=101325.0, Pcrit=4.2512e6, M_mol=44.0956;
     parameter Real A_cs=Modelica.Constants.pi*Di^2/4.0;
-    parameter Real K_bend=0.75, L_seg=A_i_seg/(Modelica.Constants.pi*Di), L_path=Nr*Nseg*L_seg;
+    parameter Real K_bend=0.75, L_seg=A_i_seg/(Modelica.Constants.pi*Di);
+    // 리턴밴드 길이 — 컬럼 내 행간 U밴드(R=P_l/2) + 컬럼 전환 밴드(R=P_t/2).
+    // 2026-07-24: 기존 L_path=Nr*Nseg*L_seg 는 Ncol 누락으로 단일회로에서 경로가
+    // 1/4 (1.44m vs 5.76m) -> 마찰 dp 1/4 과소평가. 밴드분(+6.6%)도 미포함이었음.
+    parameter Real L_bend=(Nr - 1)*Ncol*Modelica.Constants.pi*P_l/2.0
+                          + (Ncol - 1)*Modelica.Constants.pi*P_t/2.0 "리턴밴드 총길이 [m]";
+    parameter Real L_path=M*L_seg + L_bend "회로 냉매경로 길이 [m] (직관 + 리턴밴드)";
     Real cp_a_dry "습공기 cp (Wi 의존)";
     parameter Real eta_o_dry=HPWDon.finEffWet(h_o, 1.0, Dc, Xm, XL, k_fin, fin_t, A_fin_ratio);
     parameter Integer M=Nr*Nsc;
@@ -695,7 +703,9 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     parameter Real A_cs=Modelica.Constants.pi*Di^2/4.0;
     parameter Real K_bend=0.75 "U-bend 손실계수";
     parameter Real L_seg=A_i_seg/(Modelica.Constants.pi*Di) "세그 길이 [m]";
-    parameter Real L_path=M*L_seg "회로 냉매경로 길이 [m]";
+    parameter Real L_bend=(Nr - 1)*Ncol*Modelica.Constants.pi*P_l/2.0
+                          + (Ncol - 1)*Modelica.Constants.pi*P_t/2.0 "리턴밴드 총길이 [m]";
+    parameter Real L_path=M*L_seg + L_bend "회로 냉매경로 길이 [m] (직관 + 리턴밴드)";
     parameter Real Wi=HXCorr.W_humid(T_air_in, RH_in, Patm);
     parameter Real T_dp=HXCorr.Tdp_corr(Wi, Patm);
     parameter Real eta_o_dry=HPWDon.finEffWet(h_o, 1.0, Dc, Xm, XL, k_fin, fin_t, A_fin_ratio);
@@ -797,7 +807,10 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     Q_total=Ncirc*sum(Q_ref); Q_lat_total=Ncirc*sum(Q_lat_c);
     h_out=h_ref[M];
     x_out=(h_out - hl)/h_fg;
-    SH=max(R290Tab.T_ph(P, h_out) - R290Tab.Tsat(P), 0.0) "출구 과열도 [K]";
+    // smooth max — x_out 이 1.0 을 통과할 때 max() 가 상태이벤트를 만들어
+    // 사이클 콜드스타트가 그 지점(t~55s)에서 정지함(2026-07-24 실측).
+    SH=0.5*((R290Tab.T_ph(P, h_out) - R290Tab.Tsat(P))
+            + sqrt((R290Tab.T_ph(P, h_out) - R290Tab.Tsat(P))^2 + 1e-4)) "출구 과열도 [K]";
     T_air_out=sum(T_aen[Nr + 1,s] for s in 1:Nsc)/Nsc;
     W_air_out=sum(W_aen[Nr + 1,s] for s in 1:Nsc)/Nsc "출구 절대습도 [kg/kg] (제습 반영) → 응축기 입력";
     // 냉매측 dp (명시적)
