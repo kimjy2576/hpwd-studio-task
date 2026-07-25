@@ -685,7 +685,7 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
       기본값은 V_air_CMM × 해당 HX 입구조건 밀도 (단품 검증 BC 규약, Python GT와 0.05% 일치).
       ※ 직렬 덕트(증발기→응축기)로 결합할 때는 건공기 질량이 보존돼야 하므로
         상류에서 계산된 질량유량을 직접 지정할 것.";
-    final parameter Real m_air_seg=m_air_total/(Ncirc*Nsc) "(col,seg)당 공기유량 [kg/s]";
+    final parameter Real m_air_seg=m_air_total/(1.0 + Wi)/(Ncirc*Nsc) "(col,seg)당 건공기 질량유량 [kg_da/s] — march가 h_moist[J/kg_da]·W[kg/kg_da]를 쓰므로 건공기 기준 (2026-07-25)";
     // ── 1차 형상 (임의 구성 비교의 입력; 파생량은 HXGeom이 산출) ──
     parameter Real W_coil=0.24 "튜브 길이 = 코일 폭 [m]";
     parameter Real H_coil=Nt*P_t "코일 높이 [m] — 기본 Nt·P_t (튜브 열 수 바꾸면 자동 추종)";
@@ -705,7 +705,7 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     final parameter Real G_air_ho=m_air_ho/A_c_ho;
     final parameter Real mu_a_ho=HXCorr.mu_air(T_air_in+273.15);
     final parameter Real Pr_a_ho=HXCorr.Pr_air(T_air_in+273.15);
-    final parameter Real cp_a_ho=HXCorr.cp_air_moist(W_ho);
+    final parameter Real cp_a_ho=HXCorr.cp_air_mix(W_ho);
     final parameter Real Re_Dc_ho=G_air_ho*Dc/mu_a_ho;
     final parameter Real j_air_ho=HXCorr.j_wang2000_plain(Re_Dc_ho, Nr, Dc, P_t, P_l, FPI, fin_t);
     final parameter Real h_o=j_air_ho*G_air_ho*cp_a_ho/Pr_a_ho^(2.0/3.0) "공기측 HTC [W/m2K] (형상·유동서 산출)";
