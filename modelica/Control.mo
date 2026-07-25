@@ -8,11 +8,16 @@ package HPWDctrl "제어 컴포넌트"
     parameter Real Ki = 0.5 "적분 게인";
     parameter Real opening_init = 50.0 "적분기 초기값";
     parameter Real opening_min = 5.0, opening_max = 100.0;
+    parameter Real T_aw = 1.0 "반포화(back-calculation) 시상수 [s].
+      비포화 구간에서는 opening==opening_raw 라 보정항이 0 → 기존 거동 그대로.
+      포화 시에만 적분을 클램프 경계로 되끌어옴. (2026-07-25: 반포화 부재로
+      콜드스타트 SH=0 구간에서 I 가 -234 까지 발산, 개도가 418샘플 중 417개에서
+      최소값 6%% 에 고착 -> 응축기 액범람 -> Pc 25bar 폭주가 재현됐음)";
     Real I(start = opening_init) "적분 상태";
     Real err, opening_raw;
   equation
     err = SH_meas - SH_target;          // SH 과다 → opening 키워 ṁ↑ → SH↓
-    der(I) = Ki*err;
+    der(I) = Ki*err + (opening - opening_raw)/T_aw;
     opening_raw = Kp*err + I;
     opening = max(opening_min, min(opening_max, opening_raw));
   end PI_Controller;
