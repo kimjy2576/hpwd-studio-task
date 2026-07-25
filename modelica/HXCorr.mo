@@ -576,13 +576,20 @@ package HXCorr "HX Moving-Boundary correlation 함수 라이브러리 (Python �
     input Real Di "[m]";
     output Real alpha;
   protected
-    Real f, Nu;
+    Real f, Nu, Pr_c, Re_c;
   algorithm
-    if Re < 2300 then
+    // 2026-07-25 방어 가드. 사이클 콜드스타트에서 응축기 출구가 x=0 을 통과할 때
+    // 압력 노드가 뉴턴 반복 중 순간적으로 테이블 범위를 벗어나면 R290Tab 이 음수 cp 를
+    // 돌려주고 Pr<0 -> Pr^(2/3) 이 무효근이 되어 적분이 중단됨
+    // (실측: Invalid root (-0.29487)^(0.666667), DASKR 수렴실패, t=8.7445).
+    // 물리 범위(Pr>0, Re>0)에서는 클램프가 작동하지 않아 기존 결과 불변.
+    Pr_c := max(Pr, 1e-3);
+    Re_c := max(Re, 1.0);
+    if Re_c < 2300 then
       alpha := 3.66*k/Di;
     else
-      f := (0.790*log(Re) - 1.64)^(-2);
-      Nu := max((f/8)*(Re - 1000)*Pr/(1.0 + 12.7*sqrt(f/8)*(Pr^(2.0/3.0) - 1.0)), 3.66);
+      f := (0.790*log(Re_c) - 1.64)^(-2);
+      Nu := max((f/8)*(Re_c - 1000)*Pr_c/(1.0 + 12.7*sqrt(f/8)*(Pr_c^(2.0/3.0) - 1.0)), 3.66);
       alpha := Nu*k/Di;
     end if;
   end gnielinski;

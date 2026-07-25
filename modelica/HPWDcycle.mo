@@ -333,15 +333,28 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     parameter Modelica.Units.SI.Volume V_n2 = 9.99e-6  "응축기→EEV 0.2m + 응축기 리턴밴드 6.33cc";
     parameter Modelica.Units.SI.Volume V_n3 = 3.66e-6  "EEV→증발기 0.2m";
     parameter Modelica.Units.SI.Volume V_n4 = 2.226e-4 "증발기→압축기 1.0m + 어큐 200cc + 증발기 밴드 4.24cc";
+    // ── 공기 경계 모드 (2026-07-25) ──
+    // air_series=false : 응축기 공기 BC 독립 = 로드맵 2단계 '냉매 사이클(공기BC 고정)'.
+    //   증발기 출구를 응축기에 물리면 응축기 공기가 11.8C 까지 식어 냉매를 12.8C 로 과냉
+    //   -> 증발기 입구 x=0.044 -> 전잠열 증발에 823W 필요한데 공급 786W (4.5% 부족)
+    //   -> SH=0 -> 개도 최소 -> Pc 25bar 폭주. 드럼이 없어 응축기가 데운 34C 공기가
+    //   버려지고 증발기엔 계속 20C 가 들어가는 열린 경계가 원인.
+    // air_series=true  : 증발기 출구 -> 응축기 (직렬 덕트). 드럼 연결 후 커플드에서 사용.
+    parameter Boolean air_series = false "true: 증발기 출구 공기를 응축기 입구로";
+    parameter Real T_air_cond = 20.0 "응축기 공기 입구온도 [degC] (air_series=false)";
+    parameter Real RH_air_cond = 0.8 "응축기 공기 입구 상대습도 (air_series=false)";
+    final parameter Real W_air_cond = HXCorr.W_humid(T_air_cond, RH_air_cond, 101325.0);
     HPWDon.Comp_Chamber comp(V_disp_cm3=7.5);
     Volume_L3 vol1(V=V_n1, p_start=p_rest, h_start=h_rest, fixedState=true);
-    HPWDevap.Cond_On_Dyn cond(Nseg=3, h_ref_start=h_rest, T_w_start=20.0);
+    HPWDevap.Cond_On_Dyn cond(Nseg=3, h_ref_start=h_rest, T_w_start=20.0, T_air_in_start=T_air_cond);
     Volume_L3 vol2(V=V_n2, p_start=p_rest, h_start=h_rest, fixedState=true);
     HPWDon.EEV_On eev(D_seat=1.0e-3, stroke_max=1.0e-3);
     Volume_L3 vol3(V=V_n3, p_start=p_rest, h_start=h_rest, fixedState=true);
     HPWDevap.Evap_On_Dyn evap(Nseg=3, h_ref_start=h_rest, T_w_start=20.0);
     Accumulator_L3 vol4(V=V_n4, p_start=p_rest, h_start=h_rest, fixedState=true);
-    HPWDctrl.PI_Controller ctrl(SH_target=SH_target, Kp=1.0, Ki=0.3, opening_init=12.0, opening_min=6.0, I(fixed=true));
+    parameter Real open_init = 30.0 "적분기 초기값 [%]. Kp=1,err=-6 이므로 초기개도=open_init-6.
+      12 이면 초기개도가 곧바로 최소 6%% 라 콜드스타트 트랩. 설계개도 23.586%% 근처를 주려면 30.";
+    HPWDctrl.PI_Controller ctrl(SH_target=SH_target, Kp=1.0, Ki=0.3, opening_init=open_init, opening_min=6.0, I(fixed=true));
     Modelica.Blocks.Sources.TimeTable Nsig(table=[
         0.0,    0.0;
         1.0,    300.0;
@@ -354,8 +367,8 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     Real Pc_bar, Pe_bar, mdot, SH, Q_evap, Q_cond, W_comp, opening;
   equation
     // ── 공기 폐루프: 증발기 출구 → 응축기 입구 (온도·습도) ──
-    cond.T_air_in = evap.T_air_out;
-    cond.Wi       = evap.W_air_out;
+    cond.T_air_in = if air_series then evap.T_air_out else T_air_cond;
+    cond.Wi       = if air_series then evap.W_air_out else W_air_cond;
     connect(comp.port_b, vol1.port_a);
     connect(vol1.port_b, cond.port_a);
     connect(cond.port_b, vol2.port_a);
