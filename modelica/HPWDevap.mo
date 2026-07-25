@@ -496,7 +496,7 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     final parameter Real G_air_ho=m_air_ho/A_c_ho "공기 질량속도 [kg/m2s]";
     final parameter Real mu_a_ho=HXCorr.mu_air(T_air_in_start+273.15);
     final parameter Real Pr_a_ho=HXCorr.Pr_air(T_air_in_start+273.15);
-    final parameter Real cp_a_ho=HXCorr.cp_air_moist(W_ho);
+    final parameter Real cp_a_ho=HXCorr.cp_air_mix(W_ho);
     final parameter Real Re_Dc_ho=G_air_ho*Dc/mu_a_ho;
     final parameter Real j_air_ho=HXCorr.j_wang2000_plain(Re_Dc_ho, Nr, Dc, P_t, P_l, FPI, fin_t);
     // Colburn: h_o = j·G·cp/Pr^(2/3). 하드코딩 302.17(BC 불일치 오류) 대체.
@@ -582,7 +582,7 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     Real T_aen[Nr + 1,Nsc](each start=27.0);
     Real Q_total, h_out, x_out, T_air_out, x_in_q, dp_fric, dp_bend, dp_total, rho_mix, x_mid;
   equation
-      cp_a_dry=HXCorr.cp_air_moist(Wi) "입구 습도에 따른 습공기 cp";
+      cp_a_dry=HXCorr.cp_air_mix(Wi) "입구 습도에 따른 습공기 cp (혼합물 기준 — m_air_seg가 습공기 질량유량)";
     P=port_a.p;
     M_tot=sum(M_c) "HX 총 질량";
     der(M_tot)=m_ref_col - m_out "집중 질량보존 — HX 가 냉매를 저장/방출";

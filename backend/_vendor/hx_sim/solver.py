@@ -322,7 +322,13 @@ class HXSolver:
                      for _ in range(self.Nt)]
         W_air_3d = [[[W_in] * (self.Nr + 1) for _ in range(Ns)]
                      for _ in range(self.Nt)]
-        m_air_cell = m_air / max(self.Nt * Ns, 1)
+        # 2026-07-25 기준질량 정합 수정: 아래 march 는 h_simple(HAPropsSI "H",
+        # J/kg_dry_air) 와 W(kg/kg_da) 를 쓰므로 분모가 '건공기' 질량유량이어야 함.
+        # m_air 는 rho_moist·V (혼합물) 이라 그대로 나누면 열용량률·잠열항이
+        # (1+W) 배 과대 (W=0.01023 에서 +1.02%). G_air/h_o 체인은 실제 유동
+        # 질량속도라 혼합물 기준 유지.
+        m_air_da = m_air / (1.0 + W_in)
+        m_air_cell = m_air_da / max(self.Nt * Ns, 1)
 
         seg_dict = {}
         max_outer = inp.max_outer

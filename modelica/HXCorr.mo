@@ -143,6 +143,18 @@ package HXCorr "HX Moving-Boundary correlation 함수 라이브러리 (Python �
     annotation(Inline=true);
   end cp_air_moist;
 
+  function cp_air_mix "습공기 정압비열 [J/kg moist air·K] = cp_air_moist/(1+W)
+    ※ cp_air_moist 는 '건공기 1kg' 기준. 질량유량을 습공기(혼합물) 기준으로
+      쓰는 곳(Colburn h_o = j·G·cp/Pr^(2/3), march 열용량률 m_air·cp)에서는
+      기준이 어긋나 (1+W) 배 과대평가됨. 그런 곳에는 이 함수를 쓸 것.
+      (2026-07-25 측정: W=0.01023에서 열용량률 +1.02%, h_o +0.94% 과대)"
+    input Real W "humidity ratio [kg/kg]";
+    output Real cp;
+  algorithm
+    cp := (1006.0 + 1860.0*W)/(1.0 + W);
+    annotation(Inline=true);
+  end cp_air_mix;
+
   // ════════════ 습공기 포화 (Magnus; _W_sat/_h_air_sat/_b_slope 폴백과 동일) ════════════
   function Psat_water "물 유효 포화압 [Pa] (Buck×enhancement, CoolProp HAPropsSI <0.1%)"
     input Real T_C;
