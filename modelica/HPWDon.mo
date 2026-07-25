@@ -530,7 +530,7 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     h_sub := HXCorr.gnielinski(G*Di/mu_l, Pr_l, k_l, Di);
     h_vap := HXCorr.gnielinski(G*Di/mu_v, Pr_v, k_v, Di);
     w_liq := 0.5*(1.0 - tanh((x - 0.025)/0.025)) "x<0 → 1(액), x>0.05 → 0";
-    w_vap := 0.5*(1.0 + tanh((x - 1.0)/0.02)) "x>1 → 1(증기)";
+    w_vap := 0.5*(1.0 + tanh((x - 1.0)/0.002)) "x>1 → 1(증기). 전이폭 0.002 — 2026-07-25 스윕으로 확정";
     h := w_vap*h_vap + (1.0 - w_vap)*(w_liq*h_sub + (1.0 - w_liq)*h_2ph);
   end hi_dispatch_cond;
 
