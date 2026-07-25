@@ -107,7 +107,7 @@ package CmpParts "부품 단독 충실도 비교 — 동일 BC에서 L1/L2/L3 �
 
   model Cond_L3 "L3 유한체적 — Cond_On_Dyn (셀-march, 1.28 m², 6-row slit, FPI22). 동적: 정착값이 정상해"
     HPWDevap.FlowSource src(m_dot = m_ref, h = h_cond_in, p = P_c);
-    HPWDevap.Cond_On_Dyn cond(T_air_in_start = 14.474, h_ref_start = 400e3, T_w_start = 20.0);
+    HPWDevap.Cond_On_Dyn cond(use_momentum = false, T_air_in_start = 14.474, h_ref_start = 400e3, T_w_start = 20.0);
     HPWDevap.OpenSink snk(h = 340e3);
     parameter Real T_air_bc = 14.474 "공기 입구온도 [degC]";
     parameter Real W_air_bc = 0.010176 "공기 입구 절대습도 [kg/kg]";
@@ -139,7 +139,7 @@ package CmpParts "부품 단독 충실도 비교 — 동일 BC에서 L1/L2/L3 �
 
   model Evap_L3 "L3 유한체적 — Evap_On_Dyn (셀-march, 습코일 제습). 동적: 정착값이 정상해"
     HPWDevap.FlowSource src(m_dot = m_ref, h = h_evap_in, p = P_e);
-    HPWDevap.Evap_On_Dyn evap(T_air_in = 20.0, RH_in = 0.8, h_ref_start = 480e3, T_w_start = 10.0);
+    HPWDevap.Evap_On_Dyn evap(use_momentum = false, T_air_in = 20.0, RH_in = 0.8, h_ref_start = 480e3, T_w_start = 10.0);
     HPWDevap.OpenSink snk(h = 600e3);
   equation
     connect(src.port, evap.port_a);

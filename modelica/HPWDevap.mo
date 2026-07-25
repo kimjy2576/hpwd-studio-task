@@ -528,6 +528,7 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     parameter Real L_bend=(Nr - 1)*Ncol*Modelica.Constants.pi*P_l/2.0
                           + (Ncol - 1)*Modelica.Constants.pi*P_t/2.0 "리턴밴드 총길이 [m]";
     parameter Real L_path=M*L_seg + L_bend "회로 냉매경로 길이 [m] (직관 + 리턴밴드)";
+    parameter Real L_inert=L_path/A_cs "유량 관성계수 [1/m]";
     Real cp_a_dry "습공기 cp (Wi 의존)";
     parameter Real eta_o_dry=HPWDon.finEffWet(h_o, 1.0, Dc, Xm, XL, k_fin, fin_t, A_fin_ratio);
     parameter Integer M=Nr*Nsc;
@@ -555,7 +556,15 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     Real h_ref[M](each start=h_ref_start, each fixed=true) "냉매 엔탈피/셀 [J/kg]";
     Real T_w[M](each start=T_w_start, each fixed=true, each min=-40.0, each max=160.0) "벽온도/셀 [degC]";
     // ── 대수 ──
-    Real P, m_ref_col, G_ref, h_in;
+    Real P, G_ref, h_in;
+    // 유량 관성 (momentum dynamics) — 2026-07-24.
+    // 기존 port_b.p = P - dp_total 은 "Δp 를 주고 ṁ 을 푸는" 역산 방정식이라
+    // 저유량(기동 직후)에서 dp~ṁ² 이 평탄해져 조건수가 발산했음.
+    // ṁ 을 상태로 두면 역산이 사라지고 명시적 ODE 가 된다.
+    //   L_inert·d(ṁ)/dt = Δp − dp_total(ṁ),  L_inert = L_path/A_cs [1/m]
+    parameter Boolean use_momentum=true
+      "true: ṁ 을 상태로(운동량, 사이클용) / false: 대수 dp(유량 BC 고정 단품 검증용)";
+    Real m_ref_col(start=0.0, fixed=use_momentum) "회로당 냉매유량 [kg/s]";
     Real T_satC, hl, hv, h_fg, mu_l, k_l, cp_l, Pr_l, rho_l, rho_v, mu_v, k_v, cp_v, Pr_v, P_r;
     Real T_ref[M], xq[M], h_i[M], Q_ref[M], Q_air[M];
     Real w2p[M] "2상 가중 (0=단상, 1=2상)";
@@ -567,7 +576,7 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
       cp_a_dry=HXCorr.cp_air_moist(Wi) "입구 습도에 따른 습공기 cp";
     P=port_a.p;
     port_a.m_flow + port_b.m_flow=0;
-    m_ref_col=port_a.m_flow/Ncirc "회로당 냉매유량";
+
     G_ref=m_ref_col/A_cs;
     h_in=inStream(port_a.h_outflow);
     T_satC=R290Tab.Tsat(P) - 273.15; hl=R290Tab.hl(P); hv=R290Tab.hv(P); h_fg=hv - hl;
@@ -625,7 +634,13 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     // (사이클에서 dp_total 은 m_flow 에 의존하므로, T_ref[k] 가 직접 참조하면
     //  240개 셀이 통째로 비선형계에 들어가 폭증함. 2026-07-24 실측)
     0.1*der(dp_lag)=dp_total - dp_lag;
-    port_b.p=P - dp_total;
+    if use_momentum then
+      port_a.m_flow=Ncirc*m_ref_col;
+      L_inert*der(m_ref_col)=(port_a.p - port_b.p) - dp_total "운동량 방정식";
+    else
+      m_ref_col=port_a.m_flow/Ncirc;
+      port_b.p=P - dp_total "준정상 (유량 BC 고정 시)";
+    end if;
     port_b.h_outflow=h_out;
     port_a.h_outflow=h_in;
   end Cond_On_Dyn;
@@ -706,6 +721,7 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     parameter Real L_bend=(Nr - 1)*Ncol*Modelica.Constants.pi*P_l/2.0
                           + (Ncol - 1)*Modelica.Constants.pi*P_t/2.0 "리턴밴드 총길이 [m]";
     parameter Real L_path=M*L_seg + L_bend "회로 냉매경로 길이 [m] (직관 + 리턴밴드)";
+    parameter Real L_inert=L_path/A_cs "유량 관성계수 [1/m]";
     parameter Real Wi=HXCorr.W_humid(T_air_in, RH_in, Patm);
     parameter Real T_dp=HXCorr.Tdp_corr(Wi, Patm);
     parameter Real eta_o_dry=HPWDon.finEffWet(h_o, 1.0, Dc, Xm, XL, k_fin, fin_t, A_fin_ratio);
@@ -740,7 +756,15 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     Real h_ref[M](each start=h_ref_start, each fixed=true) "냉매 엔탈피/셀 [J/kg]";
     Real T_w[M](each start=T_w_start, each fixed=true, each min=-40.0, each max=90.0) "벽온도/셀 [degC]";
     // ── 대수 ──
-    Real P, m_ref_col, G_ref, h_in;
+    Real P, G_ref, h_in;
+    // 유량 관성 (momentum dynamics) — 2026-07-24.
+    // 기존 port_b.p = P - dp_total 은 "Δp 를 주고 ṁ 을 푸는" 역산 방정식이라
+    // 저유량(기동 직후)에서 dp~ṁ² 이 평탄해져 조건수가 발산했음.
+    // ṁ 을 상태로 두면 역산이 사라지고 명시적 ODE 가 된다.
+    //   L_inert·d(ṁ)/dt = Δp − dp_total(ṁ),  L_inert = L_path/A_cs [1/m]
+    parameter Boolean use_momentum=true
+      "true: ṁ 을 상태로(운동량, 사이클용) / false: 대수 dp(유량 BC 고정 단품 검증용)";
+    Real m_ref_col(start=0.0, fixed=use_momentum) "회로당 냉매유량 [kg/s]";
     Real T_satC, hl, hv, h_fg, mu_l, k_l, cp_l, Pr_l, rho_l, rho_v, mu_v, P_r;
     Real muv, kv, cpv, Prv, h_v_gni;
     Real xq_c[Nr,Nsc], T_ref_c[Nr,Nsc], h_i_c[Nr,Nsc], cp_a[Nr,Nsc], h_air_c[Nr,Nsc];
@@ -755,7 +779,7 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
   equation
     P=port_a.p;
     port_a.m_flow + port_b.m_flow=0;
-    m_ref_col=port_a.m_flow/Ncirc "회로당 냉매유량";
+
     G_ref=m_ref_col/A_cs;
     h_in=inStream(port_a.h_outflow);
     T_satC=R290Tab.Tsat(P) - 273.15; hl=R290Tab.hl(P); hv=R290Tab.hv(P); h_fg=hv - hl;
@@ -821,7 +845,13 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     rho_mix=1.0/(x_mid/rho_v + (1.0 - x_mid)/rho_l);
     dp_bend=(Nr*Ncol - 1)*K_bend*G_ref^2/(2.0*rho_mix);
     dp_total=dp_fric + dp_accel + dp_bend + K_lam*m_ref_col "+ 층류 정규화";
-    port_b.p=P - dp_total;
+    if use_momentum then
+      port_a.m_flow=Ncirc*m_ref_col;
+      L_inert*der(m_ref_col)=(port_a.p - port_b.p) - dp_total "운동량 방정식";
+    else
+      m_ref_col=port_a.m_flow/Ncirc;
+      port_b.p=P - dp_total "준정상 (유량 BC 고정 시)";
+    end if;
     port_b.h_outflow=h_out;
     port_a.h_outflow=h_in;
     annotation(Documentation(info="<html>

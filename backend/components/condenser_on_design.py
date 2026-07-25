@@ -99,7 +99,7 @@ def step(input, params, state, dt):
     # 이를 통해 h_o가 실제 응축기 형상·유동에서 산출됨 (OMC와 정합).
     p.setdefault('N_rows', 6)
     p.setdefault('N_tubes_per_row', 4)
-    p.setdefault('FPI', 22.0)
+    p.setdefault('FPI', 20.0)  # 실물 사양 (2026-07-24 확인)
     # 코일 깊이 D = N_rows×P_l = 6×10mm. 미지정 시 evap 기본(0.04)이 남아
     # 공기측 면적 35% 과소 → 2상 Q -15% (2026-07-23 셀 대조 하네스로 규명).
     p.setdefault('D', 0.06)
