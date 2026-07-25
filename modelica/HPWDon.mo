@@ -155,7 +155,10 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     pi_ratio = p_dis/p_su;
 
     // 재팽창 → 실효 흡입체적
-    V_re  = V_clear*(pi_ratio^(1.0/n_poly));
+    V_re  = V_clear*(max(pi_ratio, 1e-6)^(1.0/n_poly))
+      "2026-07-25 가드: 사이클 과도 중 압력노드가 음수로 튀면 pi_ratio<0 -> (-)^(1/n_poly)
+       무효근으로 적분 중단 (실측 Invalid root (-1.2512)^(0.78908), 0.789=1/1.268=1/n_poly).
+       물리 범위(pi_ratio>0)에서는 클램프 미작동";
     V_eff = max(V_max - V_re, 0.01*V_max);
     // 누설
     rpm_factor = (max(N, 1.0)/N_rated)^(-n_leak_rpm);

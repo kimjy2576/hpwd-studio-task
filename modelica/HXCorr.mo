@@ -319,7 +319,7 @@ package HXCorr "HX Moving-Boundary correlation 함수 라이브러리 (Python �
     Re_tp := Re_l*F^1.25;
     S := 1.0/(1.0 + 2.53e-6*Re_tp^1.17) "억제인자";
     log_Pr := -log10(max(P_r, 1e-6));
-    h_pool := 55.0*P_r^0.12*max(log_Pr, 0.01)^(-0.55)*M_mol^(-0.5)*max(q_flux, 100.0)^0.67
+    h_pool := 55.0*max(P_r, 1e-6)^0.12*max(log_Pr, 0.01)^(-0.55)*M_mol^(-0.5)*max(q_flux, 100.0)^0.67
       "Cooper(1984) pool boiling";
     h_tp := max(F*h_l + S*h_pool, 100.0);
   end h_evap_chen1966;

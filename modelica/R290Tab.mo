@@ -763,24 +763,31 @@ package R290Tab "R290 tabulated media — (p,h) basis, 2상 안전, 미분가능
   function lin1
     input Real F[nP]; input Real p; output Real y;
   protected
-    Integer i; Real t;
+    Integer i; Real t, pc;
   algorithm
-    i := idxP(p); t := (p-(P0+(i-1)*dP))/dP; y := (1-t)*F[i]+t*F[i+1];
+    // 2026-07-25: 보간 가중치도 격자범위로 클램프. idxP 는 인덱스만 클램프했고
+    // t 는 원래 p 로 계산해 범위 밖에서 무제한 선형외삽 -> 음수 cp/Pr 발생
+    // (사이클 콜드스타트 x=0 통과 중 압력노드가 음수로 튀며 Pr=-0.295 -> 적분중단).
+    // 범위 밖에서는 경계값으로 포화. 범위 안에서는 기존과 완전 동일.
+    pc := min(max(p, P0), P1);
+    i := idxP(pc); t := (pc-(P0+(i-1)*dP))/dP; y := (1-t)*F[i]+t*F[i+1];
   end lin1;
   function bilin
     input Real F[nP,nH]; input Real p; input Real h; output Real y;
   protected
-    Integer i,j; Real tp,th;
+    Integer i,j; Real tp,th,pc,hc;
   algorithm
-    i := idxP(p); j := idxH(h); tp := (p-(P0+(i-1)*dP))/dP; th := (h-(H0+(j-1)*dH))/dH;
+    pc := min(max(p, P0), P1); hc := min(max(h, H0), H1);
+    i := idxP(pc); j := idxH(hc); tp := (pc-(P0+(i-1)*dP))/dP; th := (hc-(H0+(j-1)*dH))/dH;
     y := (1-tp)*(1-th)*F[i,j]+tp*(1-th)*F[i+1,j]+(1-tp)*th*F[i,j+1]+tp*th*F[i+1,j+1];
   end bilin;
   function bilinC
     input Real F[nP,nH]; input Real satF[nP]; input Integer want; input Real p; input Real h; output Real y;
   protected
-    Integer i,j; Real tp,th,c00,c10,c01,c11;
+    Integer i,j; Real tp,th,c00,c10,c01,c11,pc,hc;
   algorithm
-    i := idxP(p); j := idxH(h); tp := (p-(P0+(i-1)*dP))/dP; th := (h-(H0+(j-1)*dH))/dH;
+    pc := min(max(p, P0), P1); hc := min(max(h, H0), H1);
+    i := idxP(pc); j := idxH(hc); tp := (pc-(P0+(i-1)*dP))/dP; th := (hc-(H0+(j-1)*dH))/dH;
     c00 := if PHg[i,j]==want then F[i,j] else satF[i];
     c10 := if PHg[i+1,j]==want then F[i+1,j] else satF[i+1];
     c01 := if PHg[i,j+1]==want then F[i,j+1] else satF[i];
