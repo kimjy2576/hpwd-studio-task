@@ -551,6 +551,7 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     Real T_satC, hl, hv, h_fg, mu_l, k_l, cp_l, Pr_l, rho_l, rho_v, mu_v, k_v, cp_v, Pr_v, P_r;
     Real T_ref[M], xq[M], h_i[M], Q_ref[M], Q_air[M];
     Real w2p[M] "2상 가중 (0=단상, 1=2상)";
+    Real dp_lag(start=0.0, fixed=true) "dp_total 지연 [Pa] — 대수 루프 차단용";
     Real xc[M] "클램프된 quality (noEvent — 이벤트 생성 회피)";
     Real T_aen[Nr + 1,Nsc](each start=27.0);
     Real Q_total, h_out, x_out, T_air_out, x_in_q, dp_fric, dp_bend, dp_total, rho_mix, x_mid;
@@ -574,7 +575,7 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
       // 과열/과냉에서는 T 가 P 에 거의 무관하므로 보정을 끈다(tanh 로 연속 전이).
       w2p[k]=0.25*(1.0 + tanh(xq[k]/0.03))*(1.0 + tanh((1.0 - xq[k])/0.03));
       T_ref[k]=R290Tab.T_ph(P, h_ref[k]) - 273.15
-               - w2p[k]*R290Tab.Tsat_d(P, dp_total*k/M);
+               - w2p[k]*R290Tab.Tsat_d(P, dp_lag*k/M);
       xq[k]=(h_ref[k] - hl)/h_fg;
       h_i[k]=HPWDon.hi_dispatch_cond(xq[k], G_ref, Di, mu_l, k_l, Pr_l, mu_v, k_v, Pr_v, P_r)*(EF_sgl + (EF_2ph - EF_sgl)*(0.25*(1.0 + tanh(xq[k]/0.03))*(1.0 + tanh((1.0 - xq[k])/0.03))));
       Q_ref[k]=h_i[k]*A_i_seg*(T_ref[k] - T_w[k]);
@@ -612,6 +613,10 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     rho_mix=1.0/(x_mid/rho_v + (1.0 - x_mid)/rho_l);
     dp_bend=(Nr*Ncol - 1)*K_bend*G_ref^2/(2.0*rho_mix);
     dp_total=dp_fric + dp_bend + K_lam*m_ref_col "셀 누적";
+    // dp 를 한 칸 지연 — T_ref[k] 가 m_flow 대수 루프에서 빠지게 함.
+    // (사이클에서 dp_total 은 m_flow 에 의존하므로, T_ref[k] 가 직접 참조하면
+    //  240개 셀이 통째로 비선형계에 들어가 폭증함. 2026-07-24 실측)
+    0.1*der(dp_lag)=dp_total - dp_lag;
     port_b.p=P - dp_total;
     port_b.h_outflow=h_out;
     port_a.h_outflow=h_in;
