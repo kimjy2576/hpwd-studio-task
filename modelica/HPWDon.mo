@@ -521,20 +521,17 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     input Real x, G, Di, mu_l, k_l, Pr_l, mu_v, k_v, Pr_v, P_r;
     output Real h;
   protected
-    Real h_2ph, h_sub, w;
+    Real h_2ph, h_sub, h_vap, w_liq, w_vap;
   algorithm
-    if x > 1.0 then
-      h := HXCorr.gnielinski(G*Di/mu_v, Pr_v, k_v, Di);
-    elseif x >= 0.05 then
-      h := HXCorr.h_cond_shah1979(min(x, 0.999), G, Di, mu_l, k_l, Pr_l, P_r);
-    elseif x >= 0.0 then
-      h_2ph := HXCorr.h_cond_shah1979(max(x, 0.001), G, Di, mu_l, k_l, Pr_l, P_r);
-      h_sub := HXCorr.gnielinski(G*Di/mu_l, Pr_l, k_l, Di);
-      w := (0.05 - x)/0.05;
-      h := (1.0 - w)*h_2ph + w*h_sub;
-    else
-      h := HXCorr.gnielinski(G*Di/mu_l, Pr_l, k_l, Di);
-    end if;
+    // 이벤트 없는 연속 블렌딩 (2026-07-24) — 기존 if/elseif 는 x=1.0/0.05/0.0 에서
+    // 셀마다 상태이벤트를 만들어, 응축기 출구가 x=0 을 통과하는 콜드스타트 구간
+    // (t≈6s) 에서 사이클 진행이 정지했음. 인자는 noEvent 로 클램프.
+    h_2ph := HXCorr.h_cond_shah1979(noEvent(max(min(x, 0.999), 0.001)), G, Di, mu_l, k_l, Pr_l, P_r);
+    h_sub := HXCorr.gnielinski(G*Di/mu_l, Pr_l, k_l, Di);
+    h_vap := HXCorr.gnielinski(G*Di/mu_v, Pr_v, k_v, Di);
+    w_liq := 0.5*(1.0 - tanh((x - 0.025)/0.025)) "x<0 → 1(액), x>0.05 → 0";
+    w_vap := 0.5*(1.0 + tanh((x - 1.0)/0.02)) "x>1 → 1(증기)";
+    h := w_vap*h_vap + (1.0 - w_vap)*(w_liq*h_sub + (1.0 - w_liq)*h_2ph);
   end hi_dispatch_cond;
 
   function finEffWet "습표면 핀효율 (Schmidt + b factor: m_wet=√(2·h_o·b/(k·t)))"

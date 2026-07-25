@@ -28,6 +28,44 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     end if;
   end Volume_L3;
 
+  model Accumulator_L3 "흡입측 어큐뮬레이터 — 액 저장, 포화증기 토출 (상분리)"
+    // 2026-07-24: 단순 체적(Volume_L3)은 상분리를 하지 않아 정지 상태(x≈0.04, 거의 액)
+    // 에서 액이 그대로 압축기로 유입됨 -> 흡입밀도 30배 -> ṁ 이 설계의 3배(0.0067)로
+    // 튀고 SH=0 에 고착. 실물은 어큐가 액을 잡아두고 증기만 보낸다.
+    HPWD.RefPort port_a;
+    HPWD.RefPort port_b;
+    parameter Modelica.Units.SI.Volume V=2.226e-4 "배관 + 어큐 200cc + 증발기 밴드";
+    parameter Modelica.Units.SI.Pressure p_start=8.365e5;
+    parameter Modelica.Units.SI.SpecificEnthalpy h_start=265.5e3;
+    parameter Boolean fixedState=false;
+    parameter Real dx_sep=0.02 "상분리 전이대 [quality] (이벤트 없는 tanh 전이)";
+    Modelica.Units.SI.Pressure p(start=p_start, fixed=false, stateSelect=StateSelect.prefer);
+    Modelica.Units.SI.SpecificEnthalpy h(start=h_start, fixed=false, stateSelect=StateSelect.prefer);
+    Real rho, U, hL, hV, xq, w_sep, h_out;
+  equation
+    rho=R290Tab.rho_ph(p, h);
+    U=rho*V*h - p*V;
+    hL=R290Tab.hl(p);
+    hV=R290Tab.hv(p);
+    xq=(h - hL)/max(hV - hL, 1.0);
+    // 2상 구간에서만 포화증기 토출. 과냉/과열에서는 벌크 엔탈피 그대로.
+    w_sep=0.25*(1.0 + tanh(xq/dx_sep))*(1.0 + tanh((1.0 - xq)/dx_sep));
+    h_out=w_sep*hV + (1.0 - w_sep)*h "토출 엔탈피 — 액은 남기고 증기만";
+    port_a.p=p; port_b.p=p;
+    port_a.h_outflow=h "역류 시 벌크";
+    port_b.h_outflow=h_out;
+    der(rho*V)=port_a.m_flow + port_b.m_flow;
+    der(U)=port_a.m_flow*actualStream(port_a.h_outflow) + port_b.m_flow*actualStream(port_b.h_outflow);
+  initial equation
+    if fixedState then
+      p=p_start;
+      h=h_start;
+    else
+      der(p)=0;
+      der(h)=0;
+    end if;
+  end Accumulator_L3;
+
   model Cycle_L3_guess "warm-start guess: 4컴포넌트를 healthy 경계로 독립 솔브 (각=검증된 standalone)"
     // 동일 인스턴스명(comp/cond/eev/evap) → .mat가 폐루프 Cycle에 -iif로 매핑됨
     HPWDon.Comp_Chamber comp(V_disp_cm3=7.5);
@@ -302,7 +340,7 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     HPWDon.EEV_On eev(D_seat=1.0e-3, stroke_max=1.0e-3);
     Volume_L3 vol3(V=V_n3, p_start=p_rest, h_start=h_rest, fixedState=true);
     HPWDevap.Evap_On_Dyn evap(Nseg=3, h_ref_start=h_rest, T_w_start=20.0);
-    Volume_L3 vol4(V=V_n4, p_start=p_rest, h_start=h_rest, fixedState=true);
+    Accumulator_L3 vol4(V=V_n4, p_start=p_rest, h_start=h_rest, fixedState=true);
     HPWDctrl.PI_Controller ctrl(SH_target=SH_target, Kp=1.0, Ki=0.3, opening_init=12.0, opening_min=6.0, I(fixed=true));
     Modelica.Blocks.Sources.TimeTable Nsig(table=[
         0.0,    0.0;

@@ -548,7 +548,16 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     parameter Real C_wall_cell=5.0 "셀당 벽(튜브+핀) 열용량 [J/K]";
     parameter Real K_lam=1.0e5 "저유량 층류 정규화 [Pa·s/kg] (flow=0 야코비안 특이점 회피)";
     parameter Real V_cell=A_cs*L_seg "셀 냉매 체적 [m3]";
-    parameter Real M_cell=rho_ref_nom*V_cell "셀당 냉매 질량 [kg]";
+    // ── 셀 질량 저장 (2026-07-24) ──
+    // 기존에는 M_cell 이 상수라 HX 가 질량을 저장하지 않았음(유입=유출 강제).
+    // 실제로는 냉매 100g 중 ~38g 이 HX 안에 있고(체적의 39%), 기동 시 재분배의
+    // 주된 완충이 HX 다. 완충이 없으니 모든 과도를 작은 체적노드(vol3 3.66cc)가
+    // 받아 계가 뻣뻣해졌음. rho_ph 는 derivative=rho_ph_d 어노테이션이 있어
+    // 심볼릭 미분 가능.
+    parameter Real M_cell_nom=rho_ref_nom*V_cell "셀 질량 초기추정 [kg]";
+    Real M_c[M](each start=M_cell_nom) "셀 냉매 질량 [kg]";
+    Real M_tot(start=M*M_cell_nom) "회로 총 냉매 질량 [kg]";
+    Real m_out "회로 출구 유량 [kg/s]";
     // 콜드스타트 초기조건 (rest)
     parameter Real h_ref_start=270e3 "냉매 엔탈피 초기값 [J/kg]";
     parameter Real T_w_start=T_air_in_start "벽온도 초기값 [degC]";
@@ -575,7 +584,9 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
   equation
       cp_a_dry=HXCorr.cp_air_moist(Wi) "입구 습도에 따른 습공기 cp";
     P=port_a.p;
-    port_a.m_flow + port_b.m_flow=0;
+    M_tot=sum(M_c) "HX 총 질량";
+    der(M_tot)=m_ref_col - m_out "집중 질량보존 — HX 가 냉매를 저장/방출";
+    port_b.m_flow=-Ncirc*m_out;
 
     G_ref=m_ref_col/A_cs;
     h_in=inStream(port_a.h_outflow);
@@ -601,9 +612,11 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
       xc[k]=noEvent(max(min(xq[k], 0.999), 0.001));
     end for;
     // 냉매 엔탈피 동특성 (upwind, path 순서; 응축기 방열 → −Q_ref)
-    M_cell*der(h_ref[1])=m_ref_col*(h_in - h_ref[1]) - Q_ref[1];
+    M_c[1]=R290Tab.rho_ph(P, h_ref[1])*V_cell;
+    M_c[1]*der(h_ref[1])=m_ref_col*(h_in - h_ref[1]) - Q_ref[1];
     for k in 2:M loop
-      M_cell*der(h_ref[k])=m_ref_col*(h_ref[k - 1] - h_ref[k]) - Q_ref[k];
+      M_c[k]=R290Tab.rho_ph(P, h_ref[k])*V_cell;
+      M_c[k]*der(h_ref[k])=m_ref_col*(h_ref[k - 1] - h_ref[k]) - Q_ref[k];
     end for;
     // 공기측 march (행 방향) + Q_air (벽→공기)
     for s in 1:Nsc loop
@@ -748,7 +761,16 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     parameter Real C_wall_cell=5.0 "셀당 벽(튜브+핀) 열용량 [J/K]";
     parameter Real K_lam=1.0e5 "저유량 층류 정규화 [Pa·s/kg] (flow=0 야코비안 특이점 회피)";
     parameter Real V_cell=A_cs*L_seg "셀 냉매 체적 [m3]";
-    parameter Real M_cell=rho_ref_nom*V_cell "셀당 냉매 질량 [kg]";
+    // ── 셀 질량 저장 (2026-07-24) ──
+    // 기존에는 M_cell 이 상수라 HX 가 질량을 저장하지 않았음(유입=유출 강제).
+    // 실제로는 냉매 100g 중 ~38g 이 HX 안에 있고(체적의 39%), 기동 시 재분배의
+    // 주된 완충이 HX 다. 완충이 없으니 모든 과도를 작은 체적노드(vol3 3.66cc)가
+    // 받아 계가 뻣뻣해졌음. rho_ph 는 derivative=rho_ph_d 어노테이션이 있어
+    // 심볼릭 미분 가능.
+    parameter Real M_cell_nom=rho_ref_nom*V_cell "셀 질량 초기추정 [kg]";
+    Real M_c[M](each start=M_cell_nom) "셀 냉매 질량 [kg]";
+    Real M_tot(start=M*M_cell_nom) "회로 총 냉매 질량 [kg]";
+    Real m_out "회로 출구 유량 [kg/s]";
     // 콜드스타트 초기조건 (rest)
     parameter Real h_ref_start=400e3 "냉매 엔탈피 초기값 [J/kg]";
     parameter Real T_w_start=T_air_in "벽온도 초기값 [degC]";
@@ -778,7 +800,9 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     Real x_in_q, dp_fric, dp_accel, dp_bend, dp_total, rho_mix, x_mid;
   equation
     P=port_a.p;
-    port_a.m_flow + port_b.m_flow=0;
+    M_tot=sum(M_c) "HX 총 질량";
+    der(M_tot)=m_ref_col - m_out "집중 질량보존 — HX 가 냉매를 저장/방출";
+    port_b.m_flow=-Ncirc*m_out;
 
     G_ref=m_ref_col/A_cs;
     h_in=inStream(port_a.h_outflow);
@@ -824,9 +848,11 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
       C_wall_cell*der(T_w[k])=Q_air_c[rowOf[k], segOf[k]] - Q_ref[k];
     end for;
     // 냉매 엔탈피 동특성 (upwind, path 순서; 증발기 흡열 → +Q_ref)
-    M_cell*der(h_ref[1])=m_ref_col*(h_in - h_ref[1]) + Q_ref[1];
+    M_c[1]=R290Tab.rho_ph(P, h_ref[1])*V_cell;
+    M_c[1]*der(h_ref[1])=m_ref_col*(h_in - h_ref[1]) + Q_ref[1];
     for k in 2:M loop
-      M_cell*der(h_ref[k])=m_ref_col*(h_ref[k - 1] - h_ref[k]) + Q_ref[k];
+      M_c[k]=R290Tab.rho_ph(P, h_ref[k])*V_cell;
+      M_c[k]*der(h_ref[k])=m_ref_col*(h_ref[k - 1] - h_ref[k]) + Q_ref[k];
     end for;
     Q_total=Ncirc*sum(Q_ref); Q_lat_total=Ncirc*sum(Q_lat_c);
     h_out=h_ref[M];
