@@ -6,6 +6,10 @@ package R290Tab "R290 tabulated media — (p,h) basis, 2상 안전, 미분가능
   constant Real P1=3500000;
   constant Real H0=120000;
   constant Real H1=800000;
+  constant Real DHB=500.0 "포화선 블렌딩 폭 [J/kg] (2026-07-25). rho_ph 의 d(rho)/dh 가
+    포화선에서 62.6배 점프(실측 p=10bar: 액상 -4.42e-4 / 2상 -2.77e-2)해 Volume_L3 의
+    der(rho*V) 질량수지 야코비안 조건수를 무너뜨림. rho 자체는 연속이라 블렌딩이
+    값은 거의 안 바꾸고 도함수만 평활화함.";
   constant Real dP=(P1-P0)/(nP-1);
   constant Real dH=(H1-H0)/(nH-1);
   constant Real SATTsat[nP]={240.3319,248.5853,255.2521,260.9046,265.8457,270.2567,274.2556,277.9235,281.3191,284.4862,287.4582,290.2617,292.9178,295.4437,297.8537,300.1598,302.3719,304.4988,306.5478,308.5254,310.4373,312.2883,314.0829,315.825,317.5181,319.1652,320.7692,322.3327,323.8579,325.347,326.8019,328.2243,329.6159,330.9781,332.3123,333.6199,334.9019,336.1595,337.3936,338.6053,339.7954,340.9647,342.114,343.2441,344.3556,345.4491,346.5253,347.5847,348.6279,349.6553,350.6674,351.6647,352.6476,353.6165,354.5717,355.5136,356.4425,357.3588,358.2627,359.1545};
@@ -819,29 +823,65 @@ package R290Tab "R290 tabulated media — (p,h) basis, 2상 안전, 미분가능
   function rho_ph
     input Real p; input Real h; output Real rho;
   protected
-    Real hL,hV,rL,rV,x;
+    Real hL,hV,rL,rV,x,xc,rho_l,rho_2p,rho_v,w1,w2;
   algorithm
     hL:=lin1(SAThl,p); hV:=lin1(SAThv,p);
-    if h>hL and h<hV then
-      rL:=lin1(SATrhol,p); rV:=lin1(SATrhov,p); x:=(h-hL)/(hV-hL); rho:=1.0/((1.0-x)/rL+x/rV);
-    elseif h<=hL then rho:=bilinC(TBLrho,SATrhol,1,p,h);
-    else rho:=bilinC(TBLrho,SATrhov,2,p,h); end if;
+    rL:=lin1(SATrhol,p); rV:=lin1(SATrhov,p);
+    // x 클램프 필수: 2상식 1/((1-x)/rL+x/rV) 는 x≈-0.046 에서 분모가 0 이 되는 극점이 있음.
+    x :=(h-hL)/(hV-hL);
+    xc:=min(max(x,-0.02),1.2);
+    // 실측: 불연속은 액포화선(hL)에만 있음 — p=10bar 에서 d(rho)/dh 가
+    //   액상 -4.42e-4 vs 2상 -2.77e-2 로 62.6배 점프.
+    //   증기포화선(hV)은 2상 -6.2e-5 vs 증기 -5.7e-5 로 1.09배라 블렌딩 불필요
+    //   (hV 에도 걸면 응축기 입구 셀이 밴드에 들어가 비용·강성만 증가).
+    // 따라서 hL 부근 ±6*DHB 밴드에서만 블렌딩, 나머지는 기존 단일 가지 그대로.
+    if h < hL - 6.0*DHB then
+      rho:=bilinC(TBLrho,SATrhol,1,p,h);
+    elseif h < hL + 6.0*DHB then
+      rho_2p:=1.0/((1.0-xc)/rL+xc/rV);
+      rho_l:=bilinC(TBLrho,SATrhol,1,p,h);
+      w1:=0.5*(1.0+tanh((h-hL)/DHB));
+      rho:=(1.0-w1)*rho_l + w1*rho_2p;
+    elseif h < hV then
+      rho:=1.0/((1.0-xc)/rL+xc/rV);
+    else
+      rho:=bilinC(TBLrho,SATrhov,2,p,h);
+    end if;
     annotation(derivative=rho_ph_d);
   end rho_ph;
   function rho_ph_d
     input Real p; input Real h; input Real dp; input Real dh; output Real drho;
   protected
-    Real hL,hV,rL,rV,x,rho,dvdh,dvdp,dxdp;
+    Real hL,hV,rL,rV,x,xc,rho_l,rho_2p,rho_v,w1,w2,dhLdp,dhVdp,s1,s2,dw1,dw2;
+    Real dvdh,dvdp,dxdp,drho_l,drho_2p,rho_in;
   algorithm
     hL:=lin1(SAThl,p); hV:=lin1(SAThv,p);
-    if h>hL and h<hV then
-      rL:=lin1(SATrhol,p); rV:=lin1(SATrhov,p); x:=(h-hL)/(hV-hL); rho:=1.0/((1.0-x)/rL+x/rV);
-      dvdh:=(1.0/rV-1.0/rL)/(hV-hL);
-      dxdp:=(-lin1(SATdhldp,p)*(hV-hL)-(h-hL)*(lin1(SATdhvdp,p)-lin1(SATdhldp,p)))/((hV-hL)*(hV-hL));
-      dvdp:=dxdp*(1.0/rV-1.0/rL)-(1.0-x)/(rL*rL)*lin1(SATdrholdp,p)-x/(rV*rV)*lin1(SATdrhovdp,p);
-      drho:=-rho*rho*(dvdh*dh+dvdp*dp);
+    rL:=lin1(SATrhol,p); rV:=lin1(SATrhov,p);
+    x :=(h-hL)/(hV-hL);
+    xc:=min(max(x,-0.02),1.2);
+    rho_2p:=1.0/((1.0-xc)/rL+xc/rV);
+    rho_l:=bilinC(TBLrho,SATrhol,1,p,h);
+    rho_v:=bilinC(TBLrho,SATrhov,2,p,h);
+    s1:=(h-hL)/DHB; s2:=(h-hV)/DHB;
+    w1:=0.5*(1.0+tanh(s1)); w2:=0.5*(1.0+tanh(s2));
+    dhLdp:=lin1(SATdhldp,p); dhVdp:=lin1(SATdhvdp,p);
+    dw1:=0.5*(1.0-tanh(s1)^2)*(dh-dhLdp*dp)/DHB;
+    dw2:=0.5*(1.0-tanh(s2)^2)*(dh-dhVdp*dp)/DHB;
+    // 액/증기 가지는 같은 테이블 도함수를 씀 (TBLdrdp/TBLdrdh 는 격자 전체를 덮음)
+    drho_l:=bilin(TBLdrdp,p,h)*dp+bilin(TBLdrdh,p,h)*dh;
+    // 2상 가지
+    dvdh:=(1.0/rV-1.0/rL)/(hV-hL);
+    dxdp:=(-dhLdp*(hV-hL)-(h-hL)*(dhVdp-dhLdp))/((hV-hL)*(hV-hL));
+    dvdp:=dxdp*(1.0/rV-1.0/rL)-(1.0-xc)/(rL*rL)*lin1(SATdrholdp,p)-xc/(rV*rV)*lin1(SATdrhovdp,p);
+    drho_2p:=-rho_2p*rho_2p*(dvdh*dh+dvdp*dp);
+    if h < hL - 6.0*DHB then
+      drho:=drho_l;
+    elseif h < hL + 6.0*DHB then
+      drho:=(1.0-w1)*drho_l + w1*drho_2p + dw1*(rho_2p - rho_l);
+    elseif h < hV then
+      drho:=drho_2p;
     else
-      drho:=bilin(TBLdrdp,p,h)*dp+bilin(TBLdrdh,p,h)*dh;
+      drho:=drho_l;
     end if;
   end rho_ph_d;
 
