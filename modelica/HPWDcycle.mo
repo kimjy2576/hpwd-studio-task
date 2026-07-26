@@ -69,8 +69,13 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
                  - sqrt((M_eq_raw - M_eq_max)^2 + (0.05*M_eq_max)^2))
       "상한 클램프: 유효범위 밖에서 dissolved 가 발산함 (실측 26bar/32C 에서 2114g)";
     code  = R290Oil.validity(P_dis, T_shell - dT_offset);
-    tau*der(M_dis) = M_eq - M_dis;
-    m_flow = der(M_dis);
+    // 2026-07-26 재정식화: der() 를 유량 경로에서 제거.
+    //   (기존) tau*der(M_dis) = M_eq - M_dis;  m_flow = der(M_dis);
+    //   상태의 미분을 대수 유량으로 쓰면 도구가 그 미분을 대수량으로 풀어야 해
+    //   솔버에 불리하다. 수학적으로 동일하나 아래 형태가 구조적으로 낫다:
+    //   유량이 상태의 명시적 대수식이 되고 der 는 그 유량으로 정의된다.
+    m_flow = (M_eq - M_dis)/tau "물질전달 유량 [kg/s]";
+    der(M_dis) = m_flow;
   end OilSump;
 
   model Volume_L3 "냉매 control volume (압력 노드, R290Tab 기반, 정상상태)"
