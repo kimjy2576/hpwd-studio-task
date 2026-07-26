@@ -467,6 +467,7 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     input Real T_air_in "공기 입구온도 [degC] (증발기 출구와 연결)";
     input Real Wi "공기 입구 절대습도 [kg/kg] (증발기 출구, 제습 반영)";
     parameter Boolean steadyInit = false "true: 정상상태 초기화 der(x)=0. false: start 값 고정 (2026-07-26)";
+    parameter Integer initOpt = 0 "0=legacy 1=noInit 2=fixedState 3=steadyState";
     parameter Real w_nom = 2.06e-3 "공칭 회로당 냉매유량 [kg/s] — homotopy 단순화 모델용 (ThermoPower wnom 대응)";
     parameter Real dp_nom = 14437.0 "공칭 압력강하 [Pa] — 단순화 모델의 선형 저항 dp_nom/w_nom*w";
     parameter Real T_air_in_start=25.0 "T_air_in 초기추정 [degC] (standalone/초기화용)" annotation(Evaluate=false);
@@ -587,7 +588,10 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
   initial equation
     // 정상상태 초기화: der(x)=0. 폐루프 사이클을 정상해에서 출발시킬 때 사용.
     // 기존 방식(start 고정)은 콜드스타트 전용.
-    if steadyInit then
+    // initOpt: 0=legacy(steadyInit 따름) 1=noInit 2=fixedState 3=steadyState
+    if initOpt == 1 then
+      // 초기방정식 없음 (-iif 로 상태를 받을 때)
+    elseif initOpt == 3 or (initOpt == 0 and steadyInit) then
       for k in 1:M loop der(h_ref[k])=0; der(T_w[k])=0; end for;
       if use_momentum then der(m_ref_col)=0; end if;
       der(dp_lag)=0;
@@ -693,6 +697,7 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     HPWD.RefPort port_a "냉매 입구";
     HPWD.RefPort port_b "냉매 출구";
     parameter Boolean steadyInit = false "true: 정상상태 초기화 der(x)=0. false: start 값 고정 (2026-07-26)";
+    parameter Integer initOpt = 0 "0=legacy 1=noInit 2=fixedState 3=steadyState";
     parameter Real w_nom = 2.06e-3 "공칭 회로당 냉매유량 [kg/s] — homotopy 단순화 모델용 (ThermoPower wnom 대응)";
     parameter Real dp_nom = 21338.0 "공칭 압력강하 [Pa] — 단순화 모델의 선형 저항 dp_nom/w_nom*w";
     parameter Real T_air_in=20.0 "공기 입구온도 [degC] (드럼 출구 공기)";
@@ -821,7 +826,10 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
   initial equation
     // 정상상태 초기화: der(x)=0. 폐루프 사이클을 정상해에서 출발시킬 때 사용.
     // 기존 방식(start 고정)은 콜드스타트 전용.
-    if steadyInit then
+    // initOpt: 0=legacy(steadyInit 따름) 1=noInit 2=fixedState 3=steadyState
+    if initOpt == 1 then
+      // 초기방정식 없음 (-iif 로 상태를 받을 때)
+    elseif initOpt == 3 or (initOpt == 0 and steadyInit) then
       for k in 1:M loop der(h_ref[k])=0; der(T_w[k])=0; end for;
       if use_momentum then der(m_ref_col)=0; end if;
     else

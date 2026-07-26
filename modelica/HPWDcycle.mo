@@ -23,11 +23,18 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     Real M_oil "오일 질량 [kg]";
     Real M_eq "평형 용해량 [kg]";
     parameter Boolean steadyInit = false "true: der(M_dis)=0";
+    parameter Integer initOpt = 0 "0=legacy 1=noInit 2=fixedState 3=steadyState";
     Real M_dis(start=M_dis_start, fixed=false) "현재 용해량 [kg]";
     Real m_flow "냉매 -> 오일 흡수율 [kg/s]. 양수면 회로에서 빠져나감";
     Integer code "R290Oil.validity: 0=ok 1=외삽 2=파탄";
   initial equation
-    if steadyInit then der(M_dis)=0; else M_dis=M_dis_start; end if;
+    if initOpt == 1 then
+      // noInit
+    elseif initOpt == 3 or (initOpt == 0 and steadyInit) then
+      der(M_dis)=0;
+    else
+      M_dis=M_dis_start;
+    end if;
   equation
     M_oil = R290Oil.oil_mass(V_oil_cc);
     M_eq  = min(M_eq_max, R290Oil.dissolved(M_oil, P_dis, T_dis - dT_sump))
@@ -49,6 +56,7 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     // 컴포넌트별 플래그로 중복 초기방정식을 하나만 제거한다.
     parameter Boolean noInitialPressure = false "정상초기화에서 der(p)=0 을 제거";
     parameter Boolean noInitialEnthalpy = false "정상초기화에서 der(h)=0 을 제거";
+    parameter Integer initOpt = 0 "0=legacy 1=noInit 2=fixedState 3=steadyState";
     Modelica.Units.SI.Pressure p(start=p_start, fixed=false, stateSelect=StateSelect.prefer);
     Modelica.Units.SI.SpecificEnthalpy h(start=h_start, fixed=false, stateSelect=StateSelect.prefer);
     Real rho, U;
@@ -60,19 +68,24 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     der(rho*V)=port_a.m_flow + port_b.m_flow - m_ext "m_ext: 외부 질량추출 [kg/s]. 오일 용해가 회로에서 냉매를 빼감 (2026-07-25)";
     der(U)=port_a.m_flow*actualStream(port_a.h_outflow) + port_b.m_flow*actualStream(port_b.h_outflow) - m_ext*h;
   initial equation
-    // 중첩 if 대신 평탄한 elseif 체인. 중첩 형태로 쓰면 OMC 가 파라미터 분기를
-    // 컴파일 시점에 제거하지 못해 초기화계가 달라지고 수렴을 잃는다
-    // (2026-07-26 실측: 논리적으로 동일한데 중첩판만 미수렴).
-    if fixedState then
+    // initOpt: 0=legacy(fixedState 플래그 따름) 1=noInit 2=fixedState 3=steadyState
+    // noInit 은 초기방정식을 전혀 두지 않아 -iif 로 준 상태를 그대로 받는다
+    // (ThermoPower Choices.Init.Options.noInit 대응).
+    // ※ 앞서 '중첩 if 가 원인'이라 적었던 주석은 오진이었음. 실제 원인은
+    //   분기 우선순위(fixedState 가 플래그를 이김)였고 vol4(fixedState=false)
+    //   를 명시해 해결했음.
+    if initOpt == 1 then
+      // 초기방정식 없음
+    elseif initOpt == 2 or (initOpt == 0 and fixedState) then
       p=p_start;
       h=h_start;
-    elseif noInitialPressure and not noInitialEnthalpy then
-      der(h)=0;
-    elseif noInitialEnthalpy and not noInitialPressure then
-      der(p)=0;
     elseif noInitialPressure and noInitialEnthalpy then
       p=p_start;
       h=h_start;
+    elseif noInitialPressure then
+      der(h)=0;
+    elseif noInitialEnthalpy then
+      der(p)=0;
     else
       der(p)=0;
       der(h)=0;
@@ -95,6 +108,7 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     // 컴포넌트별 플래그로 중복 초기방정식을 하나만 제거한다.
     parameter Boolean noInitialPressure = false "정상초기화에서 der(p)=0 을 제거";
     parameter Boolean noInitialEnthalpy = false "정상초기화에서 der(h)=0 을 제거";
+    parameter Integer initOpt = 0 "0=legacy 1=noInit 2=fixedState 3=steadyState";
     Modelica.Units.SI.Pressure p(start=p_start, fixed=false, stateSelect=StateSelect.prefer);
     Modelica.Units.SI.SpecificEnthalpy h(start=h_start, fixed=false, stateSelect=StateSelect.prefer);
     Real rho, U, hL, hV, xq, w_sep, h_out;
@@ -113,19 +127,24 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     der(rho*V)=port_a.m_flow + port_b.m_flow - m_ext "m_ext: 외부 질량추출 [kg/s]. 오일 용해가 회로에서 냉매를 빼감 (2026-07-25)";
     der(U)=port_a.m_flow*actualStream(port_a.h_outflow) + port_b.m_flow*actualStream(port_b.h_outflow) - m_ext*h;
   initial equation
-    // 중첩 if 대신 평탄한 elseif 체인. 중첩 형태로 쓰면 OMC 가 파라미터 분기를
-    // 컴파일 시점에 제거하지 못해 초기화계가 달라지고 수렴을 잃는다
-    // (2026-07-26 실측: 논리적으로 동일한데 중첩판만 미수렴).
-    if fixedState then
+    // initOpt: 0=legacy(fixedState 플래그 따름) 1=noInit 2=fixedState 3=steadyState
+    // noInit 은 초기방정식을 전혀 두지 않아 -iif 로 준 상태를 그대로 받는다
+    // (ThermoPower Choices.Init.Options.noInit 대응).
+    // ※ 앞서 '중첩 if 가 원인'이라 적었던 주석은 오진이었음. 실제 원인은
+    //   분기 우선순위(fixedState 가 플래그를 이김)였고 vol4(fixedState=false)
+    //   를 명시해 해결했음.
+    if initOpt == 1 then
+      // 초기방정식 없음
+    elseif initOpt == 2 or (initOpt == 0 and fixedState) then
       p=p_start;
       h=h_start;
-    elseif noInitialPressure and not noInitialEnthalpy then
-      der(h)=0;
-    elseif noInitialEnthalpy and not noInitialPressure then
-      der(p)=0;
     elseif noInitialPressure and noInitialEnthalpy then
       p=p_start;
       h=h_start;
+    elseif noInitialPressure then
+      der(h)=0;
+    elseif noInitialEnthalpy then
+      der(p)=0;
     else
       der(p)=0;
       der(h)=0;
@@ -532,5 +551,23 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     M_total = vol1.rho*vol1.V + vol2.rho*vol2.V + vol3.rho*vol3.V
               + vol4.rho*vol4.V + cond.M_tot + evap.M_tot + oil.M_dis;
   end Cycle_L3_branchtest;
+
+  model Cycle_L3_noinit "초기방정식 없음 — -iif 로 상태를 받아 과도 (2026-07-26)
+
+    다중해 판정용. ssinit 이 낸 가지 B 의 전체 상태(셀 120개 포함)를 mat 으로
+    받아 그 지점에서 출발시킨다. fixedState 로는 h_ref_start 가 스칼라라
+    셀 프로파일을 줄 수 없고, -iif 값도 초기방정식에 덮여 실패했음.
+    initOpt=1 (noInit) 이면 초기방정식이 없어 -iif 상태가 그대로 유지된다.
+  "
+    extends Cycle_L3_coldstart_PI(
+      use_oil=true, N_const=1800.0, Kp_c=0.0, Ki_c=0.0,
+      open_init=23.586, air_series=true,
+      cond(initOpt=1), evap(initOpt=1), oil(initOpt=1),
+      vol1(initOpt=1), vol2(initOpt=1), vol3(initOpt=1), vol4(initOpt=1));
+    Real M_total "시스템 총 냉매량 [kg] (구속 아님)";
+  equation
+    M_total = vol1.rho*vol1.V + vol2.rho*vol2.V + vol3.rho*vol3.V
+              + vol4.rho*vol4.V + cond.M_tot + evap.M_tot + oil.M_dis;
+  end Cycle_L3_noinit;
 
 end HPWDcycle;
