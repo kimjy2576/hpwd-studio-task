@@ -785,6 +785,42 @@ package R290Tab "R290 tabulated media — (p,h) basis, 2상 안전, 미분가능
     i := idxP(pc); j := idxH(hc); tp := (pc-(P0+(i-1)*dP))/dP; th := (hc-(H0+(j-1)*dH))/dH;
     y := (1-tp)*(1-th)*F[i,j]+tp*(1-th)*F[i+1,j]+(1-tp)*th*F[i,j+1]+tp*th*F[i+1,j+1];
   end bilin;
+  function lin1_d "lin1 의 정확한 기울기 dy/dp. 별도 도함수 테이블과 달리
+    보간식 자체의 도함수라 lin1 과 정합한다 (2026-07-26 질량드리프트 대응)."
+    input Real F[nP]; input Real p; output Real dydp;
+  protected
+    Integer i; Real pc;
+  algorithm
+    if p <= P0 or p >= P1 then
+      dydp := 0.0;
+    else
+      pc := p; i := idxP(pc); dydp := (F[i+1]-F[i])/dP;
+    end if;
+  end lin1_d;
+
+  function bilinC_d "bilinC 의 정확한 전미분. 코너값 선택까지 동일하게 반영.
+    기존 rho_ph_d 는 값은 bilinC(TBLrho), 도함수는 bilin(TBLdrdh) 로 서로 다른
+    테이블을 써서 원리적으로 불일치했고(실측 액상 0.29%, 블렌딩밴드 24.8%),
+    과도해석에서 질량이 새는 원인이었다."
+    input Real F[nP,nH]; input Real satF[nP]; input Integer want;
+    input Real p; input Real h; input Real dp; input Real dh; output Real dy;
+  protected
+    Integer i,j; Real tp,th,c00,c10,c01,c11,pc,hc,dydp,dydh;
+  algorithm
+    pc := min(max(p, P0), P1); hc := min(max(h, H0), H1);
+    i := idxP(pc); j := idxH(hc);
+    tp := (pc-(P0+(i-1)*dP))/dP; th := (hc-(H0+(j-1)*dH))/dH;
+    c00 := if PHg[i,j]==want then F[i,j] else satF[i];
+    c10 := if PHg[i+1,j]==want then F[i+1,j] else satF[i+1];
+    c01 := if PHg[i,j+1]==want then F[i,j+1] else satF[i];
+    c11 := if PHg[i+1,j+1]==want then F[i+1,j+1] else satF[i+1];
+    dydp := if (p <= P0 or p >= P1) then 0.0
+            else (-(1-th)*c00 + (1-th)*c10 - th*c01 + th*c11)/dP;
+    dydh := if (h <= H0 or h >= H1) then 0.0
+            else (-(1-tp)*c00 - tp*c10 + (1-tp)*c01 + tp*c11)/dH;
+    dy := dydp*dp + dydh*dh;
+  end bilinC_d;
+
   function bilinC
     input Real F[nP,nH]; input Real satF[nP]; input Integer want; input Real p; input Real h; output Real y;
   protected
@@ -849,11 +885,18 @@ package R290Tab "R290 tabulated media — (p,h) basis, 2상 안전, 미분가능
     end if;
     annotation(derivative=rho_ph_d);
   end rho_ph;
-  function rho_ph_d
+  function rho_ph_d "rho_ph 의 전미분. 2026-07-26 정합 재작성.
+
+    기존에는 값은 bilinC(TBLrho)/lin1(SAT*) 로 계산하면서 도함수는 별도
+    테이블 bilin(TBLdrdh)/lin1(SATd*dp) 로 계산해 원리적으로 불일치했다
+    (실측 상대오차: 액상 0.29%, 블렌딩밴드 24.8%).
+    보간식의 도함수는 별도 테이블이 아니라 같은 격자 코너값에서 나와야 한다.
+    -> bilinC_d / lin1_d 사용. 과도해석 질량 드리프트 대응.
+    또한 증기구간(h>=hV)에서 액상 가지 도함수를 쓰던 버그도 수정."
     input Real p; input Real h; input Real dp; input Real dh; output Real drho;
   protected
-    Real hL,hV,rL,rV,x,xc,rho_l,rho_2p,rho_v,w1,w2,dhLdp,dhVdp,s1,s2,dw1,dw2;
-    Real dvdh,dvdp,dxdp,drho_l,drho_2p,rho_in;
+    Real hL,hV,rL,rV,x,xc,rho_l,rho_2p,w1,s1,dhLdp,dhVdp,dw1;
+    Real dvdh,dvdp,dxdp,drho_l,drho_v,drho_2p;
   algorithm
     hL:=lin1(SAThl,p); hV:=lin1(SAThv,p);
     rL:=lin1(SATrhol,p); rV:=lin1(SATrhov,p);
@@ -861,18 +904,18 @@ package R290Tab "R290 tabulated media — (p,h) basis, 2상 안전, 미분가능
     xc:=min(max(x,-0.02),1.2);
     rho_2p:=1.0/((1.0-xc)/rL+xc/rV);
     rho_l:=bilinC(TBLrho,SATrhol,1,p,h);
-    rho_v:=bilinC(TBLrho,SATrhov,2,p,h);
-    s1:=(h-hL)/DHB; s2:=(h-hV)/DHB;
-    w1:=0.5*(1.0+tanh(s1)); w2:=0.5*(1.0+tanh(s2));
-    dhLdp:=lin1(SATdhldp,p); dhVdp:=lin1(SATdhvdp,p);
+    s1:=(h-hL)/DHB;
+    w1:=0.5*(1.0+tanh(s1));
+    // 포화선 기울기도 보간식 자체의 기울기로 (별도 SATd*dp 테이블 아님)
+    dhLdp:=lin1_d(SAThl,p); dhVdp:=lin1_d(SAThv,p);
     dw1:=0.5*(1.0-tanh(s1)^2)*(dh-dhLdp*dp)/DHB;
-    dw2:=0.5*(1.0-tanh(s2)^2)*(dh-dhVdp*dp)/DHB;
-    // 액/증기 가지는 같은 테이블 도함수를 씀 (TBLdrdp/TBLdrdh 는 격자 전체를 덮음)
-    drho_l:=bilin(TBLdrdp,p,h)*dp+bilin(TBLdrdh,p,h)*dh;
-    // 2상 가지
+    drho_l:=bilinC_d(TBLrho,SATrhol,1,p,h,dp,dh);
+    drho_v:=bilinC_d(TBLrho,SATrhov,2,p,h,dp,dh);
     dvdh:=(1.0/rV-1.0/rL)/(hV-hL);
     dxdp:=(-dhLdp*(hV-hL)-(h-hL)*(dhVdp-dhLdp))/((hV-hL)*(hV-hL));
-    dvdp:=dxdp*(1.0/rV-1.0/rL)-(1.0-xc)/(rL*rL)*lin1(SATdrholdp,p)-xc/(rV*rV)*lin1(SATdrhovdp,p);
+    dvdp:=dxdp*(1.0/rV-1.0/rL)
+          -(1.0-xc)/(rL*rL)*lin1_d(SATrhol,p)
+          -xc/(rV*rV)*lin1_d(SATrhov,p);
     drho_2p:=-rho_2p*rho_2p*(dvdh*dh+dvdp*dp);
     if h < hL - 6.0*DHB then
       drho:=drho_l;
@@ -881,7 +924,7 @@ package R290Tab "R290 tabulated media — (p,h) basis, 2상 안전, 미분가능
     elseif h < hV then
       drho:=drho_2p;
     else
-      drho:=drho_l;
+      drho:=drho_v;
     end if;
   end rho_ph_d;
 
