@@ -509,4 +509,28 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     M_total = M_charge "폐루프 특이성 해소 — 충전량이 어큐 압력을 결정";
   end Cycle_L3_ssinit;
 
+  model Cycle_L3_branchtest "가지 B 상태에서 출발하는 과도 — 다중해 판정용 (2026-07-26)
+
+    질문: dT_sump=15 에서 가지 A(SH=0) 와 가지 B(SH=5.5) 가 둘 다 안정한가,
+          아니면 A 만 안정하고 B 는 초기화 경로의 산물인가.
+    방법: 가지 B(dT_sump=20 정상해)의 상태를 fixedState 로 고정 초기화하고
+          dT_sump=15 로 과도해석. B 에 머물면 진짜 다중해, A 로 흘러가면 아님.
+    초기 충전량은 100g 이 되도록 HX 엔탈피를 역산해 맞췄음
+    (노드 4.258 + 오일 90.093 + 응축기 4.193 + 증발기 1.455 = 99.999 g).
+  "
+    extends Cycle_L3_coldstart_PI(
+      use_oil=true, N_const=1800.0, Kp_c=0.0, Ki_c=0.0,
+      open_init=23.586, air_series=true, M_dis_start=0.0900933,
+      p1_0=1041060, h1_0=649646,
+      p2_0=1024050, h2_0=331815,
+      p3_0= 604497, h3_0=331815,
+      p4_0= 582345, h4_0=594178,
+      cond(h_ref_start=448846, T_w_start=27.0),
+      evap(h_ref_start=439579, T_w_start=10.0));
+    Real M_total "시스템 총 냉매량 [kg] (구속 아님 — 초기값이 결정)";
+  equation
+    M_total = vol1.rho*vol1.V + vol2.rho*vol2.V + vol3.rho*vol3.V
+              + vol4.rho*vol4.V + cond.M_tot + evap.M_tot + oil.M_dis;
+  end Cycle_L3_branchtest;
+
 end HPWDcycle;
