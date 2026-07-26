@@ -45,7 +45,10 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     parameter Modelica.Units.SI.SpecificEnthalpy h_start=360e3;
     parameter Boolean fixedState=false "true면 (p,h) start값 고정 init";
     input Real m_ext = 0 "외부 질량추출 [kg/s]. 기본 0 이라 기존 모델 하위호환. 오일 섬프 연결 시 vol(m_ext=oil.m_flow) 로 결속";
-    parameter Integer initMode = 0 "0=fixedState 따름, 3=der(h)=0 만 (p 는 충전량이 결정)";
+    // ThermoPower Water.mo:735 패턴. steadyStateNoP 같은 별도 모드 대신
+    // 컴포넌트별 플래그로 중복 초기방정식을 하나만 제거한다.
+    parameter Boolean noInitialPressure = false "정상초기화에서 der(p)=0 을 제거";
+    parameter Boolean noInitialEnthalpy = false "정상초기화에서 der(h)=0 을 제거";
     Modelica.Units.SI.Pressure p(start=p_start, fixed=false, stateSelect=StateSelect.prefer);
     Modelica.Units.SI.SpecificEnthalpy h(start=h_start, fixed=false, stateSelect=StateSelect.prefer);
     Real rho, U;
@@ -57,9 +60,17 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     der(rho*V)=port_a.m_flow + port_b.m_flow - m_ext "m_ext: 외부 질량추출 [kg/s]. 오일 용해가 회로에서 냉매를 빼감 (2026-07-25)";
     der(U)=port_a.m_flow*actualStream(port_a.h_outflow) + port_b.m_flow*actualStream(port_b.h_outflow) - m_ext*h;
   initial equation
-    if initMode == 3 then
-      der(h)=0 "p 는 상위 모델의 충전량 구속이 결정 (Casella 2012: 폐루프 정상초기화는 특이)";
-    elseif fixedState then
+    // 중첩 if 대신 평탄한 elseif 체인. 중첩 형태로 쓰면 OMC 가 파라미터 분기를
+    // 컴파일 시점에 제거하지 못해 초기화계가 달라지고 수렴을 잃는다
+    // (2026-07-26 실측: 논리적으로 동일한데 중첩판만 미수렴).
+    if fixedState then
+      p=p_start;
+      h=h_start;
+    elseif noInitialPressure and not noInitialEnthalpy then
+      der(h)=0;
+    elseif noInitialEnthalpy and not noInitialPressure then
+      der(p)=0;
+    elseif noInitialPressure and noInitialEnthalpy then
       p=p_start;
       h=h_start;
     else
@@ -80,7 +91,10 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     parameter Boolean fixedState=false;
     parameter Real dx_sep=0.02 "상분리 전이대 [quality] (이벤트 없는 tanh 전이)";
     input Real m_ext = 0 "외부 질량추출 [kg/s]. 기본 0 이라 기존 모델 하위호환. 오일 섬프 연결 시 vol(m_ext=oil.m_flow) 로 결속";
-    parameter Integer initMode = 0 "0=fixedState 따름, 3=der(h)=0 만 (p 는 충전량이 결정)";
+    // ThermoPower Water.mo:735 패턴. steadyStateNoP 같은 별도 모드 대신
+    // 컴포넌트별 플래그로 중복 초기방정식을 하나만 제거한다.
+    parameter Boolean noInitialPressure = false "정상초기화에서 der(p)=0 을 제거";
+    parameter Boolean noInitialEnthalpy = false "정상초기화에서 der(h)=0 을 제거";
     Modelica.Units.SI.Pressure p(start=p_start, fixed=false, stateSelect=StateSelect.prefer);
     Modelica.Units.SI.SpecificEnthalpy h(start=h_start, fixed=false, stateSelect=StateSelect.prefer);
     Real rho, U, hL, hV, xq, w_sep, h_out;
@@ -99,9 +113,17 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     der(rho*V)=port_a.m_flow + port_b.m_flow - m_ext "m_ext: 외부 질량추출 [kg/s]. 오일 용해가 회로에서 냉매를 빼감 (2026-07-25)";
     der(U)=port_a.m_flow*actualStream(port_a.h_outflow) + port_b.m_flow*actualStream(port_b.h_outflow) - m_ext*h;
   initial equation
-    if initMode == 3 then
-      der(h)=0 "p 는 상위 모델의 충전량 구속이 결정 (Casella 2012: 폐루프 정상초기화는 특이)";
-    elseif fixedState then
+    // 중첩 if 대신 평탄한 elseif 체인. 중첩 형태로 쓰면 OMC 가 파라미터 분기를
+    // 컴파일 시점에 제거하지 못해 초기화계가 달라지고 수렴을 잃는다
+    // (2026-07-26 실측: 논리적으로 동일한데 중첩판만 미수렴).
+    if fixedState then
+      p=p_start;
+      h=h_start;
+    elseif noInitialPressure and not noInitialEnthalpy then
+      der(h)=0;
+    elseif noInitialEnthalpy and not noInitialPressure then
+      der(p)=0;
+    elseif noInitialPressure and noInitialEnthalpy then
       p=p_start;
       h=h_start;
     else
@@ -460,14 +482,14 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
 
     특이성 처리: 모든 상태에 der=0 을 걸면 총 냉매량이 결정되지 않아 계가
     특이해진다. 어큐 압력만 der(p)=0 대신 충전량 구속이 정하도록 뺐다
-    (vol4.initMode=3).
+    (vol4.noInitialPressure=true).
   "
     extends Cycle_L3_coldstart_PI(
       use_oil=true, N_const=1800.0, Kp_c=0.0, Ki_c=0.0,
       open_init=23.586, air_series=true,
       cond(steadyInit=true), evap(steadyInit=true), oil(steadyInit=true),
       vol1(fixedState=false), vol2(fixedState=false), vol3(fixedState=false),
-      vol4(initMode=3));
+      vol4(fixedState=false, noInitialPressure=true));
     parameter Real M_charge = 0.100 "총 냉매 충전량 [kg]" annotation(Evaluate=false);
     Real M_total "시스템 총 냉매량 [kg]";
   equation
