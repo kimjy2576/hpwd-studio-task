@@ -14,9 +14,9 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     용해량이 여기에 극도로 민감함: dT 5~20K 에서 용해 43~81g.
   "
     parameter Real V_oil_cc = 160.0 "오일 주입체적 [cc]";
-    parameter Real dT_sump = 15.0 "T_sump = T_dis - dT_sump [K]. ★보정계수★";
+    parameter Real dT_sump = 15.0 "T_sump = T_dis - dT_sump [K]. ★보정계수★" annotation(Evaluate=false);
     parameter Real tau = 30.0 "용해/탈리 시상수 [s]";
-    parameter Real M_dis_start = 0.084 "초기 용해량 [kg]";
+    parameter Real M_dis_start = 0.084 "초기 용해량 [kg]" annotation(Evaluate=false);
     parameter Real M_eq_max = 0.15 "평형 용해량 상한 [kg] (발산 차단)";
     input Real P_dis "섬프 압력 (고압쉘 = 토출압) [Pa]";
     input Real T_dis "토출 온도 [K]";
@@ -390,17 +390,17 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     parameter Real open_init = 30.0 "적분기 초기값 [%]. Kp=1,err=-6 이므로 초기개도=open_init-6.
       12 이면 초기개도가 곧바로 최소 6%% 라 콜드스타트 트랩. 설계개도 23.586%% 근처를 주려면 30.";
     // ── 오일 용해 (2026-07-25) ──
-    parameter Boolean use_oil = false "true: 압축기 오일 섬프를 충전량 싱크로 연결";
-    parameter Real dT_sump = 15.0 "섬프 온도차 [K] ★측정불가 보정계수★";
-    parameter Real M_dis_start = 0.084 "초기 오일 용해량 [kg]";
+    parameter Boolean use_oil = false "true: 압축기 오일 섬프를 충전량 싱크로 연결" annotation(Evaluate=false);
+    parameter Real dT_sump = 15.0 "섬프 온도차 [K] ★측정불가 보정계수★" annotation(Evaluate=false);
+    parameter Real M_dis_start = 0.084 "초기 오일 용해량 [kg]" annotation(Evaluate=false);
     // ── 노드별 초기상태 (기본=정지조건. Python 정상해 주입용) ──
-    parameter Real p1_0 = p_rest; parameter Real h1_0 = h_rest;
-    parameter Real p2_0 = p_rest; parameter Real h2_0 = h_rest;
-    parameter Real p3_0 = p_rest; parameter Real h3_0 = h_rest;
-    parameter Real p4_0 = p_rest; parameter Real h4_0 = h_rest;
+    parameter Real p1_0 = p_rest; parameter Real h1_0 = h_rest annotation(Evaluate=false);
+    parameter Real p2_0 = p_rest; parameter Real h2_0 = h_rest annotation(Evaluate=false);
+    parameter Real p3_0 = p_rest; parameter Real h3_0 = h_rest annotation(Evaluate=false);
+    parameter Real p4_0 = p_rest; parameter Real h4_0 = h_rest annotation(Evaluate=false);
     OilSump oil(V_oil_cc=160.0, dT_sump=dT_sump, M_dis_start=M_dis_start);
     parameter Real N_scale = 1.0 "압축기 속도 배율 (1.0 = 표 그대로, 최종 1800rpm)";
-    parameter Real N_const = 0.0 "0 이면 램프표 사용. >0 이면 그 값으로 고정 [rpm]";
+    parameter Real N_const = 0.0 "0 이면 램프표 사용. >0 이면 그 값으로 고정 [rpm]" annotation(Evaluate=false);
     parameter Real Kp_c = 1.0 "PI 비례게인. Kp_c=Ki_c=0 이면 개도가 open_init 로 고정 (개도고정 시험용)";
     parameter Real Ki_c = 0.3 "PI 적분게인";
     HPWDctrl.PI_Controller ctrl(SH_target=SH_target, Kp=Kp_c, Ki=Ki_c, opening_init=open_init, opening_min=6.0, I(fixed=true));
