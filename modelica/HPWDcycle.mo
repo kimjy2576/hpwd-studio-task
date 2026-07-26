@@ -487,9 +487,19 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     extends Cycle_L3_coldstart_PI(
       use_oil=true, N_const=1800.0, Kp_c=0.0, Ki_c=0.0,
       open_init=23.586, air_series=true,
-      cond(steadyInit=true), evap(steadyInit=true), oil(steadyInit=true),
+      cond(steadyInit=true, h_ref_start=362350, T_w_start=27.0),
+      evap(steadyInit=true, h_ref_start=334610, T_w_start=10.0),
+      oil(steadyInit=true),
       vol1(fixedState=false), vol2(fixedState=false), vol3(fixedState=false),
-      vol4(fixedState=false, noInitialPressure=true));
+      vol4(fixedState=false, noInitialPressure=true),
+      // 가지 B(superheated) 근처 초기추정. 정상초기화에서 p_start/h_start 는
+      // 고정값이 아니라 뉴턴 초기추정이므로 어느 정상해로 수렴할지에 영향.
+      // 기본값(정지조건 8.365bar/265.5kJ/kg)은 두 가지 모두에서 멀다.
+      p1_0=1041100, h1_0=642369,
+      p2_0=1021000, h2_0=330734,
+      p3_0= 604500, h3_0=330734,
+      p4_0= 604500, h4_0=583705);
+
     parameter Real M_charge = 0.100 "총 냉매 충전량 [kg]" annotation(Evaluate=false);
     Real M_total "시스템 총 냉매량 [kg]";
   equation
