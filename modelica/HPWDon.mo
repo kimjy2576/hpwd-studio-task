@@ -24,12 +24,6 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     parameter Real Re_transition = 1000.0 "Re 전이값";
     parameter Real choke_ratio = 0.5 "임계 압력비 (P_out/P_in)";
     parameter Real opening_min = 0.0 "최소 개도 [%]";
-    // homotopy 단순화 모델용 공칭값 (ThermoPower Water.mo:4186 밸브 패턴)
-    //   실제: w = Cd*A*sqrt(2*rho*dP)   단순: w = (op/op_nom)*(w_nom/dp_nom)*dP
-    parameter Boolean useHomotopyFlow = true "유량식 homotopy 사용";
-    parameter Real w_nom = 2.08e-3 "공칭 유량 [kg/s] (설계점 실측)";
-    parameter Real dp_nom = 4.787e5 "공칭 차압 [Pa] (설계점 실측)";
-    parameter Real opening_nom = 23.586 "공칭 개도 [%] (설계점)";
     // ─ 파생 상수 ─
     final parameter Real alpha = needle_angle_deg*Modelica.Constants.pi/180.0;
     final parameter Real A_max = Modelica.Constants.pi*(D_seat/2.0)^2 "full-open orifice 면적";
@@ -61,10 +55,6 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     Cd_eff = Cd_base*(0.5 + 0.5*Re/(Re + Re_transition));
 
     // 유량 + 등엔탈피 팽창
-    // 2026-07-26: homotopy 제거. EEV/압축기에 homotopy 를 걸면 사이클 정상초기화가
-    // 수렴하지 못함 (HX 만 걸면 3 steps 로 수렴). 스위치로 homotopy(a,a) 로 중화해도
-    // 소용없음 — 연산자 존재 자체가 전역 lambda 경로에 참여함. 끄려면 지워야 함.
-    // 공칭 파라미터(w_nom/dp_nom/opening_nom)는 향후 재시도용으로 보존.
     port_a.m_flow = Cd_eff*A_throat*sqrt(max(1e-9, 2.0*rho_in*dP_eff));
     port_a.m_flow + port_b.m_flow = 0;
     port_b.h_outflow = h_in;
@@ -114,10 +104,6 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     parameter Modelica.Units.SI.Temperature T_amb = 308.15 "shell 주위 온도 [K]";
     // ─ 손실/누설 ─
     parameter Real zeta_valve = 1.5;
-    // homotopy 단순화 모델용 공칭값
-    parameter Boolean useHomotopyFlow = true "유량식 homotopy 사용";
-    parameter Real w_nom_comp = 2.07e-3 "공칭 유량 [kg/s] @ N_nom (단품 검증 실측)";
-    parameter Real N_nom_comp = 1800.0 "공칭 회전수 [rpm]";
     parameter Real A_leak_mm2 = 0.02;
     parameter Real Cd_leak = 0.6;
     parameter Real n_leak_rpm = 0.5;
@@ -212,8 +198,8 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     W_elec     = W_shaft/(eta_motor*eta_inv);
 
     // 포트 (흡입 유입, 토출 유출, 토출엔탈피 부여)
-    port_a.m_flow = m_dot "homotopy 제거 — 위 EEV 주석 참조";
-    port_a.m_flow + port_b.m_flow = 0;
+    port_a.m_flow = m_dot;
+    port_b.m_flow = -m_dot;
     port_b.h_outflow = h_dis;
     port_a.h_outflow = inStream(port_b.h_outflow);
   end Comp_Chamber;
