@@ -354,6 +354,7 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     Accumulator_L3 vol4(V=V_n4, p_start=p_rest, h_start=h_rest, fixedState=true);
     parameter Real open_init = 30.0 "적분기 초기값 [%]. Kp=1,err=-6 이므로 초기개도=open_init-6.
       12 이면 초기개도가 곧바로 최소 6%% 라 콜드스타트 트랩. 설계개도 23.586%% 근처를 주려면 30.";
+    parameter Real N_scale = 1.0 "압축기 속도 배율 (1.0 = 표 그대로, 최종 1800rpm)";
     parameter Real Kp_c = 1.0 "PI 비례게인. Kp_c=Ki_c=0 이면 개도가 open_init 로 고정 (개도고정 시험용)";
     parameter Real Ki_c = 0.3 "PI 적분게인";
     HPWDctrl.PI_Controller ctrl(SH_target=SH_target, Kp=Kp_c, Ki=Ki_c, opening_init=open_init, opening_min=6.0, I(fixed=true));
@@ -379,7 +380,7 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     connect(vol3.port_b, evap.port_a);
     connect(evap.port_b, vol4.port_a);
     connect(vol4.port_b, comp.port_a);
-    connect(Nsig.y, comp.N);
+    comp.N = N_scale*Nsig.y "N_scale 로 압축기 속도 스케일 (개도고정/속도 스윕용, -override 가능)";
     connect(ctrl.opening, eev.opening);
     ctrl.SH_meas = evap.SH;
     Pc_bar=vol1.p/1e5;
