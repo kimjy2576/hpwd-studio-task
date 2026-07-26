@@ -357,8 +357,6 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     Volume_L3 vol3(V=V_node, p_start=p_rest, h_start=h_rest, fixedState=true);
     HPWDevap.Evap_On evap;
     Volume_L3 vol4(V=V_node, p_start=p_rest, h_start=h_rest, fixedState=true);
-    // staged N ramp: 0 → 500 → 1500 → N_final (선형보간, 단계별 hold). t0=1s, 단계 10s.
-    //   (반복변수 start 처방 후엔 t_stage를 줄여 가속 가능)
     Modelica.Blocks.Sources.TimeTable Nsig(table=[
         0.0,    0.0;
         1.0,    300.0;
@@ -507,7 +505,14 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     parameter Real Kp_c = 1.0 "PI 비례게인. Kp_c=Ki_c=0 이면 개도가 open_init 로 고정 (개도고정 시험용)";
     parameter Real Ki_c = 0.3 "PI 적분게인";
     HPWDctrl.PI_Controller ctrl(SH_target=SH_target, Kp=Kp_c, Ki=Ki_c, opening_init=open_init, opening_min=6.0, I(fixed=true));
-    Modelica.Blocks.Sources.TimeTable Nsig(table=[
+    // 2026-07-26: TimeTable -> CombiTimeTable(Akima).
+    //   TimeTable 은 선형보간이라 표 절점마다 도함수가 꺾인다(t=1,11,21,31,41,51).
+    //   그 꺾임이 적분기를 반복 재시작시켜 램프 구간(t=13~29)에서 정체를 유발했다.
+    //   실물 압축기는 매끄럽게 가속하므로 꺾인 램프는 모델링 인공물임.
+    Modelica.Blocks.Sources.CombiTimeTable Nsig(
+      smoothness=Modelica.Blocks.Types.Smoothness.ContinuousDerivative,
+      extrapolation=Modelica.Blocks.Types.Extrapolation.HoldLastPoint,
+      table=[
         0.0,    0.0;
         1.0,    300.0;
         11.0,   500.0;
@@ -533,7 +538,7 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     connect(vol3.port_b, evap.port_a);
     connect(evap.port_b, vol4.port_a);
     connect(vol4.port_b, comp.port_a);
-    comp.N = if N_const > 0 then N_const else N_scale*Nsig.y
+    comp.N = if N_const > 0 then N_const else N_scale*Nsig.y[1]
       "N_const>0 이면 램프표 무시하고 고정속도 (정상해 검증용)";
     connect(ctrl.opening, eev.opening);
     ctrl.SH_meas = evap.SH;

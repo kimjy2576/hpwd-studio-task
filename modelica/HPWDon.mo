@@ -23,6 +23,7 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     parameter Real Cd_base = 0.70 "기준 토출계수 (EEV)";
     parameter Real Re_transition = 1000.0 "Re 전이값";
     parameter Real choke_ratio = 0.5 "임계 압력비 (P_out/P_in)";
+    parameter Real dw_choke = 0.02 "초크 전이 폭 (압력비 기준). 0 이면 경성 스위치와 동일";
     parameter Real opening_min = 0.0 "최소 개도 [%]";
     // ─ 파생 상수 ─
     final parameter Real alpha = needle_angle_deg*Modelica.Constants.pi/180.0;
@@ -32,7 +33,7 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     Real op "개도 분율 (0~1)";
     Real stroke, A_cone, A_throat;
     Real h_in, rho_in, mu_in;
-    Real dP, dP_eff, m1, D_h, Re, Cd_eff;
+    Real dP, dP_eff, m1, D_h, Re, Cd_eff, pr, w_chk;
   equation
     h_in   = inStream(port_a.h_outflow);
     rho_in = R290Tab.rho_ph(port_a.p, h_in);
@@ -45,8 +46,18 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     A_throat = min(A_cone, A_max)*cf_A;
 
     // 2상 choke (vena contracta 임계 압력비)
+    // 2026-07-26: 경성 if -> tanh 블렌딩.
+    //   기존 if 는 상태이벤트를 만들고, 콜드스타트에서 vol3.p/vol2.p 가 문턱을
+    //   지날 때 같은 순간 3연발 이벤트(채터링)가 발생해 비선형계 7450 이 수렴
+    //   실패하고 vol2.p 가 -1.26e7 Pa 로 발산했다 (t=14.554, gbode).
+    //   값 자체는 문턱에서 연속이나(dP = p_a(1-pr) 이고 pr=choke_ratio 이면
+    //   choked 분기와 같음) 미분이 꺾이고 무엇보다 이벤트가 생기는 게 문제.
+    //   블렌딩하면 이벤트가 사라진다. 물리적으로도 초크는 칼같은 전환이 아니다.
+    //   같은 처방을 rho_ph 액포화선, hi_dispatch, M_eq 상한에도 이미 적용했음.
     dP     = port_a.p - port_b.p;
-    dP_eff = if (port_b.p/port_a.p) < choke_ratio then port_a.p*(1.0 - choke_ratio) else dP;
+    pr     = port_b.p/max(port_a.p, 1e3) "압력비 (분모 가드)";
+    w_chk  = 0.5*(1.0 + tanh((choke_ratio - pr)/dw_choke)) "초크 가중";
+    dP_eff = w_chk*(port_a.p*(1.0 - choke_ratio)) + (1.0 - w_chk)*dP;
 
     // Re 기반 Cd 보정 (1차 m_dot → Re → Cd_eff)
     m1     = Cd_base*A_throat*sqrt(max(1e-9, 2.0*rho_in*dP_eff));
