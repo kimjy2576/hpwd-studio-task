@@ -151,7 +151,16 @@ def system_charge(state, geom, oil_cfg=None, strict_oil=True):
     # 오일 — 고압쉘이면 섬프가 토출압
     M_oil = oil_mass_from_volume(geom.get('V_oil_cc', 160.0))
     P_sump = Pc if shell == 'high' else Pe
-    T_sump = oil_sump_temperature(state['T_dis'], dT)
+    # 2026-07-26: 섬프 온도는 압축기 쉘 에너지수지에서 나온 T_shell 을 쓴다.
+    #   AU_loss*(T_w-T_amb) + AU_su*(T_w-T_su1) = W_friction  (compressor_chamber)
+    #   고압쉘이므로 오일 섬프는 쉘 안에 있어 T_shell 이 물리적 섬프 온도.
+    #   기존 oil_sump_temperature(T_dis, dT=15) 는 Shi 2022 실측 범위(11~20K)의
+    #   중앙값을 상수로 쓴 것이라 운전점에 따라 변하지 않았음.
+    #   T_shell 이 없으면(구버전 state) 기존 방식으로 폴백.
+    if state.get('T_shell') is not None:
+        T_sump = state['T_shell'] - oil_cfg.get('dT_offset', 0.0)
+    else:
+        T_sump = oil_sump_temperature(state['T_dis'], dT)
     m_oil, oil_info = oil_charge(M_oil, P_sump, T_sump, strict=strict_oil)
     parts['oil'] = m_oil
     parts['_oil_info'] = oil_info
@@ -191,6 +200,7 @@ def _state_from_pass(r, Pe, Pc):
         'h_eev_out': s['eev']['h_out'],
         'h_evap_out': s['evaporator']['h_ref_out'],
         'T_dis': s['compressor']['T_dis'],
+        'T_shell': s['compressor'].get('T_shell'),
         'M_hx': (s['condenser'].get('M_holdup') or 0.0)
                 + (s['evaporator'].get('M_holdup') or 0.0),
         'm_dot': s['compressor']['m_dot'],

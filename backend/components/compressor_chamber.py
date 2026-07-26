@@ -371,6 +371,12 @@ def step(input, params, state, dt):
         'm_dot':       m_dot,
         'm_leak':      m_leak_kgs,
         'T_dis':       T_dis_K - 273.15,
+        # 2026-07-26: 쉘 벽온도 노출. 고압쉘이므로 오일 섬프 온도이기도 함.
+        #   AU_loss*(T_w-T_amb) + AU_su*(T_w-T_su1) = W_friction 에서 나옴.
+        #   기존에는 오일 용해 계산에 oil_sump_temperature(T_dis, dT=15) 를 썼으나
+        #   dT 를 상수로 두는 대신 이 에너지수지 값을 쓰면 자유 파라미터가 사라짐.
+        #   (Modelica Comp_Chamber.T_w 와 동일 식)
+        'T_shell':     T_w_K - 273.15,
         'h_dis':       h_dis_J / 1000.0,
         'W_elec':      W_elec_W,
         'W_indicated': W_indicated_W,

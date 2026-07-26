@@ -17,7 +17,11 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     parameter Real dT_offset = 0.0 "섬프 보정 오프셋 [K]. T_sump = T_shell - dT_offset" annotation(Evaluate=false);
     parameter Real tau = 30.0 "용해/탈리 시상수 [s]";
     parameter Real M_dis_start = 0.084 "초기 용해량 [kg]" annotation(Evaluate=false);
-    parameter Real M_eq_max = 0.15 "평형 용해량 상한 [kg] (발산 차단)";
+    parameter Real M_eq_max = 0.09 "평형 용해량 상한 [kg].
+      유효범위 밖에서 dissolved 가 발산하는 것을 막는 물리적 상한.
+      2026-07-26: 기존 0.15 는 총 충전량 100g 보다 커서 무의미했음 —
+      콜드스타트 중 code=2 구간에서 M_dis 가 149.9g 까지 올라 충전량을
+      초과했음. 상위 모델에서 충전량에 연동해 넘길 것 (0.9*M_charge 권장).";
     input Real P_dis "섬프 압력 (고압쉘 = 토출압) [Pa]";
     input Real T_shell "쉘(섬프) 온도 [K] — 압축기 벽 에너지수지에서";
     Real M_oil "오일 질량 [kg]";
@@ -442,13 +446,14 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     // ── 오일 용해 (2026-07-25) ──
     parameter Boolean use_oil = false "true: 압축기 오일 섬프를 충전량 싱크로 연결" annotation(Evaluate=false);
     parameter Real dT_offset = 0.0 "섬프 보정 오프셋 [K] (기본 0 — 쉘 벽온도를 그대로 사용)" annotation(Evaluate=false);
+    parameter Real M_charge = 0.100 "총 냉매 충전량 [kg]. 오일 용해 상한 연동용" annotation(Evaluate=false);
     parameter Real M_dis_start = 0.084 "초기 오일 용해량 [kg]" annotation(Evaluate=false);
     // ── 노드별 초기상태 (기본=정지조건. Python 정상해 주입용) ──
     parameter Real p1_0 = p_rest; parameter Real h1_0 = h_rest annotation(Evaluate=false);
     parameter Real p2_0 = p_rest; parameter Real h2_0 = h_rest annotation(Evaluate=false);
     parameter Real p3_0 = p_rest; parameter Real h3_0 = h_rest annotation(Evaluate=false);
     parameter Real p4_0 = p_rest; parameter Real h4_0 = h_rest annotation(Evaluate=false);
-    OilSump oil(V_oil_cc=160.0, dT_offset=dT_offset, M_dis_start=M_dis_start);
+    OilSump oil(V_oil_cc=160.0, dT_offset=dT_offset, M_dis_start=M_dis_start, M_eq_max=0.9*M_charge);
     parameter Real N_scale = 1.0 "압축기 속도 배율 (1.0 = 표 그대로, 최종 1800rpm)";
     parameter Real N_const = 0.0 "0 이면 램프표 사용. >0 이면 그 값으로 고정 [rpm]" annotation(Evaluate=false);
     parameter Real Kp_c = 1.0 "PI 비례게인. Kp_c=Ki_c=0 이면 개도가 open_init 로 고정 (개도고정 시험용)";
@@ -519,7 +524,6 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
       p3_0= 604500, h3_0=330734,
       p4_0= 604500, h4_0=583705);
 
-    parameter Real M_charge = 0.100 "총 냉매 충전량 [kg]" annotation(Evaluate=false);
     Real M_total "시스템 총 냉매량 [kg]";
   equation
     M_total = vol1.rho*vol1.V + vol2.rho*vol2.V + vol3.rho*vol3.V
