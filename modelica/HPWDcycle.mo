@@ -22,9 +22,12 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     input Real T_dis "토출 온도 [K]";
     Real M_oil "오일 질량 [kg]";
     Real M_eq "평형 용해량 [kg]";
-    Real M_dis(start=M_dis_start, fixed=true) "현재 용해량 [kg]";
+    parameter Boolean steadyInit = false "true: der(M_dis)=0";
+    Real M_dis(start=M_dis_start, fixed=false) "현재 용해량 [kg]";
     Real m_flow "냉매 -> 오일 흡수율 [kg/s]. 양수면 회로에서 빠져나감";
     Integer code "R290Oil.validity: 0=ok 1=외삽 2=파탄";
+  initial equation
+    if steadyInit then der(M_dis)=0; else M_dis=M_dis_start; end if;
   equation
     M_oil = R290Oil.oil_mass(V_oil_cc);
     M_eq  = min(M_eq_max, R290Oil.dissolved(M_oil, P_dis, T_dis - dT_sump))
@@ -42,6 +45,7 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     parameter Modelica.Units.SI.SpecificEnthalpy h_start=360e3;
     parameter Boolean fixedState=false "true면 (p,h) start값 고정 init";
     input Real m_ext = 0 "외부 질량추출 [kg/s]. 기본 0 이라 기존 모델 하위호환. 오일 섬프 연결 시 vol(m_ext=oil.m_flow) 로 결속";
+    parameter Integer initMode = 0 "0=fixedState 따름, 3=der(h)=0 만 (p 는 충전량이 결정)";
     Modelica.Units.SI.Pressure p(start=p_start, fixed=false, stateSelect=StateSelect.prefer);
     Modelica.Units.SI.SpecificEnthalpy h(start=h_start, fixed=false, stateSelect=StateSelect.prefer);
     Real rho, U;
@@ -53,7 +57,9 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     der(rho*V)=port_a.m_flow + port_b.m_flow - m_ext "m_ext: 외부 질량추출 [kg/s]. 오일 용해가 회로에서 냉매를 빼감 (2026-07-25)";
     der(U)=port_a.m_flow*actualStream(port_a.h_outflow) + port_b.m_flow*actualStream(port_b.h_outflow) - m_ext*h;
   initial equation
-    if fixedState then
+    if initMode == 3 then
+      der(h)=0 "p 는 상위 모델의 충전량 구속이 결정 (Casella 2012: 폐루프 정상초기화는 특이)";
+    elseif fixedState then
       p=p_start;
       h=h_start;
     else
@@ -74,6 +80,7 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     parameter Boolean fixedState=false;
     parameter Real dx_sep=0.02 "상분리 전이대 [quality] (이벤트 없는 tanh 전이)";
     input Real m_ext = 0 "외부 질량추출 [kg/s]. 기본 0 이라 기존 모델 하위호환. 오일 섬프 연결 시 vol(m_ext=oil.m_flow) 로 결속";
+    parameter Integer initMode = 0 "0=fixedState 따름, 3=der(h)=0 만 (p 는 충전량이 결정)";
     Modelica.Units.SI.Pressure p(start=p_start, fixed=false, stateSelect=StateSelect.prefer);
     Modelica.Units.SI.SpecificEnthalpy h(start=h_start, fixed=false, stateSelect=StateSelect.prefer);
     Real rho, U, hL, hV, xq, w_sep, h_out;
@@ -92,7 +99,9 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     der(rho*V)=port_a.m_flow + port_b.m_flow - m_ext "m_ext: 외부 질량추출 [kg/s]. 오일 용해가 회로에서 냉매를 빼감 (2026-07-25)";
     der(U)=port_a.m_flow*actualStream(port_a.h_outflow) + port_b.m_flow*actualStream(port_b.h_outflow) - m_ext*h;
   initial equation
-    if fixedState then
+    if initMode == 3 then
+      der(h)=0 "p 는 상위 모델의 충전량 구속이 결정 (Casella 2012: 폐루프 정상초기화는 특이)";
+    elseif fixedState then
       p=p_start;
       h=h_start;
     else
@@ -442,5 +451,30 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     W_comp=comp.W_shaft;
     opening=ctrl.opening;
   end Cycle_L3_coldstart_PI;
+
+  model Cycle_L3_ssinit "정상상태 초기화 사이클 (2026-07-26)
+
+    콜드스타트로 정상점까지 걸어가는 대신, 초기화 단계에서 der(x)=0 을 직접
+    풀어 정상해에서 출발한다. Schulze 2019 (VCC homotopy 초기화),
+    Casella 2012 (폐루프 정상초기화의 구조적 특이성) 이 말하는 표준 방식.
+
+    특이성 처리: 모든 상태에 der=0 을 걸면 총 냉매량이 결정되지 않아 계가
+    특이해진다. 어큐 압력만 der(p)=0 대신 충전량 구속이 정하도록 뺐다
+    (vol4.initMode=3).
+  "
+    extends Cycle_L3_coldstart_PI(
+      use_oil=true, N_const=1800.0, Kp_c=0.0, Ki_c=0.0,
+      open_init=23.586, air_series=true,
+      cond(steadyInit=true), evap(steadyInit=true), oil(steadyInit=true),
+      vol1(fixedState=false), vol2(fixedState=false), vol3(fixedState=false),
+      vol4(initMode=3));
+    parameter Real M_charge = 0.100 "총 냉매 충전량 [kg]" annotation(Evaluate=false);
+    Real M_total "시스템 총 냉매량 [kg]";
+  equation
+    M_total = vol1.rho*vol1.V + vol2.rho*vol2.V + vol3.rho*vol3.V
+              + vol4.rho*vol4.V + cond.M_tot + evap.M_tot + oil.M_dis;
+  initial equation
+    M_total = M_charge "폐루프 특이성 해소 — 충전량이 어큐 압력을 결정";
+  end Cycle_L3_ssinit;
 
 end HPWDcycle;

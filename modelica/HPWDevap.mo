@@ -466,6 +466,7 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     // ── 공기 입구: 폐루프 연결용 입력 (증발기 출구 → 응축기 입구) ──
     input Real T_air_in "공기 입구온도 [degC] (증발기 출구와 연결)";
     input Real Wi "공기 입구 절대습도 [kg/kg] (증발기 출구, 제습 반영)";
+    parameter Boolean steadyInit = false "true: 정상상태 초기화 der(x)=0. false: start 값 고정 (2026-07-26)";
     parameter Real T_air_in_start=25.0 "T_air_in 초기추정 [degC] (standalone/초기화용)" annotation(Evaluate=false);
     // 공기유량 단일 소스 — 팬 체적유량에서 열전달 march와 h_o가 같은 질량유량을 씀.
     // (2026-07-23까지는 m_air_seg 하드코딩 0.00119464(rho 1.1848 상당)과
@@ -562,8 +563,8 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     parameter Real h_ref_start=270e3 "냉매 엔탈피 초기값 [J/kg]" annotation(Evaluate=false);
     parameter Real T_w_start=T_air_in_start "벽온도 초기값 [degC]" annotation(Evaluate=false);
     // ── 상태 (fixed=true → init 비선형계 제거) ──
-    Real h_ref[M](each start=h_ref_start, each fixed=true) "냉매 엔탈피/셀 [J/kg]";
-    Real T_w[M](each start=T_w_start, each fixed=true, each min=-40.0, each max=160.0) "벽온도/셀 [degC]";
+    Real h_ref[M](each start=h_ref_start, each fixed=false) "냉매 엔탈피/셀 [J/kg]";
+    Real T_w[M](each start=T_w_start, each fixed=false, each min=-40.0, each max=160.0) "벽온도/셀 [degC]";
     // ── 대수 ──
     Real P, G_ref, h_in;
     // 유량 관성 (momentum dynamics) — 2026-07-24.
@@ -577,10 +578,20 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     Real T_satC, hl, hv, h_fg, mu_l, k_l, cp_l, Pr_l, rho_l, rho_v, mu_v, k_v, cp_v, Pr_v, P_r;
     Real T_ref[M], xq[M], h_i[M], Q_ref[M], Q_air[M];
     Real w2p[M] "2상 가중 (0=단상, 1=2상)";
-    Real dp_lag(start=0.0, fixed=true) "dp_total 지연 [Pa] — 대수 루프 차단용";
+    Real dp_lag(start=0.0, fixed=false) "dp_total 지연 [Pa] — 대수 루프 차단용";
     Real xc[M] "클램프된 quality (noEvent — 이벤트 생성 회피)";
     Real T_aen[Nr + 1,Nsc](each start=27.0);
     Real Q_total, h_out, x_out, T_air_out, x_in_q, dp_fric, dp_bend, dp_total, rho_mix, x_mid;
+  initial equation
+    // 정상상태 초기화: der(x)=0. 폐루프 사이클을 정상해에서 출발시킬 때 사용.
+    // 기존 방식(start 고정)은 콜드스타트 전용.
+    if steadyInit then
+      for k in 1:M loop der(h_ref[k])=0; der(T_w[k])=0; end for;
+      der(dp_lag)=0;
+    else
+      for k in 1:M loop h_ref[k]=h_ref_start; T_w[k]=T_w_start; end for;
+      dp_lag=0.0;
+    end if;
   equation
       cp_a_dry=HXCorr.cp_air_mix(Wi) "입구 습도에 따른 습공기 cp (혼합물 기준 — m_air_seg가 습공기 질량유량)";
     P=port_a.p;
@@ -675,6 +686,7 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
   model Evap_On_Dyn "L3 증발기 — 동적 유한체적 (냉매 엔탈피 h_ref + 벽온도 T_w 상태), 습코일. 폐루프/콜드스타트용."
     HPWD.RefPort port_a "냉매 입구";
     HPWD.RefPort port_b "냉매 출구";
+    parameter Boolean steadyInit = false "true: 정상상태 초기화 der(x)=0. false: start 값 고정 (2026-07-26)";
     parameter Real T_air_in=20.0 "공기 입구온도 [degC] (드럼 출구 공기)";
     parameter Real RH_in=0.8;
     // 공기유량 단일 소스 — 팬 체적유량에서 열전달 march와 h_o가 같은 질량유량을 씀.
@@ -775,8 +787,8 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     parameter Real h_ref_start=400e3 "냉매 엔탈피 초기값 [J/kg]" annotation(Evaluate=false);
     parameter Real T_w_start=T_air_in "벽온도 초기값 [degC]" annotation(Evaluate=false);
     // ── 상태 (fixed=true → init 비선형계 제거) ──
-    Real h_ref[M](each start=h_ref_start, each fixed=true) "냉매 엔탈피/셀 [J/kg]";
-    Real T_w[M](each start=T_w_start, each fixed=true, each min=-40.0, each max=90.0) "벽온도/셀 [degC]";
+    Real h_ref[M](each start=h_ref_start, each fixed=false) "냉매 엔탈피/셀 [J/kg]";
+    Real T_w[M](each start=T_w_start, each fixed=false, each min=-40.0, each max=90.0) "벽온도/셀 [degC]";
     // ── 대수 ──
     Real P, G_ref, h_in;
     // 유량 관성 (momentum dynamics) — 2026-07-24.
@@ -798,6 +810,14 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     Real Q_ref[M];
     Real Q_total, Q_lat_total, h_out, x_out, T_air_out, W_air_out, SH;
     Real x_in_q, dp_fric, dp_accel, dp_bend, dp_total, rho_mix, x_mid;
+  initial equation
+    // 정상상태 초기화: der(x)=0. 폐루프 사이클을 정상해에서 출발시킬 때 사용.
+    // 기존 방식(start 고정)은 콜드스타트 전용.
+    if steadyInit then
+      for k in 1:M loop der(h_ref[k])=0; der(T_w[k])=0; end for;
+    else
+      for k in 1:M loop h_ref[k]=h_ref_start; T_w[k]=T_w_start; end for;
+    end if;
   equation
     P=port_a.p;
     M_tot=sum(M_c) "HX 총 질량";
