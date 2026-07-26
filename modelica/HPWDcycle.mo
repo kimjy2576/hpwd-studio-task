@@ -9,17 +9,17 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     액범람 -> Pc 26bar / SH=0 의 잘못된 운전점으로 수렴한다.
 
     고압쉘 압축기이므로 섬프는 토출압에 노출된다.
-    T_sump 는 측정 불가 -> dT_sump 를 보정계수로 노출하고 추후 측정 가능한
+    T_sump 는 압축기 쉘 에너지수지에서 나온 벽온도 T_w 를 그대로 쓴다 (고압쉘).
     양(Pc, Pe, SH, T_dis, 소비전력)으로 역보정할 것.
     용해량이 여기에 극도로 민감함: dT 5~20K 에서 용해 43~81g.
   "
     parameter Real V_oil_cc = 160.0 "오일 주입체적 [cc]";
-    parameter Real dT_sump = 15.0 "T_sump = T_dis - dT_sump [K]. ★보정계수★" annotation(Evaluate=false);
+    parameter Real dT_offset = 0.0 "섬프 보정 오프셋 [K]. T_sump = T_shell - dT_offset" annotation(Evaluate=false);
     parameter Real tau = 30.0 "용해/탈리 시상수 [s]";
     parameter Real M_dis_start = 0.084 "초기 용해량 [kg]" annotation(Evaluate=false);
     parameter Real M_eq_max = 0.15 "평형 용해량 상한 [kg] (발산 차단)";
     input Real P_dis "섬프 압력 (고압쉘 = 토출압) [Pa]";
-    input Real T_dis "토출 온도 [K]";
+    input Real T_shell "쉘(섬프) 온도 [K] — 압축기 벽 에너지수지에서";
     Real M_oil "오일 질량 [kg]";
     Real M_eq "평형 용해량 [kg]";
     parameter Boolean steadyInit = false "true: der(M_dis)=0";
@@ -37,9 +37,9 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     end if;
   equation
     M_oil = R290Oil.oil_mass(V_oil_cc);
-    M_eq  = min(M_eq_max, R290Oil.dissolved(M_oil, P_dis, T_dis - dT_sump))
+    M_eq  = min(M_eq_max, R290Oil.dissolved(M_oil, P_dis, T_shell - dT_offset))
       "상한 클램프: 유효범위 밖에서 dissolved 가 발산함 (실측 26bar/32C 에서 2114g)";
-    code  = R290Oil.validity(P_dis, T_dis - dT_sump);
+    code  = R290Oil.validity(P_dis, T_shell - dT_offset);
     tau*der(M_dis) = M_eq - M_dis;
     m_flow = der(M_dis);
   end OilSump;
@@ -441,14 +441,14 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
       12 이면 초기개도가 곧바로 최소 6%% 라 콜드스타트 트랩. 설계개도 23.586%% 근처를 주려면 30.";
     // ── 오일 용해 (2026-07-25) ──
     parameter Boolean use_oil = false "true: 압축기 오일 섬프를 충전량 싱크로 연결" annotation(Evaluate=false);
-    parameter Real dT_sump = 15.0 "섬프 온도차 [K] ★측정불가 보정계수★" annotation(Evaluate=false);
+    parameter Real dT_offset = 0.0 "섬프 보정 오프셋 [K] (기본 0 — 쉘 벽온도를 그대로 사용)" annotation(Evaluate=false);
     parameter Real M_dis_start = 0.084 "초기 오일 용해량 [kg]" annotation(Evaluate=false);
     // ── 노드별 초기상태 (기본=정지조건. Python 정상해 주입용) ──
     parameter Real p1_0 = p_rest; parameter Real h1_0 = h_rest annotation(Evaluate=false);
     parameter Real p2_0 = p_rest; parameter Real h2_0 = h_rest annotation(Evaluate=false);
     parameter Real p3_0 = p_rest; parameter Real h3_0 = h_rest annotation(Evaluate=false);
     parameter Real p4_0 = p_rest; parameter Real h4_0 = h_rest annotation(Evaluate=false);
-    OilSump oil(V_oil_cc=160.0, dT_sump=dT_sump, M_dis_start=M_dis_start);
+    OilSump oil(V_oil_cc=160.0, dT_offset=dT_offset, M_dis_start=M_dis_start);
     parameter Real N_scale = 1.0 "압축기 속도 배율 (1.0 = 표 그대로, 최종 1800rpm)";
     parameter Real N_const = 0.0 "0 이면 램프표 사용. >0 이면 그 값으로 고정 [rpm]" annotation(Evaluate=false);
     parameter Real Kp_c = 1.0 "PI 비례게인. Kp_c=Ki_c=0 이면 개도가 open_init 로 고정 (개도고정 시험용)";
@@ -468,7 +468,7 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     // ── 공기 폐루프: 증발기 출구 → 응축기 입구 (온도·습도) ──
     // 오일 섬프 입력 — 고압쉘이므로 섬프 압력 = 토출압
     oil.P_dis = vol1.p;
-    oil.T_dis = comp.T_dis;
+    oil.T_shell = comp.T_w "쉘 벽온도 = 섬프 온도 (고압쉘)";
     cond.T_air_in = if air_series then evap.T_air_out else T_air_cond;
     cond.Wi       = if air_series then evap.W_air_out else W_air_cond;
     connect(comp.port_b, vol1.port_a);
