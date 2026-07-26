@@ -1,6 +1,39 @@
 within ;
 package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_On 폐루프)"
 
+  model OilSump "압축기 오일 섬프 — 냉매 용해 저장소 (2026-07-25)
+
+    사이클 충전량의 상당분이 압축기 오일에 용해되어 순환하지 않는다.
+    Python 정방향(충전량 구속) 해에서 100g 중 84g 이 오일에 용해.
+    이 항이 없으면 순환 냉매가 실제의 5배가 되어 어큐 범람 -> 응축기
+    액범람 -> Pc 26bar / SH=0 의 잘못된 운전점으로 수렴한다.
+
+    고압쉘 압축기이므로 섬프는 토출압에 노출된다.
+    T_sump 는 측정 불가 -> dT_sump 를 보정계수로 노출하고 추후 측정 가능한
+    양(Pc, Pe, SH, T_dis, 소비전력)으로 역보정할 것.
+    용해량이 여기에 극도로 민감함: dT 5~20K 에서 용해 43~81g.
+  "
+    parameter Real V_oil_cc = 160.0 "오일 주입체적 [cc]";
+    parameter Real dT_sump = 15.0 "T_sump = T_dis - dT_sump [K]. ★보정계수★";
+    parameter Real tau = 30.0 "용해/탈리 시상수 [s]";
+    parameter Real M_dis_start = 0.084 "초기 용해량 [kg]";
+    parameter Real M_eq_max = 0.15 "평형 용해량 상한 [kg] (발산 차단)";
+    input Real P_dis "섬프 압력 (고압쉘 = 토출압) [Pa]";
+    input Real T_dis "토출 온도 [K]";
+    Real M_oil "오일 질량 [kg]";
+    Real M_eq "평형 용해량 [kg]";
+    Real M_dis(start=M_dis_start, fixed=true) "현재 용해량 [kg]";
+    Real m_flow "냉매 -> 오일 흡수율 [kg/s]. 양수면 회로에서 빠져나감";
+    Integer code "R290Oil.validity: 0=ok 1=외삽 2=파탄";
+  equation
+    M_oil = R290Oil.oil_mass(V_oil_cc);
+    M_eq  = min(M_eq_max, R290Oil.dissolved(M_oil, P_dis, T_dis - dT_sump))
+      "상한 클램프: 유효범위 밖에서 dissolved 가 발산함 (실측 26bar/32C 에서 2114g)";
+    code  = R290Oil.validity(P_dis, T_dis - dT_sump);
+    tau*der(M_dis) = M_eq - M_dis;
+    m_flow = der(M_dis);
+  end OilSump;
+
   model Volume_L3 "냉매 control volume (압력 노드, R290Tab 기반, 정상상태)"
     HPWD.RefPort port_a;
     HPWD.RefPort port_b;
@@ -8,6 +41,7 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     parameter Modelica.Units.SI.Pressure p_start=10e5;
     parameter Modelica.Units.SI.SpecificEnthalpy h_start=360e3;
     parameter Boolean fixedState=false "true면 (p,h) start값 고정 init";
+    input Real m_ext = 0 "외부 질량추출 [kg/s]. 기본 0 이라 기존 모델 하위호환. 오일 섬프 연결 시 vol(m_ext=oil.m_flow) 로 결속";
     Modelica.Units.SI.Pressure p(start=p_start, fixed=false, stateSelect=StateSelect.prefer);
     Modelica.Units.SI.SpecificEnthalpy h(start=h_start, fixed=false, stateSelect=StateSelect.prefer);
     Real rho, U;
@@ -16,8 +50,8 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     U=rho*V*h - p*V;
     port_a.p=p; port_b.p=p;
     port_a.h_outflow=h; port_b.h_outflow=h;
-    der(rho*V)=port_a.m_flow + port_b.m_flow;
-    der(U)=port_a.m_flow*actualStream(port_a.h_outflow) + port_b.m_flow*actualStream(port_b.h_outflow);
+    der(rho*V)=port_a.m_flow + port_b.m_flow - m_ext "m_ext: 외부 질량추출 [kg/s]. 오일 용해가 회로에서 냉매를 빼감 (2026-07-25)";
+    der(U)=port_a.m_flow*actualStream(port_a.h_outflow) + port_b.m_flow*actualStream(port_b.h_outflow) - m_ext*h;
   initial equation
     if fixedState then
       p=p_start;
@@ -39,6 +73,7 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     parameter Modelica.Units.SI.SpecificEnthalpy h_start=265.5e3;
     parameter Boolean fixedState=false;
     parameter Real dx_sep=0.02 "상분리 전이대 [quality] (이벤트 없는 tanh 전이)";
+    input Real m_ext = 0 "외부 질량추출 [kg/s]. 기본 0 이라 기존 모델 하위호환. 오일 섬프 연결 시 vol(m_ext=oil.m_flow) 로 결속";
     Modelica.Units.SI.Pressure p(start=p_start, fixed=false, stateSelect=StateSelect.prefer);
     Modelica.Units.SI.SpecificEnthalpy h(start=h_start, fixed=false, stateSelect=StateSelect.prefer);
     Real rho, U, hL, hV, xq, w_sep, h_out;
@@ -54,8 +89,8 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     port_a.p=p; port_b.p=p;
     port_a.h_outflow=h "역류 시 벌크";
     port_b.h_outflow=h_out;
-    der(rho*V)=port_a.m_flow + port_b.m_flow;
-    der(U)=port_a.m_flow*actualStream(port_a.h_outflow) + port_b.m_flow*actualStream(port_b.h_outflow);
+    der(rho*V)=port_a.m_flow + port_b.m_flow - m_ext "m_ext: 외부 질량추출 [kg/s]. 오일 용해가 회로에서 냉매를 빼감 (2026-07-25)";
+    der(U)=port_a.m_flow*actualStream(port_a.h_outflow) + port_b.m_flow*actualStream(port_b.h_outflow) - m_ext*h;
   initial equation
     if fixedState then
       p=p_start;
@@ -345,16 +380,27 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     parameter Real RH_air_cond = 0.8 "응축기 공기 입구 상대습도 (air_series=false)";
     final parameter Real W_air_cond = HXCorr.W_humid(T_air_cond, RH_air_cond, 101325.0);
     HPWDon.Comp_Chamber comp(V_disp_cm3=7.5);
-    Volume_L3 vol1(V=V_n1, p_start=p_rest, h_start=h_rest, fixedState=true);
+    Volume_L3 vol1(V=V_n1, p_start=p1_0, h_start=h1_0, fixedState=true, m_ext=if use_oil then oil.m_flow else 0);
     HPWDevap.Cond_On_Dyn cond(Nseg=3, h_ref_start=h_rest, T_w_start=20.0, T_air_in_start=T_air_cond);
-    Volume_L3 vol2(V=V_n2, p_start=p_rest, h_start=h_rest, fixedState=true);
+    Volume_L3 vol2(V=V_n2, p_start=p2_0, h_start=h2_0, fixedState=true);
     HPWDon.EEV_On eev(D_seat=1.0e-3, stroke_max=1.0e-3);
-    Volume_L3 vol3(V=V_n3, p_start=p_rest, h_start=h_rest, fixedState=true);
+    Volume_L3 vol3(V=V_n3, p_start=p3_0, h_start=h3_0, fixedState=true);
     HPWDevap.Evap_On_Dyn evap(Nseg=3, h_ref_start=h_rest, T_w_start=20.0);
-    Accumulator_L3 vol4(V=V_n4, p_start=p_rest, h_start=h_rest, fixedState=true);
+    Accumulator_L3 vol4(V=V_n4, p_start=p4_0, h_start=h4_0, fixedState=true);
     parameter Real open_init = 30.0 "적분기 초기값 [%]. Kp=1,err=-6 이므로 초기개도=open_init-6.
       12 이면 초기개도가 곧바로 최소 6%% 라 콜드스타트 트랩. 설계개도 23.586%% 근처를 주려면 30.";
+    // ── 오일 용해 (2026-07-25) ──
+    parameter Boolean use_oil = false "true: 압축기 오일 섬프를 충전량 싱크로 연결";
+    parameter Real dT_sump = 15.0 "섬프 온도차 [K] ★측정불가 보정계수★";
+    parameter Real M_dis_start = 0.084 "초기 오일 용해량 [kg]";
+    // ── 노드별 초기상태 (기본=정지조건. Python 정상해 주입용) ──
+    parameter Real p1_0 = p_rest; parameter Real h1_0 = h_rest;
+    parameter Real p2_0 = p_rest; parameter Real h2_0 = h_rest;
+    parameter Real p3_0 = p_rest; parameter Real h3_0 = h_rest;
+    parameter Real p4_0 = p_rest; parameter Real h4_0 = h_rest;
+    OilSump oil(V_oil_cc=160.0, dT_sump=dT_sump, M_dis_start=M_dis_start);
     parameter Real N_scale = 1.0 "압축기 속도 배율 (1.0 = 표 그대로, 최종 1800rpm)";
+    parameter Real N_const = 0.0 "0 이면 램프표 사용. >0 이면 그 값으로 고정 [rpm]";
     parameter Real Kp_c = 1.0 "PI 비례게인. Kp_c=Ki_c=0 이면 개도가 open_init 로 고정 (개도고정 시험용)";
     parameter Real Ki_c = 0.3 "PI 적분게인";
     HPWDctrl.PI_Controller ctrl(SH_target=SH_target, Kp=Kp_c, Ki=Ki_c, opening_init=open_init, opening_min=6.0, I(fixed=true));
@@ -370,6 +416,9 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     Real Pc_bar, Pe_bar, mdot, SH, Q_evap, Q_cond, W_comp, opening;
   equation
     // ── 공기 폐루프: 증발기 출구 → 응축기 입구 (온도·습도) ──
+    // 오일 섬프 입력 — 고압쉘이므로 섬프 압력 = 토출압
+    oil.P_dis = vol1.p;
+    oil.T_dis = comp.T_dis;
     cond.T_air_in = if air_series then evap.T_air_out else T_air_cond;
     cond.Wi       = if air_series then evap.W_air_out else W_air_cond;
     connect(comp.port_b, vol1.port_a);
@@ -380,7 +429,8 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     connect(vol3.port_b, evap.port_a);
     connect(evap.port_b, vol4.port_a);
     connect(vol4.port_b, comp.port_a);
-    comp.N = N_scale*Nsig.y "N_scale 로 압축기 속도 스케일 (개도고정/속도 스윕용, -override 가능)";
+    comp.N = if N_const > 0 then N_const else N_scale*Nsig.y
+      "N_const>0 이면 램프표 무시하고 고정속도 (정상해 검증용)";
     connect(ctrl.opening, eev.opening);
     ctrl.SH_meas = evap.SH;
     Pc_bar=vol1.p/1e5;

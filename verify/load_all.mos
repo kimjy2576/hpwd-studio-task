@@ -22,6 +22,7 @@ loadFile("/home/claude/repo/modelica/HXCmp.mo"); getErrorString();
 loadFile("/home/claude/repo/modelica/HXCorr.mo"); getErrorString();
 loadFile("/home/claude/repo/modelica/HXGeom.mo"); getErrorString();
 loadFile("/home/claude/repo/modelica/R1234yfTab.mo"); getErrorString();
+loadFile("/home/claude/repo/modelica/R290Oil.mo"); getErrorString();
 loadFile("/home/claude/repo/modelica/R290Tab.mo"); getErrorString();
 loadFile("/home/claude/repo/modelica/TestAir.mo"); getErrorString();
 loadFile("/home/claude/repo/modelica/TestCondMBcpl.mo"); getErrorString();
