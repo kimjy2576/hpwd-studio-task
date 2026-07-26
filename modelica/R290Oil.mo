@@ -70,12 +70,18 @@ package R290Oil "R290 - 미네랄오일(SUNISO 5GSD) 용해 냉매 모델
     end if;
   end Psat;
 
-  function gamma "활동도계수"
+  function gamma "활동도계수. 2026-07-26 가드: 초기화 뉴턴 반복이 T 를 비물리
+    영역으로 밀면 GB/T_K 가 발산해 g->0 이 되고 x1_of 에서 0 나누기가 남
+    (실측: dT_sump=18 초기화 실패, Division by zero P_Pa/(gamma*Ps)).
+    물리 범위(R290 테이블 Tsat 240~359K)에서는 클램프가 작동하지 않음."
     input Real T_K;
     input Real x1;
     output Real g;
+  protected
+    Real Tc;
   algorithm
-    g := exp(GA + GB/T_K + GC*x1);
+    Tc := min(max(T_K, 200.0), 370.0);
+    g := max(exp(GA + GB/Tc + GC*x1), 1e-6);
     annotation(Inline=true);
   end gamma;
 
@@ -86,10 +92,12 @@ package R290Oil "R290 - 미네랄오일(SUNISO 5GSD) 용해 냉매 모델
   protected
     Real Ps, xn;
   algorithm
-    Ps := Psat(T_K);
-    x1 := min(X1_CLAMP, P_Pa/Ps);
+    // 분모 가드: Ps 는 Psat 이 경계포화라 항상 >0 이지만 gamma 는 T 범위 밖에서
+    // 0 이 될 수 있어 곱을 하한 클램프한다.
+    Ps := max(Psat(T_K), 1.0);
+    x1 := min(X1_CLAMP, max(P_Pa, 0.0)/Ps);
     for k in 1:40 loop
-      xn := min(X1_CLAMP, P_Pa/(gamma(T_K, x1)*Ps));
+      xn := min(X1_CLAMP, max(P_Pa, 0.0)/max(gamma(T_K, x1)*Ps, 1.0));
       x1 := 0.5*x1 + 0.5*xn;
     end for;
   end x1_of;
