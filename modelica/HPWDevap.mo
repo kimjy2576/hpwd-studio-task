@@ -467,6 +467,8 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     input Real T_air_in "공기 입구온도 [degC] (증발기 출구와 연결)";
     input Real Wi "공기 입구 절대습도 [kg/kg] (증발기 출구, 제습 반영)";
     parameter Boolean steadyInit = false "true: 정상상태 초기화 der(x)=0. false: start 값 고정 (2026-07-26)";
+    parameter Real w_nom = 2.06e-3 "공칭 회로당 냉매유량 [kg/s] — homotopy 단순화 모델용 (ThermoPower wnom 대응)";
+    parameter Real dp_nom = 14437.0 "공칭 압력강하 [Pa] — 단순화 모델의 선형 저항 dp_nom/w_nom*w";
     parameter Real T_air_in_start=25.0 "T_air_in 초기추정 [degC] (standalone/초기화용)" annotation(Evaluate=false);
     // 공기유량 단일 소스 — 팬 체적유량에서 열전달 march와 h_o가 같은 질량유량을 씀.
     // (2026-07-23까지는 m_air_seg 하드코딩 0.00119464(rho 1.1848 상당)과
@@ -574,7 +576,7 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     //   L_inert·d(ṁ)/dt = Δp − dp_total(ṁ),  L_inert = L_path/A_cs [1/m]
     parameter Boolean use_momentum=true
       "true: ṁ 을 상태로(운동량, 사이클용) / false: 대수 dp(유량 BC 고정 단품 검증용)";
-    Real m_ref_col(start=0.0, fixed=use_momentum) "회로당 냉매유량 [kg/s]";
+    Real m_ref_col(start=w_nom, fixed=false) "회로당 냉매유량 [kg/s]. 정지초기화는 initial equation 에서 처리 (2026-07-26: fixed=true 로 0 고정돼 정상초기화 시 0=-Q_ref 모순 -> h_ref[1] 발산)";
     Real T_satC, hl, hv, h_fg, mu_l, k_l, cp_l, Pr_l, rho_l, rho_v, mu_v, k_v, cp_v, Pr_v, P_r;
     Real T_ref[M], xq[M], h_i[M], Q_ref[M], Q_air[M];
     Real w2p[M] "2상 가중 (0=단상, 1=2상)";
@@ -587,9 +589,11 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     // 기존 방식(start 고정)은 콜드스타트 전용.
     if steadyInit then
       for k in 1:M loop der(h_ref[k])=0; der(T_w[k])=0; end for;
+      if use_momentum then der(m_ref_col)=0; end if;
       der(dp_lag)=0;
     else
       for k in 1:M loop h_ref[k]=h_ref_start; T_w[k]=T_w_start; end for;
+      if use_momentum then m_ref_col=0.0; end if;
       dp_lag=0.0;
     end if;
   equation
@@ -660,7 +664,9 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     0.1*der(dp_lag)=dp_total - dp_lag;
     if use_momentum then
       port_a.m_flow=Ncirc*m_ref_col;
-      L_inert*der(m_ref_col)=(port_a.p - port_b.p) - dp_total "운동량 방정식";
+      L_inert*der(m_ref_col)=homotopy((port_a.p - port_b.p) - dp_total,
+        (port_a.p - port_b.p) - dp_nom/w_nom*m_ref_col)
+        "운동량. 단순화 모델은 선형 저항 (ThermoPower Water.mo:662 패턴)";
     else
       m_ref_col=port_a.m_flow/Ncirc;
       port_b.p=P - dp_total "준정상 (유량 BC 고정 시)";
@@ -687,6 +693,8 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     HPWD.RefPort port_a "냉매 입구";
     HPWD.RefPort port_b "냉매 출구";
     parameter Boolean steadyInit = false "true: 정상상태 초기화 der(x)=0. false: start 값 고정 (2026-07-26)";
+    parameter Real w_nom = 2.06e-3 "공칭 회로당 냉매유량 [kg/s] — homotopy 단순화 모델용 (ThermoPower wnom 대응)";
+    parameter Real dp_nom = 21338.0 "공칭 압력강하 [Pa] — 단순화 모델의 선형 저항 dp_nom/w_nom*w";
     parameter Real T_air_in=20.0 "공기 입구온도 [degC] (드럼 출구 공기)";
     parameter Real RH_in=0.8;
     // 공기유량 단일 소스 — 팬 체적유량에서 열전달 march와 h_o가 같은 질량유량을 씀.
@@ -798,7 +806,7 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     //   L_inert·d(ṁ)/dt = Δp − dp_total(ṁ),  L_inert = L_path/A_cs [1/m]
     parameter Boolean use_momentum=true
       "true: ṁ 을 상태로(운동량, 사이클용) / false: 대수 dp(유량 BC 고정 단품 검증용)";
-    Real m_ref_col(start=0.0, fixed=use_momentum) "회로당 냉매유량 [kg/s]";
+    Real m_ref_col(start=w_nom, fixed=false) "회로당 냉매유량 [kg/s]. 정지초기화는 initial equation 에서 처리 (2026-07-26: fixed=true 로 0 고정돼 정상초기화 시 0=-Q_ref 모순 -> h_ref[1] 발산)";
     Real T_satC, hl, hv, h_fg, mu_l, k_l, cp_l, Pr_l, rho_l, rho_v, mu_v, P_r;
     Real muv, kv, cpv, Prv, h_v_gni;
     Real xq_c[Nr,Nsc], T_ref_c[Nr,Nsc], h_i_c[Nr,Nsc], cp_a[Nr,Nsc], h_air_c[Nr,Nsc];
@@ -815,8 +823,10 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     // 기존 방식(start 고정)은 콜드스타트 전용.
     if steadyInit then
       for k in 1:M loop der(h_ref[k])=0; der(T_w[k])=0; end for;
+      if use_momentum then der(m_ref_col)=0; end if;
     else
       for k in 1:M loop h_ref[k]=h_ref_start; T_w[k]=T_w_start; end for;
+      if use_momentum then m_ref_col=0.0; end if;
     end if;
   equation
     P=port_a.p;
@@ -893,7 +903,9 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     dp_total=dp_fric + dp_accel + dp_bend + K_lam*m_ref_col "+ 층류 정규화";
     if use_momentum then
       port_a.m_flow=Ncirc*m_ref_col;
-      L_inert*der(m_ref_col)=(port_a.p - port_b.p) - dp_total "운동량 방정식";
+      L_inert*der(m_ref_col)=homotopy((port_a.p - port_b.p) - dp_total,
+        (port_a.p - port_b.p) - dp_nom/w_nom*m_ref_col)
+        "운동량. 단순화 모델은 선형 저항 (ThermoPower Water.mo:662 패턴)";
     else
       m_ref_col=port_a.m_flow/Ncirc;
       port_b.p=P - dp_total "준정상 (유량 BC 고정 시)";
