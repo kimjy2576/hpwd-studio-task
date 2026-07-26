@@ -466,7 +466,7 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     // ── 공기 입구: 폐루프 연결용 입력 (증발기 출구 → 응축기 입구) ──
     input Real T_air_in "공기 입구온도 [degC] (증발기 출구와 연결)";
     input Real Wi "공기 입구 절대습도 [kg/kg] (증발기 출구, 제습 반영)";
-    parameter Real T_air_in_start=25.0 "T_air_in 초기추정 [degC] (standalone/초기화용)";
+    parameter Real T_air_in_start=25.0 "T_air_in 초기추정 [degC] (standalone/초기화용)" annotation(Evaluate=false);
     // 공기유량 단일 소스 — 팬 체적유량에서 열전달 march와 h_o가 같은 질량유량을 씀.
     // (2026-07-23까지는 m_air_seg 하드코딩 0.00119464(rho 1.1848 상당)과
     //  V_air_CMM의 h_o 체인(HXCorr rho 1.1957)이 0.92% 어긋나 있었음.
@@ -559,8 +559,8 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     Real M_tot(start=M*M_cell_nom) "회로 총 냉매 질량 [kg]";
     Real m_out "회로 출구 유량 [kg/s]";
     // 콜드스타트 초기조건 (rest)
-    parameter Real h_ref_start=270e3 "냉매 엔탈피 초기값 [J/kg]";
-    parameter Real T_w_start=T_air_in_start "벽온도 초기값 [degC]";
+    parameter Real h_ref_start=270e3 "냉매 엔탈피 초기값 [J/kg]" annotation(Evaluate=false);
+    parameter Real T_w_start=T_air_in_start "벽온도 초기값 [degC]" annotation(Evaluate=false);
     // ── 상태 (fixed=true → init 비선형계 제거) ──
     Real h_ref[M](each start=h_ref_start, each fixed=true) "냉매 엔탈피/셀 [J/kg]";
     Real T_w[M](each start=T_w_start, each fixed=true, each min=-40.0, each max=160.0) "벽온도/셀 [degC]";
@@ -772,8 +772,8 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     Real M_tot(start=M*M_cell_nom) "회로 총 냉매 질량 [kg]";
     Real m_out "회로 출구 유량 [kg/s]";
     // 콜드스타트 초기조건 (rest)
-    parameter Real h_ref_start=400e3 "냉매 엔탈피 초기값 [J/kg]";
-    parameter Real T_w_start=T_air_in "벽온도 초기값 [degC]";
+    parameter Real h_ref_start=400e3 "냉매 엔탈피 초기값 [J/kg]" annotation(Evaluate=false);
+    parameter Real T_w_start=T_air_in "벽온도 초기값 [degC]" annotation(Evaluate=false);
     // ── 상태 (fixed=true → init 비선형계 제거) ──
     Real h_ref[M](each start=h_ref_start, each fixed=true) "냉매 엔탈피/셀 [J/kg]";
     Real T_w[M](each start=T_w_start, each fixed=true, each min=-40.0, each max=90.0) "벽온도/셀 [degC]";
