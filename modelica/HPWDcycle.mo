@@ -199,7 +199,8 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     Modelica.Blocks.Sources.Constant opsig(k=eev_opening);
     Real Pc_bar, Pe_bar, mdot, SH, x_evap_in, Q_evap, Q_cond, W_comp;
   equation
-    connect(comp.port_b, vol1.port_a);
+    connect(comp.port_b, vshell.port_a);
+    connect(vshell.port_b, vol1.port_a);
     connect(vol1.port_b, cond.port_a);
     connect(cond.port_b, vol2.port_a);
     connect(vol2.port_b, eev.port_a);
@@ -233,7 +234,8 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     Modelica.Blocks.Sources.Constant opsig(k=eev_opening);
     Real Pc_bar, Pe_bar, mdot, SH, Q_evap, Q_cond, W_comp;
   equation
-    connect(comp.port_b, vol1.port_a);
+    connect(comp.port_b, vshell.port_a);
+    connect(vshell.port_b, vol1.port_a);
     connect(vol1.port_b, cond.port_a);
     connect(cond.port_b, vol2.port_a);
     connect(vol2.port_b, eev.port_a);
@@ -292,7 +294,8 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     Modelica.Blocks.Sources.RealExpression opsig(y=homotopy(op_target, op_easy));
     Real Pc_bar, Pe_bar, mdot, SH, Q_evap, Q_cond, W_comp, W_ind, COP;
   equation
-    connect(comp.port_b, vol1.port_a);
+    connect(comp.port_b, vshell.port_a);
+    connect(vshell.port_b, vol1.port_a);
     connect(vol1.port_b, cond.port_a);
     connect(cond.port_b, vol2.port_a);
     connect(vol2.port_b, eev.port_a);
@@ -338,7 +341,8 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     Modelica.Blocks.Sources.Constant opsig(k=eev_opening);
     Real Pc_bar, Pe_bar, mdot, SH, Q_evap, Q_cond, W_comp;
   equation
-    connect(comp.port_b, vol1.port_a);
+    connect(comp.port_b, vshell.port_a);
+    connect(vshell.port_b, vol1.port_a);
     connect(vol1.port_b, cond.port_a);
     connect(cond.port_b, vol2.port_a);
     connect(vol2.port_b, eev.port_a);
@@ -389,7 +393,8 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     // ── 공기 폐루프: 증발기 출구 → 응축기 입구 (온도·습도) ──
     cond.T_air_in = evap.T_air_out;
     cond.Wi       = evap.W_air_out;
-    connect(comp.port_b, vol1.port_a);
+    connect(comp.port_b, vshell.port_a);
+    connect(vshell.port_b, vol1.port_a);
     connect(vol1.port_b, cond.port_a);
     connect(cond.port_b, vol2.port_a);
     connect(vol2.port_b, eev.port_a);
@@ -434,7 +439,20 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     parameter Real RH_air_cond = 0.8 "응축기 공기 입구 상대습도 (air_series=false)";
     final parameter Real W_air_cond = HXCorr.W_humid(T_air_cond, RH_air_cond, 101325.0);
     HPWDon.Comp_Chamber comp(V_disp_cm3=7.5);
-    Volume_L3 vol1(V=V_n1, p_start=p1_0, h_start=h1_0, fixedState=true, m_ext=if use_oil then oil.m_flow else 0);
+    // ── 압축기 쉘 가스 체적 (2026-07-26 신설) ──
+    // 고압쉘이므로 쉘 내부는 토출압 가스로 채워지고, 오일 섬프도 그 안에 있다.
+    // 기존에는 이 체적이 인벤토리에 아예 없었고(체크리스트 414.1cc = HX+배관+어큐),
+    // 오일 질량 싱크를 18.3cc 토출배관(vol1, 냉매 0.366g)에 붙여놨었다.
+    // 그 결과 vol1.p -> M_eq -> m_ext -> vol1 질량 -> vol1.p 되먹임의 시상수가
+    //   dM_eq/dP = 33.7 g/bar,  dM1/dp = 0.035 g/bar,  tau_oil = 30s
+    //   -> tau_loop = 0.035/(33.7/30) ~ 0.031 s
+    // 로 다른 시상수(볼륨 ~s, HX벽 ~수십s)보다 1000배 빨라 사이클이 강성으로 정지했다.
+    // 실측: V_n1 18cc -> t=3 정체 / 100cc -> 완주.
+    // ★V_shell 은 실물 압축기 사양에서 확인할 것★ (행정체적 7.5cm3 와 무관한 값)
+    parameter Real V_shell = 4.0e-4 "압축기 쉘 가스 체적 [m3] ★실물 확인 필요★" annotation(Evaluate=false);
+    Volume_L3 vshell(V=V_shell, p_start=p1_0, h_start=h1_0, fixedState=true,
+                     m_ext=if use_oil then oil.m_flow else 0);
+    Volume_L3 vol1(V=V_n1, p_start=p1_0, h_start=h1_0, fixedState=true);
     HPWDevap.Cond_On_Dyn cond(Nseg=3, h_ref_start=h_rest, T_w_start=20.0, T_air_in_start=T_air_cond);
     Volume_L3 vol2(V=V_n2, p_start=p2_0, h_start=h2_0, fixedState=true);
     HPWDon.EEV_On eev(D_seat=1.0e-3, stroke_max=1.0e-3);
@@ -472,11 +490,12 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
   equation
     // ── 공기 폐루프: 증발기 출구 → 응축기 입구 (온도·습도) ──
     // 오일 섬프 입력 — 고압쉘이므로 섬프 압력 = 토출압
-    oil.P_dis = vol1.p;
+    oil.P_dis = vshell.p "고압쉘 — 오일 섬프는 쉘 안";
     oil.T_shell = comp.T_w "쉘 벽온도 = 섬프 온도 (고압쉘)";
     cond.T_air_in = if air_series then evap.T_air_out else T_air_cond;
     cond.Wi       = if air_series then evap.W_air_out else W_air_cond;
-    connect(comp.port_b, vol1.port_a);
+    connect(comp.port_b, vshell.port_a);
+    connect(vshell.port_b, vol1.port_a);
     connect(vol1.port_b, cond.port_a);
     connect(cond.port_b, vol2.port_a);
     connect(vol2.port_b, eev.port_a);
@@ -514,7 +533,7 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
       cond(steadyInit=true, h_ref_start=362350, T_w_start=27.0),
       evap(steadyInit=true, h_ref_start=334610, T_w_start=10.0),
       oil(steadyInit=true),
-      vol1(fixedState=false), vol2(fixedState=false), vol3(fixedState=false),
+      vshell(fixedState=false), vol1(fixedState=false), vol2(fixedState=false), vol3(fixedState=false),
       vol4(fixedState=false, noInitialPressure=true),
       // 가지 B(superheated) 근처 초기추정. 정상초기화에서 p_start/h_start 는
       // 고정값이 아니라 뉴턴 초기추정이므로 어느 정상해로 수렴할지에 영향.
@@ -526,8 +545,9 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
 
     Real M_total "시스템 총 냉매량 [kg]";
   equation
-    M_total = vol1.rho*vol1.V + vol2.rho*vol2.V + vol3.rho*vol3.V
-              + vol4.rho*vol4.V + cond.M_tot + evap.M_tot + oil.M_dis;
+    M_total = vshell.rho*vshell.V + vol1.rho*vol1.V + vol2.rho*vol2.V
+              + vol3.rho*vol3.V + vol4.rho*vol4.V
+              + cond.M_tot + evap.M_tot + oil.M_dis;
   initial equation
     M_total = M_charge "폐루프 특이성 해소 — 충전량이 어큐 압력을 결정";
   end Cycle_L3_ssinit;
@@ -552,8 +572,9 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
       evap(h_ref_start=439579, T_w_start=10.0));
     Real M_total "시스템 총 냉매량 [kg] (구속 아님 — 초기값이 결정)";
   equation
-    M_total = vol1.rho*vol1.V + vol2.rho*vol2.V + vol3.rho*vol3.V
-              + vol4.rho*vol4.V + cond.M_tot + evap.M_tot + oil.M_dis;
+    M_total = vshell.rho*vshell.V + vol1.rho*vol1.V + vol2.rho*vol2.V
+              + vol3.rho*vol3.V + vol4.rho*vol4.V
+              + cond.M_tot + evap.M_tot + oil.M_dis;
   end Cycle_L3_branchtest;
 
   model Cycle_L3_noinit "초기방정식 없음 — -iif 로 상태를 받아 과도 (2026-07-26)
@@ -567,11 +588,64 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
       use_oil=true, N_const=1800.0, Kp_c=0.0, Ki_c=0.0,
       open_init=23.586, air_series=true,
       cond(initOpt=1), evap(initOpt=1), oil(initOpt=1),
-      vol1(initOpt=1), vol2(initOpt=1), vol3(initOpt=1), vol4(initOpt=1));
+      vshell(initOpt=1), vol1(initOpt=1), vol2(initOpt=1), vol3(initOpt=1), vol4(initOpt=1));
     Real M_total "시스템 총 냉매량 [kg] (구속 아님)";
   equation
-    M_total = vol1.rho*vol1.V + vol2.rho*vol2.V + vol3.rho*vol3.V
-              + vol4.rho*vol4.V + cond.M_tot + evap.M_tot + oil.M_dis;
+    M_total = vshell.rho*vshell.V + vol1.rho*vol1.V + vol2.rho*vol2.V
+              + vol3.rho*vol3.V + vol4.rho*vol4.V
+              + cond.M_tot + evap.M_tot + oil.M_dis;
   end Cycle_L3_noinit;
+
+  model Cycle_L3_coldstart_charge "정지조건을 충전량에서 유도하는 콜드스타트 (2026-07-26)
+
+    문제: 기존 콜드스타트는 h_rest / M_dis_start 를 손으로 넣는 구조라
+    구성(쉘 체적, 오일 ON/OFF)이 바뀔 때마다 조용히 과충전됐다.
+      h_rest=265.5kJ/kg 은 '414.1cc 가 정확히 100g' 이 되도록 역산된 값이라
+      쉘 400cc 를 더하면 정지 충전량이 196g 이 된다(목표의 2배).
+      M_dis_start 도 회로에서 빠지지 않고 더해져 오일 ON 이면 +84% 과충전.
+
+    해결: ssinit 과 같은 방식으로 초기화에 충전량 구속을 건다.
+      정지상태는 전 시스템이 주위온도·포화압에서 균일하다고 보고
+      엔탈피를 단일 미지수 h0 로 두면, M_total = M_charge 가 h0 를 결정한다.
+      오일은 정지 평형(der(M_dis)=0 과 동치인 M_dis = M_eq)으로 둔다.
+      -> 구성이 바뀌어도 충전량이 자동으로 맞는다.
+  "
+    extends Cycle_L3_coldstart_PI(
+      use_oil=true, air_series=true,
+      vshell(initOpt=1), vol1(initOpt=1), vol2(initOpt=1),
+      vol3(initOpt=1), vol4(initOpt=1),
+      cond(initOpt=1), evap(initOpt=1), oil(initOpt=1));
+    // parameter + fixed=false: 초기화에서 풀리고 이후 상수로 유지되는 미지수.
+    // Real 로 두면 t>0 에 방정식이 없어 시뮬레이션계가 1개 부족해진다.
+    parameter Real h0(fixed=false, start=3.0e5) "정지 균일 엔탈피 [J/kg] — 충전량 구속이 결정";
+    Real M_total "시스템 총 냉매량 [kg]";
+  equation
+    M_total = vshell.rho*vshell.V + vol1.rho*vol1.V + vol2.rho*vol2.V
+              + vol3.rho*vol3.V + vol4.rho*vol4.V
+              + cond.M_tot + evap.M_tot + oil.M_dis;
+  initial equation
+    // 압력: 주위온도 포화압으로 균일
+    vshell.p = p_rest; vol1.p = p_rest; vol2.p = p_rest;
+    vol3.p = p_rest;   vol4.p = p_rest;
+    // 엔탈피: 단일 미지수 h0 로 균일 (충전량이 결정)
+    vshell.h = h0; vol1.h = h0; vol2.h = h0; vol3.h = h0; vol4.h = h0;
+    for k in 1:cond.M loop
+      cond.h_ref[k] = h0;
+      cond.T_w[k] = T_air_cond;
+    end for;
+    for k in 1:evap.M loop
+      evap.h_ref[k] = h0;
+      evap.T_w[k] = evap.T_air_in;
+    end for;
+    cond.m_ref_col = 0.0;
+    evap.m_ref_col = 0.0;
+    cond.dp_lag = 0.0;
+    // 오일: 정지 평형 (der(M_dis)=0 과 동치)
+    oil.M_dis = oil.M_eq;
+    // PI 적분기 (자체 초기방정식이 없어 명시 필요)
+    ctrl.I = open_init;
+    // 충전량 구속 — h0 를 결정
+    M_total = M_charge;
+  end Cycle_L3_coldstart_charge;
 
 end HPWDcycle;
