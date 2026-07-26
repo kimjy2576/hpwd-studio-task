@@ -25,7 +25,8 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     input Real P_dis "섬프 압력 (고압쉘 = 토출압) [Pa]";
     input Real T_shell "쉘(섬프) 온도 [K] — 압축기 벽 에너지수지에서";
     Real M_oil "오일 질량 [kg]";
-    Real M_eq "평형 용해량 [kg]";
+    Real M_eq "평형 용해량 [kg] (상한 매끄럽게 반영)";
+    Real M_eq_raw "상관식 원값 [kg] — 유효범위 밖에서 발산함";
     parameter Boolean steadyInit = false "true: der(M_dis)=0";
     parameter Integer initOpt = 0 "0=legacy 1=noInit 2=fixedState 3=steadyState";
     Real M_dis(start=M_dis_start, fixed=false) "현재 용해량 [kg]";
@@ -41,7 +42,15 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     end if;
   equation
     M_oil = R290Oil.oil_mass(V_oil_cc);
-    M_eq  = min(M_eq_max, R290Oil.dissolved(M_oil, P_dis, T_shell - dT_offset))
+    M_eq_raw = R290Oil.dissolved(M_oil, P_dis, T_shell - dT_offset);
+    // 매끄러운 min. 경성 min() 은 미분 불연속을 만들어 사이클을 강성으로 만든다.
+    //   실측(T_shell 305K): P=12bar 에서 dM_eq/dP = 44.6 g/bar,
+    //   P=15bar 에서 651 g/bar 로 발산(P>Psat 라 x1 이 0.99 클램프에 붙음),
+    //   그 위는 min() 에 걸려 0 g/bar. 651 -> 0 의 꺾임이 콜드스타트를 막았음.
+    //   콜드스타트는 8.365 -> 25bar 로 이 절벽을 정면 통과한다.
+    // smooth min: 0.5*(a+b-sqrt((a-b)^2+eps^2)),  eps = 5% of M_eq_max
+    M_eq  = 0.5*(M_eq_raw + M_eq_max
+                 - sqrt((M_eq_raw - M_eq_max)^2 + (0.05*M_eq_max)^2))
       "상한 클램프: 유효범위 밖에서 dissolved 가 발산함 (실측 26bar/32C 에서 2114g)";
     code  = R290Oil.validity(P_dis, T_shell - dT_offset);
     tau*der(M_dis) = M_eq - M_dis;
