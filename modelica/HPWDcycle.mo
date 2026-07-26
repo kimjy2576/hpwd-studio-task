@@ -15,7 +15,23 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
   "
     parameter Real V_oil_cc = 160.0 "오일 주입체적 [cc]";
     parameter Real dT_offset = 0.0 "섬프 보정 오프셋 [K]. T_sump = T_shell - dT_offset" annotation(Evaluate=false);
-    parameter Real tau = 30.0 "용해/탈리 시상수 [s]";
+    parameter Real tau = 300.0 "용해/탈리 시상수 [s].
+      2026-07-26 문헌 근거로 30 -> 300 변경.
+      기존 30s 는 근거 없이 넣은 값이며 쉘 압력과 강성 되먹임을 만들어
+      콜드스타트가 t=24 에서 정지했음 (tau>=120s 면 완주).
+      문헌:
+      - 흡수는 정지 상태에서 확산 지배이며(Barbosa 계열), 자연대류 개시와
+        운전 중 교반(모터 로터·베인·토출류)이 속도를 크게 높인다.
+      - Purdue ICEC 2016: 운전 압축기에서 측정한 '동적 용해도'는 PVT 선도의
+        '정적 용해도'와 다르다. 우리 모델은 정적 상관식 + 1차 지연 구조이므로
+        tau 가 그 차이를 대신 흡수하는 파라미터임.
+      - US5211542: 섬프 압력을 흡입압까지 낮추는 데 통상 2~10분 —
+        섬프 탈기 시간 규모가 120~600s 임을 시사.
+      검증: tau 120/300/600/1000s 전부 완주하고 SH 를 목표 6.0K 로 제어.
+      t=300s 는 아직 오일 평형 도중이라 tau 에 따라 M_dis 78/71/61/55g 로
+      갈리나 모두 같은 정상해로 수렴하는 경로임 (tau=120 에서 Pc 10.45 로
+      ssinit 정상해 10.46 에 근접).
+      ★실측으로 확정할 것★";
     parameter Real M_dis_start = 0.084 "초기 용해량 [kg]" annotation(Evaluate=false);
     parameter Real M_eq_max = 0.09 "평형 용해량 상한 [kg].
       유효범위 밖에서 dissolved 가 발산하는 것을 막는 물리적 상한.
