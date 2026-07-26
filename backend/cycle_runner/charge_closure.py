@@ -62,17 +62,20 @@ def oil_validity(P_bar, T_oil_C, oil=OIL_5GSD):
     P1s = CP.PropsSI('P', 'T', T, 'Q', 1, FLUID) / 1e5
     ratio = P_bar / P1s
     w = solubility(P_bar, T_oil_C, 'raoult_fit', oil)
-    x1 = w / oil['M_molar'] / (w / oil['M_molar'] + (1 - w) / 44.1) if w < 1 else 1.0
+    # 몰분율 환산: x1 = (w/M_refrig) / (w/M_refrig + (1-w)/M_oil)
+    x1 = (w / 44.1) / ((w / 44.1) + (1.0 - w) / oil['M_molar']) if w < 1 else 1.0
 
-    valid, reason = True, 'ok'
+    # 경성(hard): 상관식 전제가 깨져 값 자체가 무의미
+    # 연성(soft): 회귀 데이터 범위 밖 추정 — 값은 쓰되 불확실성 표시
+    hard, soft, reason = False, False, 'ok'
     if ratio >= 1.0:
-        valid, reason = False, f'섬프 압력이 포화압 초과 (P/Psat={ratio:.3f}) — 상관식 전제 파탄'
-    elif ratio > 0.92:
-        valid, reason = False, f'포화선 근접 (P/Psat={ratio:.3f}) — x1 발산 영역'
-    elif w > 0.60:
-        valid, reason = False, f'질량분율 {w*100:.1f}% — Wang 2020 회귀 범위 밖 추정'
+        hard, reason = True, f'섬프 압력이 포화압 초과 (P/Psat={ratio:.3f}) — 냉매가 응축, 상관식 전제 파탄'
+    elif x1 >= 0.98:
+        hard, reason = True, f'x1={x1:.3f} — 고정점이 클램프(0.99)에 붙어 w/(1-w) 발산'
+    elif ratio > 0.95 or x1 > 0.85:
+        soft, reason = True, f'외삽 (P/Psat={ratio:.3f}, x1={x1:.3f}) — Wang 2020 회귀범위 밖 추정'
     return {'P_sat_bar': P1s, 'P_ratio': ratio, 'x1': x1, 'w': w,
-            'valid': valid, 'reason': reason}
+            'valid': not hard, 'hard': hard, 'soft': soft, 'reason': reason}
 
 
 def oil_charge(M_oil_kg, P_bar, T_oil_C, oil=OIL_5GSD, strict=True):
@@ -176,3 +179,96 @@ def charge_residual(state, geom, M_charge, oil_cfg=None, strict_oil=True):
     lo, hi = p['_acc_range']
     return {'parts': p, 'M_acc_need': need, 'acc': acc,
             'compatible': lo <= M_charge <= hi, 'range': (lo, hi)}
+
+
+# ─── 정방향 solver (충전량 구속) ────────────────────────────────────
+def _state_from_pass(r, Pe, Pc):
+    s = r
+    return {
+        'P_evap': Pe, 'P_cond': Pc,
+        'h_dis': s['compressor']['h_dis'],
+        'h_cond_out': s['condenser']['h_ref_out'],
+        'h_eev_out': s['eev']['h_out'],
+        'h_evap_out': s['evaporator']['h_ref_out'],
+        'T_dis': s['compressor']['T_dis'],
+        'M_hx': (s['condenser'].get('M_holdup') or 0.0)
+                + (s['evaporator'].get('M_holdup') or 0.0),
+        'm_dot': s['compressor']['m_dot'],
+    }
+
+
+def solve_forward(fidelity, operating, air_bc, M_charge, geom,
+                  oil_cfg=None, method='hybr', dry_accumulator=True,
+                  x0=None, verbose=False):
+    """정방향(충전량 구속) 정상해. Modelica 와 동일한 조건 설정.
+
+    미지수 (P_evap, P_cond, h_suc), 잔차
+      r1 질량연속   m_comp - m_eev
+      r2 엔탈피폐합 h_evap_out - h_suc
+      r3 충전량보존 M_total - M_charge
+
+    어큐 처리:
+      dry_accumulator=True 면 M_acc = rho_v*V_acc 로 고정(건조 가정)하여
+      r3 를 진짜 등식으로 만든다. 해가 나온 뒤 SH>0 이면 자기정합.
+      SH<=0 이 나오면 어큐가 습윤해야 한다는 뜻이고, 그 경우 액위가
+      자유도가 되어 이 정식화로는 닫히지 않는다 (블리드 모델 필요).
+
+    scipy.optimize.root 사용 — 기존 수동 게인 고정점은 P_cond 가 한 번에
+    경계로 튀는 등 취약했음 (2026-07-25 실측).
+    """
+    from scipy.optimize import root
+    from .refrigerant_loop import one_pass
+
+    oil_cfg = oil_cfg or {}
+    N = operating['N']
+    opening = operating['opening']
+    T_amb = operating.get('T_amb', 20.0)
+    V_acc = geom['V_acc']
+
+    # 스케일 (잔차 크기 정규화)
+    S = (1e-3, 1e1, 1e-3)   # kg/s, kJ/kg, kg
+    trace = []
+
+    def residual(u):
+        Pe, Pc, hs = u
+        # 뉴턴 스텝이 비물리 영역으로 나가면 CoolProp flash 가 예외를 던짐
+        # (실측: h_suc 가 음수까지 밀려 HSU_P_flash 실패). 클램프 + 벌점 처리.
+        Pe = max(2.0, min(15.0, Pe))
+        Pc = max(6.0, min(30.0, Pc))
+        hs = max(250.0, min(800.0, hs))
+        op = {'P_evap': Pe, 'P_cond': Pc, 'N': N, 'opening': opening,
+              'h_suc': hs, 'T_amb': T_amb}
+        try:
+            r = one_pass(fidelity, op, air_bc, None)
+        except Exception:
+            return [1e3, 1e3, 1e3]
+        st = _state_from_pass(r, Pe, Pc)
+        r1 = r['residual']['mass']
+        r2 = r['h_evap_out'] - hs
+        p = system_charge(st, geom, oil_cfg, strict_oil=False)
+        if p['oil'] is None:
+            # 경성 파탄(포화압 초과 등)일 때만 벌점. 연성(외삽)은 값을 쓰되
+            # 결과에 플래그를 남긴다 — 실제 운전점이 회귀범위 경계에 걸림.
+            return [r1 / S[0], r2 / S[1], 1e3]
+        _, _, rho_v, _ = accumulator_limits(Pe, V_acc)
+        M_acc = rho_v * V_acc if dry_accumulator else 0.0
+        r3 = p['_fixed_total'] + M_acc - M_charge
+        trace.append((Pe, Pc, hs, r1, r2, r3, r['SH_evap']))
+        if verbose and len(trace) % 20 == 1:
+            print(f"  Pe={Pe:.4f} Pc={Pc:.4f} hs={hs:.1f} | "
+                  f"질량={r1:+.2e} 엔탈피={r2:+.2f} 충전={r3*1000:+.2f}g SH={r['SH_evap']:.2f}")
+        return [r1 / S[0], r2 / S[1], r3 / S[2]]
+
+    u0 = x0 or [operating['P_evap'], operating['P_cond'], operating['h_suc']]
+    sol = root(residual, u0, method=method, options={'xtol': 1e-8})
+
+    Pe, Pc, hs = sol.x
+    op = {'P_evap': Pe, 'P_cond': Pc, 'N': N, 'opening': opening,
+          'h_suc': hs, 'T_amb': T_amb}
+    r = one_pass(fidelity, op, air_bc, None)
+    st = _state_from_pass(r, Pe, Pc)
+    chk = charge_residual(st, geom, M_charge, oil_cfg, strict_oil=False)
+    return {'success': bool(sol.success), 'message': sol.message,
+            'P_evap': Pe, 'P_cond': Pc, 'h_suc': hs,
+            'SH_evap': r['SH_evap'], 'state': r, 'charge': chk,
+            'nfev': sol.nfev, 'trace': trace}
