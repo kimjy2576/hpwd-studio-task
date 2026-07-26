@@ -467,6 +467,7 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     input Real T_air_in "공기 입구온도 [degC] (증발기 출구와 연결)";
     input Real Wi "공기 입구 절대습도 [kg/kg] (증발기 출구, 제습 반영)";
     parameter Boolean steadyInit = false "true: 정상상태 초기화 der(x)=0. false: start 값 고정 (2026-07-26)";
+    parameter Boolean useHomotopyFlow = true "운동량식 homotopy 사용";
     parameter Real w_nom = 2.06e-3 "공칭 회로당 냉매유량 [kg/s] — homotopy 단순화 모델용 (ThermoPower wnom 대응)";
     parameter Real dp_nom = 14437.0 "공칭 압력강하 [Pa] — 단순화 모델의 선형 저항 dp_nom/w_nom*w";
     parameter Real T_air_in_start=25.0 "T_air_in 초기추정 [degC] (standalone/초기화용)" annotation(Evaluate=false);
@@ -693,6 +694,7 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     HPWD.RefPort port_a "냉매 입구";
     HPWD.RefPort port_b "냉매 출구";
     parameter Boolean steadyInit = false "true: 정상상태 초기화 der(x)=0. false: start 값 고정 (2026-07-26)";
+    parameter Boolean useHomotopyFlow = true "운동량식 homotopy 사용";
     parameter Real w_nom = 2.06e-3 "공칭 회로당 냉매유량 [kg/s] — homotopy 단순화 모델용 (ThermoPower wnom 대응)";
     parameter Real dp_nom = 21338.0 "공칭 압력강하 [Pa] — 단순화 모델의 선형 저항 dp_nom/w_nom*w";
     parameter Real T_air_in=20.0 "공기 입구온도 [degC] (드럼 출구 공기)";

@@ -471,9 +471,15 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     extends Cycle_L3_coldstart_PI(
       use_oil=true, N_const=1800.0, Kp_c=0.0, Ki_c=0.0,
       open_init=23.586, air_series=true,
-      cond(steadyInit=true), evap(steadyInit=true), oil(steadyInit=true),
+      cond(steadyInit=true, useHomotopyFlow=hHX),
+      evap(steadyInit=true, useHomotopyFlow=hHX),
+      eev(useHomotopyFlow=hEEV), comp(useHomotopyFlow=hComp),
+      oil(steadyInit=true),
       vol1(fixedState=false), vol2(fixedState=false), vol3(fixedState=false),
       vol4(noInitialPressure=true));
+    parameter Boolean hHX   = true  "HX 운동량식 homotopy";
+    parameter Boolean hEEV  = true  "EEV 유량식 homotopy";
+    parameter Boolean hComp = true  "압축기 유량식 homotopy";
     parameter Real M_charge = 0.100 "총 냉매 충전량 [kg]" annotation(Evaluate=false);
     Real M_total "시스템 총 냉매량 [kg]";
   equation
