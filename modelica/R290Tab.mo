@@ -1535,20 +1535,70 @@ package R290Tab "R290 tabulated media — (p,h) basis, 2상 안전, 미분가능
     annotation(derivative=rho_ph_a_d);
   end rho_ph_a;
 
-  function rho_ph_a_d "rho_ph_a 의 전미분 (중심차분).
+  function rho_ph_a_d "rho_ph_a 전미분. dh 는 해석, dp 는 중심차분.
 
-    해석식이 분기·블렌딩을 포함해 해석 도함수가 길어지므로 중심차분을 쓴다.
-    rho_ph_a 자체가 테이블·정수인덱스를 안 쓰므로 미분해도 폭발하지 않는다.
-    스텝: dp=100Pa, dh=10 J/kg (2026-07-26 검증: O(h^2) 수렴 확인 범위)
+    dp 방향은 계수 b_k(p) 와 포화선이 모두 p 에 의존해 해석식이 길어지므로
+    차분을 유지한다. dh 를 해석화해 rho_ph_a 호출을 4회 -> 2회로 줄였다.
   "
     input Real p; input Real h; input Real dp; input Real dh; output Real drho;
   protected
-    Real ep,eh,drdp,drdh;
+    Real ep,drdp;
   algorithm
-    ep := 1.0e4; eh := 1.0e1;  // 액상은 dp 민감도가 작아 100Pa 로는 부족 (14% 오차)
-    drdp := (rho_ph_a(p+ep,h) - rho_ph_a(p-ep,h))/(2.0*ep);
-    drdh := (rho_ph_a(p,h+eh) - rho_ph_a(p,h-eh))/(2.0*eh);
-    drho := drdp*dp + drdh*dh;
+    ep := 1.0e4;
+    drdp := if dp == 0.0 then 0.0
+            else (rho_ph_a(p+ep,h) - rho_ph_a(p-ep,h))/(2.0*ep);
+    drho := drdp*dp + drho_dh_a(p,h)*dh;
   end rho_ph_a_d;
+
+  function drho_dh_a "해석형 d(rho)/dh [kg/m3 / (J/kg)] (2026-07-26).
+
+    rho_ph_a 의 엔탈피 편도함수를 해석적으로 계산한다.
+    중심차분(rho_ph_a 4회 호출)을 쓰면 초기화 반복에서 비용이 누적되어
+    사이클 ssinit 이 2분 이상 걸렸다. dh 방향만 해석화하면 호출이 절반으로 준다.
+      단상: rho = rs(p)*(1 + P(dh)) 이므로 d/dh = rs*P'(dh)
+      2상 : rho = 1/((1-x)/rL + x/rV), dx/dh = 1/(hV-hL)
+            d(rho)/dh = -rho^2 * (1/rV - 1/rL) * dx/dh
+      블렌딩: 곱미분 (tanh 가중의 도함수 포함)
+  "
+    input Real p; input Real h; output Real drdh;
+  protected
+    Real lp,hL,hV,rL,rV,dh,rs,x,xc,b1,b2,b3,b4,b5,b6;
+    Real rho2p,drho2p,rhol_s,drhol_s,w1,dw1,den;
+  algorithm
+    lp := log(min(max(p, P0), P1));
+    hL := hl_a(p); hV := hv_a(p); rL := rhol_a(p); rV := rhov_a(p);
+    x  := (h-hL)/(hV-hL); xc := min(max(x,-0.02),1.2);
+    // 2상 가지
+    den    := (1.0-xc)/rL + xc/rV;
+    rho2p  := 1.0/den;
+    drho2p := if (x > -0.02 and x < 1.2)
+              then -rho2p*rho2p*(1.0/rV - 1.0/rL)/(hV-hL) else 0.0;
+    // 액상 가지
+    rs := rhol_a(p); dh := h - hL;
+      b1 := ((((((-3.5698617068e-18*lp + 2.8684486518e-16)*lp - 9.5975210133e-15)*lp + 1.7115551744e-13)*lp - 1.7157760094e-12)*lp + 9.1672505973e-12)*lp - 2.0394437926e-11);
+      b2 := ((((((-6.6882494093e-13*lp + 5.3704927822e-11)*lp - 1.7957667453e-09)*lp + 3.2005280316e-08)*lp - 3.2066079443e-07)*lp + 1.7123493348e-06)*lp - 3.8075480482e-06);
+      b3 := ((((((-6.6626082072e-08*lp + 5.3422324003e-06)*lp - 1.7839248204e-04)*lp + 3.1754302562e-03)*lp - 3.1777058835e-02)*lp + 1.6950266498e-01)*lp - 3.7650745651e-01);
+      b4 := ((((((1.0219198481e-05*lp - 8.2226990363e-04)*lp + 2.7548697953e-02)*lp - 4.9190644460e-01)*lp + 4.9371750728e+00)*lp - 2.6409592086e+01)*lp + 5.8819147952e+01);
+    rhol_s  := rs*(1.0 + ((b1*dh + b2)*dh + b3)*dh + b4);
+    drhol_s := rs*((3.0*b1*dh + 2.0*b2)*dh + b3);
+    if h < hL - 6.0*DHB then
+      drdh := drhol_s;
+    elseif h < hL + 6.0*DHB then
+      w1   := 0.5*(1.0+tanh((h-hL)/DHB));
+      dw1  := 0.5*(1.0 - tanh((h-hL)/DHB)^2)/DHB;
+      drdh := (1.0-w1)*drhol_s + w1*drho2p + dw1*(rho2p - rhol_s);
+    elseif h < hV then
+      drdh := drho2p;
+    else
+      rs := rhov_a(p); dh := h - hV;
+      b1 := (((((((2.6836607255e-29*lp - 2.5496641961e-27)*lp + 1.0371181950e-25)*lp - 2.3414008942e-24)*lp + 3.1685201994e-23)*lp - 2.5702584048e-22)*lp + 1.1572276785e-21)*lp - 2.2309186245e-21);
+      b2 := (((((((-1.2591722151e-23*lp + 1.1980051087e-21)*lp - 4.8795698449e-20)*lp + 1.1029854927e-18)*lp - 1.4943681184e-17)*lp + 1.2135402802e-16)*lp - 5.4694575730e-16)*lp + 1.0554344697e-15);
+      b3 := (((((((1.8611555021e-18*lp - 1.7787877631e-16)*lp + 7.2757710614e-15)*lp - 1.6511129058e-13)*lp + 2.2452414104e-12)*lp - 1.8296043380e-11)*lp + 8.2728039070e-11)*lp - 1.6012576966e-10);
+      b4 := (((((((-3.2604619422e-14*lp + 3.3577914560e-12)*lp - 1.4651392394e-10)*lp + 3.5184949691e-09)*lp - 5.0300995412e-08)*lp + 4.2859224457e-07)*lp - 2.0171194822e-06)*lp + 4.0480967577e-06);
+      b5 := (((((((-1.4673537559e-08*lp + 1.3638450531e-06)*lp - 5.4321024645e-05)*lp + 1.2017952597e-03)*lp - 1.5950033412e-02)*lp + 1.2698379434e-01)*lp - 5.6150666081e-01)*lp + 1.0638106303e+00);
+      b6 := (((((((1.4951964055e-05*lp - 1.4212503508e-03)*lp + 5.7847275000e-02)*lp - 1.3068974136e+00)*lp + 1.7699945553e+01)*lp - 1.4370632176e+02)*lp + 6.4763625554e+02)*lp - 1.2497841803e+03);
+      drdh := rs*((((5.0*b1*dh + 4.0*b2)*dh + 3.0*b3)*dh + 2.0*b4)*dh + b5);
+    end if;
+  end drho_dh_a;
 
 end R290Tab;
