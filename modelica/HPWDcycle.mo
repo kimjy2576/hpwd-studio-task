@@ -386,6 +386,9 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
         31.0,   1500.0;
         41.0,   1500.0;
         51.0,   N_final;
+        81.0,   N_final;
+        120.0,  N_final;
+        200.0,  N_final;
         500.0,  N_final]);
     Modelica.Blocks.Sources.Constant opsig(k=eev_opening);
     Real Pc_bar, Pe_bar, mdot, SH, Q_evap, Q_cond, W_comp;
@@ -541,6 +544,12 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
         31.0,   1500.0;
         41.0,   1500.0;
         51.0,   N_final;
+        // 평탄 구간 절점 — 51->500 단일구간이면 Akima 가 직전 급상승
+        //   (41->51: 1500->1800) 기울기를 이어받아 오버슛한다.
+        61.0,   N_final;
+        81.0,   N_final;
+        120.0,  N_final;
+        200.0,  N_final;
         500.0,  N_final]);
     Real Pc_bar, Pe_bar, mdot, SH, Q_evap, Q_cond, W_comp, opening;
   equation
