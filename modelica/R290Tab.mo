@@ -894,20 +894,37 @@ package R290Tab "R290 tabulated media — (p,h) basis, 2상 안전, 미분가능
   "
     input Real rho; input Real h; output Real p;
   protected
-    Real lo, hi, mid, f;
+    Real lo, hi, mid, f, rlo, rhi;
+    Integer ilo, ihi, imid;
   algorithm
-    lo := P0; hi := P1;
+    // 격자 기반 역산 (2026-07-26). rho_ph 는 고정 h 에서 압력 격자 셀 안에서는
+    // 선형이다(쌍선형 보간). 따라서 셀만 찾으면 선형 역산으로 끝난다.
+    //   1) 격자 인덱스 이분탐색 nP=60 -> 6회
+    //   2) 셀 안에서 선형 역산 (bilinC 분기면 이것으로 정확)
+    //   3) 2상·블렌딩 분기는 셀 안에서도 비선형이므로 시컨트 3회 보정
+    // 물성호출 30회 -> 약 11회.
     if rho <= rho_ph(P0, h) then
       p := P0;
     elseif rho >= rho_ph(P1, h) then
       p := P1;
     else
-      for k in 1:30 loop  // 30회면 상대정밀도 ~1e-9. 40회는 과함
-        mid := 0.5*(lo + hi);
-        f := rho_ph(mid, h) - rho;
-        if f > 0 then hi := mid; else lo := mid; end if;
+      ilo := 1; ihi := nP;
+      while ihi - ilo > 1 loop
+        imid := div(ilo + ihi, 2);
+        if rho_ph(P0 + (imid - 1)*dP, h) > rho then ihi := imid; else ilo := imid; end if;
+      end while;
+      lo := P0 + (ilo - 1)*dP;  hi := P0 + (ihi - 1)*dP;
+      rlo := rho_ph(lo, h);     rhi := rho_ph(hi, h);
+      p := if abs(rhi - rlo) < 1e-12 then 0.5*(lo + hi)
+           else lo + (rho - rlo)*(hi - lo)/(rhi - rlo);
+      // 블렌딩 밴드는 셀 안에서도 비선형이라 3회 필요 (2회면 상대오차 7e-5)
+      for k in 1:3 loop
+        mid := min(max(p, lo), hi);
+        f := rho_ph(mid, h);
+        if f > rho then hi := mid; rhi := f; else lo := mid; rlo := f; end if;
+        p := if abs(rhi - rlo) < 1e-12 then 0.5*(lo + hi)
+             else lo + (rho - rlo)*(hi - lo)/(rhi - rlo);
       end for;
-      p := 0.5*(lo + hi);
     end if;
     annotation(derivative = p_rhoh_d);
   end p_rhoh;
