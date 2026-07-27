@@ -108,7 +108,7 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     parameter Boolean conservativeMass = true "질량 동특성: true=보존형(M,h), false=(p,h)";
     Modelica.Units.SI.Pressure p(start=p_start,
       stateSelect=if conservativeMass then StateSelect.default else StateSelect.prefer);
-    Modelica.Units.SI.SpecificEnthalpy h(start=h_start, fixed=false, stateSelect=StateSelect.prefer);
+    Modelica.Units.SI.SpecificEnthalpy h(start=h_start, fixed=false, stateSelect=StateSelect.prefer, nominal=4.0e5);
     // start 값 필수: 보존형에서 rho 가 반복변수가 되는데 기본 start=0 이면
     // 초기 비선형계가 밀도 0 에서 출발해 실패한다 (2026-07-26 실측).
     final parameter Real rho_start = R290Tab.rho_ph_a(p_start, h_start);
@@ -185,7 +185,7 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     parameter Boolean conservativeMass = true "질량 동특성: true=보존형(M,h), false=(p,h)";
     Modelica.Units.SI.Pressure p(start=p_start,
       stateSelect=if conservativeMass then StateSelect.default else StateSelect.prefer);
-    Modelica.Units.SI.SpecificEnthalpy h(start=h_start, fixed=false, stateSelect=StateSelect.prefer);
+    Modelica.Units.SI.SpecificEnthalpy h(start=h_start, fixed=false, stateSelect=StateSelect.prefer, nominal=4.0e5);
     final parameter Real rho_start = R290Tab.rho_ph_a(p_start, h_start);
     Real rho(start=rho_start, nominal=100.0);
     Real hL, hV, xq, w_sep, h_out;
