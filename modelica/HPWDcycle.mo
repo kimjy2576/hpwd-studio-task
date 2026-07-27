@@ -102,7 +102,7 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     Modelica.Units.SI.SpecificEnthalpy h(start=h_start, fixed=false, stateSelect=StateSelect.prefer);
     // start 값 필수: 보존형에서 rho 가 반복변수가 되는데 기본 start=0 이면
     // 초기 비선형계가 밀도 0 에서 출발해 실패한다 (2026-07-26 실측).
-    final parameter Real rho_start = R290Tab.rho_ph(p_start, h_start);
+    final parameter Real rho_start = R290Tab.rho_ph_a(p_start, h_start);
     Real rho(start=rho_start, nominal=100.0);
     Real M(start=rho_start*V, fixed=false, nominal=1e-3,
            stateSelect=StateSelect.prefer) "냉매 질량 [kg] — 보존 상태";
@@ -160,7 +160,7 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     // 보존형 전환 (Volume_L3 주석 참조)
     Modelica.Units.SI.Pressure p(start=p_start);
     Modelica.Units.SI.SpecificEnthalpy h(start=h_start, fixed=false, stateSelect=StateSelect.prefer);
-    final parameter Real rho_start = R290Tab.rho_ph(p_start, h_start);
+    final parameter Real rho_start = R290Tab.rho_ph_a(p_start, h_start);
     Real rho(start=rho_start, nominal=100.0);
     Real hL, hV, xq, w_sep, h_out;
     Real M(start=rho_start*V, fixed=false, nominal=1e-3,
@@ -170,8 +170,8 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     rho=M/V;
     p=R290Tab.p_rhoh(rho, h);
     U=M*h - p*V;
-    hL=R290Tab.hl(p);
-    hV=R290Tab.hv(p);
+    hL=R290Tab.hl_a(p);
+    hV=R290Tab.hv_a(p);
     xq=(h - hL)/max(hV - hL, 1.0);
     // 2상 구간에서만 포화증기 토출. 과냉/과열에서는 벌크 엔탈피 그대로.
     w_sep=0.25*(1.0 + tanh(xq/dx_sep))*(1.0 + tanh((1.0 - xq)/dx_sep));

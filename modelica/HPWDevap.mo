@@ -99,10 +99,10 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     parameter Real A_fin_ratio=0.9424260735;
     parameter Real Patm=101325.0, Pcrit=4.2512e6, M_mol=44.0956;
     // ── 냉매 물성 (P 고정) ──
-    parameter Real T_satC=R290Tab.Tsat(P) - 273.15;
-    parameter Real hl=R290Tab.hl(P), hv=R290Tab.hv(P), h_fg=hv - hl;
+    parameter Real T_satC=R290Tab.Tsat_a(P) - 273.15;
+    parameter Real hl=R290Tab.hl_a(P), hv=R290Tab.hv_a(P), h_fg=hv - hl;
     parameter Real mu_l=R290Tab.mul(P), k_l=R290Tab.kl(P), cp_l=R290Tab.cpl(P), Pr_l=cp_l*mu_l/k_l;
-    parameter Real rho_l=R290Tab.rhol(P), rho_v=R290Tab.rhov(P), mu_v=R290Tab.muv(P), P_r=P/Pcrit;
+    parameter Real rho_l=R290Tab.rhol_a(P), rho_v=R290Tab.rhov_a(P), mu_v=R290Tab.muv(P), P_r=P/Pcrit;
     parameter Real muv=R290Tab.muv(P), kv=R290Tab.kv(P), cpv=R290Tab.cpv(P), Prv=cpv*muv/kv;
     parameter Real h_v_gni=HXCorr.gnielinski(G_ref*Di/muv, Prv, kv, Di);
     parameter Real h_max=hv + cpv*(T_air_in - T_satC) "냉매 물리상한 (공기온도 과열증기, 근사)";
@@ -252,9 +252,9 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     m_ref_col=port_a.m_flow/Nt;
     G_ref=m_ref_col/A_cs;
     h_in=inStream(port_a.h_outflow);
-    T_satC=R290Tab.Tsat(P) - 273.15; hl=R290Tab.hl(P); hv=R290Tab.hv(P); h_fg=hv - hl;
+    T_satC=R290Tab.Tsat_a(P) - 273.15; hl=R290Tab.hl_a(P); hv=R290Tab.hv_a(P); h_fg=hv - hl;
     mu_l=R290Tab.mul(P); k_l=R290Tab.kl(P); cp_l=R290Tab.cpl(P); Pr_l=cp_l*mu_l/k_l;
-    rho_l=R290Tab.rhol(P); rho_v=R290Tab.rhov(P); mu_v=R290Tab.muv(P); P_r=P/Pcrit;
+    rho_l=R290Tab.rhol_a(P); rho_v=R290Tab.rhov_a(P); mu_v=R290Tab.muv(P); P_r=P/Pcrit;
     muv=R290Tab.muv(P); kv=R290Tab.kv(P); cpv=R290Tab.cpv(P); Prv=cpv*muv/kv;
     h_v_gni=HXCorr.gnielinski(G_ref*Di/muv, Prv, kv, Di);
     h_max=hv + cpv*(T_air_in - T_satC);
@@ -289,8 +289,8 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     Q_total=Nt*sum(Q); Q_lat_total=Nt*sum(Q_lat);
     h_out=hpath[M + 1];
     x_out=(h_out - hl)/h_fg;
-    SH=0.5*((R290Tab.T_ph_a(P, h_out) - R290Tab.Tsat(P))
-            + sqrt((R290Tab.T_ph_a(P, h_out) - R290Tab.Tsat(P))^2 + 1e-4)) "증발기 출구 과열도 [K] (smooth max)";
+    SH=0.5*((R290Tab.T_ph_a(P, h_out) - R290Tab.Tsat_a(P))
+            + sqrt((R290Tab.T_ph_a(P, h_out) - R290Tab.Tsat_a(P))^2 + 1e-4)) "증발기 출구 과열도 [K] (smooth max)";
     T_air_out=sum(T_aen[Nr + 1,s] for s in 1:Nseg)/Nseg;
     // 냉매측 dp: 2상 마찰(MSH) + 가속 + U-bend
     x_in_q=(h_in - hl)/h_fg;
@@ -413,9 +413,9 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     m_ref_col=port_a.m_flow/Nt;
     G_ref=m_ref_col/A_cs;
     h_in=inStream(port_a.h_outflow);
-    T_satC=R290Tab.Tsat(P) - 273.15; hl=R290Tab.hl(P); hv=R290Tab.hv(P); h_fg=hv - hl;
+    T_satC=R290Tab.Tsat_a(P) - 273.15; hl=R290Tab.hl_a(P); hv=R290Tab.hv_a(P); h_fg=hv - hl;
     mu_l=R290Tab.mul(P); k_l=R290Tab.kl(P); cp_l=R290Tab.cpl(P); Pr_l=cp_l*mu_l/k_l;
-    rho_l=R290Tab.rhol(P); rho_v=R290Tab.rhov(P); mu_v=R290Tab.muv(P); P_r=P/Pcrit;
+    rho_l=R290Tab.rhol_a(P); rho_v=R290Tab.rhov_a(P); mu_v=R290Tab.muv(P); P_r=P/Pcrit;
     k_v=R290Tab.kv(P); cp_v=R290Tab.cpv(P); Pr_v=cp_v*mu_v/k_v;
     h_min=hl - cp_l*(T_satC - T_air_in);
     hpath[1]=h_in;
@@ -609,9 +609,9 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
 
     G_ref=m_ref_col/A_cs;
     h_in=inStream(port_a.h_outflow);
-    T_satC=R290Tab.Tsat(P) - 273.15; hl=R290Tab.hl(P); hv=R290Tab.hv(P); h_fg=hv - hl;
+    T_satC=R290Tab.Tsat_a(P) - 273.15; hl=R290Tab.hl_a(P); hv=R290Tab.hv_a(P); h_fg=hv - hl;
     mu_l=R290Tab.mul(P); k_l=R290Tab.kl(P); cp_l=R290Tab.cpl(P); Pr_l=cp_l*mu_l/k_l;
-    rho_l=R290Tab.rhol(P); rho_v=R290Tab.rhov(P); mu_v=R290Tab.muv(P); P_r=P/Pcrit;
+    rho_l=R290Tab.rhol_a(P); rho_v=R290Tab.rhov_a(P); mu_v=R290Tab.muv(P); P_r=P/Pcrit;
     k_v=R290Tab.kv(P); cp_v=R290Tab.cpv(P); Pr_v=cp_v*mu_v/k_v;
     // 셀별 냉매 상태/열전달 (상태 h_ref,T_w 로부터 전부 명시적)
     for k in 1:M loop
@@ -622,7 +622,7 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
       // 과열/과냉에서는 T 가 P 에 거의 무관하므로 보정을 끈다(tanh 로 연속 전이).
       w2p[k]=0.25*(1.0 + tanh(xq[k]/0.03))*(1.0 + tanh((1.0 - xq[k])/0.03));
       T_ref[k]=R290Tab.T_ph_a(P, h_ref[k]) - 273.15
-               - w2p[k]*R290Tab.Tsat_d(P, dp_lag*k/M);
+               - w2p[k]*R290Tab.Tsat_a_d(P, dp_lag*k/M);
       xq[k]=(h_ref[k] - hl)/h_fg;
       h_i[k]=HPWDon.hi_dispatch_cond(xq[k], G_ref, Di, mu_l, k_l, Pr_l, mu_v, k_v, Pr_v, P_r)*(EF_sgl + (EF_2ph - EF_sgl)*(0.25*(1.0 + tanh(xq[k]/0.03))*(1.0 + tanh((1.0 - xq[k])/0.03))));
       Q_ref[k]=h_i[k]*A_i_seg*(T_ref[k] - T_w[k]);
@@ -631,10 +631,10 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
       xc[k]=noEvent(max(min(xq[k], 0.999), 0.001));
     end for;
     // 냉매 엔탈피 동특성 (upwind, path 순서; 응축기 방열 → −Q_ref)
-    M_c[1]=R290Tab.rho_ph(P, h_ref[1])*V_cell;
+    M_c[1]=R290Tab.rho_ph_a(P, h_ref[1])*V_cell;
     M_c[1]*der(h_ref[1])=m_ref_col*(h_in - h_ref[1]) - Q_ref[1];
     for k in 2:M loop
-      M_c[k]=R290Tab.rho_ph(P, h_ref[k])*V_cell;
+      M_c[k]=R290Tab.rho_ph_a(P, h_ref[k])*V_cell;
       M_c[k]*der(h_ref[k])=m_ref_col*(h_ref[k - 1] - h_ref[k]) - Q_ref[k];
     end for;
     // 공기측 march (행 방향) + Q_air (벽→공기)
@@ -844,9 +844,9 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
 
     G_ref=m_ref_col/A_cs;
     h_in=inStream(port_a.h_outflow);
-    T_satC=R290Tab.Tsat(P) - 273.15; hl=R290Tab.hl(P); hv=R290Tab.hv(P); h_fg=hv - hl;
+    T_satC=R290Tab.Tsat_a(P) - 273.15; hl=R290Tab.hl_a(P); hv=R290Tab.hv_a(P); h_fg=hv - hl;
     mu_l=R290Tab.mul(P); k_l=R290Tab.kl(P); cp_l=R290Tab.cpl(P); Pr_l=cp_l*mu_l/k_l;
-    rho_l=R290Tab.rhol(P); rho_v=R290Tab.rhov(P); mu_v=R290Tab.muv(P); P_r=P/Pcrit;
+    rho_l=R290Tab.rhol_a(P); rho_v=R290Tab.rhov_a(P); mu_v=R290Tab.muv(P); P_r=P/Pcrit;
     muv=R290Tab.muv(P); kv=R290Tab.kv(P); cpv=R290Tab.cpv(P); Prv=cpv*muv/kv;
     h_v_gni=HXCorr.gnielinski(G_ref*Di/muv, Prv, kv, Di);
     // 공기 입구 (행 1)
@@ -886,10 +886,10 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
       C_wall_cell*der(T_w[k])=Q_air_c[rowOf[k], segOf[k]] - Q_ref[k];
     end for;
     // 냉매 엔탈피 동특성 (upwind, path 순서; 증발기 흡열 → +Q_ref)
-    M_c[1]=R290Tab.rho_ph(P, h_ref[1])*V_cell;
+    M_c[1]=R290Tab.rho_ph_a(P, h_ref[1])*V_cell;
     M_c[1]*der(h_ref[1])=m_ref_col*(h_in - h_ref[1]) + Q_ref[1];
     for k in 2:M loop
-      M_c[k]=R290Tab.rho_ph(P, h_ref[k])*V_cell;
+      M_c[k]=R290Tab.rho_ph_a(P, h_ref[k])*V_cell;
       M_c[k]*der(h_ref[k])=m_ref_col*(h_ref[k - 1] - h_ref[k]) + Q_ref[k];
     end for;
     Q_total=Ncirc*sum(Q_ref); Q_lat_total=Ncirc*sum(Q_lat_c);
@@ -897,8 +897,8 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     x_out=(h_out - hl)/h_fg;
     // smooth max — x_out 이 1.0 을 통과할 때 max() 가 상태이벤트를 만들어
     // 사이클 콜드스타트가 그 지점(t~55s)에서 정지함(2026-07-24 실측).
-    SH=0.5*((R290Tab.T_ph_a(P, h_out) - R290Tab.Tsat(P))
-            + sqrt((R290Tab.T_ph_a(P, h_out) - R290Tab.Tsat(P))^2 + 1e-4)) "출구 과열도 [K]";
+    SH=0.5*((R290Tab.T_ph_a(P, h_out) - R290Tab.Tsat_a(P))
+            + sqrt((R290Tab.T_ph_a(P, h_out) - R290Tab.Tsat_a(P))^2 + 1e-4)) "출구 과열도 [K]";
     T_air_out=sum(T_aen[Nr + 1,s] for s in 1:Nsc)/Nsc;
     W_air_out=sum(W_aen[Nr + 1,s] for s in 1:Nsc)/Nsc "출구 절대습도 [kg/kg] (제습 반영) → 응축기 입력";
     // 냉매측 dp (명시적)

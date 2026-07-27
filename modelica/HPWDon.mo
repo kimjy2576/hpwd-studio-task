@@ -36,7 +36,7 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     Real dP, dP_eff, m1, D_h, Re, Cd_eff, pr, w_chk;
   equation
     h_in   = inStream(port_a.h_outflow);
-    rho_in = R290Tab.rho_ph(port_a.p, h_in);
+    rho_in = R290Tab.rho_ph_a(port_a.p, h_in);
     mu_in  = R290Tab.mu_ph(port_a.p, h_in);
 
     // needle-cone 기하 → throat 면적
@@ -146,7 +146,7 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     h_su1  = inStream(port_a.h_outflow);
     T_su1  = R290Tab.T_ph_a(p_su1, h_su1);
     cp_su1 = R290Tab.cp_ph(p_su1, h_su1);
-    rho_su1    = R290Tab.rho_ph(p_su1, h_su1);
+    rho_su1    = R290Tab.rho_ph_a(p_su1, h_su1);
     m_dot_port = V_max*omega*rho_su1;
     // 흡입관·머플러·밸브 손실: dP ∝ ṁ² (정지 시 0 → 콜드스타트 균압 안전).
     // rho_su1(포트 상태)로 평가해 rho_su ← p_su ← dP 대수루프를 끊음.
@@ -159,7 +159,7 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     AU_loss*(T_w - T_amb) + AU_su*(T_w - T_su1) = W_friction;
 
     p_dis  = port_b.p;
-    rho_su = R290Tab.rho_ph(p_su, h_su);
+    rho_su = R290Tab.rho_ph_a(p_su, h_su);
     s_su   = R290Tab.s_ph(p_su, h_su);
     n_poly = R290Tab.gamma_ph(p_su, h_su);
     omega    = N/60.0;
@@ -193,7 +193,7 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     // 밸브 손실 (흡입 ρ_su, 토출 ρ_dis_est)
     dP_in       = zeta_valve*m_dot^2/(rho_su*A_in^2);
     W_valve_in  = m_dot*dP_in/rho_su;
-    rho_dis_est = R290Tab.rho_ph(p_dis, h_dis_is);
+    rho_dis_est = R290Tab.rho_ph_a(p_dis, h_dis_is);
     dP_out      = zeta_valve*m_dot^2/(rho_dis_est*A_out^2);
     W_valve_out = m_dot*dP_out/rho_dis_est;
     // indicated 일 + 실제 토출엔탈피
@@ -342,8 +342,8 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     mu_l  = R290Tab.mul(P);
     k_l   = R290Tab.kl(P);
     cp_l  = R290Tab.cpl(P);
-    rho_l = R290Tab.rhol(P);
-    rho_v = R290Tab.rhov(P);
+    rho_l = R290Tab.rhol_a(P);
+    rho_v = R290Tab.rhov_a(P);
     mu_v  = R290Tab.muv(P);
     Pr_l  = cp_l*mu_l/k_l;
     P_r   = P/Pcrit;
@@ -402,9 +402,9 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     m_fin=sqrt(2.0*h_o/(k_fin*fin_thickness)); mr_phi=m_fin*r_i*phi_f;
     eta_fin=tanh(mr_phi)/mr_phi; eta_o=1.0-(A_fin/A_total)*(1.0-eta_fin);
     // 냉매 포화물성
-    T_sat=R290Tab.Tsat(P); h_fg=R290Tab.hv(P)-R290Tab.hl(P);
+    T_sat=R290Tab.Tsat_a(P); h_fg=R290Tab.hv_a(P)-R290Tab.hl_a(P);
     mu_l=R290Tab.mul(P); k_l=R290Tab.kl(P); cp_l=R290Tab.cpl(P); Pr_l=cp_l*mu_l/k_l;
-    rho_l=R290Tab.rhol(P); rho_v=R290Tab.rhov(P); mu_v=R290Tab.muv(P); P_r=P/Pcrit;
+    rho_l=R290Tab.rhol_a(P); rho_v=R290Tab.rhov_a(P); mu_v=R290Tab.muv(P); P_r=P/Pcrit;
     // FV march (각 세그먼트: q_flux↔h_i↔Q 비선형, OM이 풂)
     x[1]=x_in;
     for i in 1:N loop
@@ -469,7 +469,7 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     Real h_i[Nx];
   equation
     mu_l=R290Tab.mul(P); k_l=R290Tab.kl(P); cp_l=R290Tab.cpl(P); Pr_l=cp_l*mu_l/k_l;
-    rho_l=R290Tab.rhol(P); rho_v=R290Tab.rhov(P); mu_v=R290Tab.muv(P); P_r=P/Pcrit;
+    rho_l=R290Tab.rhol_a(P); rho_v=R290Tab.rhov_a(P); mu_v=R290Tab.muv(P); P_r=P/Pcrit;
     muv=R290Tab.muv(P); kv=R290Tab.kv(P); cpv=R290Tab.cpv(P); Prv=cpv*muv/kv; Rev=G*Di/muv;
     h_gni=HXCorr.gnielinski(Rev, Prv, kv, Di);
     for i in 1:Nx loop
@@ -491,9 +491,9 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     Real h_ref[N+1], x[N], T_ref[N], h_i[N], UA[N], Q[N], q_flux[N];
     Real Q_total, x_out, T_out, SH_out;
   equation
-    T_sat=R290Tab.Tsat(P); hl=R290Tab.hl(P); hv=R290Tab.hv(P); h_fg=hv-hl;
+    T_sat=R290Tab.Tsat_a(P); hl=R290Tab.hl_a(P); hv=R290Tab.hv_a(P); h_fg=hv-hl;
     mu_l=R290Tab.mul(P); k_l=R290Tab.kl(P); cp_l=R290Tab.cpl(P); Pr_l=cp_l*mu_l/k_l;
-    rho_l=R290Tab.rhol(P); rho_v=R290Tab.rhov(P); mu_v=R290Tab.muv(P); P_r=P/Pcrit;
+    rho_l=R290Tab.rhol_a(P); rho_v=R290Tab.rhov_a(P); mu_v=R290Tab.muv(P); P_r=P/Pcrit;
     muv=R290Tab.muv(P); kv=R290Tab.kv(P); cpv=R290Tab.cpv(P); Prv=cpv*muv/kv; Rev=G_ref*Di/muv;
     h_v_gni=HXCorr.gnielinski(Rev, Prv, kv, Di);
     h_ref[1]=hl + x_in*h_fg;
@@ -577,9 +577,9 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     Real T_w(start=10.0), T_fin(start=22.0), b(start=3.0), eta_o_wet(start=0.5);
     Real h_i(start=4600.0), q_flux_est, Q_total, Q_air, Q_lat;
   equation
-    T_sat_C=R290Tab.Tsat(P) - 273.15;
+    T_sat_C=R290Tab.Tsat_a(P) - 273.15;
     mu_l=R290Tab.mul(P); k_l=R290Tab.kl(P); cp_l=R290Tab.cpl(P); Pr_l=cp_l*mu_l/k_l;
-    rho_l=R290Tab.rhol(P); rho_v=R290Tab.rhov(P); mu_v=R290Tab.muv(P); P_r=P/Pcrit;
+    rho_l=R290Tab.rhol_a(P); rho_v=R290Tab.rhov_a(P); mu_v=R290Tab.muv(P); P_r=P/Pcrit;
     muv=R290Tab.muv(P); kv=R290Tab.kv(P); cpv=R290Tab.cpv(P); Prv=cpv*muv/kv;
     h_v_gni=HXCorr.gnielinski(G_ref*Di/muv, Prv, kv, Di);
     Wa=HXCorr.W_humid(T_air, RH, Patm);
@@ -618,9 +618,9 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     Boolean is_wet[N];
     Real Q_total, Q_lat_total, x_out;
   equation
-    T_satC=R290Tab.Tsat(P) - 273.15; hl=R290Tab.hl(P); hv=R290Tab.hv(P); h_fg=hv - hl;
+    T_satC=R290Tab.Tsat_a(P) - 273.15; hl=R290Tab.hl_a(P); hv=R290Tab.hv_a(P); h_fg=hv - hl;
     mu_l=R290Tab.mul(P); k_l=R290Tab.kl(P); cp_l=R290Tab.cpl(P); Pr_l=cp_l*mu_l/k_l;
-    rho_l=R290Tab.rhol(P); rho_v=R290Tab.rhov(P); mu_v=R290Tab.muv(P); P_r=P/Pcrit;
+    rho_l=R290Tab.rhol_a(P); rho_v=R290Tab.rhov_a(P); mu_v=R290Tab.muv(P); P_r=P/Pcrit;
     muv=R290Tab.muv(P); kv=R290Tab.kv(P); cpv=R290Tab.cpv(P); Prv=cpv*muv/kv;
     h_v_gni=HXCorr.gnielinski(G_ref*Di/muv, Prv, kv, Di);
     Wa=HXCorr.W_humid(T_air, RH, Patm); cp_a=HXCorr.cp_air_moist(Wa); h_air=HXCorr.h_moist(T_air, Wa);
