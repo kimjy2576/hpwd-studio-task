@@ -1057,7 +1057,12 @@ package R290Tab "R290 tabulated media — (p,h) basis, 2상 안전, 미분가능
     dh := (drho - dRdp*dp)/(if abs(dRdh) < 1e-12 then -1e-12 else dRdh);
   end h_rhop_d;
 
-  function p_rhoh "밀도·엔탈피에서 압력 역산 [Pa]. 보존형 정식화용 (2026-07-26)
+  function p_rhoh "밀도·엔탈피에서 압력 역산 [Pa]. 보존형 정식화용.
+
+    2026-07-26: 내부 조회를 rho_ph -> rho_ph_a 로 전환.
+    볼륨은 p=p_rhoh(rho,h) 로 압력을 역산하는데 여기만 테이블판을 쓰면
+    다른 곳(해석형)과 물성이 섞여 모순이 생기고 초기화가 발산한다
+    (실측: 사이클 ssinit 이 lambda=0 에서 residual 2.06e+20 으로 폭주)
 
     보존형(상태 = M, h)에서는 rho = M/V 가 먼저 정해지고 p 를 역산해야 한다.
     rho_ph 는 고정 h 에서 p 에 대해 단조증가(압력이 오르면 액쪽으로 이동)이므로
@@ -1075,24 +1080,24 @@ package R290Tab "R290 tabulated media — (p,h) basis, 2상 안전, 미분가능
     //   2) 셀 안에서 선형 역산 (bilinC 분기면 이것으로 정확)
     //   3) 2상·블렌딩 분기는 셀 안에서도 비선형이므로 시컨트 3회 보정
     // 물성호출 30회 -> 약 11회.
-    if rho <= rho_ph(P0, h) then
+    if rho <= rho_ph_a(P0, h) then
       p := P0;
-    elseif rho >= rho_ph(P1, h) then
+    elseif rho >= rho_ph_a(P1, h) then
       p := P1;
     else
       ilo := 1; ihi := nP;
       while ihi - ilo > 1 loop
         imid := div(ilo + ihi, 2);
-        if rho_ph(P0 + (imid - 1)*dP, h) > rho then ihi := imid; else ilo := imid; end if;
+        if rho_ph_a(P0 + (imid - 1)*dP, h) > rho then ihi := imid; else ilo := imid; end if;
       end while;
       lo := P0 + (ilo - 1)*dP;  hi := P0 + (ihi - 1)*dP;
-      rlo := rho_ph(lo, h);     rhi := rho_ph(hi, h);
+      rlo := rho_ph_a(lo, h);     rhi := rho_ph_a(hi, h);
       p := if abs(rhi - rlo) < 1e-12 then 0.5*(lo + hi)
            else lo + (rho - rlo)*(hi - lo)/(rhi - rlo);
       // 블렌딩 밴드는 셀 안에서도 비선형이라 3회 필요 (2회면 상대오차 7e-5)
       for k in 1:3 loop
         mid := min(max(p, lo), hi);
-        f := rho_ph(mid, h);
+        f := rho_ph_a(mid, h);
         if f > rho then hi := mid; rhi := f; else lo := mid; rlo := f; end if;
         p := if abs(rhi - rlo) < 1e-12 then 0.5*(lo + hi)
              else lo + (rho - rlo)*(hi - lo)/(rhi - rlo);
@@ -1115,8 +1120,8 @@ package R290Tab "R290 tabulated media — (p,h) basis, 2상 안전, 미분가능
     Real p, dRdp, dRdh;
   algorithm
     p    := p_rhoh(rho, h);
-    dRdp := rho_ph_d(p, h, 1.0, 0.0);
-    dRdh := rho_ph_d(p, h, 0.0, 1.0);
+    dRdp := rho_ph_a_d(p, h, 1.0, 0.0);
+    dRdh := rho_ph_a_d(p, h, 0.0, 1.0);
     // dRdp 가 0 에 가까우면(2상 평탄부) 가드
     dp := (drho - dRdh*dh)/(if abs(dRdp) < 1e-12 then 1e-12 else dRdp);
   end p_rhoh_d;
