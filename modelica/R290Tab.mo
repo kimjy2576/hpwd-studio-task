@@ -885,6 +885,68 @@ package R290Tab "R290 tabulated media — (p,h) basis, 2상 안전, 미분가능
     end if;
     annotation(derivative=rho_ph_d);
   end rho_ph;
+  function rho_grid_at_p "고정 p 에서 엔탈피 격자 전체의 밀도 [kg/m3] (2026-07-26)
+
+    HX 는 모든 셀이 같은 P 를 공유하므로, 셀마다 격자탐색을 반복할 필요 없이
+    격자 밀도를 한 번만 계산해두고 셀별로는 조회만 하면 된다.
+      셀별 독립 h_rhop : 72셀 x 11회 = 792 물성호출
+      격자 공유        : 160 + 72 = 232 회  (3.4배 절감)
+  "
+    input Real p;
+    output Real r[nH];
+  algorithm
+    for j in 1:nH loop
+      r[j] := rho_ph(p, H0 + (j - 1)*dH);
+    end for;
+  end rho_grid_at_p;
+
+  function h_from_grid "사전계산된 격자밀도 r 로 엔탈피 역산 [J/kg]
+
+    r 는 rho_grid_at_p(p) 결과. h 에 대해 단조감소이므로 이분탐색 후 선형역산.
+    셀 안 비선형(2상·블렌딩) 보정은 rho_ph 호출 2회로 마무리한다.
+  "
+    input Real r[nH]; input Real rho; input Real p; output Real h;
+  protected
+    Integer ilo, ihi, imid;
+    Real lo, hi, rlo, rhi, mid, f;
+  algorithm
+    if rho >= r[1] then
+      h := H0;
+    elseif rho <= r[nH] then
+      h := H1;
+    else
+      ilo := 1; ihi := nH;
+      while ihi - ilo > 1 loop
+        imid := div(ilo + ihi, 2);
+        if r[imid] < rho then ihi := imid; else ilo := imid; end if;
+      end while;
+      lo := H0 + (ilo - 1)*dH;  hi := H0 + (ihi - 1)*dH;
+      rlo := r[ilo];            rhi := r[ihi];
+      h := if abs(rhi - rlo) < 1e-12 then 0.5*(lo + hi)
+           else lo + (rho - rlo)*(hi - lo)/(rhi - rlo);
+      for k in 1:2 loop
+        mid := min(max(h, lo), hi);
+        f := rho_ph(p, mid);
+        if f < rho then hi := mid; rhi := f; else lo := mid; rlo := f; end if;
+        h := if abs(rhi - rlo) < 1e-12 then 0.5*(lo + hi)
+             else lo + (rho - rlo)*(hi - lo)/(rhi - rlo);
+      end for;
+    end if;
+    annotation(derivative = h_from_grid_d);
+  end h_from_grid;
+
+  function h_from_grid_d "h_from_grid 의 전미분 (음함수 정리, h_rhop_d 와 동일)"
+    input Real r[nH]; input Real rho; input Real p;
+    input Real dr[nH]; input Real drho; input Real dp; output Real dh;
+  protected
+    Real h, dRdp, dRdh;
+  algorithm
+    h    := h_from_grid(r, rho, p);
+    dRdp := rho_ph_d(p, h, 1.0, 0.0);
+    dRdh := rho_ph_d(p, h, 0.0, 1.0);
+    dh := (drho - dRdp*dp)/(if abs(dRdh) < 1e-12 then -1e-12 else dRdh);
+  end h_from_grid_d;
+
   function h_rhop "밀도·압력에서 엔탈피 역산 [J/kg]. HX 셀 보존형용 (2026-07-26)
 
     HX 는 압력이 포트에서 오고(P=port_a.p) 셀 상태가 엔탈피이므로
