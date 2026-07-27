@@ -815,6 +815,7 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     Real T_satC, hl, hv, h_fg, mu_l, k_l, cp_l, Pr_l, rho_l, rho_v, mu_v, P_r;
     Real muv, kv, cpv, Prv, h_v_gni;
     Real xq_c[Nr,Nsc], T_ref_c[Nr,Nsc], h_i_c[Nr,Nsc], cp_a[Nr,Nsc], h_air_c[Nr,Nsc];
+    Real dQ_c[Nr,Nsc] "Q_air_c - Q_sens_c (클램프)";
     Real eta_o[Nr,Nsc], b[Nr,Nsc], T_fin[Nr,Nsc], Q_air_c[Nr,Nsc], Q_ref_c[Nr,Nsc], Q_lat_c[Nr,Nsc];
     Real w_wet[Nr,Nsc](each min=0.0, each max=1.0) "습윤 가중 (0=건, 1=습) — 이벤트 없는 연속 전이";
     Real Q_sens_c[Nr,Nsc] "공기→벽 현열 [W] (잠열 분리용)";
@@ -878,7 +879,11 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
         // 벽→냉매 열전달
         Q_ref_c[p,s]=h_i_c[p,s]*A_i_seg*(T_w[kOf[p,s] + 1] - T_ref_c[p,s]);
         // 잠열 = 총열량 − 현열 (smooth max로 음수 클립, max() 이벤트 제거)
-        Q_lat_c[p,s]=w_wet[p,s]*0.5*((Q_air_c[p,s] - Q_sens_c[p,s]) + sqrt((Q_air_c[p,s] - Q_sens_c[p,s])^2 + eps_Q^2));
+        // 2026-07-26 가드: smooth-max 의 제곱합이 음수로 관측됨(= 인자가 NaN).
+      // Q_air_c 나 Q_sens_c 가 초기화 반복에서 NaN 이 되면 계 전체가 붕괴한다.
+      // 차이값을 유한 범위로 클램프해 sqrt 인자를 항상 유한·양수로 만든다.
+      dQ_c[p,s]=min(max(Q_air_c[p,s] - Q_sens_c[p,s], -1.0e6), 1.0e6);
+      Q_lat_c[p,s]=w_wet[p,s]*0.5*(dQ_c[p,s] + sqrt(dQ_c[p,s]^2 + eps_Q^2));
         // 공기 march
         // 2026-07-26 가드: 주석의 'Q_lat_c>=0 이라 max 불필요' 는 시간전진에서만
       // 참이다. 정상초기화는 반복 중 Q_lat_c 가 음수가 될 수 있고, 그러면
