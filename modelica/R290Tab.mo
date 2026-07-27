@@ -885,6 +885,60 @@ package R290Tab "R290 tabulated media — (p,h) basis, 2상 안전, 미분가능
     end if;
     annotation(derivative=rho_ph_d);
   end rho_ph;
+  function h_rhop "밀도·압력에서 엔탈피 역산 [J/kg]. HX 셀 보존형용 (2026-07-26)
+
+    HX 는 압력이 포트에서 오고(P=port_a.p) 셀 상태가 엔탈피이므로
+    볼륨의 p_rhoh 와 반대 방향 역함수가 필요하다.
+    rho_ph 는 고정 p 에서 h 에 단조감소(가열하면 팽창)이므로 안전하게 풀린다.
+    구현은 p_rhoh 와 동일한 격자 기반:
+      1) 엔탈피 격자 인덱스 이분탐색 (nH -> log2(nH) 회)
+      2) 셀 안 선형 역산
+      3) 2상·블렌딩 보정 시컨트 3회
+  "
+    input Real rho; input Real p; output Real h;
+  protected
+    Real lo, hi, mid, f, rlo, rhi;
+    Integer ilo, ihi, imid;
+  algorithm
+    // 단조감소이므로 부등호 방향이 p_rhoh 와 반대
+    if rho >= rho_ph(p, H0) then
+      h := H0;
+    elseif rho <= rho_ph(p, H1) then
+      h := H1;
+    else
+      ilo := 1; ihi := nH;
+      while ihi - ilo > 1 loop
+        imid := div(ilo + ihi, 2);
+        if rho_ph(p, H0 + (imid - 1)*dH) < rho then ihi := imid; else ilo := imid; end if;
+      end while;
+      lo := H0 + (ilo - 1)*dH;  hi := H0 + (ihi - 1)*dH;
+      rlo := rho_ph(p, lo);     rhi := rho_ph(p, hi);
+      h := if abs(rhi - rlo) < 1e-12 then 0.5*(lo + hi)
+           else lo + (rho - rlo)*(hi - lo)/(rhi - rlo);
+      for k in 1:3 loop
+        mid := min(max(h, lo), hi);
+        f := rho_ph(p, mid);
+        if f < rho then hi := mid; rhi := f; else lo := mid; rlo := f; end if;
+        h := if abs(rhi - rlo) < 1e-12 then 0.5*(lo + hi)
+             else lo + (rho - rlo)*(hi - lo)/(rhi - rlo);
+      end for;
+    end if;
+    annotation(derivative = h_rhop_d);
+  end h_rhop;
+
+  function h_rhop_d "h_rhop 의 전미분. 음함수 정리 기반.
+    rho = rho_ph(p,h) -> dh = (drho - (drho/dp)*dp)/(drho/dh)
+  "
+    input Real rho; input Real p; input Real drho; input Real dp; output Real dh;
+  protected
+    Real h, dRdp, dRdh;
+  algorithm
+    h    := h_rhop(rho, p);
+    dRdp := rho_ph_d(p, h, 1.0, 0.0);
+    dRdh := rho_ph_d(p, h, 0.0, 1.0);
+    dh := (drho - dRdp*dp)/(if abs(dRdh) < 1e-12 then -1e-12 else dRdh);
+  end h_rhop_d;
+
   function p_rhoh "밀도·엔탈피에서 압력 역산 [Pa]. 보존형 정식화용 (2026-07-26)
 
     보존형(상태 = M, h)에서는 rho = M/V 가 먼저 정해지고 p 를 역산해야 한다.
