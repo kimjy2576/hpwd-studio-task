@@ -139,7 +139,10 @@ package HXCorr "HX Moving-Boundary correlation 함수 라이브러리 (Python �
     input Real W "humidity ratio [kg/kg]";
     output Real cp;
   algorithm
-    cp := 1006.0 + 1860.0*W;
+    // 2026-07-26 가드: 초기화 반복 중 W 가 음수가 되면 cp 가 0 이나 음수가 되어
+    // b = 1 + w*(hfg*dWsdT/cp) 가 음수 -> finEffWet 의 sqrt 가 실패한다.
+    // W 를 물리 범위 [0, 1] 로 클램프.
+    cp := 1006.0 + 1860.0*min(max(W, 0.0), 1.0);
     annotation(Inline=true);
   end cp_air_moist;
 
@@ -172,7 +175,13 @@ package HXCorr "HX Moving-Boundary correlation 함수 라이브러리 (Python �
     Real Psat;
   algorithm
     Psat := Psat_water(T_C);
-    Ws := 0.622*Psat/(P_atm - Psat);
+    // 2026-07-26 가드 필수: T_C > 100C 면 Psat > P_atm 이 되어 분모가 0 을
+    // 지나 음수가 된다. 그러면 Ws < 0 -> dWsdT < 0 -> b = 1 + w*(hfg*dWsdT/cp) < 0
+    // -> finEffWet 의 sqrt(2*h_o*b/(k*t)) 가 음수 인자로 실패한다.
+    // 실측(2026-07-26 ssinit): evap.b[4,11] = -29088.6 로 초기화 전체가 붕괴.
+    // 초기화 반복 중 T_w 가 잠시 비물리적 값을 가지면 바로 터진다.
+    // 분모를 대기압의 5% 이상으로 클램프해 항상 유한·양수를 반환한다.
+    Ws := 0.622*Psat/max(P_atm - Psat, 0.05*P_atm);
     annotation(Inline=true);
   end W_sat;
 
