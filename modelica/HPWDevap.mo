@@ -560,11 +560,13 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     // 심볼릭 미분 가능.
     parameter Real M_cell_nom=rho_ref_nom*V_cell "셀 질량 초기추정 [kg]";
     Real M_c[M](each start=M_cell_nom) "셀 냉매 질량 [kg]";
-    Real drdh_c[M] "d(rho)/dh 셀별 [kg/m3 / (J/kg)]";
-    Real drdp_c[M] "d(rho)/dp 셀별 [kg/m3 / Pa]";
-    Real dMdt_c[M] "셀 질량 변화율 [kg/s] — 명시 계산";
-    Real w_c[M](each start=w_nom) "셀 출구 유량 [kg/s]";
-    Real dMcum[M] "dMdt 누적합 [kg/s]";
+    Real drdh_c[M](each nominal=1e-3) "d(rho)/dh 셀별 [kg/m3 / (J/kg)]";
+    Real drdp_c[M](each nominal=1e-5) "d(rho)/dp 셀별 [kg/m3 / Pa]";
+    Real dMdt_c[M](each start=0.0, each nominal=1e-6) "셀 질량 변화율 [kg/s] — 명시 계산";
+    // start/nominal 필수: 보존형 볼륨에서 rho.start=0 으로 초기 비선형계가
+    // 실패했던 것과 동형. 유량·저장량 모두 물리 규모를 명시한다.
+    Real w_c[M](each start=w_nom, each nominal=1e-3) "셀 출구 유량 [kg/s]";
+    Real dMcum[M](each start=0.0, each nominal=1e-5) "dMdt 누적합 [kg/s]";
     parameter Boolean useDerP = true "der(P) 항 포함 (dMdt 및 에너지식). P 가 대수량이면 false";
     Real M_tot(start=M*M_cell_nom) "회로 총 냉매 질량 [kg]";
     Real m_out "회로 출구 유량 [kg/s]";
