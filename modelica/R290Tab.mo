@@ -1184,7 +1184,23 @@ package R290Tab "R290 tabulated media — (p,h) basis, 2상 안전, 미분가능
     else
       dT:=bilin(TBLdTdp,p,h)*dp+bilin(TBLdTdh,p,h)*dh;
     end if;
+    annotation(derivative(order=2)=T_ph_dd);
   end T_ph_d;
+  function T_ph_dd "T_ph_d 의 도함수 자리표시자 (2026-07-26).
+
+    T_ph_d 에 annotation 이 없으면 2차 미분 경로에서 T_ph_d 가 통째로 인라인되고
+    그 안의 bilin(TBLdTdh,...) 가 60x160 테이블을 리터럴로 전개한다.
+    셀 240개분 반복되어 기호 야코비안이 406.7MB 로 폭발했다.
+    T_ph_d 를 함수 호출로 유지시키는 것이 목적이며, 2차 도함수 값 자체는
+    현재 사용처가 없어 0 으로 둔다 (야코비안은 1차만 필요).
+    ※ 2차 도함수가 실제로 필요해지면 여기를 채워야 함.
+  "
+    input Real p; input Real h; input Real dp; input Real dh;
+    input Real d2p; input Real d2h; output Real d2T;
+  algorithm
+    d2T := 0.0;
+  end T_ph_dd;
+
 
   // ===== 단일상 수송물성 (영역인지, 값) =====
   function mu_ph
@@ -1258,4 +1274,92 @@ package R290Tab "R290 tabulated media — (p,h) basis, 2상 안전, 미분가능
       h := h + (s_target - sN)*T;
     end for;
   end h_ps;
+  // ═══ 해석형 T_ph (2026-07-26) ═══
+  // 테이블 기반 T_ph 는 기호 야코비안 생성 시 TBLT/TBLdTdh(60x160)가 리터럴로
+  // 전개되어 _12jac.c 가 406.7MB 로 폭발했다. 셀 240개마다 호출되기 때문.
+  // 해석형은 상수배열이 6개짜리 다항계수뿐이라 전개돼도 무해하다.
+  //
+  // 형태: T - Tsat(p) = sum_k a_k(p) * (h - h_sat(p))^(3-k),  k=0..3
+  //       a_k(p) = 5차 다항
+  // 정확도(CoolProp 대조, 2~30bar):
+  //   액상  h in [hl-60k, hl-2k]   최대 0.024 K
+  //   증기  h in [hv+2k, hv+180k]  최대 0.167 K
+  constant Real TCL[4,6] = {{-7.105628038e-48, -1.482784810e-42, 6.770858730e-35, -3.424793425e-28, 2.000092478e-22, -1.832329621e-16},
+                            {-4.038099831e-42, 2.605905503e-35, -8.580458847e-29, 1.049734615e-22, -1.381225342e-16, -1.970950239e-10},
+                            {-1.679563407e-36, 1.515820216e-29, -5.696197281e-23, 1.065963930e-16, -1.541141597e-10, 4.558072453e-04},
+                            {5.185545926e-35, -2.672607829e-28, 6.609012642e-22, -6.417300542e-16, 4.942029418e-10, -1.052847239e-04}} "액상 T 계수";
+  constant Real TCV[4,6] = {{-1.607213570e-47, 1.478569292e-40, -5.731984123e-34, 1.046481544e-27, -1.589198188e-21, 4.604239992e-16},
+                            {1.243638051e-41, -1.152612943e-34, 4.386158618e-28, -8.138058199e-22, 1.129953876e-15, -6.167997577e-10},
+                            {-4.802357695e-36, 4.506484242e-29, -1.696679412e-22, 3.200191700e-16, -4.159538110e-10, 7.213976650e-04},
+                            {-3.560007963e-34, 2.278420793e-27, -6.148518356e-21, 1.731622354e-15, -2.797780568e-08, -1.297233529e-02}} "증기 T 계수";
+
+  function polyv "다항 평가 (내림차순 계수)"
+    input Real c[:]; input Real x; output Real y;
+  algorithm
+    y := 0.0;
+    for i in 1:size(c,1) loop y := y*x + c[i]; end for;
+    annotation(derivative=polyv_d);
+  end polyv;
+
+  function polyv_d "polyv 의 x 에 대한 도함수"
+    input Real c[:]; input Real x; input Real dc[:]; input Real dx; output Real dy;
+  protected
+    Real d;
+  algorithm
+    d := 0.0;
+    for i in 1:(size(c,1)-1) loop d := d*x + (size(c,1)-i)*c[i]; end for;
+    dy := d*dx;
+  end polyv_d;
+
+  function T_ph_a "해석형 T_ph — 테이블 없음. 기호 야코비안 친화적."
+    input Real p; input Real h; output Real T;
+  protected
+    Real Ts,hL,hV,dh,a[4];
+  algorithm
+    Ts := Tsat(p); hL := hl(p); hV := hv(p);
+    if h > hL and h < hV then
+      T := Ts;
+    else
+      if h <= hL then
+        dh := h - hL;
+        a[1] := polyv(TCL[1,:], p); a[2] := polyv(TCL[2,:], p);
+        a[3] := polyv(TCL[3,:], p); a[4] := polyv(TCL[4,:], p);
+      else
+        dh := h - hV;
+        a[1] := polyv(TCV[1,:], p); a[2] := polyv(TCV[2,:], p);
+        a[3] := polyv(TCV[3,:], p); a[4] := polyv(TCV[4,:], p);
+      end if;
+      T := Ts + ((a[1]*dh + a[2])*dh + a[3])*dh + a[4];
+    end if;
+    annotation(derivative=T_ph_a_d);
+  end T_ph_a;
+
+  function T_ph_a_d "T_ph_a 의 전미분"
+    input Real p; input Real h; input Real dp; input Real dh_in; output Real dT;
+  protected
+    Real Ts,hL,hV,dh,a[4],dTdh,dTdp,eps,Tp,Tm;
+  algorithm
+    hL := hl(p); hV := hv(p);
+    if h > hL and h < hV then
+      dT := Tsat_d(p, dp);
+    else
+      if h <= hL then
+        dh := h - hL;
+        a[1] := polyv(TCL[1,:], p); a[2] := polyv(TCL[2,:], p);
+        a[3] := polyv(TCL[3,:], p); a[4] := polyv(TCL[4,:], p);
+      else
+        dh := h - hV;
+        a[1] := polyv(TCV[1,:], p); a[2] := polyv(TCV[2,:], p);
+        a[3] := polyv(TCV[3,:], p); a[4] := polyv(TCV[4,:], p);
+      end if;
+      // dT/dh 는 해석적으로
+      dTdh := (3.0*a[1]*dh + 2.0*a[2])*dh + a[3];
+      // dT/dp 는 중심차분 (계수·포화선이 모두 p 에 의존해 식이 길어짐)
+      eps := 1.0e2;
+      Tp := T_ph_a(p + eps, h); Tm := T_ph_a(p - eps, h);
+      dTdp := (Tp - Tm)/(2.0*eps);
+      dT := dTdh*dh_in + dTdp*dp;
+    end if;
+  end T_ph_a_d;
+
 end R290Tab;

@@ -144,7 +144,7 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     // ── 흡입 경로: 포트(1) → 흡입 압력손실(유량의존) → shell 가열 → 챔버 흡입 ──
     p_su1  = port_a.p;
     h_su1  = inStream(port_a.h_outflow);
-    T_su1  = R290Tab.T_ph(p_su1, h_su1);
+    T_su1  = R290Tab.T_ph_a(p_su1, h_su1);
     cp_su1 = R290Tab.cp_ph(p_su1, h_su1);
     rho_su1    = R290Tab.rho_ph(p_su1, h_su1);
     m_dot_port = V_max*omega*rho_su1;
@@ -200,7 +200,7 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     w_chamber   = w_is + w_overunder;
     W_indicated = m_dot*w_chamber + W_valve_in + W_valve_out;
     h_dis       = h_su + w_chamber + (W_valve_in + W_valve_out)/m_dot;
-    T_dis       = R290Tab.T_ph(p_dis, h_dis);
+    T_dis       = R290Tab.T_ph_a(p_dis, h_dis);
     // 등엔트로피 효율
     eta_is = max(0.05, min(0.99, w_is/w_chamber));
     // 마찰 + 모터
@@ -499,7 +499,7 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     h_ref[1]=hl + x_in*h_fg;
     for i in 1:N loop
       x[i]=(h_ref[i] - hl)/h_fg;
-      T_ref[i]=if x[i] < 1.0 then T_sat else R290Tab.T_ph(P, h_ref[i]);
+      T_ref[i]=if x[i] < 1.0 then T_sat else R290Tab.T_ph_a(P, h_ref[i]);
       q_flux[i]=Q[i]/A_i_seg;
       h_i[i]=hi_dispatch_evap(x[i], G_ref, Di, q_flux[i],
                               mu_l, k_l, Pr_l, rho_l, rho_v, mu_v, P_r, M_mol, h_v_gni);
@@ -509,7 +509,7 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     end for;
     Q_total=sum(Q);
     x_out=(h_ref[N+1] - hl)/h_fg;
-    T_out=R290Tab.T_ph(P, h_ref[N+1]);
+    T_out=R290Tab.T_ph_a(P, h_ref[N+1]);
     SH_out=T_out - T_sat;
   end TestMarchSpan;
 
@@ -629,7 +629,7 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     h_ref[1]=hl + x_in*h_fg;
     for i in 1:N loop
       x[i]=(h_ref[i] - hl)/h_fg;
-      T_ref_g[i]=if x[i] < 1.0 then T_satC else R290Tab.T_ph(P, h_ref[i]) - 273.15;
+      T_ref_g[i]=if x[i] < 1.0 then T_satC else R290Tab.T_ph_a(P, h_ref[i]) - 273.15;
       is_wet[i]=((T_air + T_ref_g[i])/2.0) < T_dp;
       q_flux[i]=(T_air - T_w[i])*h_o;
       h_i[i]=hi_dispatch_evap(x[i], G_ref, Di, q_flux[i], mu_l, k_l, Pr_l, rho_l, rho_v, mu_v, P_r, M_mol, h_v_gni);
