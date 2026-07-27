@@ -560,6 +560,12 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     // 심볼릭 미분 가능.
     parameter Real M_cell_nom=rho_ref_nom*V_cell "셀 질량 초기추정 [kg]";
     Real M_c[M](each start=M_cell_nom) "셀 냉매 질량 [kg]";
+    Real drdh_c[M] "d(rho)/dh 셀별 [kg/m3 / (J/kg)]";
+    Real drdp_c[M] "d(rho)/dp 셀별 [kg/m3 / Pa]";
+    Real dMdt_c[M] "셀 질량 변화율 [kg/s] — 명시 계산";
+    Real w_c[M](each start=w_nom) "셀 출구 유량 [kg/s]";
+    Real dMcum[M] "dMdt 누적합 [kg/s]";
+    parameter Boolean useDerP = false "dMdt 에 der(P) 항 포함 여부";
     Real M_tot(start=M*M_cell_nom) "회로 총 냉매 질량 [kg]";
     Real m_out "회로 출구 유량 [kg/s]";
     // 콜드스타트 초기조건 (rest)
@@ -604,7 +610,7 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
       cp_a_dry=HXCorr.cp_air_mix(Wi) "입구 습도에 따른 습공기 cp (혼합물 기준 — m_air_seg가 습공기 질량유량)";
     P=port_a.p;
     M_tot=sum(M_c) "HX 총 질량";
-    der(M_tot)=m_ref_col - m_out "집중 질량보존 — HX 가 냉매를 저장/방출";
+    m_out=m_ref_col - dMcum[M] "출구유량 = 입구 - 총 저장량 (구조적 질량보존)";
     port_b.m_flow=-Ncirc*m_out;
 
     G_ref=m_ref_col/A_cs;
@@ -631,11 +637,41 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
       xc[k]=noEvent(max(min(xq[k], 0.999), 0.001));
     end for;
     // 냉매 엔탈피 동특성 (upwind, path 순서; 응축기 방열 → −Q_ref)
-    M_c[1]=R290Tab.rho_ph(P, h_ref[1])*V_cell;
-    M_c[1]*der(h_ref[1])=m_ref_col*(h_in - h_ref[1]) - Q_ref[1];
-    for k in 2:M loop
+    // ── ThermoPower Flow1DFV 정식화 이식 (2026-07-26) ──
+    // 기존: 전 셀에 균일 유량 m_ref_col + 집중 질량수지 der(M_tot)=m_in-m_out.
+    //   M_tot 를 도구가 미분해야 하고, 그 값과 이웃 볼륨이 적분한 유량이
+    //   상태 적분오차만큼 어긋나 질량이 샜다 (실측 -2.0%).
+    // 변경: 셀 저장량 dMdt 를 물성 도함수로 명시 계산하고, 셀별 유량이
+    //   그것을 누적해서 빼도록 한다. 출구유량 = 입구 - sum(dMdt) 가 되어
+    //   질량보존이 구조적으로 정확해진다.
+    //   ThermoPower: dMdt[j]=A*l*(drbdh*der(htilde)+drbdp*der(p))
+    //                wbar[j]=w_in - sum(dMdt[1:j-1]) - dMdt[j]/2
+    //   전진 삼각 구조라 셀마다 스칼라 해가 나온다 — M_c 를 상태로 두는
+    //   방식(144차 연립으로 실패)과 결정적으로 다름.
+    for k in 1:M loop
       M_c[k]=R290Tab.rho_ph(P, h_ref[k])*V_cell;
-      M_c[k]*der(h_ref[k])=m_ref_col*(h_ref[k - 1] - h_ref[k]) - Q_ref[k];
+      drdh_c[k]=R290Tab.rho_ph_d(P, h_ref[k], 0.0, 1.0);
+      drdp_c[k]=R290Tab.rho_ph_d(P, h_ref[k], 1.0, 0.0);
+      // der(P) 항: HX 는 P 가 포트에서 오는 대수량이라 der(P) 를 요구하면
+      // 압력망을 미분해야 해 index 문제가 생긴다 (ThermoPower 는 p 가 상태).
+      // useDerP=false 면 생략 — 사이클에서는 볼륨이 압력 상태를 가지므로
+      // 총 질량보존은 유지된다.
+      dMdt_c[k]=V_cell*(drdh_c[k]*der(h_ref[k])
+                        + (if useDerP then drdp_c[k]*der(P) else 0.0));
+    end for;
+    // 누적합 O(M): sum(dMdt_c[1:k-1]) 을 셀마다 쓰면 O(M^2)=2556 항
+    // (ThermoPower 는 N~10~20 이라 무해하나 우리는 M=72).
+    dMcum[1]=dMdt_c[1];
+    for k in 2:M loop
+      dMcum[k]=dMcum[k - 1] + dMdt_c[k];
+    end for;
+    w_c[1]=m_ref_col - dMdt_c[1]/2;
+    for k in 2:M loop
+      w_c[k]=m_ref_col - dMcum[k - 1] - dMdt_c[k]/2;
+    end for;
+    M_c[1]*der(h_ref[1])=w_c[1]*(h_in - h_ref[1]) - Q_ref[1];
+    for k in 2:M loop
+      M_c[k]*der(h_ref[k])=w_c[k]*(h_ref[k - 1] - h_ref[k]) - Q_ref[k];
     end for;
     // 공기측 march (행 방향) + Q_air (벽→공기)
     for s in 1:Nsc loop
