@@ -144,6 +144,14 @@ def system_charge(state, geom, oil_cfg=None, strict_oil=True):
     Pe, Pc = state['P_evap'], state['P_cond']
     parts = {}
     parts['HX'] = state.get('M_hx', 0.0)
+    # 2026-07-26: 압축기 쉘 가스 체적 추가.
+    #   체크리스트 414.1cc(HX+배관+어큐)에 쉘이 빠져 있었다. 고압쉘이므로
+    #   쉘 내부는 토출압 가스로 채워지고 그 질량이 고압측 인벤토리의 일부다.
+    #   Modelica 는 vshell 노드로 이미 반영됨 — 양쪽 인벤토리를 맞춘다.
+    #   문헌 추정 300~450cc (GMCC RDSK75D35WBZ3 7.52cm3 동일사양, 인접모델
+    #   치수 역산, 오일/외형체적 13~16%). ★실물 확인 필요★
+    parts['shell'] = pipe_mass(Pc, state['h_dis'],
+                               geom.get('V_shell', 4.0e-4), state.get('m_dot'))
     parts['pipe_n1'] = pipe_mass(Pc, state['h_dis'], geom['V_n1'], state.get('m_dot'))
     parts['pipe_n2'] = pipe_mass(Pc, state['h_cond_out'], geom['V_n2'], state.get('m_dot'))
     parts['pipe_n3'] = pipe_mass(Pe, state['h_eev_out'], geom['V_n3'], state.get('m_dot'))
