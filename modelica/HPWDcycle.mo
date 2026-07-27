@@ -98,18 +98,38 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     //   p 는 R290Tab.p_rhoh(rho,h) 로 명시적 역산 — 음함수가 없어
     //   지수축약 실패를 피한다 (상태 (M,U) 방식은 그 문제로 빌드 실패했음).
     //   p_rhoh 의 도함수는 음함수 정리로 rho_ph_d 에서 유도됨.
-    Modelica.Units.SI.Pressure p(start=p_start);
+    // Modelica.Fluid / ThermoPower 방식: 질량 동특성을 파라미터로 선택.
+    //   true  = 보존형. 상태 (M,h), p 는 p_rhoh 로 역산. 질량이 정확히 보존됨.
+    //           과도해석용. 콜드스타트에서 드리프트 -2.77% -> +0.04%.
+    //   false = 기존형. 상태 (p,h), 질량은 rho_ph_a(p,h)*V 로 계산.
+    //           정상해용. ssinit 은 시간적분이 없어 드리프트 자체가 없으므로
+    //           보존형이 불필요하고, homotopy 에서 rho 가 반복변수가 되면
+    //           p_rhoh 역산이 발산한다 (2026-07-26 실측: residual 2.06e+20).
+    parameter Boolean conservativeMass = true "질량 동특성: true=보존형(M,h), false=(p,h)";
+    Modelica.Units.SI.Pressure p(start=p_start,
+      stateSelect=if conservativeMass then StateSelect.default else StateSelect.prefer);
     Modelica.Units.SI.SpecificEnthalpy h(start=h_start, fixed=false, stateSelect=StateSelect.prefer);
     // start 값 필수: 보존형에서 rho 가 반복변수가 되는데 기본 start=0 이면
     // 초기 비선형계가 밀도 0 에서 출발해 실패한다 (2026-07-26 실측).
     final parameter Real rho_start = R290Tab.rho_ph_a(p_start, h_start);
     Real rho(start=rho_start, nominal=100.0);
     Real M(start=rho_start*V, fixed=false, nominal=1e-3,
-           stateSelect=StateSelect.prefer) "냉매 질량 [kg] — 보존 상태";
+           stateSelect=if conservativeMass then StateSelect.prefer else StateSelect.never)
+           "냉매 질량 [kg]. conservativeMass=true 면 상태";
     Real U "내부에너지 [J]";
   equation
-    rho=M/V;
-    p=R290Tab.p_rhoh(rho, h);
+    // Modelica.Fluid 방식: 질량 동특성을 파라미터로 분기.
+    //   보존형  : rho=M/V 로 두고 p 를 역산. M 이 상태라 질량이 정확히 보존.
+    //   비보존형: p 가 상태이고 rho=rho_ph_a(p,h), M=rho*V 로 계산.
+    //             정상해(ssinit)는 시간적분이 없어 드리프트가 없으므로 이쪽.
+    //             homotopy 에서 rho 가 반복변수가 되면 p_rhoh 역산이 발산한다.
+    if conservativeMass then
+      rho = M/V;
+      p   = R290Tab.p_rhoh(rho, h);
+    else
+      rho = R290Tab.rho_ph_a(p, h);
+      M   = rho*V;
+    end if;
     U=M*h - p*V;
     port_a.p=p; port_b.p=p;
     port_a.h_outflow=h; port_b.h_outflow=h;
@@ -158,17 +178,30 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     parameter Boolean noInitialEnthalpy = false "정상초기화에서 der(h)=0 을 제거";
     parameter Integer initOpt = 0 "0=legacy 1=noInit 2=fixedState 3=steadyState";
     // 보존형 전환 (Volume_L3 주석 참조)
-    Modelica.Units.SI.Pressure p(start=p_start);
+    parameter Boolean conservativeMass = true "질량 동특성: true=보존형(M,h), false=(p,h)";
+    Modelica.Units.SI.Pressure p(start=p_start,
+      stateSelect=if conservativeMass then StateSelect.default else StateSelect.prefer);
     Modelica.Units.SI.SpecificEnthalpy h(start=h_start, fixed=false, stateSelect=StateSelect.prefer);
     final parameter Real rho_start = R290Tab.rho_ph_a(p_start, h_start);
     Real rho(start=rho_start, nominal=100.0);
     Real hL, hV, xq, w_sep, h_out;
     Real M(start=rho_start*V, fixed=false, nominal=1e-3,
-           stateSelect=StateSelect.prefer) "냉매 질량 [kg] — 보존 상태";
+           stateSelect=if conservativeMass then StateSelect.prefer else StateSelect.never)
+           "냉매 질량 [kg]. conservativeMass=true 면 상태";
     Real U "내부에너지 [J]";
   equation
-    rho=M/V;
-    p=R290Tab.p_rhoh(rho, h);
+    // Modelica.Fluid 방식: 질량 동특성을 파라미터로 분기.
+    //   보존형  : rho=M/V 로 두고 p 를 역산. M 이 상태라 질량이 정확히 보존.
+    //   비보존형: p 가 상태이고 rho=rho_ph_a(p,h), M=rho*V 로 계산.
+    //             정상해(ssinit)는 시간적분이 없어 드리프트가 없으므로 이쪽.
+    //             homotopy 에서 rho 가 반복변수가 되면 p_rhoh 역산이 발산한다.
+    if conservativeMass then
+      rho = M/V;
+      p   = R290Tab.p_rhoh(rho, h);
+    else
+      rho = R290Tab.rho_ph_a(p, h);
+      M   = rho*V;
+    end if;
     U=M*h - p*V;
     hL=R290Tab.hl_a(p);
     hV=R290Tab.hv_a(p);
@@ -598,8 +631,8 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
       cond(steadyInit=true, h_ref_start=362350, T_w_start=27.0),
       evap(steadyInit=true, h_ref_start=334610, T_w_start=10.0),
       oil(steadyInit=true),
-      vshell(fixedState=false), vol1(fixedState=false), vol2(fixedState=false), vol3(fixedState=false),
-      vol4(fixedState=false, noInitialPressure=true),
+      vshell(fixedState=false, conservativeMass=false), vol1(fixedState=false, conservativeMass=false), vol2(fixedState=false, conservativeMass=false), vol3(fixedState=false, conservativeMass=false),
+      vol4(fixedState=false, conservativeMass=false, noInitialPressure=true),
       // 가지 B(superheated) 근처 초기추정. 정상초기화에서 p_start/h_start 는
       // 고정값이 아니라 뉴턴 초기추정이므로 어느 정상해로 수렴할지에 영향.
       // 기본값(정지조건 8.365bar/265.5kJ/kg)은 두 가지 모두에서 멀다.
