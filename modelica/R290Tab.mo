@@ -784,7 +784,31 @@ package R290Tab "R290 tabulated media — (p,h) basis, 2상 안전, 미분가능
     pc := min(max(p, P0), P1); hc := min(max(h, H0), H1);
     i := idxP(pc); j := idxH(hc); tp := (pc-(P0+(i-1)*dP))/dP; th := (hc-(H0+(j-1)*dH))/dH;
     y := (1-tp)*(1-th)*F[i,j]+tp*(1-th)*F[i+1,j]+(1-tp)*th*F[i,j+1]+tp*th*F[i+1,j+1];
+    annotation(derivative=bilin_d);
   end bilin;
+  function bilin_d "bilin 의 전미분 (2026-07-26).
+
+    annotation 이 없으면 T_ph_d 등 2차 경로에서 bilin 이 인라인되고
+    F[nP,nH] 테이블(60x160)이 리터럴로 전개된다. 셀 240개분 반복되어
+    기호 야코비안이 406.7MB 로 폭발했다 (실측: 범인은 T_ph_d 안의
+    bilin(TBLdTdh,...) — 표현식에 TBLdTdh 값이 그대로 박혀 있었음).
+    쌍선형 보간의 도함수는 같은 격자 코너값에서 유도된다.
+  "
+    input Real F[nP,nH]; input Real p; input Real h;
+    input Real dp; input Real dh; output Real dy;
+  protected
+    Integer i,j; Real tp,th,pc,hc,dydp,dydh;
+  algorithm
+    pc := min(max(p, P0), P1); hc := min(max(h, H0), H1);
+    i := idxP(pc); j := idxH(hc);
+    tp := (pc-(P0+(i-1)*dP))/dP; th := (hc-(H0+(j-1)*dH))/dH;
+    dydp := if (p <= P0 or p >= P1) then 0.0
+            else (-(1-th)*F[i,j] + (1-th)*F[i+1,j] - th*F[i,j+1] + th*F[i+1,j+1])/dP;
+    dydh := if (h <= H0 or h >= H1) then 0.0
+            else (-(1-tp)*F[i,j] - tp*F[i+1,j] + (1-tp)*F[i,j+1] + tp*F[i+1,j+1])/dH;
+    dy := dydp*dp + dydh*dh;
+  end bilin_d;
+
   function lin1_d "lin1 의 정확한 기울기 dy/dp. 별도 도함수 테이블과 달리
     보간식 자체의 도함수라 lin1 과 정합한다 (2026-07-26 질량드리프트 대응)."
     input Real F[nP]; input Real p; output Real dydp;
