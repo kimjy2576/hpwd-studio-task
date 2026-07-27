@@ -368,7 +368,8 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     final parameter Real j_air_ho=HXCorr.j_wang2000_plain(Re_Dc_ho, Nr, Dc, P_t, P_l, FPI, fin_t);
     // Colburn: h_o = j·G·cp/Pr^(2/3). 하드코딩 302.17(BC 불일치 오류) 대체.
     final parameter Real h_o=j_air_ho*G_air_ho*cp_a_ho/Pr_a_ho^(2.0/3.0) "공기측 HTC [W/m2K] (형상·유동서 산출)";
-    parameter Integer Nr=6, Nseg=10, Nt=4;
+    parameter Integer NsegC=10 "응축기 공기측 세그먼트 수 — 격자 수렴성 시험용";
+    parameter Integer Nr=6, Nseg=NsegC, Nt=4;
     parameter Real Di=0.0046 "튜브 내경 [m]";
     parameter Real k_fin=200.0 "핀 열전도율 [W/mK]";
     parameter Real fin_t=0.11e-3 "핀 두께 [m]";
@@ -560,6 +561,7 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     // 심볼릭 미분 가능.
     parameter Real M_cell_nom=rho_ref_nom*V_cell "셀 질량 초기추정 [kg]";
     Real M_c[M](each start=M_cell_nom) "셀 냉매 질량 [kg]";
+    Real rho_c[M](each nominal=100.0) "셀 밀도 [kg/m3]";
     Real drdh_c[M](each nominal=1e-3) "d(rho)/dh 셀별 [kg/m3 / (J/kg)]";
     Real drdp_c[M](each nominal=1e-5) "d(rho)/dp 셀별 [kg/m3 / Pa]";
     Real dMdt_c[M](each start=0.0, each nominal=1e-6) "셀 질량 변화율 [kg/s] — 명시 계산";
@@ -567,6 +569,8 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     // 실패했던 것과 동형. 유량·저장량 모두 물리 규모를 명시한다.
     Real w_c[M](each start=w_nom, each nominal=1e-3) "셀 출구 유량 [kg/s]";
     Real dMcum[M](each start=0.0, each nominal=1e-5) "dMdt 누적합 [kg/s]";
+    Real Dh_c[M](each nominal=1e4) "상류-셀 엔탈피차 [J/kg]";
+    Real Ccl_c[M](each nominal=1e-3) "앞 셀까지 확정된 유량 [kg/s]";
     parameter Boolean useDerP = true "der(P) 항 포함 (dMdt 및 에너지식). P 가 대수량이면 false";
     Real M_tot(start=M*M_cell_nom) "회로 총 냉매 질량 [kg]";
     Real m_out "회로 출구 유량 [kg/s]";
@@ -651,9 +655,9 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     //   전진 삼각 구조라 셀마다 스칼라 해가 나온다 — M_c 를 상태로 두는
     //   방식(144차 연립으로 실패)과 결정적으로 다름.
     for k in 1:M loop
-      M_c[k]=R290Tab.rho_ph(P, h_ref[k])*V_cell;
-      drdh_c[k]=R290Tab.rho_ph_d(P, h_ref[k], 0.0, 1.0);
-      drdp_c[k]=R290Tab.rho_ph_d(P, h_ref[k], 1.0, 0.0);
+      // 한 번의 호출로 rho, drdp, drdh 를 모두 얻는다 (셀당 3회 -> 1회)
+      (rho_c[k], drdp_c[k], drdh_c[k])=R290Tab.rho_ph_all(P, h_ref[k]);
+      M_c[k]=rho_c[k]*V_cell;
       // der(P) 항: HX 는 P 가 포트에서 오는 대수량이라 der(P) 를 요구하면
       // 압력망을 미분해야 해 index 문제가 생긴다 (ThermoPower 는 p 가 상태).
       // useDerP=false 면 생략 — 사이클에서는 볼륨이 압력 상태를 가지므로
@@ -676,11 +680,20 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     //   이식 시 빠뜨렸고, 그 결과 에너지 균형이 안 맞아 적분기가 t=0 에서
     //   첫 스텝을 못 뗐다 (2026-07-26).
     //   useDerP=false 면 이 항도 생략 (P 가 대수량일 때의 index 회피용).
-    M_c[1]*der(h_ref[1]) - (if useDerP then V_cell*der(P) else 0.0)
-      =w_c[1]*(h_in - h_ref[1]) - Q_ref[1];
-    for k in 2:M loop
-      M_c[k]*der(h_ref[k]) - (if useDerP then V_cell*der(P) else 0.0)
-        =w_c[k]*(h_ref[k - 1] - h_ref[k]) - Q_ref[k];
+    // ── 수동 tearing (2026-07-26) ──
+    // der(h_ref[k]) 가 에너지식과 dMdt(->w_c) 양쪽에 나타나 셀마다 선형계가
+    // 생긴다 (실측: 240개 torn linear system, 각 반복변수 1). 스칼라이므로
+    // 해석적으로 풀어 명시식으로 쓰면 선형계가 통째로 사라진다.
+    //   M_c*dh - V*dP = (C - V*(drdh*dh + drdp*dP)/2)*Dh - Q
+    //   -> dh = [C*Dh - Q + V*dP*(1 - drdp*Dh/2)] / (M_c + V*drdh*Dh/2)
+    // C = m_ref_col - dMcum[k-1] (앞 셀에서 확정), Dh = h_up - h_ref[k].
+    // Dymola 가 자동으로 하는 tearing 을 손으로 해준 것.
+    for k in 1:M loop
+      Dh_c[k]=(if k == 1 then h_in else h_ref[k - 1]) - h_ref[k];
+      Ccl_c[k]=m_ref_col - (if k == 1 then 0.0 else dMcum[k - 1]);
+      der(h_ref[k])=(Ccl_c[k]*Dh_c[k] - Q_ref[k]
+                     + (if useDerP then V_cell*der(P)*(1.0 - drdp_c[k]*Dh_c[k]/2.0) else 0.0))
+                    /(M_c[k] + V_cell*drdh_c[k]*Dh_c[k]/2.0);
     end for;
     // 공기측 march (행 방향) + Q_air (벽→공기)
     for s in 1:Nsc loop

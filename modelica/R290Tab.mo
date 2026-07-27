@@ -1001,6 +1001,23 @@ package R290Tab "R290 tabulated media — (p,h) basis, 2상 안전, 미분가능
     dh := (drho - dRdp*dp)/(if abs(dRdh) < 1e-12 then -1e-12 else dRdh);
   end h_rhop_d;
 
+  function rho_ph_all "rho 와 두 편도함수를 한 번에 반환 (2026-07-26)
+
+    HX 셀은 같은 (P,h) 에서 rho_ph 1회 + rho_ph_d 2회 = 3회를 호출한다.
+    세 호출이 hL/hV/rL/rV/블렌딩가중을 각각 다시 계산하므로 낭비다.
+    한 번에 반환하면 셀당 3회 -> 1회 (240셀 기준 720 -> 240 호출).
+    값은 rho_ph / rho_ph_d 와 동일해야 하므로 그 둘을 호출해 조립한다
+    (내부 재구현은 불일치 위험이 커서 피함).
+  "
+    input Real p; input Real h;
+    output Real rho; output Real drdp; output Real drdh;
+  algorithm
+    rho  := rho_ph(p, h);
+    drdp := rho_ph_d(p, h, 1.0, 0.0);
+    drdh := rho_ph_d(p, h, 0.0, 1.0);
+    annotation(Inline=true);
+  end rho_ph_all;
+
   function p_rhoh "밀도·엔탈피에서 압력 역산 [Pa]. 보존형 정식화용 (2026-07-26)
 
     보존형(상태 = M, h)에서는 rho = M/V 가 먼저 정해지고 p 를 역산해야 한다.
