@@ -280,7 +280,12 @@ def solve_forward(fidelity, operating, air_bc, M_charge, geom,
     u0 = x0 or [operating['P_evap'], operating['P_cond'], operating['h_suc']]
     sol = root(residual, u0, method=method, options={'xtol': 1e-8})
 
-    Pe, Pc, hs = sol.x
+    # 2026-07-26: 최종 호출에도 클램프 필요. 잔차 함수 안에만 두었더니
+    # 솔버가 범위 밖 해를 반환했을 때 여기서 CoolProp 이 터졌음
+    # (실측: p=-1.82613e+06 로 1phase PY flash 실패).
+    Pe = max(2.0, min(15.0, sol.x[0]))
+    Pc = max(6.0, min(30.0, sol.x[1]))
+    hs = max(250.0, min(800.0, sol.x[2]))
     op = {'P_evap': Pe, 'P_cond': Pc, 'N': N, 'opening': opening,
           'h_suc': hs, 'T_amb': T_amb}
     r = one_pass(fidelity, op, air_bc, None)
