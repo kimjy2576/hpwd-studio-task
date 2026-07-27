@@ -565,7 +565,7 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     Real dMdt_c[M] "셀 질량 변화율 [kg/s] — 명시 계산";
     Real w_c[M](each start=w_nom) "셀 출구 유량 [kg/s]";
     Real dMcum[M] "dMdt 누적합 [kg/s]";
-    parameter Boolean useDerP = false "dMdt 에 der(P) 항 포함 여부";
+    parameter Boolean useDerP = true "der(P) 항 포함 (dMdt 및 에너지식). P 가 대수량이면 false";
     Real M_tot(start=M*M_cell_nom) "회로 총 냉매 질량 [kg]";
     Real m_out "회로 출구 유량 [kg/s]";
     // 콜드스타트 초기조건 (rest)
@@ -669,9 +669,16 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     for k in 2:M loop
       w_c[k]=m_ref_col - dMcum[k - 1] - dMdt_c[k]/2;
     end for;
-    M_c[1]*der(h_ref[1])=w_c[1]*(h_in - h_ref[1]) - Q_ref[1];
+    // ThermoPower 원본: A*l*rhobar*der(htilde) + wbar*(h_out-h_in) - A*l*der(p) = Q
+    //   V_cell*der(P) 는 압력변화에 의한 유동일(flow work). 원본에 있는데
+    //   이식 시 빠뜨렸고, 그 결과 에너지 균형이 안 맞아 적분기가 t=0 에서
+    //   첫 스텝을 못 뗐다 (2026-07-26).
+    //   useDerP=false 면 이 항도 생략 (P 가 대수량일 때의 index 회피용).
+    M_c[1]*der(h_ref[1]) - (if useDerP then V_cell*der(P) else 0.0)
+      =w_c[1]*(h_in - h_ref[1]) - Q_ref[1];
     for k in 2:M loop
-      M_c[k]*der(h_ref[k])=w_c[k]*(h_ref[k - 1] - h_ref[k]) - Q_ref[k];
+      M_c[k]*der(h_ref[k]) - (if useDerP then V_cell*der(P) else 0.0)
+        =w_c[k]*(h_ref[k - 1] - h_ref[k]) - Q_ref[k];
     end for;
     // 공기측 march (행 방향) + Q_air (벽→공기)
     for s in 1:Nsc loop
