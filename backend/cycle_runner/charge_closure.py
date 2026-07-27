@@ -217,7 +217,7 @@ def _state_from_pass(r, Pe, Pc):
 
 def solve_forward(fidelity, operating, air_bc, M_charge, geom,
                   oil_cfg=None, method='hybr', dry_accumulator=True,
-                  x0=None, verbose=False):
+                  x0=None, verbose=False, SH_target=None):
     """정방향(충전량 구속) 정상해. Modelica 와 동일한 조건 설정.
 
     미지수 (P_evap, P_cond, h_suc), 잔차
@@ -244,22 +244,31 @@ def solve_forward(fidelity, operating, air_bc, M_charge, geom,
     V_acc = geom['V_acc']
 
     # 스케일 (잔차 크기 정규화)
-    S = (1e-3, 1e1, 1e-3)   # kg/s, kJ/kg, kg
+    # SH 구속 시 미지수 4개 (개도 추가), 잔차 4개 (SH 추가)
+    S = (1e-3, 1e1, 1e-3, 1e0)   # kg/s, kJ/kg, kg, K
     trace = []
 
+    use_SH = SH_target is not None
+
     def residual(u):
-        Pe, Pc, hs = u
+        if use_SH:
+            Pe, Pc, hs, op_x = u
+            # 개도는 물리 범위 [1, 100] % 로 클램프
+            op_x = max(1.0, min(100.0, op_x))
+        else:
+            Pe, Pc, hs = u
+            op_x = opening
         # 뉴턴 스텝이 비물리 영역으로 나가면 CoolProp flash 가 예외를 던짐
         # (실측: h_suc 가 음수까지 밀려 HSU_P_flash 실패). 클램프 + 벌점 처리.
         Pe = max(2.0, min(15.0, Pe))
         Pc = max(6.0, min(30.0, Pc))
         hs = max(250.0, min(800.0, hs))
-        op = {'P_evap': Pe, 'P_cond': Pc, 'N': N, 'opening': opening,
+        op = {'P_evap': Pe, 'P_cond': Pc, 'N': N, 'opening': op_x,
               'h_suc': hs, 'T_amb': T_amb}
         try:
             r = one_pass(fidelity, op, air_bc, None)
         except Exception:
-            return [1e3, 1e3, 1e3]
+            return ([1e3, 1e3, 1e3, 1e3] if use_SH else [1e3, 1e3, 1e3])
         st = _state_from_pass(r, Pe, Pc)
         r1 = r['residual']['mass']
         r2 = r['h_evap_out'] - hs
@@ -267,7 +276,8 @@ def solve_forward(fidelity, operating, air_bc, M_charge, geom,
         if p['oil'] is None:
             # 경성 파탄(포화압 초과 등)일 때만 벌점. 연성(외삽)은 값을 쓰되
             # 결과에 플래그를 남긴다 — 실제 운전점이 회귀범위 경계에 걸림.
-            return [r1 / S[0], r2 / S[1], 1e3]
+            return ([r1 / S[0], r2 / S[1], 1e3, 1e3] if use_SH
+                    else [r1 / S[0], r2 / S[1], 1e3])
         _, _, rho_v, _ = accumulator_limits(Pe, V_acc)
         M_acc = rho_v * V_acc if dry_accumulator else 0.0
         r3 = p['_fixed_total'] + M_acc - M_charge
@@ -275,9 +285,14 @@ def solve_forward(fidelity, operating, air_bc, M_charge, geom,
         if verbose and len(trace) % 20 == 1:
             print(f"  Pe={Pe:.4f} Pc={Pc:.4f} hs={hs:.1f} | "
                   f"질량={r1:+.2e} 엔탈피={r2:+.2f} 충전={r3*1000:+.2f}g SH={r['SH_evap']:.2f}")
+        if use_SH:
+            r4 = r['SH_evap'] - SH_target
+            return [r1 / S[0], r2 / S[1], r3 / S[2], r4 / S[3]]
         return [r1 / S[0], r2 / S[1], r3 / S[2]]
 
-    u0 = x0 or [operating['P_evap'], operating['P_cond'], operating['h_suc']]
+    u0 = x0 or ([operating['P_evap'], operating['P_cond'], operating['h_suc'],
+                 opening] if SH_target is not None
+                else [operating['P_evap'], operating['P_cond'], operating['h_suc']])
     sol = root(residual, u0, method=method, options={'xtol': 1e-8})
 
     # 2026-07-26: 최종 호출에도 클램프 필요. 잔차 함수 안에만 두었더니
@@ -286,12 +301,13 @@ def solve_forward(fidelity, operating, air_bc, M_charge, geom,
     Pe = max(2.0, min(15.0, sol.x[0]))
     Pc = max(6.0, min(30.0, sol.x[1]))
     hs = max(250.0, min(800.0, sol.x[2]))
-    op = {'P_evap': Pe, 'P_cond': Pc, 'N': N, 'opening': opening,
+    op_final = (max(1.0, min(100.0, sol.x[3])) if SH_target is not None else opening)
+    op = {'P_evap': Pe, 'P_cond': Pc, 'N': N, 'opening': op_final,
           'h_suc': hs, 'T_amb': T_amb}
     r = one_pass(fidelity, op, air_bc, None)
     st = _state_from_pass(r, Pe, Pc)
     chk = charge_residual(st, geom, M_charge, oil_cfg, strict_oil=False)
     return {'success': bool(sol.success), 'message': sol.message,
-            'P_evap': Pe, 'P_cond': Pc, 'h_suc': hs,
+            'P_evap': Pe, 'P_cond': Pc, 'h_suc': hs, 'opening': op_final,
             'SH_evap': r['SH_evap'], 'state': r, 'charge': chk,
             'nfev': sol.nfev, 'trace': trace}
