@@ -518,9 +518,7 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     input Real T_C;
     output Real h_fg;
   algorithm
-    // 2026-07-26 가드: 초기화 중 T_C 가 비물리적으로 크면 h_fg 가 음수가 된다.
-    // 물의 임계온도(374C) 위로는 잠열이 정의되지 않으므로 하한을 둔다.
-    h_fg := max(2501000.0 - 2361.0*T_C, 1.0e4);
+    h_fg := 2501000.0 - 2361.0*T_C;
     annotation(Inline=true);
   end hfgWater;
 

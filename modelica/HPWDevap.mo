@@ -566,11 +566,8 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     parameter Real h_ref_start=270e3 "냉매 엔탈피 초기값 [J/kg]" annotation(Evaluate=false);
     parameter Real T_w_start=T_air_in_start "벽온도 초기값 [degC]" annotation(Evaluate=false);
     // ── 상태 (fixed=true → init 비선형계 제거) ──
-    // 2026-07-26: nominal 필수. 엔탈피는 크기가 3.6e5 인데 nominal 기본값 1 이라
-    //   뉴턴이 상대 크기를 잘못 판단해 정상초기화가 수렴하지 않았다
-    //   (실측: cond.h_ref[k]=362350 인데 nom=1, residual 8.77e+11).
-    Real h_ref[M](each start=h_ref_start, each fixed=false, each nominal=4.0e5) "냉매 엔탈피/셀 [J/kg]";
-    Real T_w[M](each start=T_w_start, each fixed=false, each min=-40.0, each max=160.0, each nominal=300.0) "벽온도/셀 [degC]";
+    Real h_ref[M](each start=h_ref_start, each fixed=false) "냉매 엔탈피/셀 [J/kg]";
+    Real T_w[M](each start=T_w_start, each fixed=false, each min=-40.0, each max=160.0) "벽온도/셀 [degC]";
     // ── 대수 ──
     Real P, G_ref, h_in;
     // 유량 관성 (momentum dynamics) — 2026-07-24.
@@ -803,11 +800,8 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     parameter Real h_ref_start=400e3 "냉매 엔탈피 초기값 [J/kg]" annotation(Evaluate=false);
     parameter Real T_w_start=T_air_in "벽온도 초기값 [degC]" annotation(Evaluate=false);
     // ── 상태 (fixed=true → init 비선형계 제거) ──
-    // 2026-07-26: nominal 필수. 엔탈피는 크기가 3.6e5 인데 nominal 기본값 1 이라
-    //   뉴턴이 상대 크기를 잘못 판단해 정상초기화가 수렴하지 않았다
-    //   (실측: cond.h_ref[k]=362350 인데 nom=1, residual 8.77e+11).
-    Real h_ref[M](each start=h_ref_start, each fixed=false, each nominal=4.0e5) "냉매 엔탈피/셀 [J/kg]";
-    Real T_w[M](each start=T_w_start, each fixed=false, each min=-40.0, each max=90.0, each nominal=300.0) "벽온도/셀 [degC]";
+    Real h_ref[M](each start=h_ref_start, each fixed=false) "냉매 엔탈피/셀 [J/kg]";
+    Real T_w[M](each start=T_w_start, each fixed=false, each min=-40.0, each max=90.0) "벽온도/셀 [degC]";
     // ── 대수 ──
     Real P, G_ref, h_in;
     // 유량 관성 (momentum dynamics) — 2026-07-24.
@@ -821,7 +815,6 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     Real T_satC, hl, hv, h_fg, mu_l, k_l, cp_l, Pr_l, rho_l, rho_v, mu_v, P_r;
     Real muv, kv, cpv, Prv, h_v_gni;
     Real xq_c[Nr,Nsc], T_ref_c[Nr,Nsc], h_i_c[Nr,Nsc], cp_a[Nr,Nsc], h_air_c[Nr,Nsc];
-    Real dQ_c[Nr,Nsc] "Q_air_c - Q_sens_c (클램프)";
     Real eta_o[Nr,Nsc], b[Nr,Nsc], T_fin[Nr,Nsc], Q_air_c[Nr,Nsc], Q_ref_c[Nr,Nsc], Q_lat_c[Nr,Nsc];
     Real w_wet[Nr,Nsc](each min=0.0, each max=1.0) "습윤 가중 (0=건, 1=습) — 이벤트 없는 연속 전이";
     Real Q_sens_c[Nr,Nsc] "공기→벽 현열 [W] (잠열 분리용)";
@@ -871,11 +864,7 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
         h_i_c[p,s]=HPWDon.hi_dispatch_evap(xq_c[p,s], G_ref, Di, abs(T_aen[p,s] - T_w[kOf[p,s] + 1])*h_o,
                                            mu_l, k_l, Pr_l, rho_l, rho_v, mu_v, P_r, M_mol, h_v_gni)*(EF_sgl + (EF_2ph - EF_sgl)*(0.25*(1.0 + tanh(xq_c[p,s]/0.03))*(1.0 + tanh((1.0 - xq_c[p,s])/0.03))));
         // ★ 습핀 b를 T_fin 대신 T_w(상태)에서 평가 → 루프 차단, eta_o 명시화
-        // 2026-07-26: b 에 직접 하한. 물리적으로 b = 1 + w_wet*(hfg*dWsdT/cp) 는
-        // 항이 모두 양수라 b >= 1 이어야 한다. 개별 항에 가드를 넣어도
-        // 초기화 반복에서 음수가 관측되므로(실측 b=-29088, -3.32e+) 최종 가드.
-        // b<1 이면 finEffWet 의 sqrt(2*h_o*b/(k*t)) 가 실패해 계가 붕괴한다.
-        b[p,s]=max(1.0 + w_wet[p,s]*(HPWDon.hfgWater(T_w[kOf[p,s] + 1])*HPWDon.dWsdT(T_w[kOf[p,s] + 1], Patm)/cp_a[p,s]), 1.0) "w→0이면 b=1 → eta_o=eta_o_dry 정확 일치";
+        b[p,s]=1.0 + w_wet[p,s]*(HPWDon.hfgWater(T_w[kOf[p,s] + 1])*HPWDon.dWsdT(T_w[kOf[p,s] + 1], Patm)/cp_a[p,s]) "w→0이면 b=1 → eta_o=eta_o_dry 정확 일치";
         eta_o[p,s]=HPWDon.finEffWet(h_o, b[p,s], Dc, Xm, XL, k_fin, fin_t, A_fin_ratio);
         T_fin[p,s]=T_aen[p,s] - eta_o[p,s]*(T_aen[p,s] - T_w[kOf[p,s] + 1]) "진단용";
         // 공기→벽 열전달 (습: 엔탈피 포텐셜 총열량 / 건: 현열 — w_wet로 블렌딩)
@@ -885,21 +874,10 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
         // 벽→냉매 열전달
         Q_ref_c[p,s]=h_i_c[p,s]*A_i_seg*(T_w[kOf[p,s] + 1] - T_ref_c[p,s]);
         // 잠열 = 총열량 − 현열 (smooth max로 음수 클립, max() 이벤트 제거)
-        // 2026-07-26 가드: smooth-max 의 제곱합이 음수로 관측됨(= 인자가 NaN).
-      // Q_air_c 나 Q_sens_c 가 초기화 반복에서 NaN 이 되면 계 전체가 붕괴한다.
-      // 차이값을 유한 범위로 클램프해 sqrt 인자를 항상 유한·양수로 만든다.
-      dQ_c[p,s]=min(max(Q_air_c[p,s] - Q_sens_c[p,s], -1.0e6), 1.0e6);
-      Q_lat_c[p,s]=w_wet[p,s]*0.5*(dQ_c[p,s] + sqrt(dQ_c[p,s]^2 + eps_Q^2));
+        Q_lat_c[p,s]=w_wet[p,s]*0.5*((Q_air_c[p,s] - Q_sens_c[p,s]) + sqrt((Q_air_c[p,s] - Q_sens_c[p,s])^2 + eps_Q^2));
         // 공기 march
-        // 2026-07-26 가드: 주석의 'Q_lat_c>=0 이라 max 불필요' 는 시간전진에서만
-      // 참이다. 정상초기화는 반복 중 Q_lat_c 가 음수가 될 수 있고, 그러면
-      // W_aen 이 발산해 cp_a=1006+1860*W 가 음수가 되어
-      // b = 1 + w_wet*(hfg*dWsdT/cp_a) 가 음수 -> finEffWet 의 sqrt 실패.
-      // 실측: evap.b[1,11] = -3.32e+ 로 초기화 붕괴. 물리 범위로 클램프한다.
-      W_aen[p + 1,s]=min(max(W_aen[p,s]
-        - Q_lat_c[p,s]/(m_air_seg*HPWDon.hfgWater(T_aen[p,s])), 0.0), 1.0);
-        T_aen[p + 1,s]=(h_air_c[p,s] - Q_air_c[p,s]/m_air_seg - W_aen[p + 1,s]*2501e3)
-                     /max(1006.0 + 1860.0*W_aen[p + 1,s], 500.0);
+        W_aen[p + 1,s]=W_aen[p,s] - Q_lat_c[p,s]/(m_air_seg*HPWDon.hfgWater(T_aen[p,s])) "Q_lat_c>=0 → 단조감소, max 불필요(OMC 역산 가능)";
+        T_aen[p + 1,s]=(h_air_c[p,s] - Q_air_c[p,s]/m_air_seg - W_aen[p + 1,s]*2501e3)/(1006.0 + 1860.0*W_aen[p + 1,s]);
       end for;
     end for;
     // path-order Q_ref 조립 + 벽 동특성
