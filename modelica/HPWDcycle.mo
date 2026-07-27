@@ -153,9 +153,13 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     elseif noInitialPressure then
       der(h)=0;
     elseif noInitialEnthalpy then
-      der(p)=0;
+      if conservativeMass then der(M)=0; else der(p)=0; end if;
     else
-      der(p)=0;
+      // Casella 2011 / arXiv 2411.12666 권고: 폐회로 정상초기화에서는
+      // 압력이 아니라 질량수지에 der=0 을 건다. der(p)=0 은 압력만 고정할 뿐
+      // 질량 보존을 보장하지 않아, 총 충전량이 미결정인 채로 계가 특이해진다.
+      // 보존형이면 M 이 상태이므로 der(M)=0 이 곧 질량수지 정상조건이다.
+      if conservativeMass then der(M)=0; else der(p)=0; end if;
       der(h)=0;
     end if;
   end Volume_L3;
@@ -232,9 +236,13 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     elseif noInitialPressure then
       der(h)=0;
     elseif noInitialEnthalpy then
-      der(p)=0;
+      if conservativeMass then der(M)=0; else der(p)=0; end if;
     else
-      der(p)=0;
+      // Casella 2011 / arXiv 2411.12666 권고: 폐회로 정상초기화에서는
+      // 압력이 아니라 질량수지에 der=0 을 건다. der(p)=0 은 압력만 고정할 뿐
+      // 질량 보존을 보장하지 않아, 총 충전량이 미결정인 채로 계가 특이해진다.
+      // 보존형이면 M 이 상태이므로 der(M)=0 이 곧 질량수지 정상조건이다.
+      if conservativeMass then der(M)=0; else der(p)=0; end if;
       der(h)=0;
     end if;
   end Accumulator_L3;
@@ -631,8 +639,8 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
       cond(steadyInit=true, h_ref_start=362350, T_w_start=27.0),
       evap(steadyInit=true, h_ref_start=334610, T_w_start=10.0),
       oil(steadyInit=true),
-      vshell(fixedState=false, conservativeMass=false), vol1(fixedState=false, conservativeMass=false), vol2(fixedState=false, conservativeMass=false), vol3(fixedState=false, conservativeMass=false),
-      vol4(fixedState=false, conservativeMass=false, noInitialPressure=true),
+      vshell(fixedState=false), vol1(fixedState=false), vol2(fixedState=false), vol3(fixedState=false),
+      vol4(fixedState=false, noInitialPressure=true),
       // 가지 B(superheated) 근처 초기추정. 정상초기화에서 p_start/h_start 는
       // 고정값이 아니라 뉴턴 초기추정이므로 어느 정상해로 수렴할지에 영향.
       // 기본값(정지조건 8.365bar/265.5kJ/kg)은 두 가지 모두에서 멀다.
