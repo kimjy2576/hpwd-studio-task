@@ -6,7 +6,7 @@ package R290Tab "R290 tabulated media — (p,h) basis, 2상 안전, 미분가능
   constant Real P1=3500000;
   constant Real H0=120000;
   constant Real H1=800000;
-  constant Real DHB=500.0 "포화선 블렌딩 폭 [J/kg] (2026-07-25). rho_ph 의 d(rho)/dh 가
+  constant Real DHB=100.0 "포화선 블렌딩 폭 [J/kg] (2026-07-25). rho_ph 의 d(rho)/dh 가
     포화선에서 62.6배 점프(실측 p=10bar: 액상 -4.42e-4 / 2상 -2.77e-2)해 Volume_L3 의
     der(rho*V) 질량수지 야코비안 조건수를 무너뜨림. rho 자체는 연속이라 블렌딩이
     값은 거의 안 바꾸고 도함수만 평활화함.";
