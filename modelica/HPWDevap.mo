@@ -566,8 +566,11 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     parameter Real h_ref_start=270e3 "냉매 엔탈피 초기값 [J/kg]" annotation(Evaluate=false);
     parameter Real T_w_start=T_air_in_start "벽온도 초기값 [degC]" annotation(Evaluate=false);
     // ── 상태 (fixed=true → init 비선형계 제거) ──
-    Real h_ref[M](each start=h_ref_start, each fixed=false) "냉매 엔탈피/셀 [J/kg]";
-    Real T_w[M](each start=T_w_start, each fixed=false, each min=-40.0, each max=160.0) "벽온도/셀 [degC]";
+    // 2026-07-26: nominal 필수. 엔탈피는 크기가 3.6e5 인데 nominal 기본값 1 이라
+    //   뉴턴이 상대 크기를 잘못 판단해 정상초기화가 수렴하지 않았다
+    //   (실측: cond.h_ref[k]=362350 인데 nom=1, residual 8.77e+11).
+    Real h_ref[M](each start=h_ref_start, each fixed=false, each nominal=4.0e5) "냉매 엔탈피/셀 [J/kg]";
+    Real T_w[M](each start=T_w_start, each fixed=false, each min=-40.0, each max=160.0, each nominal=300.0) "벽온도/셀 [degC]";
     // ── 대수 ──
     Real P, G_ref, h_in;
     // 유량 관성 (momentum dynamics) — 2026-07-24.
@@ -800,8 +803,11 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     parameter Real h_ref_start=400e3 "냉매 엔탈피 초기값 [J/kg]" annotation(Evaluate=false);
     parameter Real T_w_start=T_air_in "벽온도 초기값 [degC]" annotation(Evaluate=false);
     // ── 상태 (fixed=true → init 비선형계 제거) ──
-    Real h_ref[M](each start=h_ref_start, each fixed=false) "냉매 엔탈피/셀 [J/kg]";
-    Real T_w[M](each start=T_w_start, each fixed=false, each min=-40.0, each max=90.0) "벽온도/셀 [degC]";
+    // 2026-07-26: nominal 필수. 엔탈피는 크기가 3.6e5 인데 nominal 기본값 1 이라
+    //   뉴턴이 상대 크기를 잘못 판단해 정상초기화가 수렴하지 않았다
+    //   (실측: cond.h_ref[k]=362350 인데 nom=1, residual 8.77e+11).
+    Real h_ref[M](each start=h_ref_start, each fixed=false, each nominal=4.0e5) "냉매 엔탈피/셀 [J/kg]";
+    Real T_w[M](each start=T_w_start, each fixed=false, each min=-40.0, each max=90.0, each nominal=300.0) "벽온도/셀 [degC]";
     // ── 대수 ──
     Real P, G_ref, h_in;
     // 유량 관성 (momentum dynamics) — 2026-07-24.
