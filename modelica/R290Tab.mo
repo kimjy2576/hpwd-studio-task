@@ -848,12 +848,42 @@ package R290Tab "R290 tabulated media — (p,h) basis, 2상 안전, 미분가능
   function rhov_d input Real p; input Real dp; output Real dy; algorithm dy:=lin1(SATdrhovdp,p)*dp; end rhov_d;
 
   // ===== 포화 수송물성 (액/증기) =====
-  function mul input Real p; output Real y; algorithm y:=lin1(SATmul,p); end mul;
-  function kl  input Real p; output Real y; algorithm y:=lin1(SATkl,p);  end kl;
-  function cpl input Real p; output Real y; algorithm y:=lin1(SATcpl,p); end cpl;
-  function muv input Real p; output Real y; algorithm y:=lin1(SATmuv,p); end muv;
-  function kv  input Real p; output Real y; algorithm y:=lin1(SATkv,p);  end kv;
-  function cpv input Real p; output Real y; algorithm y:=lin1(SATcpv,p); end cpv;
+  function mul input Real p; output Real y; algorithm y:=lin1(SATmul,p);
+    annotation(derivative=mul_d); end mul;
+  function mul_d "d(mul)/dp — annotation 누락 시 인라인 미분으로 SATmul(60원소)이
+    리터럴 전개되어 기호 야코비안이 폭발한다 (실측 단일식 0.5MB)."
+    input Real p; input Real dp; output Real dy;
+  algorithm dy := lin1_d(SATmul, p)*dp; end mul_d;
+  function kl input Real p; output Real y; algorithm y:=lin1(SATkl,p);
+    annotation(derivative=kl_d); end kl;
+  function kl_d "d(kl)/dp — annotation 누락 시 인라인 미분으로 SATkl(60원소)이
+    리터럴 전개되어 기호 야코비안이 폭발한다 (실측 단일식 0.5MB)."
+    input Real p; input Real dp; output Real dy;
+  algorithm dy := lin1_d(SATkl, p)*dp; end kl_d;
+  function cpl input Real p; output Real y; algorithm y:=lin1(SATcpl,p);
+    annotation(derivative=cpl_d); end cpl;
+  function cpl_d "d(cpl)/dp — annotation 누락 시 인라인 미분으로 SATcpl(60원소)이
+    리터럴 전개되어 기호 야코비안이 폭발한다 (실측 단일식 0.5MB)."
+    input Real p; input Real dp; output Real dy;
+  algorithm dy := lin1_d(SATcpl, p)*dp; end cpl_d;
+  function muv input Real p; output Real y; algorithm y:=lin1(SATmuv,p);
+    annotation(derivative=muv_d); end muv;
+  function muv_d "d(muv)/dp — annotation 누락 시 인라인 미분으로 SATmuv(60원소)이
+    리터럴 전개되어 기호 야코비안이 폭발한다 (실측 단일식 0.5MB)."
+    input Real p; input Real dp; output Real dy;
+  algorithm dy := lin1_d(SATmuv, p)*dp; end muv_d;
+  function kv input Real p; output Real y; algorithm y:=lin1(SATkv,p);
+    annotation(derivative=kv_d); end kv;
+  function kv_d "d(kv)/dp — annotation 누락 시 인라인 미분으로 SATkv(60원소)이
+    리터럴 전개되어 기호 야코비안이 폭발한다 (실측 단일식 0.5MB)."
+    input Real p; input Real dp; output Real dy;
+  algorithm dy := lin1_d(SATkv, p)*dp; end kv_d;
+  function cpv input Real p; output Real y; algorithm y:=lin1(SATcpv,p);
+    annotation(derivative=cpv_d); end cpv;
+  function cpv_d "d(cpv)/dp — annotation 누락 시 인라인 미분으로 SATcpv(60원소)이
+    리터럴 전개되어 기호 야코비안이 폭발한다 (실측 단일식 0.5MB)."
+    input Real p; input Real dp; output Real dy;
+  algorithm dy := lin1_d(SATcpv, p)*dp; end cpv_d;
 
   // ===== ρ(p,h), T(p,h) — 영역인지 + 해석 도함수 =====
   function rho_ph
