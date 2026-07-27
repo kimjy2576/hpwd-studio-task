@@ -101,9 +101,9 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     // ── 냉매 물성 (P 고정) ──
     parameter Real T_satC=R290Tab.Tsat_a(P) - 273.15;
     parameter Real hl=R290Tab.hl_a(P), hv=R290Tab.hv_a(P), h_fg=hv - hl;
-    parameter Real mu_l=R290Tab.mul(P), k_l=R290Tab.kl(P), cp_l=R290Tab.cpl(P), Pr_l=cp_l*mu_l/k_l;
-    parameter Real rho_l=R290Tab.rhol_a(P), rho_v=R290Tab.rhov_a(P), mu_v=R290Tab.muv(P), P_r=P/Pcrit;
-    parameter Real muv=R290Tab.muv(P), kv=R290Tab.kv(P), cpv=R290Tab.cpv(P), Prv=cpv*muv/kv;
+    parameter Real mu_l=R290Tab.mul_a(P), k_l=R290Tab.kl_a(P), cp_l=R290Tab.cpl_a(P), Pr_l=cp_l*mu_l/k_l;
+    parameter Real rho_l=R290Tab.rhol_a(P), rho_v=R290Tab.rhov_a(P), mu_v=R290Tab.muv_a(P), P_r=P/Pcrit;
+    parameter Real muv=R290Tab.muv_a(P), kv=R290Tab.kv_a(P), cpv=R290Tab.cpv_a(P), Prv=cpv*muv/kv;
     parameter Real h_v_gni=HXCorr.gnielinski(G_ref*Di/muv, Prv, kv, Di);
     parameter Real h_max=hv + cpv*(T_air_in - T_satC) "냉매 물리상한 (공기온도 과열증기, 근사)";
     parameter Real eta_o_dry=HPWDon.finEffWet(h_o, 1.0, Dc, Xm, XL, k_fin, fin_t, A_fin_ratio);
@@ -253,9 +253,9 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     G_ref=m_ref_col/A_cs;
     h_in=inStream(port_a.h_outflow);
     T_satC=R290Tab.Tsat_a(P) - 273.15; hl=R290Tab.hl_a(P); hv=R290Tab.hv_a(P); h_fg=hv - hl;
-    mu_l=R290Tab.mul(P); k_l=R290Tab.kl(P); cp_l=R290Tab.cpl(P); Pr_l=cp_l*mu_l/k_l;
-    rho_l=R290Tab.rhol_a(P); rho_v=R290Tab.rhov_a(P); mu_v=R290Tab.muv(P); P_r=P/Pcrit;
-    muv=R290Tab.muv(P); kv=R290Tab.kv(P); cpv=R290Tab.cpv(P); Prv=cpv*muv/kv;
+    mu_l=R290Tab.mul_a(P); k_l=R290Tab.kl_a(P); cp_l=R290Tab.cpl_a(P); Pr_l=cp_l*mu_l/k_l;
+    rho_l=R290Tab.rhol_a(P); rho_v=R290Tab.rhov_a(P); mu_v=R290Tab.muv_a(P); P_r=P/Pcrit;
+    muv=R290Tab.muv_a(P); kv=R290Tab.kv_a(P); cpv=R290Tab.cpv_a(P); Prv=cpv*muv/kv;
     h_v_gni=HXCorr.gnielinski(G_ref*Di/muv, Prv, kv, Di);
     h_max=hv + cpv*(T_air_in - T_satC);
     hpath[1]=h_in;
@@ -414,9 +414,9 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     G_ref=m_ref_col/A_cs;
     h_in=inStream(port_a.h_outflow);
     T_satC=R290Tab.Tsat_a(P) - 273.15; hl=R290Tab.hl_a(P); hv=R290Tab.hv_a(P); h_fg=hv - hl;
-    mu_l=R290Tab.mul(P); k_l=R290Tab.kl(P); cp_l=R290Tab.cpl(P); Pr_l=cp_l*mu_l/k_l;
-    rho_l=R290Tab.rhol_a(P); rho_v=R290Tab.rhov_a(P); mu_v=R290Tab.muv(P); P_r=P/Pcrit;
-    k_v=R290Tab.kv(P); cp_v=R290Tab.cpv(P); Pr_v=cp_v*mu_v/k_v;
+    mu_l=R290Tab.mul_a(P); k_l=R290Tab.kl_a(P); cp_l=R290Tab.cpl_a(P); Pr_l=cp_l*mu_l/k_l;
+    rho_l=R290Tab.rhol_a(P); rho_v=R290Tab.rhov_a(P); mu_v=R290Tab.muv_a(P); P_r=P/Pcrit;
+    k_v=R290Tab.kv_a(P); cp_v=R290Tab.cpv_a(P); Pr_v=cp_v*mu_v/k_v;
     h_min=hl - cp_l*(T_satC - T_air_in);
     hpath[1]=h_in;
     for k in 1:M loop
@@ -610,9 +610,9 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     G_ref=m_ref_col/A_cs;
     h_in=inStream(port_a.h_outflow);
     T_satC=R290Tab.Tsat_a(P) - 273.15; hl=R290Tab.hl_a(P); hv=R290Tab.hv_a(P); h_fg=hv - hl;
-    mu_l=R290Tab.mul(P); k_l=R290Tab.kl(P); cp_l=R290Tab.cpl(P); Pr_l=cp_l*mu_l/k_l;
-    rho_l=R290Tab.rhol_a(P); rho_v=R290Tab.rhov_a(P); mu_v=R290Tab.muv(P); P_r=P/Pcrit;
-    k_v=R290Tab.kv(P); cp_v=R290Tab.cpv(P); Pr_v=cp_v*mu_v/k_v;
+    mu_l=R290Tab.mul_a(P); k_l=R290Tab.kl_a(P); cp_l=R290Tab.cpl_a(P); Pr_l=cp_l*mu_l/k_l;
+    rho_l=R290Tab.rhol_a(P); rho_v=R290Tab.rhov_a(P); mu_v=R290Tab.muv_a(P); P_r=P/Pcrit;
+    k_v=R290Tab.kv_a(P); cp_v=R290Tab.cpv_a(P); Pr_v=cp_v*mu_v/k_v;
     // 셀별 냉매 상태/열전달 (상태 h_ref,T_w 로부터 전부 명시적)
     for k in 1:M loop
       // 국소 압력 효과는 T_sat 1차 보정으로 반영 (T_ph 는 상수 P 로 호출해
@@ -845,9 +845,9 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     G_ref=m_ref_col/A_cs;
     h_in=inStream(port_a.h_outflow);
     T_satC=R290Tab.Tsat_a(P) - 273.15; hl=R290Tab.hl_a(P); hv=R290Tab.hv_a(P); h_fg=hv - hl;
-    mu_l=R290Tab.mul(P); k_l=R290Tab.kl(P); cp_l=R290Tab.cpl(P); Pr_l=cp_l*mu_l/k_l;
-    rho_l=R290Tab.rhol_a(P); rho_v=R290Tab.rhov_a(P); mu_v=R290Tab.muv(P); P_r=P/Pcrit;
-    muv=R290Tab.muv(P); kv=R290Tab.kv(P); cpv=R290Tab.cpv(P); Prv=cpv*muv/kv;
+    mu_l=R290Tab.mul_a(P); k_l=R290Tab.kl_a(P); cp_l=R290Tab.cpl_a(P); Pr_l=cp_l*mu_l/k_l;
+    rho_l=R290Tab.rhol_a(P); rho_v=R290Tab.rhov_a(P); mu_v=R290Tab.muv_a(P); P_r=P/Pcrit;
+    muv=R290Tab.muv_a(P); kv=R290Tab.kv_a(P); cpv=R290Tab.cpv_a(P); Prv=cpv*muv/kv;
     h_v_gni=HXCorr.gnielinski(G_ref*Di/muv, Prv, kv, Di);
     // 공기 입구 (행 1)
     for s in 1:Nsc loop

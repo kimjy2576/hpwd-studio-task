@@ -1219,7 +1219,22 @@ package R290Tab "R290 tabulated media — (p,h) basis, 2상 안전, 미분가능
     if h>hL and h<hV then x:=(h-hL)/(hV-hL); mu:=(1-x)*lin1(SATmul,p)+x*lin1(SATmuv,p);
     elseif h<=hL then mu:=bilinC(TBLmu,SATmul,1,p,h);
     else mu:=bilinC(TBLmu,SATmuv,2,p,h); end if;
+    annotation(derivative=mu_ph_d, Inline=false);
   end mu_ph;
+  function mu_ph_d "mu_ph 도함수 (중심차분).
+    annotation 이 없으면 기호 야코비안 생성 시 이 함수가 인라인되고
+    내부 lin1/bilinC 의 idxP(integer(floor)) 가 미분경로에 들어가
+    switch(double) 코드가 생성되어 clang 이 거부한다 (2026-07-26).
+    압축기에서 각 1회만 쓰이므로 차분 비용은 무시 가능."
+    input Real p; input Real h; input Real dp; input Real dh; output Real dy;
+  protected
+    Real ep,eh;
+  algorithm
+    ep := 1.0e3; eh := 1.0e2;
+    dy := ((mu_ph(p+ep,h) - mu_ph(p-ep,h))/(2.0*ep))*dp
+        + ((mu_ph(p,h+eh) - mu_ph(p,h-eh))/(2.0*eh))*dh;
+    annotation(Inline=false);
+  end mu_ph_d;
   function k_ph
     input Real p; input Real h; output Real k;
   protected
@@ -1239,7 +1254,22 @@ package R290Tab "R290 tabulated media — (p,h) basis, 2상 안전, 미분가능
     if h>hL and h<hV then x:=(h-hL)/(hV-hL); cp:=(1-x)*lin1(SATcpl,p)+x*lin1(SATcpv,p);
     elseif h<=hL then cp:=bilinC(TBLcp,SATcpl,1,p,h);
     else cp:=bilinC(TBLcp,SATcpv,2,p,h); end if;
+    annotation(derivative=cp_ph_d, Inline=false);
   end cp_ph;
+  function cp_ph_d "cp_ph 도함수 (중심차분).
+    annotation 이 없으면 기호 야코비안 생성 시 이 함수가 인라인되고
+    내부 lin1/bilinC 의 idxP(integer(floor)) 가 미분경로에 들어가
+    switch(double) 코드가 생성되어 clang 이 거부한다 (2026-07-26).
+    압축기에서 각 1회만 쓰이므로 차분 비용은 무시 가능."
+    input Real p; input Real h; input Real dp; input Real dh; output Real dy;
+  protected
+    Real ep,eh;
+  algorithm
+    ep := 1.0e3; eh := 1.0e2;
+    dy := ((cp_ph(p+ep,h) - cp_ph(p-ep,h))/(2.0*ep))*dp
+        + ((cp_ph(p,h+eh) - cp_ph(p,h-eh))/(2.0*eh))*dh;
+    annotation(Inline=false);
+  end cp_ph_d;
 
   // ===== 엔트로피 / cv / gamma / 등엔트로피 (컴프용) =====
   function s_ph "엔트로피 s(p,h) [J/kgK] — 영역인지"
@@ -1251,7 +1281,22 @@ package R290Tab "R290 tabulated media — (p,h) basis, 2상 안전, 미분가능
     if h>hL and h<hV then x:=(h-hL)/(hV-hL); s:=(1-x)*lin1(SATsl,p)+x*lin1(SATsv,p);
     elseif h<=hL then s:=bilinC(TBLs,SATsl,1,p,h);
     else s:=bilinC(TBLs,SATsv,2,p,h); end if;
+    annotation(derivative=s_ph_d, Inline=false);
   end s_ph;
+  function s_ph_d "s_ph 도함수 (중심차분).
+    annotation 이 없으면 기호 야코비안 생성 시 이 함수가 인라인되고
+    내부 lin1/bilinC 의 idxP(integer(floor)) 가 미분경로에 들어가
+    switch(double) 코드가 생성되어 clang 이 거부한다 (2026-07-26).
+    압축기에서 각 1회만 쓰이므로 차분 비용은 무시 가능."
+    input Real p; input Real h; input Real dp; input Real dh; output Real dy;
+  protected
+    Real ep,eh;
+  algorithm
+    ep := 1.0e3; eh := 1.0e2;
+    dy := ((s_ph(p+ep,h) - s_ph(p-ep,h))/(2.0*ep))*dp
+        + ((s_ph(p,h+eh) - s_ph(p,h-eh))/(2.0*eh))*dh;
+    annotation(Inline=false);
+  end s_ph_d;
 
   function cv_ph "정적비열 cv(p,h) — 영역인지"
     input Real p; input Real h; output Real cv;
@@ -1262,13 +1307,43 @@ package R290Tab "R290 tabulated media — (p,h) basis, 2상 안전, 미분가능
     if h>hL and h<hV then x:=(h-hL)/(hV-hL); cv:=(1-x)*lin1(SATcvl,p)+x*lin1(SATcvv,p);
     elseif h<=hL then cv:=bilinC(TBLcv,SATcvl,1,p,h);
     else cv:=bilinC(TBLcv,SATcvv,2,p,h); end if;
+    annotation(derivative=cv_ph_d, Inline=false);
   end cv_ph;
+  function cv_ph_d "cv_ph 도함수 (중심차분).
+    annotation 이 없으면 기호 야코비안 생성 시 이 함수가 인라인되고
+    내부 lin1/bilinC 의 idxP(integer(floor)) 가 미분경로에 들어가
+    switch(double) 코드가 생성되어 clang 이 거부한다 (2026-07-26).
+    압축기에서 각 1회만 쓰이므로 차분 비용은 무시 가능."
+    input Real p; input Real h; input Real dp; input Real dh; output Real dy;
+  protected
+    Real ep,eh;
+  algorithm
+    ep := 1.0e3; eh := 1.0e2;
+    dy := ((cv_ph(p+ep,h) - cv_ph(p-ep,h))/(2.0*ep))*dp
+        + ((cv_ph(p,h+eh) - cv_ph(p,h-eh))/(2.0*eh))*dh;
+    annotation(Inline=false);
+  end cv_ph_d;
 
   function gamma_ph "비열비 cp/cv"
     input Real p; input Real h; output Real g;
   algorithm
     g:=cp_ph(p,h)/cv_ph(p,h);
+    annotation(derivative=gamma_ph_d, Inline=false);
   end gamma_ph;
+  function gamma_ph_d "gamma_ph 도함수 (중심차분).
+    annotation 이 없으면 기호 야코비안 생성 시 이 함수가 인라인되고
+    내부 lin1/bilinC 의 idxP(integer(floor)) 가 미분경로에 들어가
+    switch(double) 코드가 생성되어 clang 이 거부한다 (2026-07-26).
+    압축기에서 각 1회만 쓰이므로 차분 비용은 무시 가능."
+    input Real p; input Real h; input Real dp; input Real dh; output Real dy;
+  protected
+    Real ep,eh;
+  algorithm
+    ep := 1.0e3; eh := 1.0e2;
+    dy := ((gamma_ph(p+ep,h) - gamma_ph(p-ep,h))/(2.0*ep))*dp
+        + ((gamma_ph(p,h+eh) - gamma_ph(p,h-eh))/(2.0*eh))*dh;
+    annotation(Inline=false);
+  end gamma_ph_d;
 
   function h_ps "등엔트로피: (p, s_target) -> h. s_ph에 Newton 역산 (ds=dh/T)"
     input Real p; input Real s_target; output Real h;
@@ -1280,6 +1355,7 @@ package R290Tab "R290 tabulated media — (p,h) basis, 2상 안전, 미분가능
       sN := s_ph(p,h); T := T_ph(p,h);
       h := h + (s_target - sN)*T;
     end for;
+    annotation(Inline=false);
   end h_ps;
   // ═══ 해석형 T_ph (2026-07-26) ═══
   // 테이블 기반 T_ph 는 기호 야코비안 생성 시 TBLT/TBLdTdh(60x160)가 리터럴로
@@ -1605,5 +1681,135 @@ package R290Tab "R290 tabulated media — (p,h) basis, 2상 안전, 미분가능
       drdh := rs*((((5.0*b1*dh + 4.0*b2)*dh + 3.0*b3)*dh + 2.0*b4)*dh + b5);
     end if;
   end drho_dh_a;
+
+  // ═══ 해석형 수송물성 (2026-07-26) ═══
+  // log(y) = 7차 다항(log p). 정확도: mul 0.030%, kl 0.006%, cpl 0.170%,
+  //          muv 0.026%, kv 0.068%, cpv 0.225% (HTC 상관식 입력이라 충분)
+  function mul_a "해석형 mul"
+    input Real p; output Real y;
+  protected
+    Real lp;
+  algorithm
+    lp := log(min(max(p, P0), P1));
+    y := exp((((((((-2.9613106465e-03*lp + 2.7725840000e-01)*lp - 1.1121221938e+01)*lp + 2.4773021697e+02)*lp - 3.3096135536e+03)*lp + 2.6517834073e+04)*lp - 1.1798584712e+05)*lp + 2.2486771345e+05));
+    annotation(derivative=mul_a_d, Inline=false);
+  end mul_a;
+
+  function mul_a_d "mul_a 도함수"
+    input Real p; input Real dp; output Real dy;
+  protected
+    Real lp,pc,d;
+  algorithm
+    pc := min(max(p, P0), P1); lp := log(pc);
+    d := ((((((-2.0729174526e-02*lp + 1.6635504000e+00)*lp - 5.5606109689e+01)*lp + 9.9092086786e+02)*lp - 9.9288406607e+03)*lp + 5.3035668145e+04)*lp - 1.1798584712e+05);
+    dy := if (p <= P0 or p >= P1) then 0.0 else mul_a(pc)*d/pc*dp;
+    annotation(Inline=false);
+  end mul_a_d;
+
+  function kl_a "해석형 kl"
+    input Real p; output Real y;
+  protected
+    Real lp;
+  algorithm
+    lp := log(min(max(p, P0), P1));
+    y := exp((((((((4.8166824384e-05*lp - 4.8671926339e-03)*lp + 2.0910181021e-01)*lp - 4.9569898237e+00)*lp + 7.0093663705e+01)*lp - 5.9164063757e+02)*lp + 2.7617386221e+03)*lp - 5.5041848437e+03));
+    annotation(derivative=kl_a_d, Inline=false);
+  end kl_a;
+
+  function kl_a_d "kl_a 도함수"
+    input Real p; input Real dp; output Real dy;
+  protected
+    Real lp,pc,d;
+  algorithm
+    pc := min(max(p, P0), P1); lp := log(pc);
+    d := ((((((3.3716777069e-04*lp - 2.9203155803e-02)*lp + 1.0455090511e+00)*lp - 1.9827959295e+01)*lp + 2.1028099111e+02)*lp - 1.1832812751e+03)*lp + 2.7617386221e+03);
+    dy := if (p <= P0 or p >= P1) then 0.0 else kl_a(pc)*d/pc*dp;
+    annotation(Inline=false);
+  end kl_a_d;
+
+  function cpl_a "해석형 cpl"
+    input Real p; output Real y;
+  protected
+    Real lp;
+  algorithm
+    lp := log(min(max(p, P0), P1));
+    y := exp((((((((1.4195065985e-02*lp - 1.3323945249e+00)*lp + 5.3571069537e+01)*lp - 1.1959923922e+03)*lp + 1.6012008980e+04)*lp - 1.2855174171e+05)*lp + 5.7305584391e+05)*lp - 1.0941874000e+06));
+    annotation(derivative=cpl_a_d, Inline=false);
+  end cpl_a;
+
+  function cpl_a_d "cpl_a 도함수"
+    input Real p; input Real dp; output Real dy;
+  protected
+    Real lp,pc,d;
+  algorithm
+    pc := min(max(p, P0), P1); lp := log(pc);
+    d := ((((((9.9365461896e-02*lp - 7.9943671491e+00)*lp + 2.6785534768e+02)*lp - 4.7839695687e+03)*lp + 4.8036026941e+04)*lp - 2.5710348342e+05)*lp + 5.7305584391e+05);
+    dy := if (p <= P0 or p >= P1) then 0.0 else cpl_a(pc)*d/pc*dp;
+    annotation(Inline=false);
+  end cpl_a_d;
+
+  function muv_a "해석형 muv"
+    input Real p; output Real y;
+  protected
+    Real lp;
+  algorithm
+    lp := log(min(max(p, P0), P1));
+    y := exp((((((((2.7223679599e-03*lp - 2.5482906597e-01)*lp + 1.0219267795e+01)*lp - 2.2758873252e+02)*lp + 3.0398687100e+03)*lp - 2.4351323936e+04)*lp + 1.0832339735e+05)*lp - 2.0642792392e+05));
+    annotation(derivative=muv_a_d, Inline=false);
+  end muv_a;
+
+  function muv_a_d "muv_a 도함수"
+    input Real p; input Real dp; output Real dy;
+  protected
+    Real lp,pc,d;
+  algorithm
+    pc := min(max(p, P0), P1); lp := log(pc);
+    d := ((((((1.9056575719e-02*lp - 1.5289743958e+00)*lp + 5.1096338975e+01)*lp - 9.1035493008e+02)*lp + 9.1196061300e+03)*lp - 4.8702647871e+04)*lp + 1.0832339735e+05);
+    dy := if (p <= P0 or p >= P1) then 0.0 else muv_a(pc)*d/pc*dp;
+    annotation(Inline=false);
+  end muv_a_d;
+
+  function kv_a "해석형 kv"
+    input Real p; output Real y;
+  protected
+    Real lp;
+  algorithm
+    lp := log(min(max(p, P0), P1));
+    y := exp((((((((6.3830915764e-03*lp - 5.9882670274e-01)*lp + 2.4065058262e+01)*lp - 5.3701289992e+02)*lp + 7.1864038016e+03)*lp - 5.7671567515e+04)*lp + 2.5698421165e+05)*lp - 4.9050281606e+05));
+    annotation(derivative=kv_a_d, Inline=false);
+  end kv_a;
+
+  function kv_a_d "kv_a 도함수"
+    input Real p; input Real dp; output Real dy;
+  protected
+    Real lp,pc,d;
+  algorithm
+    pc := min(max(p, P0), P1); lp := log(pc);
+    d := ((((((4.4681641035e-02*lp - 3.5929602164e+00)*lp + 1.2032529131e+02)*lp - 2.1480515997e+03)*lp + 2.1559211405e+04)*lp - 1.1534313503e+05)*lp + 2.5698421165e+05);
+    dy := if (p <= P0 or p >= P1) then 0.0 else kv_a(pc)*d/pc*dp;
+    annotation(Inline=false);
+  end kv_a_d;
+
+  function cpv_a "해석형 cpv"
+    input Real p; output Real y;
+  protected
+    Real lp;
+  algorithm
+    lp := log(min(max(p, P0), P1));
+    y := exp((((((((2.3558622633e-02*lp - 2.2116207731e+00)*lp + 8.8934157093e+01)*lp - 1.9857398719e+03)*lp + 2.6588311139e+04)*lp - 2.1348597423e+05)*lp + 9.5176651083e+05)*lp - 1.8174582102e+06));
+    annotation(derivative=cpv_a_d, Inline=false);
+  end cpv_a;
+
+  function cpv_a_d "cpv_a 도함수"
+    input Real p; input Real dp; output Real dy;
+  protected
+    Real lp,pc,d;
+  algorithm
+    pc := min(max(p, P0), P1); lp := log(pc);
+    d := ((((((1.6491035843e-01*lp - 1.3269724639e+01)*lp + 4.4467078546e+02)*lp - 7.9429594874e+03)*lp + 7.9764933418e+04)*lp - 4.2697194846e+05)*lp + 9.5176651083e+05);
+    dy := if (p <= P0 or p >= P1) then 0.0 else cpv_a(pc)*d/pc*dp;
+    annotation(Inline=false);
+  end cpv_a_d;
+
 
 end R290Tab;

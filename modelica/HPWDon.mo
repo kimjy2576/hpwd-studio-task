@@ -339,12 +339,12 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     Real h_chen "2상 Chen HTC";
     Real h_gni "단상 Gnielinski HTC (Re=50000,Pr=0.85,k=0.018)";
   equation
-    mu_l  = R290Tab.mul(P);
-    k_l   = R290Tab.kl(P);
-    cp_l  = R290Tab.cpl(P);
+    mu_l  = R290Tab.mul_a(P);
+    k_l   = R290Tab.kl_a(P);
+    cp_l  = R290Tab.cpl_a(P);
     rho_l = R290Tab.rhol_a(P);
     rho_v = R290Tab.rhov_a(P);
-    mu_v  = R290Tab.muv(P);
+    mu_v  = R290Tab.muv_a(P);
     Pr_l  = cp_l*mu_l/k_l;
     P_r   = P/Pcrit;
     h_chen = HXCorr.h_evap_chen1966(x, G, Di, q_flux, mu_l, k_l, Pr_l, rho_l, rho_v, mu_v, P_r, M_mol);
@@ -403,8 +403,8 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     eta_fin=tanh(mr_phi)/mr_phi; eta_o=1.0-(A_fin/A_total)*(1.0-eta_fin);
     // 냉매 포화물성
     T_sat=R290Tab.Tsat_a(P); h_fg=R290Tab.hv_a(P)-R290Tab.hl_a(P);
-    mu_l=R290Tab.mul(P); k_l=R290Tab.kl(P); cp_l=R290Tab.cpl(P); Pr_l=cp_l*mu_l/k_l;
-    rho_l=R290Tab.rhol_a(P); rho_v=R290Tab.rhov_a(P); mu_v=R290Tab.muv(P); P_r=P/Pcrit;
+    mu_l=R290Tab.mul_a(P); k_l=R290Tab.kl_a(P); cp_l=R290Tab.cpl_a(P); Pr_l=cp_l*mu_l/k_l;
+    rho_l=R290Tab.rhol_a(P); rho_v=R290Tab.rhov_a(P); mu_v=R290Tab.muv_a(P); P_r=P/Pcrit;
     // FV march (각 세그먼트: q_flux↔h_i↔Q 비선형, OM이 풂)
     x[1]=x_in;
     for i in 1:N loop
@@ -468,9 +468,9 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     Real muv, kv, cpv, Prv, Rev, h_gni;
     Real h_i[Nx];
   equation
-    mu_l=R290Tab.mul(P); k_l=R290Tab.kl(P); cp_l=R290Tab.cpl(P); Pr_l=cp_l*mu_l/k_l;
-    rho_l=R290Tab.rhol_a(P); rho_v=R290Tab.rhov_a(P); mu_v=R290Tab.muv(P); P_r=P/Pcrit;
-    muv=R290Tab.muv(P); kv=R290Tab.kv(P); cpv=R290Tab.cpv(P); Prv=cpv*muv/kv; Rev=G*Di/muv;
+    mu_l=R290Tab.mul_a(P); k_l=R290Tab.kl_a(P); cp_l=R290Tab.cpl_a(P); Pr_l=cp_l*mu_l/k_l;
+    rho_l=R290Tab.rhol_a(P); rho_v=R290Tab.rhov_a(P); mu_v=R290Tab.muv_a(P); P_r=P/Pcrit;
+    muv=R290Tab.muv_a(P); kv=R290Tab.kv_a(P); cpv=R290Tab.cpv_a(P); Prv=cpv*muv/kv; Rev=G*Di/muv;
     h_gni=HXCorr.gnielinski(Rev, Prv, kv, Di);
     for i in 1:Nx loop
       h_i[i]=hi_dispatch_evap(xarr[i], G, Di, q_flux, mu_l, k_l, Pr_l, rho_l, rho_v, mu_v, P_r, M_mol, h_gni);
@@ -492,9 +492,9 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     Real Q_total, x_out, T_out, SH_out;
   equation
     T_sat=R290Tab.Tsat_a(P); hl=R290Tab.hl_a(P); hv=R290Tab.hv_a(P); h_fg=hv-hl;
-    mu_l=R290Tab.mul(P); k_l=R290Tab.kl(P); cp_l=R290Tab.cpl(P); Pr_l=cp_l*mu_l/k_l;
-    rho_l=R290Tab.rhol_a(P); rho_v=R290Tab.rhov_a(P); mu_v=R290Tab.muv(P); P_r=P/Pcrit;
-    muv=R290Tab.muv(P); kv=R290Tab.kv(P); cpv=R290Tab.cpv(P); Prv=cpv*muv/kv; Rev=G_ref*Di/muv;
+    mu_l=R290Tab.mul_a(P); k_l=R290Tab.kl_a(P); cp_l=R290Tab.cpl_a(P); Pr_l=cp_l*mu_l/k_l;
+    rho_l=R290Tab.rhol_a(P); rho_v=R290Tab.rhov_a(P); mu_v=R290Tab.muv_a(P); P_r=P/Pcrit;
+    muv=R290Tab.muv_a(P); kv=R290Tab.kv_a(P); cpv=R290Tab.cpv_a(P); Prv=cpv*muv/kv; Rev=G_ref*Di/muv;
     h_v_gni=HXCorr.gnielinski(Rev, Prv, kv, Di);
     h_ref[1]=hl + x_in*h_fg;
     for i in 1:N loop
@@ -578,9 +578,9 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     Real h_i(start=4600.0), q_flux_est, Q_total, Q_air, Q_lat;
   equation
     T_sat_C=R290Tab.Tsat_a(P) - 273.15;
-    mu_l=R290Tab.mul(P); k_l=R290Tab.kl(P); cp_l=R290Tab.cpl(P); Pr_l=cp_l*mu_l/k_l;
-    rho_l=R290Tab.rhol_a(P); rho_v=R290Tab.rhov_a(P); mu_v=R290Tab.muv(P); P_r=P/Pcrit;
-    muv=R290Tab.muv(P); kv=R290Tab.kv(P); cpv=R290Tab.cpv(P); Prv=cpv*muv/kv;
+    mu_l=R290Tab.mul_a(P); k_l=R290Tab.kl_a(P); cp_l=R290Tab.cpl_a(P); Pr_l=cp_l*mu_l/k_l;
+    rho_l=R290Tab.rhol_a(P); rho_v=R290Tab.rhov_a(P); mu_v=R290Tab.muv_a(P); P_r=P/Pcrit;
+    muv=R290Tab.muv_a(P); kv=R290Tab.kv_a(P); cpv=R290Tab.cpv_a(P); Prv=cpv*muv/kv;
     h_v_gni=HXCorr.gnielinski(G_ref*Di/muv, Prv, kv, Di);
     Wa=HXCorr.W_humid(T_air, RH, Patm);
     cp_a=HXCorr.cp_air_moist(Wa);
@@ -619,9 +619,9 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     Real Q_total, Q_lat_total, x_out;
   equation
     T_satC=R290Tab.Tsat_a(P) - 273.15; hl=R290Tab.hl_a(P); hv=R290Tab.hv_a(P); h_fg=hv - hl;
-    mu_l=R290Tab.mul(P); k_l=R290Tab.kl(P); cp_l=R290Tab.cpl(P); Pr_l=cp_l*mu_l/k_l;
-    rho_l=R290Tab.rhol_a(P); rho_v=R290Tab.rhov_a(P); mu_v=R290Tab.muv(P); P_r=P/Pcrit;
-    muv=R290Tab.muv(P); kv=R290Tab.kv(P); cpv=R290Tab.cpv(P); Prv=cpv*muv/kv;
+    mu_l=R290Tab.mul_a(P); k_l=R290Tab.kl_a(P); cp_l=R290Tab.cpl_a(P); Pr_l=cp_l*mu_l/k_l;
+    rho_l=R290Tab.rhol_a(P); rho_v=R290Tab.rhov_a(P); mu_v=R290Tab.muv_a(P); P_r=P/Pcrit;
+    muv=R290Tab.muv_a(P); kv=R290Tab.kv_a(P); cpv=R290Tab.cpv_a(P); Prv=cpv*muv/kv;
     h_v_gni=HXCorr.gnielinski(G_ref*Di/muv, Prv, kv, Di);
     Wa=HXCorr.W_humid(T_air, RH, Patm); cp_a=HXCorr.cp_air_moist(Wa); h_air=HXCorr.h_moist(T_air, Wa);
     eta_o_dry=finEffWet(h_o, 1.0, Dc, Xm, XL, k_fin, fin_t, A_fin_ratio);
