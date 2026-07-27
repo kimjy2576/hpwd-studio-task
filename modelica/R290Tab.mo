@@ -885,6 +885,53 @@ package R290Tab "R290 tabulated media — (p,h) basis, 2상 안전, 미분가능
     end if;
     annotation(derivative=rho_ph_d);
   end rho_ph;
+  function p_rhoh "밀도·엔탈피에서 압력 역산 [Pa]. 보존형 정식화용 (2026-07-26)
+
+    보존형(상태 = M, h)에서는 rho = M/V 가 먼저 정해지고 p 를 역산해야 한다.
+    rho_ph 는 고정 h 에서 p 에 대해 단조증가(압력이 오르면 액쪽으로 이동)이므로
+    이분법으로 안전하게 풀린다. 도함수는 iteration 을 미분하지 않고
+    음함수 정리로 rho_ph_d 에서 유도한다 (p_rhoh_d 참조).
+  "
+    input Real rho; input Real h; output Real p;
+  protected
+    Real lo, hi, mid, f;
+  algorithm
+    lo := P0; hi := P1;
+    if rho <= rho_ph(P0, h) then
+      p := P0;
+    elseif rho >= rho_ph(P1, h) then
+      p := P1;
+    else
+      for k in 1:30 loop  // 30회면 상대정밀도 ~1e-9. 40회는 과함
+        mid := 0.5*(lo + hi);
+        f := rho_ph(mid, h) - rho;
+        if f > 0 then hi := mid; else lo := mid; end if;
+      end for;
+      p := 0.5*(lo + hi);
+    end if;
+    annotation(derivative = p_rhoh_d);
+  end p_rhoh;
+
+  function p_rhoh_d "p_rhoh 의 전미분. 음함수 정리 기반.
+
+    rho = rho_ph(p, h) 를 미분하면
+      drho = (drho/dp)*dp + (drho/dh)*dh
+    이므로
+      dp = (drho - (drho/dh)*dh)/(drho/dp)
+    편도함수는 이미 검증된 rho_ph_d 로 얻는다
+    (2026-07-26 검증: drho/dh, drho/dp 모두 수치미분과 기계정밀도 일치).
+  "
+    input Real rho; input Real h; input Real drho; input Real dh; output Real dp;
+  protected
+    Real p, dRdp, dRdh;
+  algorithm
+    p    := p_rhoh(rho, h);
+    dRdp := rho_ph_d(p, h, 1.0, 0.0);
+    dRdh := rho_ph_d(p, h, 0.0, 1.0);
+    // dRdp 가 0 에 가까우면(2상 평탄부) 가드
+    dp := (drho - dRdh*dh)/(if abs(dRdp) < 1e-12 then 1e-12 else dRdp);
+  end p_rhoh_d;
+
   function rho_ph_d "rho_ph 의 전미분. 2026-07-26 정합 재작성.
 
     기존에는 값은 bilinC(TBLrho)/lin1(SAT*) 로 계산하면서 도함수는 별도

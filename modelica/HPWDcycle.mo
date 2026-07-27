@@ -91,15 +91,29 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     parameter Boolean noInitialPressure = false "정상초기화에서 der(p)=0 을 제거";
     parameter Boolean noInitialEnthalpy = false "정상초기화에서 der(h)=0 을 제거";
     parameter Integer initOpt = 0 "0=legacy 1=noInit 2=fixedState 3=steadyState";
-    Modelica.Units.SI.Pressure p(start=p_start, fixed=false, stateSelect=StateSelect.prefer);
+    // 2026-07-26 보존형 전환 (상태 = M, h).
+    //   기존 상태 (p,h) 에서는 질량이 rho_ph(p,h)*V 로 계산되는 파생량이라
+    //   적분오차로 표류했다 (ida tol=1e-2 -2.77%, 1e-3 -1.01%).
+    //   M 을 상태로 두면 der(M)=유량합 이므로 기계정밀도로 보존된다.
+    //   p 는 R290Tab.p_rhoh(rho,h) 로 명시적 역산 — 음함수가 없어
+    //   지수축약 실패를 피한다 (상태 (M,U) 방식은 그 문제로 빌드 실패했음).
+    //   p_rhoh 의 도함수는 음함수 정리로 rho_ph_d 에서 유도됨.
+    Modelica.Units.SI.Pressure p(start=p_start);
     Modelica.Units.SI.SpecificEnthalpy h(start=h_start, fixed=false, stateSelect=StateSelect.prefer);
-    Real rho, U;
+    // start 값 필수: 보존형에서 rho 가 반복변수가 되는데 기본 start=0 이면
+    // 초기 비선형계가 밀도 0 에서 출발해 실패한다 (2026-07-26 실측).
+    final parameter Real rho_start = R290Tab.rho_ph(p_start, h_start);
+    Real rho(start=rho_start, nominal=100.0);
+    Real M(start=rho_start*V, fixed=false, nominal=1e-3,
+           stateSelect=StateSelect.prefer) "냉매 질량 [kg] — 보존 상태";
+    Real U "내부에너지 [J]";
   equation
-    rho=R290Tab.rho_ph(p, h);
-    U=rho*V*h - p*V;
+    rho=M/V;
+    p=R290Tab.p_rhoh(rho, h);
+    U=M*h - p*V;
     port_a.p=p; port_b.p=p;
     port_a.h_outflow=h; port_b.h_outflow=h;
-    der(rho*V)=port_a.m_flow + port_b.m_flow - m_ext "m_ext: 외부 질량추출 [kg/s]. 오일 용해가 회로에서 냉매를 빼감 (2026-07-25)";
+    der(M)=port_a.m_flow + port_b.m_flow - m_ext "보존형: M 이 상태이므로 질량이 정확히 보존";
     der(U)=port_a.m_flow*actualStream(port_a.h_outflow) + port_b.m_flow*actualStream(port_b.h_outflow) - m_ext*h;
   initial equation
     // initOpt: 0=legacy(fixedState 플래그 따름) 1=noInit 2=fixedState 3=steadyState
@@ -143,12 +157,19 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     parameter Boolean noInitialPressure = false "정상초기화에서 der(p)=0 을 제거";
     parameter Boolean noInitialEnthalpy = false "정상초기화에서 der(h)=0 을 제거";
     parameter Integer initOpt = 0 "0=legacy 1=noInit 2=fixedState 3=steadyState";
-    Modelica.Units.SI.Pressure p(start=p_start, fixed=false, stateSelect=StateSelect.prefer);
+    // 보존형 전환 (Volume_L3 주석 참조)
+    Modelica.Units.SI.Pressure p(start=p_start);
     Modelica.Units.SI.SpecificEnthalpy h(start=h_start, fixed=false, stateSelect=StateSelect.prefer);
-    Real rho, U, hL, hV, xq, w_sep, h_out;
+    final parameter Real rho_start = R290Tab.rho_ph(p_start, h_start);
+    Real rho(start=rho_start, nominal=100.0);
+    Real hL, hV, xq, w_sep, h_out;
+    Real M(start=rho_start*V, fixed=false, nominal=1e-3,
+           stateSelect=StateSelect.prefer) "냉매 질량 [kg] — 보존 상태";
+    Real U "내부에너지 [J]";
   equation
-    rho=R290Tab.rho_ph(p, h);
-    U=rho*V*h - p*V;
+    rho=M/V;
+    p=R290Tab.p_rhoh(rho, h);
+    U=M*h - p*V;
     hL=R290Tab.hl(p);
     hV=R290Tab.hv(p);
     xq=(h - hL)/max(hV - hL, 1.0);
@@ -158,7 +179,7 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     port_a.p=p; port_b.p=p;
     port_a.h_outflow=h "역류 시 벌크";
     port_b.h_outflow=h_out;
-    der(rho*V)=port_a.m_flow + port_b.m_flow - m_ext "m_ext: 외부 질량추출 [kg/s]. 오일 용해가 회로에서 냉매를 빼감 (2026-07-25)";
+    der(M)=port_a.m_flow + port_b.m_flow - m_ext "보존형: M 이 상태이므로 질량이 정확히 보존";
     der(U)=port_a.m_flow*actualStream(port_a.h_outflow) + port_b.m_flow*actualStream(port_b.h_outflow) - m_ext*h;
   initial equation
     // initOpt: 0=legacy(fixedState 플래그 따름) 1=noInit 2=fixedState 3=steadyState
@@ -580,8 +601,8 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
 
     Real M_total "시스템 총 냉매량 [kg]";
   equation
-    M_total = vshell.rho*vshell.V + vol1.rho*vol1.V + vol2.rho*vol2.V
-              + vol3.rho*vol3.V + vol4.rho*vol4.V
+    M_total = vshell.M + vol1.M + vol2.M
+              + vol3.M + vol4.M
               + cond.M_tot + evap.M_tot + oil.M_dis;
   initial equation
     M_total = M_charge "폐루프 특이성 해소 — 충전량이 어큐 압력을 결정";
@@ -607,8 +628,8 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
       evap(h_ref_start=439579, T_w_start=10.0));
     Real M_total "시스템 총 냉매량 [kg] (구속 아님 — 초기값이 결정)";
   equation
-    M_total = vshell.rho*vshell.V + vol1.rho*vol1.V + vol2.rho*vol2.V
-              + vol3.rho*vol3.V + vol4.rho*vol4.V
+    M_total = vshell.M + vol1.M + vol2.M
+              + vol3.M + vol4.M
               + cond.M_tot + evap.M_tot + oil.M_dis;
   end Cycle_L3_branchtest;
 
@@ -626,8 +647,8 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
       vshell(initOpt=1), vol1(initOpt=1), vol2(initOpt=1), vol3(initOpt=1), vol4(initOpt=1));
     Real M_total "시스템 총 냉매량 [kg] (구속 아님)";
   equation
-    M_total = vshell.rho*vshell.V + vol1.rho*vol1.V + vol2.rho*vol2.V
-              + vol3.rho*vol3.V + vol4.rho*vol4.V
+    M_total = vshell.M + vol1.M + vol2.M
+              + vol3.M + vol4.M
               + cond.M_tot + evap.M_tot + oil.M_dis;
   end Cycle_L3_noinit;
 
@@ -655,8 +676,8 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     parameter Real h0(fixed=false, start=3.0e5) "정지 균일 엔탈피 [J/kg] — 충전량 구속이 결정";
     Real M_total "시스템 총 냉매량 [kg]";
   equation
-    M_total = vshell.rho*vshell.V + vol1.rho*vol1.V + vol2.rho*vol2.V
-              + vol3.rho*vol3.V + vol4.rho*vol4.V
+    M_total = vshell.M + vol1.M + vol2.M
+              + vol3.M + vol4.M
               + cond.M_tot + evap.M_tot + oil.M_dis;
   initial equation
     // 압력: 주위온도 포화압으로 균일
