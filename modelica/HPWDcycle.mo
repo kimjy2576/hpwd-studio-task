@@ -639,8 +639,8 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
       cond(steadyInit=true, h_ref_start=362350, T_w_start=27.0),
       evap(steadyInit=true, h_ref_start=334610, T_w_start=10.0),
       oil(steadyInit=true),
-      vshell(fixedState=false), vol1(fixedState=false), vol2(fixedState=false), vol3(fixedState=false),
-      vol4(fixedState=false, noInitialPressure=true),
+      vshell(fixedState=false, conservativeMass=false), vol1(fixedState=false, conservativeMass=false), vol2(fixedState=false, conservativeMass=false), vol3(fixedState=false, conservativeMass=false),
+      vol4(fixedState=false, conservativeMass=false, noInitialPressure=true),
       // 가지 B(superheated) 근처 초기추정. 정상초기화에서 p_start/h_start 는
       // 고정값이 아니라 뉴턴 초기추정이므로 어느 정상해로 수렴할지에 영향.
       // 기본값(정지조건 8.365bar/265.5kJ/kg)은 두 가지 모두에서 멀다.
