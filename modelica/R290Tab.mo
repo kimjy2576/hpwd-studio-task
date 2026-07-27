@@ -758,11 +758,13 @@ package R290Tab "R290 tabulated media — (p,h) basis, 2상 안전, 미분가능
     input Real p; output Integer i;
   algorithm
     i := noEvent(min(max(integer(floor((min(max(p,P0),P1)-P0)/dP))+1,1),nP-1)) "noEvent: 격자 인덱스는 순수 조회 — 이벤트 생성 금지(셀별 압력 시 240셀 이벤트 폭발)";
+    annotation(Inline=false);
   end idxP;
   function idxH
     input Real h; output Integer j;
   algorithm
     j := noEvent(min(max(integer(floor((min(max(h,H0),H1)-H0)/dH))+1,1),nH-1)) "noEvent: 동일 사유";
+    annotation(Inline=false);
   end idxH;
   function lin1
     input Real F[nP]; input Real p; output Real y;
@@ -1316,7 +1318,7 @@ package R290Tab "R290 tabulated media — (p,h) basis, 2상 안전, 미분가능
   protected
     Real Ts,hL,hV,dh,a[4];
   algorithm
-    Ts := Tsat(p); hL := hl(p); hV := hv(p);
+    Ts := Tsat_a(p); hL := hl_a(p); hV := hv_a(p);  // 해석형 — 미분경로에서 테이블 제거
     if h > hL and h < hV then
       T := Ts;
     else
@@ -1339,9 +1341,9 @@ package R290Tab "R290 tabulated media — (p,h) basis, 2상 안전, 미분가능
   protected
     Real Ts,hL,hV,dh,a[4],dTdh,dTdp,eps,Tp,Tm;
   algorithm
-    hL := hl(p); hV := hv(p);
+    hL := hl_a(p); hV := hv_a(p);
     if h > hL and h < hV then
-      dT := Tsat_d(p, dp);
+      dT := Tsat_a_d(p, dp);
     else
       if h <= hL then
         dh := h - hL;
@@ -1361,5 +1363,73 @@ package R290Tab "R290 tabulated media — (p,h) basis, 2상 안전, 미분가능
       dT := dTdh*dh_in + dTdp*dp;
     end if;
   end T_ph_a_d;
+
+  // ═══ 해석형 포화선 (2026-07-26) ═══
+  // lin1(SAT*,p) 는 idxP 의 integer(floor(...)) 를 타는데, 이 정수 인덱스는
+  // 미분 불가능이라 기호 야코비안이 어느 OMC 버전에서도 실패했다
+  //   1.25 / 1.27 : switch(double) clang 오류
+  //   1.28 새백엔드: 'Variable $fDER_i is used before it is assigned'
+  // log(p) 7차 다항으로 대체해 미분 경로에서 테이블을 완전히 제거한다.
+  // 정확도(CoolProp, 2~30bar): Tsat 0.00037 K, hl 33 J/kg, hv 47 J/kg
+  function Tsat_a "해석형 포화온도 [K]"
+    input Real p; output Real T;
+  protected
+    Real x;
+  algorithm
+    x := log(min(max(p, P0), P1));
+    T := (((((((-5.8568321336e-03*x + 5.4409513135e-01)*x - 2.1658325307e+01)*x + 4.7889496682e+02)*x - 6.3523509732e+03)*x + 5.0547784191e+04)*x - 2.2340371167e+05)*x + 4.2318837646e+05);
+    annotation(derivative=Tsat_a_d);
+  end Tsat_a;
+
+  function Tsat_a_d "Tsat_a 도함수"
+    input Real p; input Real dp; output Real dT;
+  protected
+    Real x,pc,d;
+  algorithm
+    pc := min(max(p, P0), P1); x := log(pc);
+    d := 0.0;
+    d := ((((((-4.0997824935e-02*x + 3.2645707881e+00)*x - 1.0829162653e+02)*x + 1.9155798673e+03)*x - 1.9057052920e+04)*x + 1.0109556838e+05)*x - 2.2340371167e+05);
+    dT := if (p <= P0 or p >= P1) then 0.0 else d/pc*dp;
+  end Tsat_a_d;
+
+  function hl_a "해석형 포화액 엔탈피 [J/kg]"
+    input Real p; output Real h;
+  protected
+    Real x;
+  algorithm
+    x := log(min(max(p, P0), P1));
+    h := (((((((2.7527849399e+02*x - 2.5757436934e+04)*x + 1.0325452903e+06)*x - 2.2986758475e+07)*x + 3.0691577333e+08)*x - 2.4576645156e+09)*x + 1.0928382824e+10)*x - 2.0816551755e+10);
+    annotation(derivative=hl_a_d);
+  end hl_a;
+
+  function hl_a_d "hl_a 도함수"
+    input Real p; input Real dp; output Real dh;
+  protected
+    Real x,pc,d;
+  algorithm
+    pc := min(max(p, P0), P1); x := log(pc);
+    d := ((((((1.9269494579e+03*x - 1.5454462160e+05)*x + 5.1627264516e+06)*x - 9.1947033901e+07)*x + 9.2074732000e+08)*x - 4.9153290312e+09)*x + 1.0928382824e+10);
+    dh := if (p <= P0 or p >= P1) then 0.0 else d/pc*dp;
+  end hl_a_d;
+
+  function hv_a "해석형 포화증기 엔탈피 [J/kg]"
+    input Real p; output Real h;
+  protected
+    Real x;
+  algorithm
+    x := log(min(max(p, P0), P1));
+    h := (((((((-4.7098627826e+02*x + 4.4039861081e+04)*x - 1.7642198471e+06)*x + 3.9248300940e+07)*x - 5.2367709839e+08)*x + 4.1905574981e+09)*x - 1.8621451030e+10)*x + 3.5447252901e+10);
+    annotation(derivative=hv_a_d);
+  end hv_a;
+
+  function hv_a_d "hv_a 도함수"
+    input Real p; input Real dp; output Real dh;
+  protected
+    Real x,pc,d;
+  algorithm
+    pc := min(max(p, P0), P1); x := log(pc);
+    d := ((((((-3.2969039478e+03*x + 2.6423916649e+05)*x - 8.8210992354e+06)*x + 1.5699320376e+08)*x - 1.5710312952e+09)*x + 8.3811149962e+09)*x - 1.8621451030e+10);
+    dh := if (p <= P0 or p >= P1) then 0.0 else d/pc*dp;
+  end hv_a_d;
 
 end R290Tab;
