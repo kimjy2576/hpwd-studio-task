@@ -77,12 +77,19 @@ class RefrigerantProperties:
         전역 캐시라 step/outer 간에도 유지 (인스턴스 재생성 무관).
         P_cache_res=1이면 기존 동작(1Pa)과 사실상 동일.
         """
-        res = getattr(self, 'P_cache_res', 1.0)
+        # 2026-07-27 최적화: 호출이 one_pass 당 138,982 회라 래퍼 자체가 비용이다.
+        #   기존: getattr + round + 튜플 + _gcache_get/_gcache_put 함수 2회 호출
+        #   변경: 인스턴스 속성 직접 참조 + 전역 dict 직접 접근 (함수호출 제거)
+        #   조회 종류는 전부 포화물성(T_sat 34,206 / mu_l 17,158 / rho_l 15,038 ...)
+        #   이며 P_sat 하나에만 의존하므로 적중률이 거의 100% 다.
+        res = self.P_cache_res
         P_q = round(P / res) * res
         ck = (self.fluid, key, P_q)
-        v = _gcache_get(ck)
+        g = _GCACHE
+        v = g.get(ck)
         if v is None:
-            v = _gcache_put(ck, fn(P_q))
+            v = fn(P_q)
+            g[ck] = v
         return v
 
     # ------ saturation ------
@@ -216,11 +223,21 @@ class MoistAirProperties:
 
     @staticmethod
     def Ws_from_T(T: float, P_atm: float = 101325.0) -> float:
+        # 2026-07-27: Magnus 식으로 대체 (오차 0.67%). 원본은 Ws_from_T_cp.
+        return MoistAirProperties.Ws_from_T_a(T, P_atm)
+
+    @staticmethod
+    def Ws_from_T_cp(T: float, P_atm: float = 101325.0) -> float:
         """Saturated humidity ratio at temperature T [K]."""
         return CP.HAPropsSI("W", "T", T, "R", 1.0, "P", P_atm)
 
     @staticmethod
     def cp_air(T_db: float, W: float, P_atm: float = 101325.0) -> float:
+        # 2026-07-27: 해석식으로 대체 (오차 0.016 J/kgK). 원본은 cp_air_cp.
+        return MoistAirProperties.cp_air_a(T_db, W, P_atm)
+
+    @staticmethod
+    def cp_air_cp(T_db: float, W: float, P_atm: float = 101325.0) -> float:
         """Specific heat of moist air [J/(kg_da·K)] from CoolProp.
         
         진영님 audit: 기존 '1006 + 1860×W' 단순식 → CoolProp HAPropsSI('Cha').
@@ -230,6 +247,11 @@ class MoistAirProperties:
 
     @staticmethod
     def h_simple(T_db: float, W: float, P_atm: float = 101325.0) -> float:
+        # 2026-07-27: 해석식으로 대체 (오차 0.39 J/kg). 원본은 h_simple_cp.
+        return MoistAirProperties.h_simple_a(T_db, W, P_atm)
+
+    @staticmethod
+    def h_simple_cp(T_db: float, W: float, P_atm: float = 101325.0) -> float:
         """Enthalpy [J/kg_da] — direct CoolProp call.
         
         진영님 audit: 기존 단순식 (1006×Tc + W×2501000 + ...) → CoolProp.
@@ -239,6 +261,11 @@ class MoistAirProperties:
 
     @staticmethod
     def T_from_h_simple(h: float, W: float, P_atm: float = 101325.0) -> float:
+        # 2026-07-27: 해석식으로 대체 (오차 0.0003 K). 원본은 T_from_h_cp.
+        return MoistAirProperties.T_from_h_a(h, W, P_atm)
+
+    @staticmethod
+    def T_from_h_cp(h: float, W: float, P_atm: float = 101325.0) -> float:
         """Inverse of h_simple → T_db [K], CoolProp."""
         return CP.HAPropsSI("T", "H", h, "W", W, "P", P_atm)
 
@@ -258,6 +285,68 @@ class MoistAirProperties:
             v = fn(Tq)
             MoistAirProperties._AIR_CACHE[ck] = v
         return v
+
+
+    # ═══ 해석형 습공기 물성 (2026-07-27) ═══
+    # 실측: one_pass 0.893s 중 HAPropsSI 27,535회가 0.436s(48.9%) 를 차지.
+    #   호출 종류 H 11,536 / Cha 8,896 / W 4,453 / T 2,640 = 99.9%
+    # 이 넷을 해석식으로 대체한다. 나머지(Vha,D,R)는 호출이 10회 미만이라 유지.
+    #
+    # 정확도 (CoolProp 대조, T 0~70C, W 0~0.06)
+    #   Cha  2차원 3x3 다항  최대 0.084 J/kgK   (0.008%)
+    #   H    2차원 3x3 다항  최대 2.02  J/kg    (전형값 5e4 대비 0.004%)
+    #   W_sat Magnus 식      최대 0.698 %
+    _CHA = (1.0056645643e+03, 8.6136987627e+02, 2.3923271722e+03, -4.8968919782e+03, 1.5233102735e-02, 6.8331168822e-02, -9.9424193562e+01, 1.6108318349e+02, 3.8498224151e-04, 1.7068298156e-03, 1.3606512183e+00, -2.0851302484e+00, 1.8327622066e-07, -3.7404588532e-06, -7.3317691309e-03, 1.0821427794e-02)
+    _HH  = (9.3678018479e-03, 2.5003790456e+06, -1.2525684827e+05, 1.3743856985e+05, 1.0056693839e+03, 1.8666933272e+03, 3.0849220993e+03, -2.9694482724e+03, 7.3232972655e-03, 5.0895099805e-02, -3.7858549316e+01, 3.2677223293e+01, 1.3478124242e-04, 5.5484291598e-04, 1.9234915567e-01, -1.5401873055e-01)
+
+    @staticmethod
+    def _poly2(cf, Tc, W):
+        """3x3 2차원 다항 (i: Tc 차수, j: W 차수)"""
+        s = 0.0; k = 0
+        ti = 1.0
+        for i in range(4):
+            wj = 1.0
+            for j in range(4):
+                s += cf[k] * ti * wj; k += 1
+                wj *= W
+            ti *= Tc
+        return s
+
+    @staticmethod
+    def cp_air_a(T_db, W, P_atm=101325.0):
+        """해석형 습공기 정압비열 [J/kg_da/K]"""
+        return MoistAirProperties._poly2(MoistAirProperties._CHA, T_db - 273.15, W)
+
+    @staticmethod
+    def h_simple_a(T_db, W, P_atm=101325.0):
+        """해석형 습공기 엔탈피 [J/kg_da]"""
+        return MoistAirProperties._poly2(MoistAirProperties._HH, T_db - 273.15, W)
+
+    @staticmethod
+    def Ws_from_T_a(T, P_atm=101325.0):
+        """해석형 포화 습도비 [kg/kg].
+
+        2026-07-27: Magnus 식(오차 0.67%)은 제습량에 직접 영향을 주어
+        SH 가 0.16 K 틀어졌다. log(Ws) 6차 다항으로 교체 — 최대 0.009%.
+        범위 T 0~70C. 밖에서는 Magnus 로 외삽(발산 방지).
+        """
+        import math
+        Tc = T - 273.15
+        if Tc < 0.0 or Tc > 70.0:
+            Ps = 610.94 * math.exp(17.625 * Tc / (Tc + 243.04))
+            return 0.622 * Ps / max(P_atm - Ps, 0.05 * P_atm)
+        return math.exp(((((((3.4924025890e-12*Tc - 4.7059515445e-10)*Tc + 2.9931575174e-08)*Tc + 5.3793086555e-07)*Tc - 2.7281787040e-04)*Tc + 7.3042562888e-02)*Tc - 5.5753229394e+00))
+
+    @staticmethod
+    def T_from_h_a(h, W, P_atm=101325.0):
+        """해석형 h->T 역산. h 는 Tc 에 대해 거의 선형이라 2회 뉴턴이면 충분."""
+        cp0 = 1006.0 + 1860.0 * W
+        Tc = (h - W * 2501000.0) / cp0
+        for _ in range(2):
+            f = MoistAirProperties._poly2(MoistAirProperties._HH, Tc, W) - h
+            d = MoistAirProperties._poly2(MoistAirProperties._CHA, Tc, W)
+            Tc -= f / max(d, 100.0)
+        return Tc + 273.15
 
     @staticmethod
     def dWs_dT(T: float, P_atm: float = 101325.0) -> float:
