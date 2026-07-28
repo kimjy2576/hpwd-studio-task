@@ -579,7 +579,7 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     parameter Real N_const = 0.0 "0 이면 램프표 사용. >0 이면 그 값으로 고정 [rpm]" annotation(Evaluate=false);
     parameter Real Kp_c = 0.0 "PI 비례게인. Kp_c=Ki_c=0 이면 개도가 open_init 로 고정 (개도고정 시험용)";
     parameter Real Ki_c = 0.0 "PI 적분게인";
-    HPWDctrl.PI_Controller ctrl(SH_target=SH_target, Kp=Kp_c, Ki=Ki_c, opening_init=open_init, opening_min=6.0, I(fixed=true));
+    HPWDctrl.PI_Controller_Pulse ctrl(SH_target=SH_target, Kp=Kp_c, Ki=Ki_c, opening_init=open_init, opening_min=6.0, I(fixed=true));
     // 2026-07-26: TimeTable -> CombiTimeTable(Akima).
     //   TimeTable 은 선형보간이라 표 절점마다 도함수가 꺾인다(t=1,11,21,31,41,51).
     //   그 꺾임이 적분기를 반복 재시작시켜 램프 구간(t=13~29)에서 정체를 유발했다.

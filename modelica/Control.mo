@@ -22,6 +22,49 @@ package HPWDctrl "제어 컴포넌트"
     opening = max(opening_min, min(opening_max, opening_raw));
   end PI_Controller;
 
+  model PI_Controller_Pulse "SH PI 제어 + EEV 스텝모터 펄스 (2026-07-27)
+
+    실제 EEV 는 연속 개도가 아니라 스텝모터 구동이다.
+      - 개도가 정수 스텝(이산)
+      - 초당 최대 펄스(pps)로 변화율 제한
+      - 제어 주기마다만 갱신
+      - 데드밴드로 헌팅 방지
+    이 특성 때문에 과도구간에서 SH 가 목표에 고정되지 않고 진동하며,
+    SH<0(2상 출구)이 되어 어큐에 액이 쌓이는 구간이 실제로 발생한다.
+    use_pulse=false 로 두면 기존 연속 개도와 동일(하위호환).
+  "
+    parameter Real SH_target = 6.0;
+    parameter Real Kp = 2.0;
+    parameter Real Ki = 0.5;
+    parameter Real opening_init = 50.0;
+    parameter Real opening_min = 5.0, opening_max = 100.0;
+    parameter Real T_aw = 1.0;
+    parameter Boolean use_pulse = true;
+    parameter Integer n_max = 480 "EEV 전체 스텝수";
+    parameter Real pps_max = 40.0 "초당 최대 펄스 [step/s]";
+    parameter Real T_ctrl = 1.0 "제어 주기 [s]";
+    parameter Real deadband = 0.5 "데드밴드 [K]";
+    Modelica.Blocks.Interfaces.RealInput SH_meas;
+    Modelica.Blocks.Interfaces.RealOutput opening;
+    Real I(start = opening_init) "적분 상태";
+    Real err, opening_raw, opening_cont;
+    discrete Real n_act(start = opening_init/100.0*480);
+  equation
+    err = SH_meas - SH_target;
+    der(I) = Ki*err + (opening - opening_raw)/T_aw;
+    opening_raw = Kp*err + I;
+    opening_cont = max(opening_min, min(opening_max, opening_raw));
+    opening = if use_pulse then n_act/n_max*100.0 else opening_cont;
+  algorithm
+    when sample(0, T_ctrl) then
+      n_act := if abs(err) <= deadband then pre(n_act)
+               else pre(n_act) + max(-pps_max*T_ctrl,
+                      min(pps_max*T_ctrl, opening_cont/100.0*n_max - pre(n_act)));
+      n_act := max(opening_min/100.0*n_max,
+                   min(opening_max/100.0*n_max, integer(n_act + 0.5)));
+    end when;
+  end PI_Controller_Pulse;
+
   model PI_Test "가상 플랜트 폐루프 (opening↑ → SH↓)"
     PI_Controller ctrl(SH_target=5.0, Kp=2.0, Ki=0.5, opening_init=50.0);
     Real SH_plant;
