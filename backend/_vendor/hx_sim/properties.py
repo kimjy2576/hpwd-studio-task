@@ -242,9 +242,32 @@ class MoistAirProperties:
         """Inverse of h_simple → T_db [K], CoolProp."""
         return CP.HAPropsSI("T", "H", h, "W", W, "P", P_atm)
 
+    # 2026-07-27: 공기 물성 캐시. 냉매 물성(_cached)과 달리 캐시가 없어
+    # dWs_dT 가 one_pass 당 13,341 회 호출되며 0.29s(전체의 16%)를 차지했다.
+    # HAPropsSI 자체는 8us/call 로 싸지만 횟수가 문제.
+    # HX 셀들은 온도가 비슷하므로 양자화(0.05K)하면 적중률이 높다.
+    _AIR_CACHE = {}
+    _T_RES = 0.05  # K
+
+    @staticmethod
+    def _ac(key, T, fn, P_atm=101325.0):
+        Tq = round(T / MoistAirProperties._T_RES) * MoistAirProperties._T_RES
+        ck = (key, Tq, P_atm)
+        v = MoistAirProperties._AIR_CACHE.get(ck)
+        if v is None:
+            v = fn(Tq)
+            MoistAirProperties._AIR_CACHE[ck] = v
+        return v
+
     @staticmethod
     def dWs_dT(T: float, P_atm: float = 101325.0) -> float:
-        """dWs/dT at temperature T [K], central difference."""
+        """dWs/dT at temperature T [K], central difference. (캐시 적용)"""
+        return MoistAirProperties._ac(
+            'dWsdT', T,
+            lambda Tq: MoistAirProperties._dWs_dT_raw(Tq, P_atm), P_atm)
+
+    @staticmethod
+    def _dWs_dT_raw(T: float, P_atm: float = 101325.0) -> float:
         dT = 0.5  # K
         Ws_plus = CP.HAPropsSI("W", "T", T + dT, "R", 1.0, "P", P_atm)
         Ws_minus = CP.HAPropsSI("W", "T", T - dT, "R", 1.0, "P", P_atm)
