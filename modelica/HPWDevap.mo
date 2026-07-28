@@ -289,8 +289,15 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     Q_total=Nt*sum(Q); Q_lat_total=Nt*sum(Q_lat);
     h_out=hpath[M + 1];
     x_out=(h_out - hl)/h_fg;
-    SH=0.5*((R290Tab.T_ph_a(P, h_out) - R290Tab.Tsat_a(P))
-            + sqrt((R290Tab.T_ph_a(P, h_out) - R290Tab.Tsat_a(P))^2 + 1e-4)) "증발기 출구 과열도 [K] (smooth max)";
+    // 2026-07-27: SH 를 부호 있는 값으로 (Python evaporator_on_design.py 와 동일 정의).
+    //   기존 smooth-max 는 2상 출구(x<1)를 표현하지 못해 SH 가 0.005 에 고정됐다.
+    //   실측: x_out 0.72~0.99 인데 SH=0.005, 그 사이 어큐 질량 +12% (액축적 진행).
+    //   과도해석에서는 SH<0 (2상 출구) 이 실제로 발생하므로 표현해야 한다.
+    //   2상이면 남은 증발 엔탈피를 cp_v 로 환산해 음수 SH 로 준다.
+    SH=if x_out < 1.0
+       then -(1.0 - max(x_out, 0.0))*h_fg/max(R290Tab.cpv_a(P), 1.0)
+       else R290Tab.T_ph_a(P, h_out) - R290Tab.Tsat_a(P)
+       "증발기 출구 과열도 [K] — 2상이면 음수 (Python 과 동일 정의)";
     T_air_out=sum(T_aen[Nr + 1,s] for s in 1:Nseg)/Nseg;
     // 냉매측 dp: 2상 마찰(MSH) + 가속 + U-bend
     x_in_q=(h_in - hl)/h_fg;
@@ -897,8 +904,13 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     x_out=(h_out - hl)/h_fg;
     // smooth max — x_out 이 1.0 을 통과할 때 max() 가 상태이벤트를 만들어
     // 사이클 콜드스타트가 그 지점(t~55s)에서 정지함(2026-07-24 실측).
-    SH=0.5*((R290Tab.T_ph_a(P, h_out) - R290Tab.Tsat_a(P))
-            + sqrt((R290Tab.T_ph_a(P, h_out) - R290Tab.Tsat_a(P))^2 + 1e-4)) "출구 과열도 [K]";
+    // 2026-07-27: 부호 있는 SH (Python evaporator_on_design.py 와 동일 정의).
+    //   smooth-max 는 2상 출구를 표현하지 못해 SH 가 0.005 에 고정됐다.
+    //   실측: x_out 0.72~0.99 인데 SH=0.005, 어큐 질량 +12% (액축적 진행 중).
+    SH=if x_out < 1.0
+       then -(1.0 - max(x_out, 0.0))*h_fg/max(R290Tab.cpv_a(P), 1.0)
+       else R290Tab.T_ph_a(P, h_out) - R290Tab.Tsat_a(P)
+       "출구 과열도 [K] — 2상이면 음수";
     T_air_out=sum(T_aen[Nr + 1,s] for s in 1:Nsc)/Nsc;
     W_air_out=sum(W_aen[Nr + 1,s] for s in 1:Nsc)/Nsc "출구 절대습도 [kg/kg] (제습 반영) → 응축기 입력";
     // 냉매측 dp (명시적)

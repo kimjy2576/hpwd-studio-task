@@ -590,9 +590,26 @@ def step(input, params, state, dt):
     
     # SH/SC 계산
     if mode == 'evap':
-        SH_out = max(0.0, T_ref_out_K - T_sat)
+        # 2026-07-27: 과도해석을 위해 SH 를 부호 있는 값으로 정의.
+        #   기존 max(0, dT) 는 2상 출구(x<1)를 표현하지 못해
+        #   과도구간에서 SH 가 0 에 붙고 진단·제어가 무의미해졌다.
+        #   (실측 Modelica: x_out 0.72~0.99 인데 SH 는 0.005 고정,
+        #    그 사이 어큐 질량이 +12% 증가 — 액축적이 실제로 진행 중)
+        #   2상이면 미달 과열도를 '남은 증발에 필요한 엔탈피/cp' 로 환산해
+        #   음수 SH 로 표현한다. 단상이면 기존과 동일.
+        if x_out < 1.0:
+            # (1-x)*h_fg 를 마저 증발시켜야 SH=0 이 된다
+            try:
+                _hfg = (CP.PropsSI('H', 'P', P_ref_out_Pa, 'Q', 1, fluid)
+                        - CP.PropsSI('H', 'P', P_ref_out_Pa, 'Q', 0, fluid))
+                _cpv = CP.PropsSI('C', 'P', P_ref_out_Pa, 'Q', 1, fluid)
+            except Exception:
+                _hfg, _cpv = 3.2e5, 2000.0
+            SH_out = -(1.0 - max(x_out, 0.0)) * _hfg / max(_cpv, 1.0)
+        else:
+            SH_out = T_ref_out_K - T_sat
     else:
-        SH_out = max(0.0, T_sat - T_ref_out_K)  # subcool for cond
+        SH_out = T_sat - T_ref_out_K  # subcool for cond (부호 유지)
     
     # Wet diagnostics
     wet_frac = result.correlations_used.get('wet_fraction', 0.0)
