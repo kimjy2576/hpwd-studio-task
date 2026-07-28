@@ -1625,10 +1625,13 @@ package R290Tab "R290 tabulated media — (p,h) basis, 2상 안전, 미분가능
   protected
     Real ep,drdp;
   algorithm
-    ep := 1.0e4;
-    drdp := if dp == 0.0 then 0.0
-            else (rho_ph_a(p+ep,h) - rho_ph_a(p-ep,h))/(2.0*ep);
-    drho := drdp*dp + drho_dh_a(p,h)*dh;
+    // 2026-07-27: ep=1e4(0.1bar) 는 2상 블렌딩 구간(DHB=100 J/kg)을 통째로
+    //   건너뛰어 적분기가 필요로 하는 국소 도함수와 어긋난다.
+    //   실측: 사이클 콜드스타트가 t=1.598 에서 Integrator failed.
+    //   ep 를 100Pa 로 줄이고 dp==0 실수비교도 제거한다.
+    ep := 1.0e2;
+    drdp := (rho_ph_a(p + ep, h) - rho_ph_a(p - ep, h))/(2.0*ep);
+    drho := drdp*dp + drho_dh_a(p, h)*dh;
   end rho_ph_a_d;
 
   function drho_dh_a "해석형 d(rho)/dh [kg/m3 / (J/kg)] (2026-07-26).
