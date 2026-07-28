@@ -295,7 +295,13 @@ def solve_forward(fidelity, operating, air_bc, M_charge, geom,
                 else [operating['P_evap'], operating['P_cond'], operating['h_suc']])
     # xtol: 외부 연성 루프가 보정하므로 내부를 1e-8 로 조이는 것은 과하다.
     # 인자로 받아 호출부가 정한다 (단독 사용 시 기본 1e-8 유지).
-    sol = root(residual, u0, method=method, options={'xtol': xtol})
+    # 2026-07-27: method 별로 지원 옵션이 다르다.
+    #   hybr/lm      : xtol
+    #   broyden1/2, krylov, df-sane : fatol/xtol 등 별도 체계
+    # 야코비안 비용이 지배적이라(미지수 4개, 잔차 1회 0.55s -> 야코비안 2.2s)
+    # quasi-Newton 계열로 바꾸면 이득이 클 수 있다.
+    _opt = {'xtol': xtol} if method in ('hybr', 'lm') else {'fatol': 1e-6}
+    sol = root(residual, u0, method=method, options=_opt)
 
     # 2026-07-26: 최종 호출에도 클램프 필요. 잔차 함수 안에만 두었더니
     # 솔버가 범위 밖 해를 반환했을 때 여기서 CoolProp 이 터졌음

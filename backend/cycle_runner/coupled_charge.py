@@ -25,10 +25,30 @@ def _rh_from_TW(T_C, W, P_atm=101325.0):
     return f(T_C, W, P_atm)
 
 
+def _try_solve(fid, op, air_bc, M_charge, geom, oil_cfg, sh, x0, xtol, dry_acc):
+    """broyden1 우선, 실패 시 hybr 재시도.
+
+    broyden1 은 야코비안을 재사용해 warm start 에서 5.6배 빠르나
+    범위 밖으로 벗어나면 CoolProp 예외가 난다. 그때는 견고한 hybr 로 되돌린다.
+    """
+    if x0 is not None:
+        try:
+            r = solve_forward(fid, op, air_bc, M_charge, geom, oil_cfg=oil_cfg,
+                              SH_target=sh, x0=x0, xtol=xtol,
+                              method='broyden1', dry_accumulator=dry_acc)
+            if r['success']:
+                return r
+        except Exception:
+            pass
+    return solve_forward(fid, op, air_bc, M_charge, geom, oil_cfg=oil_cfg,
+                         SH_target=sh, x0=x0, xtol=xtol,
+                         method='hybr', dry_accumulator=dry_acc)
+
+
 def solve(ref_fidelity, air_fidelity, operating, air_inlet,
           M_charge, geom, oil_cfg=None, SH_target=None, fan_position=None,
           params_override=None, air_states=None,
-          sh_warmup=3, dt=1.0, max_outer=20, tol_air=0.05, alpha_air=0.6, inner_xtol=1e-6,
+          sh_warmup=3, dt=1.0, method='hybr', max_outer=20, tol_air=0.05, alpha_air=0.6, inner_xtol=1e-6,
           dry_accumulator=True, verbose=False):
     """완전 연성 정상해.
 
@@ -76,10 +96,28 @@ def solve(ref_fidelity, air_fidelity, operating, air_inlet,
         # 첫 반복의 공기 BC 는 실제 운전점과 멀어, 바로 SH 를 구속하면
         # 개도가 상한(100%)에 붙고 Pe 가 발산한다 (실측: Pe 9.09, open 100).
         sh_now = SH_target if (SH_target is not None and outer >= sh_warmup) else None
-        ref_res = solve_forward(ref_fidelity, op_ws, air_bc, M_charge, geom,
+        _use_warm = (x_ws is not None
+                     and len(x_ws) == (4 if sh_now is not None else 3))
+        # broyden1 은 빠르지만(nfev 3, 0.8s vs hybr 8, 4.5s) 범위 밖으로
+        # 크게 벗어나 CoolProp 이 터지는 경우가 있다(실측: Pe 가 하한 2bar 로).
+        # 실패하면 hybr 로 재시도한다.
+        ref_res = _try_solve(ref_fidelity, op_ws, air_bc, M_charge, geom,
+                             oil_cfg, sh_now, x_ws if _use_warm else None,
+                             inner_xtol, dry_accumulator)
+        _unused_solve_forward = (solve_forward,)
+        if False:
+            ref_res = solve_forward(ref_fidelity, op_ws, air_bc, M_charge, geom,
                                 # warm start 는 차원이 맞을 때만 전달.
                                 # sh_warmup 경계에서 미지수가 3개<->4개로 바뀌므로
                                 # 이전 x_ws 를 그대로 넘기면 unpack 오류가 난다.
+                                # 2026-07-27: warm start 유무로 solver 선택.
+                                #   hybr     : 수치 야코비안(미지수 4개 -> 4~5평가)
+                                #              견고하나 warm 에서도 nfev 8, 4.5s
+                                #   broyden1 : quasi-Newton, 야코비안 재사용
+                                #              warm 에서 nfev 3, 0.8s (5.6배)
+                                #              단 냉해에서는 NaN 으로 발산
+                                # -> warm 있으면 broyden1, 없으면 hybr
+                                method=method,
                                 x0=(x_ws if (x_ws is not None
                                     and len(x_ws) == (4 if sh_now is not None else 3))
                                     else None),

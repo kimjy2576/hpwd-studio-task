@@ -32,7 +32,7 @@ def run(ref_fidelity, air_fidelity, operating, air_inlet,
         M_charge, geom, oil_cfg=None, fan_position=None,
         SH_target=None, t_end=1800.0, dt=60.0,
         N_target=1800.0, ramp_time=120.0, N_charge_min=1200.0,
-        max_outer=6, verbose=False):
+        max_outer=6, method='hybr', verbose=False):
     """완전 연성 동적 해석.
 
     Returns:
@@ -71,6 +71,7 @@ def run(ref_fidelity, air_fidelity, operating, air_inlet,
                                  # sh_warmup: warm start 가 있어도 첫 회부터 SH 를
                                  # 걸면 개도가 상한(100%)에 붙는다(실측 t=120 발산).
                                  # 공기 BC 를 1회 안정시킨 뒤 켜는 것이 안전하다.
+                                 method=method,
                                  sh_warmup=(1 if k > 0 else 3))
                 rr = r['refrigerant']
                 rec = {'t': t, 'N': N, 'phase': 'charge',
