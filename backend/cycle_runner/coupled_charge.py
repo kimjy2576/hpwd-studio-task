@@ -28,7 +28,7 @@ def _rh_from_TW(T_C, W, P_atm=101325.0):
 def solve(ref_fidelity, air_fidelity, operating, air_inlet,
           M_charge, geom, oil_cfg=None, SH_target=None, fan_position=None,
           params_override=None, air_states=None,
-          sh_warmup=3, max_outer=20, tol_air=0.05, alpha_air=0.6, inner_xtol=1e-6,
+          sh_warmup=3, dt=1.0, max_outer=20, tol_air=0.05, alpha_air=0.6, inner_xtol=1e-6,
           dry_accumulator=True, verbose=False):
     """완전 연성 정상해.
 
@@ -108,9 +108,11 @@ def solve(ref_fidelity, air_fidelity, operating, air_inlet,
                            'h_in':   st['compressor']['h_dis'],
                            'm_dot_ref': st['compressor']['m_dot']},
         }
+        # dt 전달 필수: air_loop 기본값이 1.0s 라 드럼이 스텝당 1초만 적분한다.
+        # 실측: dt=60 스텝에서 300초 동안 m_w 가 0.001kg 만 감소(1/60 진행).
         air_res = air_pass(air_fidelity, air_inlet, air_states or {}, hx_ref,
                            fan_position=fan_position,
-                           params_override=params_override)
+                           params_override=params_override, dt=dt)
 
         # ── 새 공기 BC 추출 + under-relaxation ──
         # air_res['path'] 는 실행 순서, trajectory[i] 는 path[i] 직전 공기 상태.

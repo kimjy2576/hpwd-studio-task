@@ -63,7 +63,7 @@ def run(ref_fidelity, air_fidelity, operating, air_inlet,
                 r = charge_solve(ref_fidelity, air_fidelity, op_ws, air_inlet,
                                  M_charge, geom, oil_cfg=oil_cfg,
                                  fan_position=fan_position, SH_target=SH_target,
-                                 air_states=air_st, max_outer=max_outer)
+                                 air_states=air_st, dt=dt, max_outer=max_outer)
                 rr = r['refrigerant']
                 rec = {'t': t, 'N': N, 'phase': 'charge',
                        'Pc': rr['P_cond'], 'Pe': rr['P_evap'],
