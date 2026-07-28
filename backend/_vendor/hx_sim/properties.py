@@ -92,8 +92,138 @@ class RefrigerantProperties:
             g[ck] = v
         return v
 
+
+    # ═══ 해석형 냉매 포화물성 (2026-07-27) ═══
+    # 실측: one_pass 의 PropsSI 2,469회 중 (P,Q) 포화물성이 2,374회(96%).
+    #   D(P,Q) 1,352 / V(P,Q) 676 / I(P,Q) 338
+    # log(y) = log(p) 8차 다항으로 대체. 정확도(2~30bar)
+    #   rhol 0.009% rhov 0.011% mul 0.012% muv 0.010% sigma 0.111%
+    #   T_sat 0.000% h_l 0.005% h_v 0.002% k_l 0.004% k_v 0.027%
+    #   cp_l 0.075% cp_v 0.074%
+    def T_sat_a(self, P):
+        """해석형 T_sat (log p 8차 다항). 범위 밖은 CoolProp 폴백."""
+        import math
+        if P < 2.0e5 or P > 3.0e6:
+            return self.T_sat_cp(P)
+        x = math.log(P)
+        return ((((((((-2.4885292440e-03*x + 2.6500936217e-01)*x - 1.2345811614e+01)*x + 3.2861758104e+02)*x - 5.4661224926e+03)*x + 5.8179958968e+04)*x - 3.8695567735e+05)*x + 1.4703371130e+06)*x - 2.4435550789e+06)
+
+    def rho_l_a(self, P):
+        """해석형 rho_l (log p 8차 다항). 범위 밖은 CoolProp 폴백."""
+        import math
+        if P < 2.0e5 or P > 3.0e6:
+            return self.rho_l_cp(P)
+        x = math.log(P)
+        return math.exp(((((((((-1.4060695288e-03*x + 1.5098925620e-01)*x - 7.0906926269e+00)*x + 1.9020100143e+02)*x - 3.1873622928e+03)*x + 3.4169601527e+04)*x - 2.2884115354e+05)*x + 8.7537109904e+05)*x - 1.4642824078e+06))
+
+    def rho_v_a(self, P):
+        """해석형 rho_v (log p 8차 다항). 범위 밖은 CoolProp 폴백."""
+        import math
+        if P < 2.0e5 or P > 3.0e6:
+            return self.rho_v_cp(P)
+        x = math.log(P)
+        return math.exp(((((((((1.9472695943e-03*x - 2.0893081013e-01)*x + 9.8037464137e+00)*x - 2.6276801596e+02)*x + 4.4000371484e+03)*x - 4.7134466755e+04)*x + 3.1543858840e+05)*x - 1.2057645661e+06)*x + 2.0155470429e+06))
+
+    def mu_l_a(self, P):
+        """해석형 mu_l (log p 8차 다항). 범위 밖은 CoolProp 폴백."""
+        import math
+        if P < 2.0e5 or P > 3.0e6:
+            return self.mu_l_cp(P)
+        x = math.log(P)
+        return math.exp(((((((((-1.9047663498e-03*x + 2.0450282009e-01)*x - 9.6020846210e+00)*x + 2.5752415786e+02)*x - 4.3148838202e+03)*x + 4.6250224461e+04)*x - 3.0970462668e+05)*x + 1.1845363816e+06)*x - 1.9812072960e+06))
+
+    def mu_v_a(self, P):
+        """해석형 mu_v (log p 8차 다항). 범위 밖은 CoolProp 폴백."""
+        import math
+        if P < 2.0e5 or P > 3.0e6:
+            return self.mu_v_cp(P)
+        x = math.log(P)
+        return math.exp(((((((((1.7145144692e-03*x - 1.8401982957e-01)*x + 8.6377453711e+00)*x - 2.3159327294e+02)*x + 3.8793022676e+03)*x - 4.1569833320e+04)*x + 2.7828856329e+05)*x - 1.0641002993e+06)*x + 1.7792998895e+06))
+
+    def sigma_a(self, P):
+        """해석형 sigma (log p 8차 다항). 범위 밖은 CoolProp 폴백."""
+        import math
+        if P < 2.0e5 or P > 3.0e6:
+            return self.sigma_cp(P)
+        x = math.log(P)
+        return math.exp(((((((((-1.6452352912e-02*x + 1.7677020436e+00)*x - 8.3058155554e+01)*x + 2.2290859469e+03)*x - 3.7372869248e+04)*x + 4.0083646992e+05)*x - 2.6856886515e+06)*x + 1.0277806140e+07)*x - 1.7199455859e+07))
+
+    def k_l_a(self, P):
+        """해석형 k_l (log p 8차 다항). 범위 밖은 CoolProp 폴백."""
+        import math
+        if P < 2.0e5 or P > 3.0e6:
+            return self.k_l_cp(P)
+        x = math.log(P)
+        return math.exp(((((((((2.0807354666e-04*x - 2.2614874096e-02)*x + 1.0743360203e+00)*x - 2.9137278625e+01)*x + 4.9345548332e+02)*x - 5.3437417803e+03)*x + 3.6136749931e+04)*x - 1.3952365587e+05)*x + 2.3548383694e+05))
+
+    def k_v_a(self, P):
+        """해석형 k_v (log p 8차 다항). 범위 밖은 CoolProp 폴백."""
+        import math
+        if P < 2.0e5 or P > 3.0e6:
+            return self.k_v_cp(P)
+        x = math.log(P)
+        return math.exp(((((((((4.4232070164e-03*x - 4.7538560373e-01)*x + 2.2342768952e+01)*x - 5.9977740455e+02)*x + 1.0058190269e+04)*x - 1.0790037514e+05)*x + 7.2309692545e+05)*x - 2.7677046086e+06)*x + 4.6323966439e+06))
+
+    def cp_l_a(self, P):
+        """해석형 cp_l (log p 8차 다항). 범위 밖은 CoolProp 폴백."""
+        import math
+        if P < 2.0e5 or P > 3.0e6:
+            return self.cp_l_cp(P)
+        x = math.log(P)
+        return math.exp(((((((((1.0270473316e-02*x - 1.1044486042e+00)*x + 5.1936883906e+01)*x - 1.3949610359e+03)*x + 2.3405558277e+04)*x - 2.5121394025e+05)*x + 1.6843550373e+06)*x - 6.4501256981e+06)*x + 1.0800938042e+07))
+
+    def cp_v_a(self, P):
+        """해석형 cp_v (log p 8차 다항). 범위 밖은 CoolProp 폴백."""
+        import math
+        if P < 2.0e5 or P > 3.0e6:
+            return self.cp_v_cp(P)
+        x = math.log(P)
+        return math.exp(((((((((1.6299674500e-02*x - 1.7517760812e+00)*x + 8.2328971690e+01)*x - 2.2099474120e+03)*x + 3.7057959042e+04)*x - 3.9751054518e+05)*x + 2.6636735744e+06)*x - 1.0194318917e+07)*x + 1.7060607738e+07))
+    def h_fg_a(self, P):
+        """해석형 h_fg (log p 8차). 범위 밖은 CoolProp 폴백."""
+        import math
+        if P < 2.0e5 or P > 3.0e6:
+            return self.h_fg_cp(P)
+        x = math.log(P)
+        return math.exp(((((((((-5.1729474349e-03*x + 5.5567006198e-01)*x - 2.6102967616e+01)*x + 7.0038330818e+02)*x - 1.1740009055e+04)*x + 1.2588785577e+05)*x - 8.4329291608e+05)*x + 3.2264944552e+06)*x - 5.3982535781e+06))
+
+    def sigma_a(self, P):
+        """해석형 sigma (log p 8차). 범위 밖은 CoolProp 폴백."""
+        import math
+        if P < 2.0e5 or P > 3.0e6:
+            return self.sigma_cp(P)
+        x = math.log(P)
+        return math.exp(((((((((-1.6452352912e-02*x + 1.7677020436e+00)*x - 8.3058155554e+01)*x + 2.2290859469e+03)*x - 3.7372869248e+04)*x + 4.0083646992e+05)*x - 2.6856886515e+06)*x + 1.0277806140e+07)*x - 1.7199455859e+07))
+
+    def Pr_l_a(self, P):
+        """해석형 Pr_l (log p 8차). 범위 밖은 CoolProp 폴백."""
+        import math
+        if P < 2.0e5 or P > 3.0e6:
+            return self.Pr_l_cp(P)
+        x = math.log(P)
+        return math.exp(((((((((8.1576334201e-03*x - 8.7733091004e-01)*x + 4.1260463265e+01)*x - 1.1082995995e+03)*x + 1.8597218973e+04)*x - 1.9961997401e+05)*x + 1.3385136607e+06)*x - 5.1260656606e+06)*x + 8.5842469087e+06))
+
+    def Pr_v_a(self, P):
+        """해석형 Pr_v (log p 8차). 범위 밖은 CoolProp 폴백."""
+        import math
+        if P < 2.0e5 or P > 3.0e6:
+            return self.Pr_v_cp(P)
+        x = math.log(P)
+        return math.exp(((((((((1.3590981953e-02*x - 1.4604103070e+00)*x + 6.8623948109e+01)*x - 1.8417632803e+03)*x + 3.0879071041e+04)*x - 3.3118000336e+05)*x + 2.2188652122e+06)*x - 8.4907146074e+06)*x + 1.4207510984e+07))
+
+    def cp_v_a(self, P):
+        """해석형 cp_v (log p 8차). 범위 밖은 CoolProp 폴백."""
+        import math
+        if P < 2.0e5 or P > 3.0e6:
+            return self.cp_v_cp(P)
+        x = math.log(P)
+        return math.exp(((((((((1.6299674500e-02*x - 1.7517760812e+00)*x + 8.2328971690e+01)*x - 2.2099474120e+03)*x + 3.7057959042e+04)*x - 3.9751054518e+05)*x + 2.6636735744e+06)*x - 1.0194318917e+07)*x + 1.7060607738e+07))
     # ------ saturation ------
     def T_sat(self, P: float) -> float:
+        # 2026-07-27: 해석식으로 대체. 원본은 T_sat_cp.
+        return self.T_sat_a(P)
+
+    def T_sat_cp(self, P: float) -> float:
         return self._cached("T_sat", P, lambda Pq: CP.PropsSI("T", "P", Pq, "Q", 0, self.fluid))
 
     def P_sat(self, T: float) -> float:
@@ -101,41 +231,89 @@ class RefrigerantProperties:
 
     # ------ two-phase ------
     def h_fg(self, P: float) -> float:
+        # 2026-07-27: 해석식 대체. 원본은 h_fg_cp.
+        return self.h_fg_a(P)
+
+    def h_fg_cp(self, P: float) -> float:
         return self._cached("h_fg", P, lambda Pq: (
             CP.PropsSI("H", "P", Pq, "Q", 1, self.fluid) -
             CP.PropsSI("H", "P", Pq, "Q", 0, self.fluid)))
 
     def rho_l(self, P: float) -> float:
+        # 2026-07-27: 해석식으로 대체. 원본은 rho_l_cp.
+        return self.rho_l_a(P)
+
+    def rho_l_cp(self, P: float) -> float:
         return self._cached("rho_l", P, lambda Pq: CP.PropsSI("D", "P", Pq, "Q", 0, self.fluid))
 
     def rho_v(self, P: float) -> float:
+        # 2026-07-27: 해석식으로 대체. 원본은 rho_v_cp.
+        return self.rho_v_a(P)
+
+    def rho_v_cp(self, P: float) -> float:
         return self._cached("rho_v", P, lambda Pq: CP.PropsSI("D", "P", Pq, "Q", 1, self.fluid))
 
     def mu_l(self, P: float) -> float:
+        # 2026-07-27: 해석식으로 대체. 원본은 mu_l_cp.
+        return self.mu_l_a(P)
+
+    def mu_l_cp(self, P: float) -> float:
         return self._cached("mu_l", P, lambda Pq: CP.PropsSI("V", "P", Pq, "Q", 0, self.fluid))
 
     def mu_v(self, P: float) -> float:
+        # 2026-07-27: 해석식으로 대체. 원본은 mu_v_cp.
+        return self.mu_v_a(P)
+
+    def mu_v_cp(self, P: float) -> float:
         return self._cached("mu_v", P, lambda Pq: CP.PropsSI("V", "P", Pq, "Q", 1, self.fluid))
 
     def k_l(self, P: float) -> float:
+        # 2026-07-27: 해석식으로 대체. 원본은 k_l_cp.
+        return self.k_l_a(P)
+
+    def k_l_cp(self, P: float) -> float:
         return self._cached("k_l", P, lambda Pq: CP.PropsSI("L", "P", Pq, "Q", 0, self.fluid))
 
     def k_v(self, P: float) -> float:
+        # 2026-07-27: 해석식으로 대체. 원본은 k_v_cp.
+        return self.k_v_a(P)
+
+    def k_v_cp(self, P: float) -> float:
         return self._cached("k_v", P, lambda Pq: CP.PropsSI("L", "P", Pq, "Q", 1, self.fluid))
 
     def cp_l(self, P: float) -> float:
+        # 2026-07-27: 해석식으로 대체. 원본은 cp_l_cp.
+        return self.cp_l_a(P)
+
+    def cp_l_cp(self, P: float) -> float:
         return self._cached("cp_l", P, lambda Pq: CP.PropsSI("C", "P", Pq, "Q", 0, self.fluid))
 
     def cp_v(self, P: float) -> float:
+        # 2026-07-27: 해석식 대체. 원본은 cp_v_cp.
+        return self.cp_v_a(P)
+
+    def cp_v_cp(self, P: float) -> float:
         return self._cached("cp_v", P, lambda Pq: CP.PropsSI("C", "P", Pq, "Q", 1, self.fluid))
 
     def Pr_l(self, P: float) -> float:
+        # 2026-07-27: 해석식 대체. 원본은 Pr_l_cp.
+        return self.Pr_l_a(P)
+
+    def Pr_l_cp(self, P: float) -> float:
         return self._cached("Pr_l", P, lambda Pq: CP.PropsSI("Prandtl", "P", Pq, "Q", 0, self.fluid))
 
     def Pr_v(self, P: float) -> float:
+        # 2026-07-27: 해석식 대체. 원본은 Pr_v_cp.
+        return self.Pr_v_a(P)
+
+    def Pr_v_cp(self, P: float) -> float:
         return self._cached("Pr_v", P, lambda Pq: CP.PropsSI("Prandtl", "P", Pq, "Q", 1, self.fluid))
 
     def sigma(self, P: float) -> float:
+        # 2026-07-27: 해석식 대체. 원본은 sigma_cp.
+        return self.sigma_a(P)
+
+    def sigma_cp(self, P: float) -> float:
         return self._cached("sigma", P, lambda Pq: CP.PropsSI("I", "P", Pq, "Q", 0, self.fluid))
 
     def P_r(self, P: float) -> float:

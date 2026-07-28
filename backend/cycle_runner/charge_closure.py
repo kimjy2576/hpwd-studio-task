@@ -217,7 +217,7 @@ def _state_from_pass(r, Pe, Pc):
 
 def solve_forward(fidelity, operating, air_bc, M_charge, geom,
                   oil_cfg=None, method='hybr', dry_accumulator=True,
-                  x0=None, verbose=False, SH_target=None):
+                  x0=None, verbose=False, SH_target=None, xtol=1e-8):
     """정방향(충전량 구속) 정상해. Modelica 와 동일한 조건 설정.
 
     미지수 (P_evap, P_cond, h_suc), 잔차
@@ -293,7 +293,9 @@ def solve_forward(fidelity, operating, air_bc, M_charge, geom,
     u0 = x0 or ([operating['P_evap'], operating['P_cond'], operating['h_suc'],
                  opening] if SH_target is not None
                 else [operating['P_evap'], operating['P_cond'], operating['h_suc']])
-    sol = root(residual, u0, method=method, options={'xtol': 1e-8})
+    # xtol: 외부 연성 루프가 보정하므로 내부를 1e-8 로 조이는 것은 과하다.
+    # 인자로 받아 호출부가 정한다 (단독 사용 시 기본 1e-8 유지).
+    sol = root(residual, u0, method=method, options={'xtol': xtol})
 
     # 2026-07-26: 최종 호출에도 클램프 필요. 잔차 함수 안에만 두었더니
     # 솔버가 범위 밖 해를 반환했을 때 여기서 CoolProp 이 터졌음
