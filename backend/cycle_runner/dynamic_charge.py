@@ -63,7 +63,15 @@ def run(ref_fidelity, air_fidelity, operating, air_inlet,
                 r = charge_solve(ref_fidelity, air_fidelity, op_ws, air_inlet,
                                  M_charge, geom, oil_cfg=oil_cfg,
                                  fan_position=fan_position, SH_target=SH_target,
-                                 air_states=air_st, dt=dt, max_outer=max_outer)
+                                 air_states=air_st, dt=dt, max_outer=max_outer,
+                                 # warm start 가 있으면 공기 BC 가 이미 가까우므로
+                                 # SH 구속을 일찍 켠다. sh_warmup 기본 3 은
+                                 # max_outer=6 에서 SH 반복을 3회로 제한해
+                                 # t>=180 부터 SH 가 0 으로 밀렸다.
+                                 # sh_warmup: warm start 가 있어도 첫 회부터 SH 를
+                                 # 걸면 개도가 상한(100%)에 붙는다(실측 t=120 발산).
+                                 # 공기 BC 를 1회 안정시킨 뒤 켜는 것이 안전하다.
+                                 sh_warmup=(1 if k > 0 else 3))
                 rr = r['refrigerant']
                 rec = {'t': t, 'N': N, 'phase': 'charge',
                        'Pc': rr['P_cond'], 'Pe': rr['P_evap'],
@@ -76,9 +84,14 @@ def run(ref_fidelity, air_fidelity, operating, air_inlet,
                     op_ws['opening'] = rr['opening']
                 air_res = r.get('air')
             else:
+                # 기동 구간은 SH 구속을 끈다.
+                #   저rpm 에서는 개도를 최대로 열어도 SH 목표를 만들 수 없어
+                #   흡입이 포화선에 붙고 CoolProp (P,T) flash 가 실패한다
+                #   (실측 N=900: Psat[794000Pa] 가 T[291.186K] 와 일치).
+                #   SH 없이 풀면 정상 수렴한다 (Pe 6.09, Pc 10.03).
                 r = coupled_solve(ref_fidelity, air_fidelity, op_ws, air_inlet,
                                   fan_position=fan_position, air_states=air_st,
-                                  SH_target=SH_target, max_outer=max_outer)
+                                  SH_target=None, max_outer=max_outer)
                 s = r['refrigerant']
                 rec = {'t': t, 'N': N, 'phase': 'startup',
                        'Pc': s.get('P_cond'), 'Pe': s.get('P_evap'),
