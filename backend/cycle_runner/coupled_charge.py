@@ -77,7 +77,13 @@ def solve(ref_fidelity, air_fidelity, operating, air_inlet,
         # 개도가 상한(100%)에 붙고 Pe 가 발산한다 (실측: Pe 9.09, open 100).
         sh_now = SH_target if (SH_target is not None and outer >= sh_warmup) else None
         ref_res = solve_forward(ref_fidelity, op_ws, air_bc, M_charge, geom,
-                                x0=x_ws, xtol=inner_xtol,
+                                # warm start 는 차원이 맞을 때만 전달.
+                                # sh_warmup 경계에서 미지수가 3개<->4개로 바뀌므로
+                                # 이전 x_ws 를 그대로 넘기면 unpack 오류가 난다.
+                                x0=(x_ws if (x_ws is not None
+                                    and len(x_ws) == (4 if sh_now is not None else 3))
+                                    else None),
+                                xtol=inner_xtol,
                                 oil_cfg=oil_cfg, SH_target=sh_now,
                                 dry_accumulator=dry_accumulator)
         st = ref_res['state']
