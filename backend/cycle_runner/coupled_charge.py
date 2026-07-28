@@ -93,8 +93,12 @@ def solve(ref_fidelity, air_fidelity, operating, air_inlet,
         op_ws['P_evap'] = ref_res['P_evap']
         op_ws['P_cond'] = ref_res['P_cond']
         op_ws['h_suc']  = ref_res['h_suc']
+        # 2026-07-27 버그 수정: 전역 SH_target 이 아니라 이번 outer 에 실제로
+        #   쓴 sh_now 로 차원을 정해야 한다. sh_warmup 구간(sh_now=None)에서
+        #   4개짜리를 만들면 다음 호출의 차원 가드가 매번 warm start 를 버려
+        #   nfev 가 줄지 않았다 (실측: outer3 nfev 12 -> outer4 nfev 21).
         x_ws = ([ref_res['P_evap'], ref_res['P_cond'], ref_res['h_suc'],
-                 ref_res.get('opening', op_ws['opening'])] if SH_target is not None
+                 ref_res.get('opening', op_ws['opening'])] if sh_now is not None
                 else [ref_res['P_evap'], ref_res['P_cond'], ref_res['h_suc']])
         if SH_target is not None and 'opening' in ref_res:
             op_ws['opening'] = ref_res['opening']   # SH 제어 시 개도도 warm start
