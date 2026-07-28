@@ -243,10 +243,14 @@ def evaluate(name, **kwargs):
 
 
 def mean_density(alpha, P_Pa, fluid='R290'):
-    """2상 평균 밀도 ρ_tp = α·ρ_v + (1−α)·ρ_l [kg/m³] — charge holdup용."""
-    rho_l = CP.PropsSI('D', 'P', P_Pa, 'Q', 0, fluid)
-    rho_v = CP.PropsSI('D', 'P', P_Pa, 'Q', 1, fluid)
-    return alpha * rho_v + (1.0 - alpha) * rho_l
+    """2상 평균 밀도 rho_tp = a*rho_v + (1-a)*rho_l [kg/m3] — charge holdup용.
+
+    2026-07-27: 직접 CoolProp 을 부르던 것을 _props 경유로 바꿨다.
+    evaporator_on_design.py:558 에서 678회 호출되어 잔여 CoolProp 의 87% 였다.
+    _props 는 해석식 + 압력 양자화 캐시를 쓴다.
+    """
+    p = _props(P_Pa, fluid)
+    return alpha * p['rho_v'] + (1.0 - alpha) * p['rho_l']
 
 
 def available():
