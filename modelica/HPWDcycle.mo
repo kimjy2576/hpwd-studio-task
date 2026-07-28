@@ -420,13 +420,18 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     HPWDevap.Evap_On evap;
     Volume_L3 vol4(V=V_node, p_start=p_rest, h_start=h_rest, fixedState=true);
     Modelica.Blocks.Sources.TimeTable Nsig(table=[
+        // 2026-07-27: 저rpm 평탄 구간(11~21 의 500rpm) 제거.
+        //   그 구간에는 충전량 구속을 만족하는 해가 물리적으로 없어
+        //   t=13.31 에서 Integrator failed 했다 (SH=0.005 로 포화선 고착).
+        //   저rpm 을 빠르게 통과하도록 연속 상승으로 바꾼다.
+        // 2026-07-27 2차: 저rpm 구간을 더 빠르게 통과.
+        //   N=936 에서도 SH 가 포화선에 붙어 실패했으므로
+        //   1200rpm 이상까지 3초 안에 올린다.
         0.0,    0.0;
-        1.0,    300.0;
-        11.0,   500.0;
-        21.0,   500.0;
-        31.0,   1500.0;
-        41.0,   1500.0;
-        51.0,   N_final;
+        0.5,    600.0;
+        1.5,    1200.0;
+        3.0,    1500.0;
+        10.0,   N_final;
         81.0,   N_final;
         120.0,  N_final;
         200.0,  N_final;
@@ -472,13 +477,18 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     HPWDevap.Evap_On_Dyn evap(Nseg=1, h_ref_start=h_rest, T_w_start=35.0);
     Volume_L3 vol4(V=V_node, p_start=p_rest, h_start=h_rest, fixedState=true);
     Modelica.Blocks.Sources.TimeTable Nsig(table=[
+        // 2026-07-27: 저rpm 평탄 구간(11~21 의 500rpm) 제거.
+        //   그 구간에는 충전량 구속을 만족하는 해가 물리적으로 없어
+        //   t=13.31 에서 Integrator failed 했다 (SH=0.005 로 포화선 고착).
+        //   저rpm 을 빠르게 통과하도록 연속 상승으로 바꾼다.
+        // 2026-07-27 2차: 저rpm 구간을 더 빠르게 통과.
+        //   N=936 에서도 SH 가 포화선에 붙어 실패했으므로
+        //   1200rpm 이상까지 3초 안에 올린다.
         0.0,    0.0;
-        1.0,    300.0;
-        11.0,   500.0;
-        21.0,   500.0;
-        31.0,   1500.0;
-        41.0,   1500.0;
-        51.0,   N_final;
+        0.5,    600.0;
+        1.5,    1200.0;
+        3.0,    1500.0;
+        10.0,   N_final;
         500.0,  N_final]);
     Modelica.Blocks.Sources.Constant opsig(k=eev_opening);
     Real Pc_bar, Pe_bar, mdot, SH, Q_evap, Q_cond, W_comp;
@@ -552,7 +562,7 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     Volume_L3 vol3(V=V_n3, p_start=p3_0, h_start=h3_0, fixedState=true);
     HPWDevap.Evap_On_Dyn evap(Nseg=1, h_ref_start=h_rest, T_w_start=20.0);
     Accumulator_L3 vol4(V=V_n4, p_start=p4_0, h_start=h4_0, fixedState=true);
-    parameter Real open_init = 30.0 "적분기 초기값 [%]. Kp=1,err=-6 이므로 초기개도=open_init-6.
+    parameter Real open_init = 18.0 "적분기 초기값 [%]. Kp=1,err=-6 이므로 초기개도=open_init-6.
       12 이면 초기개도가 곧바로 최소 6%% 라 콜드스타트 트랩. 설계개도 23.586%% 근처를 주려면 30.";
     // ── 오일 용해 (2026-07-25) ──
     parameter Boolean use_oil = false "true: 압축기 오일 섬프를 충전량 싱크로 연결" annotation(Evaluate=false);
@@ -578,13 +588,18 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
       smoothness=Modelica.Blocks.Types.Smoothness.ContinuousDerivative,
       extrapolation=Modelica.Blocks.Types.Extrapolation.HoldLastPoint,
       table=[
+        // 2026-07-27: 저rpm 평탄 구간(11~21 의 500rpm) 제거.
+        //   그 구간에는 충전량 구속을 만족하는 해가 물리적으로 없어
+        //   t=13.31 에서 Integrator failed 했다 (SH=0.005 로 포화선 고착).
+        //   저rpm 을 빠르게 통과하도록 연속 상승으로 바꾼다.
+        // 2026-07-27 2차: 저rpm 구간을 더 빠르게 통과.
+        //   N=936 에서도 SH 가 포화선에 붙어 실패했으므로
+        //   1200rpm 이상까지 3초 안에 올린다.
         0.0,    0.0;
-        1.0,    300.0;
-        11.0,   500.0;
-        21.0,   500.0;
-        31.0,   1500.0;
-        41.0,   1500.0;
-        51.0,   N_final;
+        0.5,    600.0;
+        1.5,    1200.0;
+        3.0,    1500.0;
+        10.0,   N_final;
         // 평탄 구간 절점 — 51->500 단일구간이면 Akima 가 직전 급상승
         //   (41->51: 1500->1800) 기울기를 이어받아 오버슛한다.
         61.0,   N_final;
