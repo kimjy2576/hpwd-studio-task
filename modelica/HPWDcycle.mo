@@ -577,8 +577,8 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     OilSump oil(V_oil_cc=160.0, dT_offset=dT_offset, M_dis_start=M_dis_start, M_eq_max=0.9*M_charge);
     parameter Real N_scale = 1.0 "압축기 속도 배율 (1.0 = 표 그대로, 최종 1800rpm)";
     parameter Real N_const = 0.0 "0 이면 램프표 사용. >0 이면 그 값으로 고정 [rpm]" annotation(Evaluate=false);
-    parameter Real Kp_c = 1.0 "PI 비례게인. Kp_c=Ki_c=0 이면 개도가 open_init 로 고정 (개도고정 시험용)";
-    parameter Real Ki_c = 0.3 "PI 적분게인";
+    parameter Real Kp_c = 0.0 "PI 비례게인. Kp_c=Ki_c=0 이면 개도가 open_init 로 고정 (개도고정 시험용)";
+    parameter Real Ki_c = 0.0 "PI 적분게인";
     HPWDctrl.PI_Controller ctrl(SH_target=SH_target, Kp=Kp_c, Ki=Ki_c, opening_init=open_init, opening_min=6.0, I(fixed=true));
     // 2026-07-26: TimeTable -> CombiTimeTable(Akima).
     //   TimeTable 은 선형보간이라 표 절점마다 도함수가 꺾인다(t=1,11,21,31,41,51).
