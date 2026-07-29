@@ -48,7 +48,8 @@ def _try_solve(fid, op, air_bc, M_charge, geom, oil_cfg, sh, x0, xtol, dry_acc):
 def solve(ref_fidelity, air_fidelity, operating, air_inlet,
           M_charge, geom, oil_cfg=None, SH_target=None, fan_position=None,
           params_override=None, air_states=None,
-          sh_warmup=3, dt=1.0, method='hybr', max_outer=20, tol_air=0.05, alpha_air=0.6, inner_xtol=1e-6,
+          sh_warmup=3, sh_air_tol=1.0, dt=1.0, method='hybr',
+          max_outer=20, tol_air=0.05, alpha_air=0.6, inner_xtol=1e-6,
           dry_accumulator=True, verbose=False):
     """완전 연성 정상해.
 
@@ -82,6 +83,7 @@ def solve(ref_fidelity, air_fidelity, operating, air_inlet,
 
     op_ws = dict(operating)
     x_ws = None   # 이전 outer 해 (warm start)
+    _dT_cond_last = 1e9   # 직전 outer 의 응축기 공기입구 변화량 [K]
     converged = False
     ref_res = None
     air_res = None
@@ -95,7 +97,14 @@ def solve(ref_fidelity, air_fidelity, operating, air_inlet,
         # SH 구속은 공기 BC 가 어느 정도 안정된 뒤에 켠다.
         # 첫 반복의 공기 BC 는 실제 운전점과 멀어, 바로 SH 를 구속하면
         # 개도가 상한(100%)에 붙고 Pe 가 발산한다 (실측: Pe 9.09, open 100).
-        sh_now = SH_target if (SH_target is not None and outer >= sh_warmup) else None
+        # 2026-07-27: SH 구속 진입을 '고정 횟수'가 아니라 '공기 수렴 상태' 기준으로.
+        #   실제 제품도 기동 초기에는 EEV 를 고정 개도로 두고 일정 조건이
+        #   갖춰진 뒤 제어에 진입한다. 공기 BC 가 초기값인 상태에서 SH 를
+        #   강제하면 개도가 상한(100%)에 붙는다
+        #   (실측: 공기입구 30C 조건의 자연 SH 가 29.9K, 목표 6K 과 괴리).
+        #   dT_cond 가 sh_air_tol 이하로 안정되면 그때 SH 구속을 켠다.
+        sh_ready = (outer >= sh_warmup) and (_dT_cond_last <= sh_air_tol)
+        sh_now = SH_target if (SH_target is not None and sh_ready) else None
         _use_warm = (x_ws is not None
                      and len(x_ws) == (4 if sh_now is not None else 3))
         # broyden1 은 빠르지만(nfev 3, 0.8s vs hybr 8, 4.5s) 범위 밖으로
@@ -175,6 +184,7 @@ def solve(ref_fidelity, air_fidelity, operating, air_inlet,
 
         dT_e = abs(new_bc['evaporator']['T_air_in'] - air_bc['evaporator']['T_air_in'])
         dT_c = abs(new_bc['condenser']['T_air_in'] - air_bc['condenser']['T_air_in'])
+        _dT_cond_last = dT_c
         hist.append({'outer': outer, 'dT_evap': dT_e, 'dT_cond': dT_c,
                      'Pc': ref_res['P_cond'], 'Pe': ref_res['P_evap'],
                      'SH': ref_res['SH_evap'],
