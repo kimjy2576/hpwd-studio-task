@@ -40,15 +40,15 @@ package HPWDctrl "제어 컴포넌트"
     parameter Real opening_min = 5.0, opening_max = 100.0;
     parameter Real T_aw = 1.0;
     parameter Boolean use_pulse = true;
-    parameter Integer n_max = 480 "EEV 전체 스텝수";
-    parameter Real pps_max = 40.0 "초당 최대 펄스 [step/s]";
+    parameter Integer n_max = 500 "EEV 전체 스텝수 (실측)";
+    parameter Real pps_max = 30.0 "초당 최대 펄스 [step/s] (실측)";
     parameter Real T_ctrl = 1.0 "제어 주기 [s]";
     parameter Real deadband = 0.5 "데드밴드 [K]";
     Modelica.Blocks.Interfaces.RealInput SH_meas;
     Modelica.Blocks.Interfaces.RealOutput opening;
     Real I(start = opening_init) "적분 상태";
     Real err, opening_raw, opening_cont;
-    discrete Real n_act(start = opening_init/100.0*480);
+    discrete Real n_act(start = opening_init/100.0*500);
   equation
     err = SH_meas - SH_target;
     der(I) = Ki*err + (opening - opening_raw)/T_aw;

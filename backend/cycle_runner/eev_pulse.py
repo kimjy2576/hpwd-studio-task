@@ -33,7 +33,7 @@ class EEVPulseController:
     def __init__(self, SH_target=6.0, Kp=2.0, Ki=0.5,
                  opening_init=50.0, opening_min=5.0, opening_max=100.0,
                  T_aw=1.0, use_pulse=True,
-                 n_max=480, pps_max=40.0, T_ctrl=1.0, deadband=0.5):
+                 n_max=500, pps_max=30.0, T_ctrl=1.0, deadband=0.5):
         self.SH_target = SH_target
         self.Kp = Kp
         self.Ki = Ki

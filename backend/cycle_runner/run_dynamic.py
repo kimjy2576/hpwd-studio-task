@@ -65,8 +65,8 @@ def main():
     ap.add_argument('--max_outer', type=int, default=8, help='공기 연성 외부 반복 상한')
     ap.add_argument('--pulse', action='store_true',
                     help='EEV 스텝모터 펄스 제어 (과도구간 SH 진동 재현)')
-    ap.add_argument('--pps', type=float, default=40.0, help='초당 최대 펄스 [step/s]')
-    ap.add_argument('--nstep', type=int, default=480, help='EEV 전체 스텝수')
+    ap.add_argument('--pps', type=float, default=30.0, help='초당 최대 펄스 [step/s]')
+    ap.add_argument('--nstep', type=int, default=500, help='EEV 전체 스텝수')
     ap.add_argument('--solver', default='hybr',
                     help="scipy.root method (hybr/broyden1/krylov/df-sane)")
     ap.add_argument('--out', default='dynamic_result.json', help='결과 JSON 경로')
