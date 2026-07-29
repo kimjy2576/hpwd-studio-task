@@ -17,6 +17,7 @@ warm start
 """
 from .coupled_solver import solve as coupled_solve
 from .coupled_charge import solve as charge_solve
+from .eev_pulse import EEVPulseController
 
 
 def n_ramp(t, N_target, ramp_time):
@@ -30,7 +31,8 @@ def n_ramp(t, N_target, ramp_time):
 
 def run(ref_fidelity, air_fidelity, operating, air_inlet,
         M_charge, geom, oil_cfg=None, fan_position=None,
-        SH_target=None, t_end=1800.0, dt=60.0,
+        SH_target=None, use_pulse=False, eev_cfg=None,
+        t_end=1800.0, dt=60.0,
         N_target=1800.0, ramp_time=120.0, N_charge_min=1200.0,
         max_outer=6, method='hybr', verbose=False):
     """완전 연성 동적 해석.
@@ -39,6 +41,17 @@ def run(ref_fidelity, air_fidelity, operating, air_inlet,
       dict: trajectory, converged_steps, total_steps, phase_switch_t
     """
     traj = []
+    # 2026-07-27: EEV 스텝모터 펄스 제어.
+    #   use_pulse=True 면 SH 구속을 풀고 제어기가 개도를 결정한다.
+    #   정상해석은 SH=6 이 맞으나 과도해석은 그렇지 않다 — 실제 EEV 는
+    #   초당 최대 펄스가 있어 SH 가 목표에 고정되지 않고 진동하며,
+    #   SH<0(2상 출구)로 어큐에 액이 쌓이는 구간이 실제로 발생한다.
+    ctrl = None
+    if use_pulse:
+        cfg = dict(eev_cfg or {})
+        ctrl = EEVPulseController(SH_target=(SH_target or 6.0),
+                                  opening_init=operating.get('opening', 18.0),
+                                  **cfg)
     persistent_drum = None
     op_ws = dict(operating)
     conv = 0
@@ -60,9 +73,12 @@ def run(ref_fidelity, air_fidelity, operating, air_inlet,
 
         try:
             if use_charge:
+                # 펄스 제어 시: SH 구속을 풀고(개도는 제어기가 결정)
+                #   solve_forward 는 3미지수(P_evap,P_cond,h_suc)로 푼다.
+                _sh = None if use_pulse else SH_target
                 r = charge_solve(ref_fidelity, air_fidelity, op_ws, air_inlet,
                                  M_charge, geom, oil_cfg=oil_cfg,
-                                 fan_position=fan_position, SH_target=SH_target,
+                                 fan_position=fan_position, SH_target=_sh,
                                  air_states=air_st, dt=dt, max_outer=max_outer,
                                  # warm start 가 있으면 공기 BC 가 이미 가까우므로
                                  # SH 구속을 일찍 켠다. sh_warmup 기본 3 은
@@ -81,7 +97,12 @@ def run(ref_fidelity, air_fidelity, operating, air_inlet,
                 op_ws['P_evap'] = rr['P_evap']
                 op_ws['P_cond'] = rr['P_cond']
                 op_ws['h_suc'] = rr['h_suc']
-                if rr.get('opening') is not None:
+                if use_pulse and ctrl is not None:
+                    # 이번 스텝의 SH(부호 있는 값)로 다음 개도를 결정한다.
+                    op_ws['opening'] = ctrl.step(rr['SH_evap'], dt)
+                    rec['opening'] = op_ws['opening']
+                    rec['n_act'] = ctrl.n_act
+                elif rr.get('opening') is not None:
                     op_ws['opening'] = rr['opening']
                 air_res = r.get('air')
             else:

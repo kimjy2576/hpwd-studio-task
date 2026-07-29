@@ -63,6 +63,10 @@ def main():
     ap.add_argument('--V_air', type=float, default=2.42, help='풍량 [CMM]')
     ap.add_argument('--T_amb', type=float, default=35.0, help='주위 온도 [C]')
     ap.add_argument('--max_outer', type=int, default=8, help='공기 연성 외부 반복 상한')
+    ap.add_argument('--pulse', action='store_true',
+                    help='EEV 스텝모터 펄스 제어 (과도구간 SH 진동 재현)')
+    ap.add_argument('--pps', type=float, default=40.0, help='초당 최대 펄스 [step/s]')
+    ap.add_argument('--nstep', type=int, default=480, help='EEV 전체 스텝수')
     ap.add_argument('--solver', default='hybr',
                     help="scipy.root method (hybr/broyden1/krylov/df-sane)")
     ap.add_argument('--out', default='dynamic_result.json', help='결과 JSON 경로')
@@ -95,7 +99,10 @@ def main():
                  fan_position=args.fan_pos, SH_target=sh,
                  t_end=args.t_end, dt=args.dt,
                  N_target=args.N, ramp_time=args.ramp,
-                 max_outer=args.max_outer, method=args.solver, verbose=False)
+                 max_outer=args.max_outer, method=args.solver,
+                 use_pulse=args.pulse,
+                 eev_cfg={'pps_max': args.pps, 'n_max': args.nstep},
+                 verbose=False)
     wall = time.time() - t0
 
     print(f"\n{'t[s]':>7} {'N':>6} {'phase':>8} {'Pc':>8} {'Pe':>8} "
