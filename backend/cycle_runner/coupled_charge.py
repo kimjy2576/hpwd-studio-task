@@ -25,13 +25,18 @@ def _rh_from_TW(T_C, W, P_atm=101325.0):
     return f(T_C, W, P_atm)
 
 
-def _try_solve(fid, op, air_bc, M_charge, geom, oil_cfg, sh, x0, xtol, dry_acc):
+def _try_solve(fid, op, air_bc, M_charge, geom, oil_cfg, sh, x0, xtol, dry_acc,
+               use_broyden=False):
     """broyden1 우선, 실패 시 hybr 재시도.
 
     broyden1 은 야코비안을 재사용해 warm start 에서 5.6배 빠르나
     범위 밖으로 벗어나면 CoolProp 예외가 난다. 그때는 견고한 hybr 로 되돌린다.
     """
-    if x0 is not None:
+    # 2026-07-27: broyden1 은 지금 조건에서 거의 매번 실패해
+    #   hybr 재시도로 이어져 같은 문제를 두 번 푼다(실측: 전체 59.8s 중
+    #   solve_forward 12.1s 외 47.1s 가 실패한 broyden1 에 소모).
+    #   use_broyden 로 명시적으로 켤 때만 시도한다.
+    if x0 is not None and use_broyden:
         try:
             r = solve_forward(fid, op, air_bc, M_charge, geom, oil_cfg=oil_cfg,
                               SH_target=sh, x0=x0, xtol=xtol,
