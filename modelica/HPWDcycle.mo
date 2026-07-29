@@ -470,11 +470,11 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     parameter Modelica.Units.SI.Volume V_node = 2e-3 "노드 체적 [m3]";
     HPWDon.Comp_Chamber comp(V_disp_cm3=7.5);
     Volume_L3 vol1(V=V_node, p_start=p_rest, h_start=h_rest, fixedState=true);
-    HPWDevap.Cond_On_Dyn cond(Nseg=1, h_ref_start=h_rest, T_w_start=25.0);
+    HPWDevap.Cond_On_Dyn cond(Nseg=3, h_ref_start=h_rest, T_w_start=25.0);
     Volume_L3 vol2(V=V_node, p_start=p_rest, h_start=h_rest, fixedState=true);
     HPWDon.EEV_On eev(D_seat=1.0e-3, stroke_max=1.0e-3);
     Volume_L3 vol3(V=V_node, p_start=p_rest, h_start=h_rest, fixedState=true);
-    HPWDevap.Evap_On_Dyn evap(Nseg=1, h_ref_start=h_rest, T_w_start=35.0);
+    HPWDevap.Evap_On_Dyn evap(Nseg=3, h_ref_start=h_rest, T_w_start=35.0);
     Volume_L3 vol4(V=V_node, p_start=p_rest, h_start=h_rest, fixedState=true);
     Modelica.Blocks.Sources.TimeTable Nsig(table=[
         // 2026-07-27: 저rpm 평탄 구간(11~21 의 500rpm) 제거.
@@ -556,11 +556,11 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     Volume_L3 vshell(V=V_shell, p_start=p1_0, h_start=h1_0, fixedState=true,
                      m_ext=if use_oil then oil.m_flow else 0);
     Volume_L3 vol1(V=V_n1, p_start=p1_0, h_start=h1_0, fixedState=true);
-    HPWDevap.Cond_On_Dyn cond(Nseg=1, h_ref_start=h_rest, T_w_start=20.0, T_air_in_start=T_air_cond);
+    HPWDevap.Cond_On_Dyn cond(Nseg=3, h_ref_start=h_rest, T_w_start=20.0, T_air_in_start=T_air_cond);
     Volume_L3 vol2(V=V_n2, p_start=p2_0, h_start=h2_0, fixedState=true);
     HPWDon.EEV_On eev(D_seat=1.0e-3, stroke_max=1.0e-3);
     Volume_L3 vol3(V=V_n3, p_start=p3_0, h_start=h3_0, fixedState=true);
-    HPWDevap.Evap_On_Dyn evap(Nseg=1, h_ref_start=h_rest, T_w_start=20.0);
+    HPWDevap.Evap_On_Dyn evap(Nseg=3, h_ref_start=h_rest, T_w_start=20.0);
     Accumulator_L3 vol4(V=V_n4, p_start=p4_0, h_start=h4_0, fixedState=true);
     parameter Real open_init = 18.0 "적분기 초기값 [%]. Kp=1,err=-6 이므로 초기개도=open_init-6.
       12 이면 초기개도가 곧바로 최소 6%% 라 콜드스타트 트랩. 설계개도 23.586%% 근처를 주려면 30.";
@@ -577,8 +577,8 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     OilSump oil(V_oil_cc=160.0, dT_offset=dT_offset, M_dis_start=M_dis_start, M_eq_max=0.9*M_charge);
     parameter Real N_scale = 1.0 "압축기 속도 배율 (1.0 = 표 그대로, 최종 1800rpm)";
     parameter Real N_const = 0.0 "0 이면 램프표 사용. >0 이면 그 값으로 고정 [rpm]" annotation(Evaluate=false);
-    parameter Real Kp_c = 0.0 "PI 비례게인. Kp_c=Ki_c=0 이면 개도가 open_init 로 고정 (개도고정 시험용)";
-    parameter Real Ki_c = 0.0 "PI 적분게인";
+    parameter Real Kp_c = 1.0 "PI 비례게인. Kp_c=Ki_c=0 이면 개도가 open_init 로 고정 (개도고정 시험용)";
+    parameter Real Ki_c = 0.3 "PI 적분게인";
     HPWDctrl.PI_Controller_Pulse ctrl(SH_target=SH_target, Kp=Kp_c, Ki=Ki_c, opening_init=open_init, opening_min=6.0, I(fixed=true));
     // 2026-07-26: TimeTable -> CombiTimeTable(Akima).
     //   TimeTable 은 선형보간이라 표 절점마다 도함수가 꺾인다(t=1,11,21,31,41,51).
