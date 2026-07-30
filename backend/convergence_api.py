@@ -141,6 +141,55 @@ RECIPES: Dict[str, Dict[str, Any]] = {
     },
 }
 
+def load_lines() -> str:
+    """모델 로드 스크립트를 현재 저장소 경로로 생성한다.
+
+    2026-07-30: verify/load_all.mos 는 절대경로가 하드코딩돼 있어
+      (loadFile("/home/claude/repo/modelica/...")) 다른 환경에서 전부 실패한다.
+      그래서 0.8초 만에 '빌드 실패' 가 떴다.
+      여기서 modelica/*.mo 를 직접 훑어 경로를 만든다.
+    """
+    md = REPO / "modelica"
+    files = sorted(md.glob("*.mo")) if md.exists() else []
+    out = ["loadModel(Modelica); getErrorString();"]
+    for f in files:
+        out.append(f'loadFile("{f.as_posix()}"); getErrorString();')
+    return "\n".join(out)
+
+
+def find_omc() -> Optional[str]:
+    """omc 실행 파일을 찾는다.
+
+    2026-07-30: shutil.which('omc') 만으로는 못 찾는 환경이 있다.
+      - 서버가 PATH 를 물려받지 못한 경우(systemd, IDE 터미널 등)
+      - Windows/WSL2 에서 omc.exe 로 설치된 경우
+      - OpenModelica 기본 설치 경로에만 있는 경우
+    환경변수 OMC_BIN (server.py 와 동일) 또는 OMC_PATH 로 지정 가능.
+    """
+    for var in ("OMC_BIN", "OMC_PATH"):
+        env = os.environ.get(var)
+        if env and Path(env).is_file():
+            return env
+    for name in ("omc", "omc.exe"):
+        w = shutil.which(name)
+        if w:
+            return w
+    cands = [
+        "/usr/bin/omc", "/usr/local/bin/omc", "/opt/openmodelica/bin/omc",
+        "/mnt/c/Program Files/OpenModelica/bin/omc.exe",
+    ]
+    for c in cands:
+        if Path(c).exists():
+            return c
+    home = os.environ.get("OPENMODELICAHOME")
+    if home:
+        for name in ("omc", "omc.exe"):
+            c = Path(home) / "bin" / name
+            if c.exists():
+                return str(c)
+    return None
+
+
 GEOM = {
     "V_n1": 1.832e-5, "V_n2": 9.99e-6, "V_n3": 3.66e-6,
     "V_acc": 2.226e-4, "V_oil_cc": 160.0, "V_shell": 4.0e-4,
@@ -434,47 +483,68 @@ def _smoke(omc: Optional[str]) -> Dict[str, Any]:
 
 
 @convergence_router.get("/recipes")
-def recipes() -> Dict[str, Any]:
-    """어떤 조합을 실행할 수 있는지. UI 가 표를 검증할 때 쓴다."""
-    omc = find_omc()
-    ver = None
-    if omc:
+def recipes(smoke: bool = False) -> Dict[str, Any]:
+    """실행 가능 조합 + 환경 진단.
+
+    2026-07-30: smoke 가 omc 로 전체 모델(31개)을 로드해 오래 걸리거나
+      예외가 나면 500 이 떴다. 기본을 끄고 ?smoke=1 로만 켠다.
+      각 항목을 개별 try 로 감싸 하나가 실패해도 나머지는 돌려준다.
+    """
+    def safe(fn, dv=None):
         try:
-            ver = subprocess.run([omc, "--version"], capture_output=True,
+            return fn()
+        except Exception as e:
+            return f"확인 실패: {type(e).__name__}: {e}"[:120]
+
+    omc = safe(find_omc)
+    if isinstance(omc, str) and omc.startswith("확인 실패"):
+        omc_path, omc_err = None, omc
+    else:
+        omc_path, omc_err = omc, None
+
+    ver = None
+    if omc_path:
+        try:
+            ver = subprocess.run([omc_path, "--version"], capture_output=True,
                                  text=True, timeout=20).stdout.strip()
         except Exception as e:
-            ver = f"실행하지 못했습니다: {type(e).__name__}"
-    return {
+            ver = f"실행하지 못했습니다: {type(e).__name__}: {e}"[:100]
+
+    md = REPO / "modelica"
+    out: Dict[str, Any] = {
         "ids": sorted(RECIPES),
-        "presets": {k: {"opts": v.get("opts", {}),
-                        "override": v.get("override", {}),
-                        "requires": v.get("requires"),
-                        "model": v.get("model"),
-                        "desc": v.get("desc")}
-                    for k, v in RECIPES.items()},
-        "omc_available": omc is not None,
-        "omc_path": omc,
+        "omc_available": omc_path is not None,
+        "omc_path": omc_path,
         "omc_version": ver,
-        "cpu_count": os.cpu_count(),
-        "which_omc": shutil.which("omc"),
+        "omc_error": omc_err,
+        "cpu_count": safe(os.cpu_count),
+        "which_omc": safe(lambda: shutil.which("omc")),
         "env_OMC_BIN": os.environ.get("OMC_BIN"),
         "env_OMC_PATH": os.environ.get("OMC_PATH"),
         "env_OPENMODELICAHOME": os.environ.get("OPENMODELICAHOME"),
-        "path_head": (os.environ.get("PATH") or "").split(os.pathsep)[:6],
-        # 2026-07-30: '1초 만에 빌드 안됨' 진단용 경로 점검
+        "path_head": safe(lambda: (os.environ.get("PATH") or "").split(os.pathsep)[:6]),
         "repo": str(REPO),
-        "mo_count": len(list((REPO / "modelica").glob("*.mo"))) if (REPO / "modelica").exists() else 0,
-        "loader": "내부 생성 (verify/load_all.mos 미사용 — 절대경로 하드코딩 문제)",
-        "loader_exists": (REPO / "modelica").exists(),
-        "modelica_dir_exists": (REPO / "modelica").exists(),
+        "cwd": safe(os.getcwd),
+        "loader": "내부 생성 (verify/load_all.mos 미사용)",
+        "loader_exists": safe(lambda: md.exists()),
+        "modelica_dir_exists": safe(lambda: md.exists()),
+        "mo_count": safe(lambda: len(list(md.glob("*.mo"))) if md.exists() else 0),
         "work_dir": str(BACKEND / "_omc_work"),
-        "work_writable": os.access(BACKEND, os.W_OK),
-        "cwd": os.getcwd(),
-        # 2026-07-30: omc 를 실제로 한 번 호출해 본다.
-        #   --version 은 되는데 스크립트 실행이 안 되는 경우가 있어
-        #   loadFile 까지 시켜 본다(경로·라이브러리·권한 종합 점검).
-        "smoke": _smoke(omc),
+        "work_writable": safe(lambda: os.access(BACKEND, os.W_OK)),
     }
+    try:
+        out["presets"] = {k: {"opts": v.get("opts", {}),
+                              "override": v.get("override", {}),
+                              "requires": v.get("requires"),
+                              "model": v.get("model"),
+                              "desc": v.get("desc")}
+                          for k, v in RECIPES.items()}
+    except Exception as e:
+        out["presets"] = {}
+        out["presets_error"] = f"{type(e).__name__}: {e}"
+    if smoke:
+        out["smoke"] = safe(lambda: _smoke(omc_path), {})
+    return out
 
 
 # ══════════════════════════════════════════════════════════════
