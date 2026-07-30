@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -93,6 +94,40 @@ RECIPES: Dict[str, Dict[str, Any]] = {
     "omc-cs-pulse":       {"kind": "omc", "model": "HPWDcycle.Cycle_L3_coldstart_charge",
                            "solver": "dassl", "jac": "symbolic"},
 }
+
+def find_omc() -> Optional[str]:
+    """omc 실행 파일을 찾는다.
+
+    2026-07-30: shutil.which('omc') 만으로는 못 찾는 환경이 있다.
+      - 서버가 PATH 를 물려받지 못한 경우(systemd, IDE 터미널 등)
+      - Windows/WSL2 에서 omc.exe 로 설치된 경우
+      - OpenModelica 기본 설치 경로에만 있는 경우
+    환경변수 OMC_PATH 로 직접 지정할 수도 있다.
+    """
+    env = os.environ.get("OMC_PATH")
+    if env and Path(env).exists():
+        return env
+    for name in ("omc", "omc.exe"):
+        w = shutil.which(name)
+        if w:
+            return w
+    cands = [
+        "/usr/bin/omc", "/usr/local/bin/omc", "/opt/openmodelica/bin/omc",
+        "/C:/Program Files/OpenModelica/bin/omc.exe",
+        "/mnt/c/Program Files/OpenModelica/bin/omc.exe",
+    ]
+    for c in cands:
+        if Path(c).exists():
+            return c
+    # OPENMODELICAHOME 이 있으면 그 아래 bin
+    home = os.environ.get("OPENMODELICAHOME")
+    if home:
+        for name in ("omc", "omc.exe"):
+            c = Path(home) / "bin" / name
+            if c.exists():
+                return str(c)
+    return None
+
 
 GEOM = {
     "V_n1": 1.832e-5, "V_n2": 9.99e-6, "V_n3": 3.66e-6,
@@ -218,10 +253,12 @@ def run_py(rid: str, rec: Dict[str, Any], opts: Dict[str, Any]) -> RunResp:
 # ══════════════════════════════════════════════════════════════
 def run_omc(rid: str, rec: Dict[str, Any], opts: Dict[str, Any]) -> RunResp:
     """omc 로 빌드 후 실행. 오래 걸리므로 timeout 을 넉넉히 준다."""
-    import shutil
-    if not shutil.which("omc"):
+    omc = find_omc()
+    if not omc:
         return RunResp(id=rid, status="bad", metric="—",
-                       note="omc 를 찾을 수 없습니다. OpenModelica 설치가 필요합니다.")
+                       note="omc 를 찾지 못했습니다. 환경변수 OMC_PATH 로 "
+                            "실행 파일 경로를 지정하십시오. "
+                            "(GET /api/convergence/recipes 에서 탐색 결과 확인)")
 
     model = rec["model"]
     solver = str(opts.get("solver") or rec.get("solver", "dassl"))
@@ -246,7 +283,7 @@ def run_omc(rid: str, rec: Dict[str, Any], opts: Dict[str, Any]) -> RunResp:
 
     t0 = time.time()
     try:
-        p = subprocess.run(["omc", "run.mos"], cwd=work, timeout=900,
+        p = subprocess.run([omc, "run.mos"], cwd=work, timeout=900,
                            capture_output=True, text=True)
         out = (p.stdout or "") + (p.stderr or "")
     except subprocess.TimeoutExpired:
@@ -333,9 +370,22 @@ def history() -> List[Dict[str, Any]]:
 @convergence_router.get("/recipes")
 def recipes() -> Dict[str, Any]:
     """어떤 조합을 실행할 수 있는지. UI 가 표를 검증할 때 쓴다."""
-    import shutil
+    omc = find_omc()
+    ver = None
+    if omc:
+        try:
+            ver = subprocess.run([omc, "--version"], capture_output=True,
+                                 text=True, timeout=20).stdout.strip()
+        except Exception as e:
+            ver = f"실행하지 못했습니다: {type(e).__name__}"
     return {
         "ids": sorted(RECIPES),
-        "omc_available": shutil.which("omc") is not None,
+        "omc_available": omc is not None,
+        "omc_path": omc,
+        "omc_version": ver,
         "cpu_count": os.cpu_count(),
+        "which_omc": shutil.which("omc"),
+        "env_OMC_PATH": os.environ.get("OMC_PATH"),
+        "env_OPENMODELICAHOME": os.environ.get("OPENMODELICAHOME"),
+        "path_head": (os.environ.get("PATH") or "").split(os.pathsep)[:6],
     }
