@@ -412,11 +412,17 @@ def run_omc(rid: str, rec: Dict[str, Any], opts: Dict[str, Any],
         # 2026-07-30: 1초 만에 '빌드 안됨' 이 뜨는 경우가 있어 원인을 좁힌다.
         #   rc!=0 이면 omc 가 실행 자체를 못 한 것(경로·권한·라이브러리)
         #   rc==0 인데 실패면 모델 오류
-        err = ""
-        for line in out.splitlines():
-            if "Error" in line or "error:" in line or "not found" in line:
-                err = line.strip()[:100]
-                break
+        # 2026-07-30: 'Error' 단순 매칭은 getErrorString() 을 오탐한다.
+        #   omc 의 실제 오류 형태만 잡고, 여러 건을 모아 보여준다.
+        errs = [l.strip()[:130] for l in out.splitlines()
+                if re.search(r"(^|\s)(Error|error):", l)
+                or "Failed to load" in l or "not found in scope" in l
+                or "No viable alternative" in l][:3]
+        err = " | ".join(errs)
+        # 로드 성공/실패 개수도 함께 (모델이 안 올라간 건지 구분)
+        nt, nf = out.count("true"), out.count("false")
+        if not err:
+            err = f"로드 {nt}/{nt + nf} · 오류 문구 없음"
         if w < 2.0 and not out.strip():
             err = (f"omc 가 출력 없이 즉시 종료했습니다 (rc={p.returncode}, {w:.2f}s). "
                    f"omc={omc} · cwd={work}")
@@ -686,3 +692,27 @@ def plan_run(req: PlanRunReq) -> RunResp:
            "id": "PLAN:" + req.plan_id,
            "at": datetime.now(timezone.utc).isoformat(timespec="seconds")})
     return last
+
+
+@convergence_router.get("/log/{rid}")
+def get_log(rid: str, tail: int = 120) -> Dict[str, Any]:
+    """마지막 실행의 omc 로그를 돌려준다. 빌드 실패 원인 확인용."""
+    w = BACKEND / "_omc_work" / rid
+    f = w / "omc.log"
+    m = w / "run.mos"
+    if not f.exists():
+        return {"id": rid, "exists": False,
+                "note": f"로그가 없습니다: {f}"}
+    txt = f.read_text(encoding="utf-8", errors="replace")
+    lines = txt.splitlines()
+    errs = [l.strip() for l in lines
+            if re.search(r"(^|\s)(Error|error):", l)
+            or "Failed to load" in l or "not found in scope" in l
+            or "No viable alternative" in l][:20]
+    return {"id": rid, "exists": True, "size": len(txt),
+            "lines": len(lines),
+            "loaded_true": txt.count("true"), "loaded_false": txt.count("false"),
+            "errors": errs,
+            "tail": "\n".join(lines[-tail:]),
+            "mos_head": (m.read_text(encoding="utf-8", errors="replace")[:400]
+                         if m.exists() else None)}

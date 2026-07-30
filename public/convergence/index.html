@@ -176,7 +176,7 @@ tbody tr:hover td{background:var(--panel)}
     <div id="opts"></div>
     <div class="runrow">
       <button class="btn pri" id="run" disabled>실행</button>
-      <button class="btn" id="runall">전체 재실행</button>
+      <button class="btn" id="showlog" disabled>로그 보기</button>
     </div>
     <div class="log" id="log">대기 중</div>
     <div class="note">
@@ -273,7 +273,7 @@ function renderMatrix(){
 function renderSide(){
   const r=ROWS.find(x=>x.id===sel);
   if(!r){$('#detail').innerHTML='<div class="kvr"><span>선택 없음</span><b>행을 누르십시오</b></div>';
-    $('#opts').innerHTML='';$('#run').disabled=true;return;}
+    $('#opts').innerHTML='';$('#run').disabled=true;$('#showlog').disabled=true;return;}
   $('#detail').innerHTML=[['엔진',r.eng],['물성',r.props+' 물성'],['야코비안',r.jac],
     ['솔버',r.solver],['해석',r.kind],
     ['최근 시간',r.t==null?'—':fmt(r.t,r.t<10?3:1)+' s'],['성능',r.metric],['판정',badge(r.status)]]
@@ -298,7 +298,7 @@ function renderSide(){
   }).join('');
   $('#opts').querySelectorAll('[data-k]').forEach(function(el){
     el.onchange=function(){OPTS[el.dataset.k].val=el.value;};});
-  $('#run').disabled=false;
+  $('#run').disabled=false; $('#showlog').disabled=false;
 }
 function log(s){const el=$('#log');
   el.textContent=(el.textContent==='대기 중'?'':el.textContent+'\n')+s;
@@ -329,7 +329,23 @@ async function run(ids){
   }
 }
 $('#run').onclick=function(){run();};
-$('#runall').onclick=function(){run(ROWS.filter(r=>r.id).map(r=>r.id));};
+$('#showlog').onclick=async function(){
+  if(!sel) return;
+  try{
+    const res=await fetch('/api/convergence/log/'+encodeURIComponent(sel));
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    const d=await res.json();
+    if(!d.exists){ log(d.note); return; }
+    log('── omc 로그 '+sel+' ('+d.lines+'행, '+d.size+'B) ──');
+    log('  모델 로드     성공 '+d.loaded_true+' / 실패 '+d.loaded_false);
+    if(d.errors.length){ log('  오류 '+d.errors.length+'건:');
+      d.errors.forEach(function(e){ log('    '+e); }); }
+    else log('  오류 문구 없음');
+    if(d.mos_head) log('  스크립트 앞부분\n    '
+      +String(d.mos_head).replace(/\n/g,'\n    '));
+    log('  ── 로그 끝부분 ──\n    '+String(d.tail).replace(/\n/g,'\n    '));
+  }catch(e){ log('로그를 읽지 못했습니다 — '+e.message); }
+};
 $('#reload').onclick=async function(){
   try{
     const res=await fetch('/api/convergence/history');
