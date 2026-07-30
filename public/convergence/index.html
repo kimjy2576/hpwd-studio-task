@@ -124,6 +124,13 @@ tbody tr:hover td{background:var(--panel)}
 .psm:disabled{opacity:.4;cursor:not-allowed}
 .psm.ghost{background:var(--panel-2);color:var(--ink-2);border:1px solid var(--line)}
 .psm.ghost:hover{color:var(--ink);border-color:var(--accent)}
+.popts{display:none;margin-top:10px;padding:10px 11px;background:var(--panel-2);
+  border-radius:6px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:6px 14px}
+.popts.open{display:grid}
+.popt{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px}
+.popt label{color:var(--ink-3);font-family:var(--mono);font-size:10.5px}
+.popt input,.popt select{font-family:var(--mono);font-size:11px;width:78px;text-align:right;
+  background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:4px;padding:3px 6px}
 
 @media(max-width:1100px){.wrap{grid-template-columns:1fr}}
 </style>
@@ -237,7 +244,7 @@ const ROWS = [
 ];
 const OPTS = {
   threads:{label:'CPU 스레드',type:'number',val:8,min:1,max:64,only:'OMC',hint:'-jacobianThreads'},
-  procs:{label:'병렬 프로세스',type:'number',val:4,min:1,max:64,only:'Python',hint:'스윕용'},
+  procs:{label:'병렬 프로세스',type:'number',val:1,min:1,max:64,only:'Python',hint:'미구현 — 단일 해석엔 무효'},
   tol:{label:'허용오차',type:'select',val:'1e-3',opts:['1e-2','1e-3','1e-4','1e-5','1e-6']},
   stop:{label:'종료 시각 [s]',type:'number',val:120,min:1,max:3600},
   nseg:{label:'HX Nseg',type:'number',val:2,min:1,max:6,only:'OMC'},
@@ -413,7 +420,9 @@ const sw=$('#sw'),sm=$('#smenu');
 sw.onclick=function(e){e.stopPropagation();sm.classList.toggle('open');};
 document.addEventListener('click',function(){sm.classList.remove('open');});
 // ══ 실행 계획 ══
-let PLAN=[];
+let PLAN=[], PO={};   // PO: 계획 항목별 사용자 조정값
+// 계획 항목에서 조정 가능한 설정 (엔진 조건은 OPTS.only 가 걸러낸다)
+const POPT=['threads','procs','tol','stop','nseg','dt','charge','sh','pulse','max_outer'];
 function renderPlan(){
   const el=$('#plan');
   if(!PLAN.length){ el.innerHTML='<div class="pres">계획을 불러오지 못했습니다. '
@@ -431,6 +440,7 @@ function renderPlan(){
       +'<span class="peng">'+it.engine+'</span>'
       +'<span class="pact">'+(st==='done'?badge('ok'):st==='failed'?badge('bad'):
          st==='running'?'<span class="badge none">실행 중</span>':badge('none'))
+      +'<button class="psm ghost" data-tog="'+it.id+'">설정</button>'
       +'<button class="psm" data-run="'+it.id+'"'+(st==='running'?' disabled':'')+'>실행</button>'
       +'</span></div>'
       +'<div class="pwhy">'+it.why+'</div>'
@@ -440,6 +450,17 @@ function renderPlan(){
       +'<dt>확인</dt><dd>'+it.check+'</dd>'
       +(it.prev?'<dt>직전</dt><dd style="color:var(--ink-3)">'+it.prev+'</dd>':'')
       +'</dl>'
+      +'<div class="popts" id="po-'+it.id+'">'+POPT.map(function(k){
+          const o=OPTS[k]; if(o.only&&o.only!==it.engine) return '';
+          const v=(PO[it.id]&&PO[it.id][k]!=null)?PO[it.id][k]
+                 :(it.opts&&it.opts[k]!=null?it.opts[k]:o.val);
+          const ctl=o.type==='select'
+            ? '<select data-po="'+it.id+'" data-k="'+k+'">'
+              +o.opts.map(x=>'<option'+(String(x)==String(v)?' selected':'')+'>'+x+'</option>').join('')
+              +'</select>'
+            : '<input type="number" data-po="'+it.id+'" data-k="'+k+'" value="'+v+'">';
+          return '<div class="popt"><label>'+o.label+'</label>'+ctl+'</div>';
+        }).join('')+'</div>'
       +(r?'<div class="pres"><b>'+String(r.status).toUpperCase()+'</b> · '
          +(r.t==null?'—':r.t+' s')+' · '+r.metric+(r.note?' · '+r.note:'')
          +'<span style="color:var(--ink-3)">  '+(r.at||'')+'</span></div>':'')
@@ -447,6 +468,14 @@ function renderPlan(){
   }).join('');
   el.querySelectorAll('[data-run]').forEach(function(b){
     b.onclick=function(){runPlan(b.dataset.run);};});
+  el.querySelectorAll('[data-tog]').forEach(function(b){
+    b.onclick=function(){
+      const box=document.getElementById('po-'+b.dataset.tog);
+      if(box) box.classList.toggle('open');};});
+  el.querySelectorAll('[data-po]').forEach(function(el2){
+    el2.onchange=function(){
+      const id=el2.dataset.po, k=el2.dataset.k;
+      PO[id]=PO[id]||{}; PO[id][k]=el2.value;};});
 }
 async function loadPlan(){
   try{
@@ -463,7 +492,7 @@ async function runPlan(pid){
   log('▶ '+pid+' '+it.title);
   try{
     const res=await fetch('/api/convergence/plan/run',{method:'POST',
-      headers:{'Content-Type':'application/json'},body:JSON.stringify({plan_id:pid})});
+      headers:{'Content-Type':'application/json'},body:JSON.stringify({plan_id:pid, opts_patch:PO[pid]||{}})});
     if(!res.ok) throw new Error('HTTP '+res.status);
     const d=await res.json();
     it.result={status:d.status,t:d.t,steps:d.steps,metric:d.metric,note:d.note,at:'방금'};
