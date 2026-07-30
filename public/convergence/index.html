@@ -3,167 +3,99 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>수렴 테스트 — HPWD-Studio</title>
+<title>수렴 테스트 — HPWD Studio</title>
 <link href="https://fonts.googleapis.com/css2?family=Pretendard:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
 :root{
-  --bg:#0E1116;          /* 계측기 패널 */
-  --panel:#151A21;
-  --panel-2:#1B222B;
-  --line:#242C36;
-  --ink:#E8EDF3;
-  --ink-2:#94A3B0;
-  --ink-3:#5D6B7A;
-  --accent:#2563EB;      /* 기존 프로젝트 액센트 */
-  --ok:#22C55E;
-  --warn:#F59E0B;
-  --bad:#EF4444;
-  --twophase:#8B5CF6;    /* 2상 구간 */
+  --bg:#0E1116; --panel:#151A21; --panel-2:#1B222B; --panel-3:#212A35;
+  --line:#242C36; --line-2:#2F3945;
+  --ink:#E8EDF3; --ink-2:#94A3B0; --ink-3:#5D6B7A;
+  --accent:#2563EB;
+  --ok:#22C55E; --warn:#F59E0B; --bad:#EF4444; --none:#3F4A57;
   --mono:'JetBrains Mono',ui-monospace,monospace;
 }
 *{box-sizing:border-box;margin:0;padding:0}
-body{
-  font-family:'Pretendard',system-ui,sans-serif;
-  background:var(--bg); color:var(--ink);
-  font-size:14px; line-height:1.5;
-}
-
-/* ── 헤더: 실행 조건이 곧 제목 ── */
-.top{
-  border-bottom:1px solid var(--line);
-  padding:16px 22px;
-  display:flex; align-items:baseline; gap:22px; flex-wrap:wrap;
-  background:linear-gradient(180deg,#131922,#0E1116);
-}
-.top h1{
-  font-size:17px; font-weight:700; letter-spacing:-.01em;
-  display:flex; align-items:center; gap:9px;
-}
-.top h1::before{
-  content:''; width:3px; height:17px; background:var(--accent); border-radius:2px;
-}
-.cond{
-  font-family:var(--mono); font-size:11.5px; color:var(--ink-2);
-  display:flex; gap:16px; flex-wrap:wrap;
-}
-.cond b{color:var(--ink); font-weight:500}
-.spacer{flex:1}
+body{font-family:'Pretendard',system-ui,sans-serif;background:var(--bg);color:var(--ink);font-size:14px;line-height:1.5}
+.top{border-bottom:1px solid var(--line);padding:14px 22px;display:flex;align-items:center;gap:18px;flex-wrap:wrap;
+  background:linear-gradient(180deg,#131922,#0E1116)}
 .switch{position:relative}
-.sbtn{
-  font-family:var(--mono); font-size:11.5px; color:var(--ink-2);
-  background:var(--panel-2); border:1px solid var(--line); border-radius:6px;
-  padding:6px 11px; cursor:pointer;
-}
-.sbtn:hover{color:var(--ink); border-color:var(--accent)}
-.smenu{
-  display:none; position:absolute; top:calc(100% + 6px); left:0; z-index:50;
-  background:var(--panel); border:1px solid var(--line); border-radius:9px;
-  min-width:232px; padding:5px; box-shadow:0 12px 32px rgba(0,0,0,.45);
-}
+.sbtn{font-family:var(--mono);font-size:11.5px;color:var(--ink-2);background:var(--panel-2);
+  border:1px solid var(--line);border-radius:6px;padding:6px 11px;cursor:pointer}
+.sbtn:hover{color:var(--ink);border-color:var(--accent)}
+.smenu{display:none;position:absolute;top:calc(100% + 6px);left:0;z-index:60;background:var(--panel);
+  border:1px solid var(--line);border-radius:9px;min-width:236px;padding:5px;box-shadow:0 14px 36px rgba(0,0,0,.5)}
 .smenu.open{display:block}
-.smenu a{
-  display:block; padding:8px 10px; border-radius:6px;
-  color:var(--ink-2); text-decoration:none; font-size:12.5px;
-}
-.smenu a em{display:block; font-style:normal; font-size:10.5px; color:var(--ink-3); margin-top:1px}
-.smenu a:hover{background:var(--panel-2); color:var(--ink)}
+.smenu a{display:block;padding:8px 10px;border-radius:6px;color:var(--ink-2);text-decoration:none;font-size:12.5px}
+.smenu a em{display:block;font-style:normal;font-size:10.5px;color:var(--ink-3);margin-top:1px}
+.smenu a:hover{background:var(--panel-2);color:var(--ink)}
 .smenu a.cur{color:var(--accent)}
-.smenu a.cur em{color:var(--ink-3)}
-.btn{
-  font-family:var(--mono); font-size:11.5px;
-  background:var(--panel-2); color:var(--ink-2);
-  border:1px solid var(--line); border-radius:6px;
-  padding:6px 12px; cursor:pointer;
-}
-.btn:hover{color:var(--ink); border-color:var(--accent)}
-.btn.on{background:var(--accent); color:#fff; border-color:var(--accent)}
-
-/* ── 판정 스트립: 가장 먼저 보이는 것 ── */
-.verdict{
-  display:grid; grid-template-columns:repeat(auto-fit,minmax(168px,1fr));
-  gap:1px; background:var(--line);
-  border-bottom:1px solid var(--line);
-}
-.vcell{background:var(--panel); padding:13px 16px; position:relative}
-.vcell::before{
-  content:''; position:absolute; left:0; top:0; bottom:0; width:2px; background:var(--ink-3);
-}
-.vcell.pass::before{background:var(--ok)}
-.vcell.warn::before{background:var(--warn)}
-.vcell.fail::before{background:var(--bad)}
-.vlabel{
-  font-family:var(--mono); font-size:9.5px; letter-spacing:.09em;
-  color:var(--ink-3); text-transform:uppercase; margin-bottom:5px;
-}
-.vval{font-family:var(--mono); font-size:19px; font-weight:500; letter-spacing:-.02em}
-.vval .u{font-size:11px; color:var(--ink-2); margin-left:3px}
-.vnote{font-size:11px; color:var(--ink-3); margin-top:3px}
-.vcell.pass .vval{color:var(--ok)}
-.vcell.warn .vval{color:var(--warn)}
-.vcell.fail .vval{color:var(--bad)}
-
-/* ── 본문 ── */
-.wrap{display:grid; grid-template-columns:1fr 300px; gap:1px; background:var(--line)}
-.main{background:var(--bg); padding:18px 22px; min-width:0}
-.side{background:var(--panel); padding:18px 16px}
-
-.chart{
-  background:var(--panel); border:1px solid var(--line); border-radius:9px;
-  padding:14px 14px 8px; margin-bottom:14px;
-}
-.chead{
-  display:flex; align-items:baseline; gap:10px; margin-bottom:10px;
-}
-.ctitle{font-size:13px; font-weight:600}
-.csub{font-family:var(--mono); font-size:10.5px; color:var(--ink-3)}
-.legend{margin-left:auto; display:flex; gap:12px; font-family:var(--mono); font-size:10px; color:var(--ink-2)}
-.legend i{display:inline-block; width:9px; height:2px; margin-right:4px; vertical-align:middle}
-svg{display:block; width:100%; overflow:visible}
-.gl{stroke:var(--line); stroke-width:1}
-.gl.zero{stroke:var(--ink-3); stroke-dasharray:3 3}
-.ax{font-family:var(--mono); font-size:9.5px; fill:var(--ink-3)}
-.ln{fill:none; stroke-width:1.6; stroke-linejoin:round}
-.band{fill:var(--twophase); opacity:.10}
-.stepline{fill:none; stroke-width:1.4}
-
-/* ── 사이드: 스텝 로그 ── */
-.sh{
-  font-family:var(--mono); font-size:9.5px; letter-spacing:.09em;
-  color:var(--ink-3); text-transform:uppercase;
-  padding-bottom:7px; border-bottom:1px solid var(--line); margin-bottom:10px;
-}
-.log{font-family:var(--mono); font-size:10.5px; max-height:340px; overflow-y:auto}
-.log::-webkit-scrollbar{width:5px}
-.log::-webkit-scrollbar-thumb{background:var(--line); border-radius:3px}
-.lrow{
-  display:grid; grid-template-columns:38px 1fr auto; gap:7px;
-  padding:4px 5px; border-radius:4px; align-items:center;
-}
-.lrow:hover{background:var(--panel-2)}
-.lt{color:var(--ink-3)}
-.lv{color:var(--ink-2)}
-.lb{
-  font-size:9px; padding:1px 5px; border-radius:3px; letter-spacing:.04em;
-}
-.lb.ok{background:rgba(34,197,94,.14); color:var(--ok)}
-.lb.tp{background:rgba(139,92,246,.16); color:#A78BFA}
-.lb.no{background:rgba(239,68,68,.14); color:var(--bad)}
-
-.kv{font-family:var(--mono); font-size:11px; margin-top:16px}
-.kvr{display:flex; justify-content:space-between; padding:4px 0; border-bottom:1px dotted var(--line)}
+h1{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:center;gap:9px}
+h1::before{content:'';width:3px;height:16px;background:var(--accent);border-radius:2px}
+.spacer{flex:1}
+.btn{font-family:var(--mono);font-size:11.5px;background:var(--panel-2);color:var(--ink-2);
+  border:1px solid var(--line);border-radius:6px;padding:6px 12px;cursor:pointer;text-decoration:none;display:inline-block}
+.btn:hover{color:var(--ink);border-color:var(--accent)}
+.btn.pri{background:var(--accent);color:#fff;border-color:var(--accent)}
+.btn.pri:hover{filter:brightness(1.12)}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.wrap{display:grid;grid-template-columns:1fr 336px;gap:1px;background:var(--line);min-height:calc(100vh - 57px)}
+.main{background:var(--bg);padding:18px 22px;min-width:0;overflow-x:auto}
+.side{background:var(--panel);padding:16px}
+.mhead{display:flex;align-items:baseline;gap:12px;margin-bottom:12px}
+.mtitle{font-size:14px;font-weight:600}
+.msub{font-family:var(--mono);font-size:10.5px;color:var(--ink-3)}
+.legend{margin-left:auto;display:flex;gap:13px;font-family:var(--mono);font-size:10px;color:var(--ink-2)}
+.legend i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+table{border-collapse:separate;border-spacing:0;width:100%;font-size:12.5px;margin-bottom:26px}
+thead th{font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--ink-3);font-weight:500;text-align:left;padding:7px 10px;
+  border-bottom:1px solid var(--line-2);white-space:nowrap}
+thead th.num{text-align:right}
+tbody td{padding:0;border-bottom:1px solid var(--line)}
+tbody tr:hover td{background:var(--panel)}
+.grp td{font-family:var(--mono);font-size:10px;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--ink-3);padding:11px 10px 5px;border-bottom:1px solid var(--line-2);background:transparent!important}
+.cell{display:grid;grid-template-columns:2px 1fr;align-items:stretch;cursor:pointer}
+.cell .bar{background:var(--none)}
+.cell.ok .bar{background:var(--ok)}
+.cell.warn .bar{background:var(--warn)}
+.cell.bad .bar{background:var(--bad)}
+.cell .body{padding:9px 10px}
+.cell.sel{background:var(--panel-3)!important;box-shadow:inset 0 0 0 1px var(--accent)}
+.cfg{font-family:var(--mono);font-size:11.5px;color:var(--ink)}
+.cnote{font-size:10.5px;color:var(--ink-3);margin-top:2px}
+.n{font-family:var(--mono);font-size:11.5px;text-align:right;padding:9px 10px;white-space:nowrap;color:var(--ink-2)}
+.n.hl{color:var(--ink);font-weight:500}
+.n.dim{color:var(--ink-3)}
+.badge{display:inline-block;font-family:var(--mono);font-size:9px;letter-spacing:.05em;padding:2px 6px;border-radius:3px}
+.badge.ok{background:rgba(34,197,94,.14);color:var(--ok)}
+.badge.warn{background:rgba(245,158,11,.14);color:var(--warn)}
+.badge.bad{background:rgba(239,68,68,.14);color:var(--bad)}
+.badge.none{background:rgba(93,107,122,.16);color:var(--ink-3)}
+.sh{font-family:var(--mono);font-size:9.5px;letter-spacing:.09em;color:var(--ink-3);
+  text-transform:uppercase;padding-bottom:7px;border-bottom:1px solid var(--line);margin-bottom:11px}
+.sh.mt{margin-top:20px}
+.kv{font-family:var(--mono);font-size:11px}
+.kvr{display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-bottom:1px dotted var(--line)}
 .kvr span:first-child{color:var(--ink-3)}
-.hint{
-  font-size:11.5px; color:var(--ink-3); line-height:1.55;
-  margin-top:16px; padding:10px 11px;
-  background:var(--panel-2); border-radius:7px; border-left:2px solid var(--accent);
-}
-.hint b{color:var(--ink-2); font-weight:500}
-
-@media(max-width:1000px){ .wrap{grid-template-columns:1fr} }
+.kvr b{font-weight:500}
+.opt{display:flex;justify-content:space-between;align-items:center;padding:7px 0;font-size:12.5px}
+.opt label{color:var(--ink-2)}
+.opt input[type=number],.opt select{font-family:var(--mono);font-size:11.5px;width:88px;text-align:right;
+  background:var(--panel-2);color:var(--ink);border:1px solid var(--line);border-radius:5px;padding:4px 7px}
+.note{font-size:11.5px;color:var(--ink-3);line-height:1.55;margin-top:12px;padding:10px 11px;
+  background:var(--panel-2);border-radius:7px;border-left:2px solid var(--accent)}
+.note b{color:var(--ink-2);font-weight:500}
+.runrow{display:flex;gap:8px;margin-top:14px}
+.runrow .btn{flex:1;text-align:center;padding:9px}
+.log{font-family:var(--mono);font-size:10.5px;color:var(--ink-2);margin-top:12px;
+  max-height:150px;overflow-y:auto;white-space:pre-wrap;line-height:1.6}
+.log::-webkit-scrollbar{width:5px}
+.log::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px}
+@media(max-width:1100px){.wrap{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
-
 <div class="top">
   <div class="switch">
     <button class="sbtn" id="sw">■ 수렴 테스트 ▾</button>
@@ -178,260 +110,193 @@ svg{display:block; width:100%; overflow:visible}
     </div>
   </div>
   <h1>수렴 테스트</h1>
-  <div class="cond" id="cond"></div>
   <div class="spacer"></div>
-  <button class="btn on" data-src="omc">Modelica</button>
-  <button class="btn" data-src="py">Python</button>
-  <button class="btn" id="load">결과 불러오기</button>
+  <a class="btn" href="/convergence/detail.html">궤적 보기</a>
+  <button class="btn" id="reload">기록 불러오기</button>
 </div>
-
-<div class="verdict" id="verdict"></div>
-
 <div class="wrap">
   <div class="main">
-
-    <div class="chart">
-      <div class="chead">
-        <div class="ctitle">과열도</div>
-        <div class="csub">목표 6.0 K · 음수는 2상 출구</div>
-        <div class="legend"><span><i style="background:#2563EB"></i>SH</span>
-          <span><i style="background:#8B5CF6;opacity:.5"></i>2상 구간</span></div>
+    <div class="mhead">
+      <div class="mtitle">조합 매트릭스</div>
+      <div class="msub">행을 눌러 조건을 고르고 · 실행</div>
+      <div class="legend">
+        <span><i style="background:var(--ok)"></i>통과</span>
+        <span><i style="background:var(--warn)"></i>부분</span>
+        <span><i style="background:var(--bad)"></i>실패</span>
+        <span><i style="background:var(--none)"></i>미검증</span>
       </div>
-      <svg id="c_sh" viewBox="0 0 720 170"></svg>
     </div>
-
-    <div class="chart">
-      <div class="chead">
-        <div class="ctitle">EEV 스텝</div>
-        <div class="csub">n_max 500 · pps 30 step/s · 데드밴드 0.5 K</div>
-        <div class="legend"><span><i style="background:#22C55E"></i>n_act</span></div>
-      </div>
-      <svg id="c_eev" viewBox="0 0 720 130"></svg>
-    </div>
-
-    <div class="chart">
-      <div class="chead">
-        <div class="ctitle">냉매 충전량</div>
-        <div class="csub">M_total · 목표 100 g</div>
-        <div class="legend"><span><i style="background:#F59E0B"></i>드리프트</span></div>
-      </div>
-      <svg id="c_m" viewBox="0 0 720 120"></svg>
-    </div>
-
-    <div class="chart">
-      <div class="chead">
-        <div class="ctitle">압력</div>
-        <div class="csub">고압 / 저압 [bar]</div>
-        <div class="legend"><span><i style="background:#EF4444"></i>Pc</span>
-          <span><i style="background:#38BDF8"></i>Pe</span></div>
-      </div>
-      <svg id="c_p" viewBox="0 0 720 150"></svg>
-    </div>
-
+    <table id="mtx"></table>
   </div>
-
   <div class="side">
-    <div class="sh">스텝 로그</div>
-    <div class="log" id="log"></div>
-    <div class="kv" id="kv"></div>
-    <div class="hint" id="hint"></div>
+    <div class="sh">선택한 조건</div>
+    <div class="kv" id="detail"></div>
+    <div class="sh mt">실행 설정</div>
+    <div id="opts"></div>
+    <div class="runrow">
+      <button class="btn pri" id="run" disabled>실행</button>
+      <button class="btn" id="runall">전체 재실행</button>
+    </div>
+    <div class="log" id="log">대기 중</div>
+    <div class="note">
+      <b>GPU 설정은 없습니다.</b> Modelica 솔버는 순차 시간적분이고
+      CoolProp·scipy 에 GPU 경로가 없어, 이 규모(상태 수천)에서는 전송
+      오버헤드가 계산보다 큽니다. CPU 스레드는 Modelica 야코비안 열 병렬화와
+      Python 파라미터 스윕에 실제로 효과가 있습니다.
+    </div>
   </div>
 </div>
-
 <script>
-// ─────────────────────────────────────────────────────────────
-// 샘플 데이터 — 실제로는 CSV/JSON 을 불러온다.
-//   Modelica: <model>_res.csv  (time, M_total, Pc_bar, Pe_bar, SH, comp.N,
-//                               evap.x_out, ctrl.n_act, vol4.M)
-//   Python  : dynamic_result.json (trajectory[])
-// 아래 값은 2026-07-28 실측 궤적 (Nseg=2, dassl+기호야코비안, 펄스제어).
-// ─────────────────────────────────────────────────────────────
-const SAMPLE = {
-  omc: {
-    meta:{solver:'dassl', jac:'기호', props:'해석형', Nseg:2, tol:'1e-3',
-          charge:100, SH_target:6.0, pps:30, nmax:500, deadband:0.5},
-    t:      [0.00, 0.38, 0.76, 1.16, 1.56, 1.92, 2.29, 2.68, 3.08, 3.50, 3.92, 4.26, 4.60],
-    SH:     [-135.9,-134.2,-131.3,-108.4,-81.5,-40.2,-0.03, 5.60, 10.91, 10.2, 9.55, -4.1,-17.4],
-    x_out:  [0.234, 0.256, 0.278, 0.421, 0.569, 0.784, 1.000, 1.028, 1.054, 1.051, 1.048, 0.978, 0.911],
-    n_act:  [90,    90,    60,    60,    30,    30,    60,    60,    90,    90,    90,    120,  120],
-    M_total:[0.1000,0.1000,0.1000,0.1000,0.1000,0.1000,0.1000,0.1000,0.1000,0.1001,0.1001,0.1001,0.1001],
-    Pc:     [8.365, 8.494, 8.622, 8.809, 8.996, 9.117, 9.237, 9.315, 9.392, 9.495, 9.597, 9.687, 9.777],
-    Pe:     [8.365, 8.113, 7.861, 7.475, 7.089, 6.730, 6.370, 6.116, 5.861, 5.946, 6.031, 6.253, 6.474],
-    stop:'Integrator failed (t=4.60)'
-  },
-  py: {
-    meta:{solver:'hybr', jac:'수치', props:'해석형', Nseg:'-', tol:'1e-6',
-          charge:100, SH_target:6.0, pps:30, nmax:500, deadband:0.5},
-    t:      [0, 20, 40, 60, 80, 100, 120],
-    SH:     [-120.0,-42.0, 4.2, 6.1, 5.9, 6.0, 6.0],
-    x_out:  [0.31, 0.72, 1.02, 1.03, 1.03, 1.03, 1.03],
-    n_act:  [90, 60, 90, 108, 110, 109, 109],
-    M_total:[0.1000,0.1000,0.1000,0.1000,0.1000,0.1000,0.1000],
-    Pc:     [8.37, 9.02, 9.81, 10.22, 10.38, 10.44, 10.44],
-    Pe:     [8.37, 7.10, 6.42, 6.14, 6.09, 6.08, 6.08],
-    stop:'완주 (t=120)'
-  }
+const ROWS = [
+{g:'Modelica · 단품 (CmpParts.Cond_L3)'},
+{id:'omc-cond-tab-num',eng:'OMC',props:'테이블',jac:'수치',solver:'ida',kind:'과도',
+ status:'ok',t:3.722,steps:1516,metric:'Q=611.0577',note:'기준값'},
+{id:'omc-cond-tab-sym',eng:'OMC',props:'테이블',jac:'기호',solver:'ida',kind:'과도',
+ status:'bad',t:null,steps:null,metric:'_12jac 406.7 MB',note:'빌드 폭발 — idxP 정수연산'},
+{id:'omc-cond-ana-num',eng:'OMC',props:'해석형',jac:'수치',solver:'ida',kind:'과도',
+ status:'ok',t:0.200,steps:390,metric:'0.040 %',note:'테이블 대비 18배'},
+{id:'omc-cond-ana-sym',eng:'OMC',props:'해석형',jac:'기호',solver:'ida',kind:'과도',
+ status:'ok',t:0.515,steps:388,metric:'0.040 %',note:'단품에선 수치가 더 빠름'},
+{g:'Modelica · 사이클 정상해 (Cycle_L3_ssinit)'},
+{id:'omc-ss-tab-num',eng:'OMC',props:'테이블',jac:'수치',solver:'gbode',kind:'정상',
+ status:'bad',t:null,steps:null,metric:'lambda=0 정체',note:'ssinit-ok 이후 깨짐'},
+{id:'omc-ss-ana-num',eng:'OMC',props:'해석형',jac:'수치',solver:'gbode',kind:'정상',
+ status:'bad',t:null,steps:null,metric:'lambda=0 정체',note:'물성과 무관한 선행 이슈'},
+{id:'omc-ss-ana-sym',eng:'OMC',props:'해석형',jac:'기호',solver:'gbode',kind:'정상',
+ status:'bad',t:null,steps:null,metric:'lambda=0 정체',note:'미해결'},
+{g:'Modelica · 사이클 과도 (Cycle_L3_coldstart_charge)'},
+{id:'omc-cs-tab-num-ida',eng:'OMC',props:'테이블',jac:'수치',solver:'ida',kind:'과도',
+ status:'ok',t:93,steps:null,metric:'드리프트 −0.64 %',note:'DHB=100 · 300 s 완주'},
+{id:'omc-cs-ana-num-ida',eng:'OMC',props:'해석형',jac:'수치',solver:'ida',kind:'과도',
+ status:'bad',t:null,steps:58,metric:'드리프트 +8.1 %',note:'t=3.83 적분 실패'},
+{id:'omc-cs-ana-num-das',eng:'OMC',props:'해석형',jac:'수치',solver:'dassl',kind:'과도',
+ status:'warn',t:null,steps:null,metric:'드리프트 0.16 %',note:'t=0.74 — 정확하나 느림'},
+{id:'omc-cs-ana-sym-das',eng:'OMC',props:'해석형',jac:'기호',solver:'dassl',kind:'과도',
+ status:'ok',t:null,steps:334,metric:'드리프트 0.007 %',note:'t=15.6 · 최선 조합'},
+{id:'omc-cs-ana-num-gbo',eng:'OMC',props:'해석형',jac:'수치',solver:'gbode',kind:'과도',
+ status:'bad',t:null,steps:332,metric:'M_total 음수',note:'발산'},
+{id:'omc-cs-pulse',eng:'OMC',props:'해석형',jac:'기호',solver:'dassl',kind:'과도+펄스',
+ status:'warn',t:null,steps:null,metric:'드리프트 0.118 %',note:'t=4.60 — EEV 이산 이벤트'},
+{g:'Python · 정상해'},
+{id:'py-ss-part',eng:'Python',props:'해석형',jac:'수치',solver:'hybr',kind:'정상 (부분 커플드)',
+ status:'ok',t:5.7,steps:13,metric:'Pc 10.4572',note:'SH 구속 · 개도 22.68'},
+{id:'py-ss-full',eng:'Python',props:'해석형',jac:'수치',solver:'hybr',kind:'정상 (완전 커플드)',
+ status:'ok',t:35.3,steps:6,metric:'Pc 10.4409',note:'드럼루프 · 개도 21.70'},
+{id:'py-ss-full-broy',eng:'Python',props:'해석형',jac:'준뉴턴',solver:'broyden1',kind:'정상 (완전 커플드)',
+ status:'bad',t:59.8,steps:null,metric:'실패 후 hybr 재시도',note:'같은 문제를 두 번 품'},
+{id:'py-ss-tab',eng:'Python',props:'테이블',jac:'수치',solver:'hybr',kind:'정상 (부분 커플드)',
+ status:'ok',t:38.9,steps:28,metric:'Pc 10.4623',note:'개선 전 기준'},
+{g:'Python · 동적'},
+{id:'py-dyn-60',eng:'Python',props:'해석형',jac:'수치',solver:'hybr',kind:'동적 dt=60 s',
+ status:'warn',t:165,steps:null,metric:'수렴 4/6',note:'개도 21→9.5 이동을 warm start 가 못 따라감'},
+{id:'py-dyn-20',eng:'Python',props:'해석형',jac:'수치',solver:'hybr',kind:'동적 dt=20 s',
+ status:'none',t:null,steps:null,metric:'—',note:'미검증'},
+{id:'py-dyn-pulse',eng:'Python',props:'해석형',jac:'수치',solver:'hybr',kind:'동적 + 펄스',
+ status:'none',t:null,steps:null,metric:'—',note:'미검증'},
+];
+const OPTS = {
+  threads:{label:'CPU 스레드',type:'number',val:8,min:1,max:64,only:'OMC',hint:'-jacobianThreads'},
+  procs:{label:'병렬 프로세스',type:'number',val:4,min:1,max:64,only:'Python',hint:'스윕용'},
+  tol:{label:'허용오차',type:'select',val:'1e-3',opts:['1e-2','1e-3','1e-4','1e-5','1e-6']},
+  stop:{label:'종료 시각 [s]',type:'number',val:120,min:1,max:3600},
+  nseg:{label:'HX Nseg',type:'number',val:2,min:1,max:6,only:'OMC'},
+  dt:{label:'스텝 [s]',type:'number',val:20,min:1,max:300,only:'Python'},
+  charge:{label:'충전량 [g]',type:'number',val:100,min:50,max:200},
+  sh:{label:'SH 목표 [K]',type:'number',val:6,min:0,max:20},
+  pulse:{label:'EEV 펄스',type:'select',val:'끔',opts:['끔','켬']},
 };
-
-let src = 'omc';
-const $ = s => document.querySelector(s);
-
-// ── 판정 규칙 ──
-function verdicts(d){
-  const drift = Math.max(...d.M_total.map(m => Math.abs(m/0.1-1)*100));
-  const shEnd = d.SH[d.SH.length-1];
-  const tp = d.x_out.filter(x => x < 1).length / d.x_out.length * 100;
-  const steps = d.n_act.reduce((a,v,i,arr)=> i? a + (v!==arr[i-1]?1:0) : 0, 0);
-  const done = d.stop.startsWith('완주');
-  return [
-    {l:'완주',      v:d.t[d.t.length-1].toFixed(1), u:'s',
-     s:done?'pass':'fail', n:d.stop},
-    {l:'충전량 드리프트', v:drift.toFixed(3), u:'%',
-     s:drift<0.5?'pass':drift<2?'warn':'fail', n:'목표 100 g 대비'},
-    {l:'최종 과열도',  v:shEnd.toFixed(2), u:'K',
-     s:Math.abs(shEnd-6)<1?'pass':shEnd<0?'fail':'warn',
-     n:shEnd<0?'2상 출구 — 액 넘침':'목표 6.0 K'},
-    {l:'2상 출구 비율', v:tp.toFixed(0), u:'%',
-     s:tp<20?'pass':tp<60?'warn':'fail', n:'x_out < 1 인 구간'},
-    {l:'EEV 스텝 변경', v:steps, u:'회',
-     s:'pass', n:'펄스 제어 동작'},
-  ];
-}
-
-// ── 축·경로 ──
-function scale(arr, lo, hi){ const a=Math.min(...arr), b=Math.max(...arr);
-  const p=(b-a)*0.12||1; return v => hi - (v-(a-p))/((b+p)-(a-p))*(hi-lo); }
-function xscale(t, w){ const a=t[0], b=t[t.length-1];
-  return v => 46 + (v-a)/((b-a)||1)*(w-62); }
-
-function draw(id, series, opt={}){
-  const svg=$(id), vb=svg.viewBox.baseVal, W=vb.width, H=vb.height;
-  const d=SAMPLE[src], X=xscale(d.t,W), top=12, bot=H-24;
-  const all=series.flatMap(s=>s.v);
-  const Y=scale(opt.zero? all.concat([0]) : all, top, bot);
-  let g='';
-
-  // 2상 구간 밴드
-  if(opt.band){
-    let i=0;
-    while(i<d.x_out.length){
-      if(d.x_out[i]<1){ let j=i; while(j+1<d.x_out.length && d.x_out[j+1]<1) j++;
-        g+=`<rect class="band" x="${X(d.t[i])}" y="${top}" width="${Math.max(X(d.t[j])-X(d.t[i]),2)}" height="${bot-top}"/>`;
-        i=j+1; } else i++;
-    }
+let sel=null;
+const $=s=>document.querySelector(s);
+const fmt=(v,d=3)=>v==null?'—':(typeof v==='number'?String(v.toFixed(d)).replace(/\.?0+$/,''):v);
+function badge(s){const m={ok:['통과','ok'],warn:['부분','warn'],bad:['실패','bad'],none:['미검증','none']};
+  const a=m[s]||m.none;return '<span class="badge '+a[1]+'">'+a[0]+'</span>';}
+function renderMatrix(){
+  let h='<thead><tr><th style="width:30%">조건</th><th>해석</th><th>솔버</th>'
+   +'<th class="num">시간 [s]</th><th class="num">스텝</th><th>성능</th>'
+   +'<th style="width:62px">판정</th></tr></thead><tbody>';
+  for(const r of ROWS){
+    if(r.g){h+='<tr class="grp"><td colspan="7">'+r.g+'</td></tr>';continue;}
+    const on=sel===r.id?' sel':'';
+    h+='<tr data-id="'+r.id+'"><td><div class="cell '+r.status+on+'"><div class="bar"></div>'
+      +'<div class="body"><div class="cfg">'+r.props+' 물성 · '+r.jac+' 야코비안</div>'
+      +'<div class="cnote">'+r.note+'</div></div></div></td>'
+      +'<td class="n dim">'+r.kind+'</td><td class="n dim">'+r.solver+'</td>'
+      +'<td class="n '+(r.t!=null?'hl':'')+'">'+(r.t==null?'—':fmt(r.t,r.t<10?3:1))+'</td>'
+      +'<td class="n">'+(r.steps==null?'—':r.steps)+'</td>'
+      +'<td class="n">'+r.metric+'</td><td class="n">'+badge(r.status)+'</td></tr>';
   }
-  // 그리드
-  const lo=Math.min(...all), hi=Math.max(...all);
-  [0,.25,.5,.75,1].forEach(f=>{ const val=lo+(hi-lo)*f, y=Y(val);
-    g+=`<line class="gl" x1="46" y1="${y}" x2="${W-16}" y2="${y}"/>`;
-    g+=`<text class="ax" x="40" y="${y+3}" text-anchor="end">${val.toFixed(opt.dp??1)}</text>`; });
-  if(opt.zero && lo<0 && hi>0){ const y=Y(0);
-    g+=`<line class="gl zero" x1="46" y1="${y}" x2="${W-16}" y2="${y}"/>`; }
-  // x축
-  d.t.forEach((t,i)=>{ if(i%Math.ceil(d.t.length/6)) return;
-    g+=`<text class="ax" x="${X(t)}" y="${H-8}" text-anchor="middle">${t.toFixed(1)}</text>`; });
-
-  series.forEach(s=>{
-    const pts=d.t.map((t,i)=>[X(t),Y(s.v[i])]);
-    const path = s.step
-      ? pts.reduce((a,[x,y],i)=> i? a+`L${x} ${pts[i-1][1]}L${x} ${y}` : `M${x} ${y}`,'')
-      : pts.reduce((a,[x,y],i)=> i? a+`L${x} ${y}` : `M${x} ${y}`,'');
-    g+=`<path class="${s.step?'stepline':'ln'}" d="${path}" stroke="${s.c}"/>`;
-  });
-  svg.innerHTML=g;
+  $('#mtx').innerHTML=h+'</tbody>';
+  $('#mtx').querySelectorAll('tr[data-id]').forEach(function(tr){
+    tr.onclick=function(){sel=tr.dataset.id;renderMatrix();renderSide();};});
 }
-
-function render(){
-  const d=SAMPLE[src], m=d.meta;
-  $('#cond').innerHTML=[
-    ['솔버',m.solver],['야코비안',m.jac],['물성',m.props],
-    ['Nseg',m.Nseg],['tol',m.tol],['충전',m.charge+' g'],['SH 목표',m.SH_target+' K']
-  ].map(([k,v])=>`<span>${k} <b>${v}</b></span>`).join('');
-
-  $('#verdict').innerHTML=verdicts(d).map(v=>`
-    <div class="vcell ${v.s}">
-      <div class="vlabel">${v.l}</div>
-      <div class="vval">${v.v}<span class="u">${v.u}</span></div>
-      <div class="vnote">${v.n}</div>
-    </div>`).join('');
-
-  draw('#c_sh',[{v:d.SH,c:'#2563EB'}],{zero:true,band:true,dp:0});
-  draw('#c_eev',[{v:d.n_act,c:'#22C55E',step:true}],{dp:0});
-  draw('#c_m',[{v:d.M_total.map(x=>(x/0.1-1)*100),c:'#F59E0B'}],{zero:true,dp:2});
-  draw('#c_p',[{v:d.Pc,c:'#EF4444'},{v:d.Pe,c:'#38BDF8'}],{dp:1});
-
-  $('#log').innerHTML=d.t.map((t,i)=>{
-    const tp=d.x_out[i]<1, sh=d.SH[i];
-    const badge = tp?'<span class="lb tp">2상</span>'
-      : Math.abs(sh-6)<1?'<span class="lb ok">제어중</span>':'<span class="lb ok">과열</span>';
-    return `<div class="lrow">
-      <span class="lt">${t.toFixed(2)}</span>
-      <span class="lv">SH ${sh.toFixed(1).padStart(7)} · x ${d.x_out[i].toFixed(3)} · n ${d.n_act[i]}</span>
-      ${badge}</div>`;
+function renderSide(){
+  const r=ROWS.find(x=>x.id===sel);
+  if(!r){$('#detail').innerHTML='<div class="kvr"><span>선택 없음</span><b>행을 누르십시오</b></div>';
+    $('#opts').innerHTML='';$('#run').disabled=true;return;}
+  $('#detail').innerHTML=[['엔진',r.eng],['물성',r.props+' 물성'],['야코비안',r.jac],
+    ['솔버',r.solver],['해석',r.kind],
+    ['최근 시간',r.t==null?'—':fmt(r.t,r.t<10?3:1)+' s'],['성능',r.metric],['판정',badge(r.status)]]
+    .map(a=>'<div class="kvr"><span>'+a[0]+'</span><b>'+a[1]+'</b></div>').join('');
+  $('#opts').innerHTML=Object.keys(OPTS).map(function(k){
+    const o=OPTS[k]; if(o.only&&o.only!==r.eng) return '';
+    const ctl=o.type==='select'
+      ? '<select data-k="'+k+'">'+o.opts.map(v=>'<option'+(v==o.val?' selected':'')+'>'+v+'</option>').join('')+'</select>'
+      : '<input type="number" data-k="'+k+'" value="'+o.val+'" min="'+o.min+'" max="'+o.max+'">';
+    const hint=o.hint?' <span style="color:var(--ink-3);font-family:var(--mono);font-size:10px">'+o.hint+'</span>':'';
+    return '<div class="opt"><label>'+o.label+hint+'</label>'+ctl+'</div>';
   }).join('');
-
-  const last=d.t.length-1;
-  $('#kv').innerHTML=[
-    ['Pc 최종', d.Pc[last].toFixed(3)+' bar'],
-    ['Pe 최종', d.Pe[last].toFixed(3)+' bar'],
-    ['개도 최종', (d.n_act[last]/d.meta.nmax*100).toFixed(1)+' %'],
-    ['n_act 범위', Math.min(...d.n_act)+' ~ '+Math.max(...d.n_act)],
-    ['x_out 범위', Math.min(...d.x_out).toFixed(3)+' ~ '+Math.max(...d.x_out).toFixed(3)],
-  ].map(([k,v])=>`<div class="kvr"><span>${k}</span><span>${v}</span></div>`).join('');
-
-  const drift=Math.max(...d.M_total.map(x=>Math.abs(x/0.1-1)*100));
-  $('#hint').innerHTML = d.stop.startsWith('완주')
-    ? `완주했습니다. 충전량 드리프트 <b>${drift.toFixed(3)}%</b>, 최종 과열도 <b>${d.SH[last].toFixed(2)} K</b>.`
-    : `<b>${d.stop}</b> — 과열도가 목표에 도달하기 전에 멈췄습니다.
-       EEV 스텝이 ${Math.min(...d.n_act)}~${Math.max(...d.n_act)} 사이를 오갔고,
-       2상 출구 구간에서 어큐에 액이 쌓입니다.
-       데드밴드나 제어 주기를 조정해 스텝 변화를 줄여 보십시오.`;
+  $('#opts').querySelectorAll('[data-k]').forEach(function(el){
+    el.onchange=function(){OPTS[el.dataset.k].val=el.value;};});
+  $('#run').disabled=false;
 }
-
-document.querySelectorAll('[data-src]').forEach(b=>b.onclick=()=>{
-  document.querySelectorAll('[data-src]').forEach(x=>x.classList.remove('on'));
-  b.classList.add('on'); src=b.dataset.src; render();
-});
-$('#load').onclick=()=>{
-  const i=document.createElement('input'); i.type='file'; i.accept='.csv,.json';
-  i.onchange=e=>{ const f=e.target.files[0]; if(!f) return;
-    const r=new FileReader();
-    r.onload=()=>{ try{ parseInto(f.name, r.result); render(); }
-      catch(err){ alert('읽지 못했습니다: '+err.message); } };
-    r.readAsText(f); };
-  i.click();
-};
-
-// CSV(Modelica) / JSON(Python) 파서
-function parseInto(name, text){
-  if(name.endsWith('.json')){
-    const j=JSON.parse(text), tr=j.trajectory.filter(x=>x.SH!=null);
-    SAMPLE.py={meta:SAMPLE.py.meta,
-      t:tr.map(x=>x.t), SH:tr.map(x=>x.SH),
-      x_out:tr.map(x=>x.x_out??1), n_act:tr.map(x=>x.n_act??0),
-      M_total:tr.map(()=>0.1), Pc:tr.map(x=>x.Pc), Pe:tr.map(x=>x.Pe),
-      stop: tr.length? `완주 (t=${tr[tr.length-1].t})` : '결과 없음'};
-    src='py';
-  } else {
-    const L=text.trim().split('\n'), h=L[0].split(',').map(s=>s.replace(/"/g,'').trim());
-    const col=n=>h.findIndex(x=>x===n||x.endsWith('.'+n));
-    const rows=L.slice(1).map(l=>l.split(',').map(Number)).filter(r=>r.length===h.length);
-    const g=n=>{const i=col(n); return i<0? rows.map(()=>0) : rows.map(r=>r[i]);};
-    SAMPLE.omc={meta:SAMPLE.omc.meta,
-      t:rows.map(r=>r[0]), SH:g('SH'), x_out:g('x_out'),
-      n_act:g('n_act'), M_total:g('M_total'), Pc:g('Pc_bar'), Pe:g('Pe_bar'),
-      stop:`t=${rows[rows.length-1][0].toFixed(2)} 까지`};
-    src='omc';
+function log(s){const el=$('#log');
+  el.textContent=(el.textContent==='대기 중'?'':el.textContent+'\n')+s;
+  el.scrollTop=el.scrollHeight;}
+async function run(ids){
+  const list=ids||[sel];
+  for(const id of list){
+    const r=ROWS.find(x=>x.id===id); if(!r) continue;
+    log('▶ '+r.eng+' · '+r.props+' · '+r.jac+' · '+r.solver+' · '+r.kind);
+    const prev=r.status; r.status='none'; r.note='실행 중'; renderMatrix();
+    const opts={}; Object.keys(OPTS).forEach(function(k){
+      const o=OPTS[k]; if(!o.only||o.only===r.eng) opts[k]=o.val;});
+    try{
+      const res=await fetch('/api/convergence/run',{method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({id:id,engine:r.eng,props:r.props,jac:r.jac,
+          solver:r.solver,kind:r.kind,opts:opts})});
+      if(!res.ok) throw new Error('HTTP '+res.status);
+      const d=await res.json();
+      r.status=d.status; r.t=d.t; r.steps=d.steps; r.metric=d.metric; r.note=d.note||'';
+      log('  '+String(d.status).toUpperCase()+' · '+fmt(d.t,1)+' s · '+d.metric);
+    }catch(e){
+      r.status=prev; r.note='백엔드 연결 실패';
+      log('  실행하지 못했습니다 — '+e.message);
+      log('  백엔드에 POST /api/convergence/run 이 필요합니다.');
+    }
+    renderMatrix(); renderSide();
   }
-  document.querySelectorAll('[data-src]').forEach(x=>
-    x.classList.toggle('on', x.dataset.src===src));
 }
-
-const sw=document.getElementById('sw'), sm=document.getElementById('smenu');
-sw.onclick=e=>{ e.stopPropagation(); sm.classList.toggle('open'); };
-document.addEventListener('click',()=>sm.classList.remove('open'));
-
-render();
+$('#run').onclick=function(){run();};
+$('#runall').onclick=function(){run(ROWS.filter(r=>r.id).map(r=>r.id));};
+$('#reload').onclick=async function(){
+  try{
+    const res=await fetch('/api/convergence/history');
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    const h=await res.json(); let n=0;
+    h.forEach(function(rec){const r=ROWS.find(x=>x.id===rec.id);
+      if(r){Object.assign(r,rec);n++;}});
+    renderMatrix(); renderSide(); log('기록 '+n+'건을 불러왔습니다.');
+  }catch(e){
+    log('기록을 불러오지 못했습니다 — '+e.message);
+    log('  GET /api/convergence/history 가 필요합니다.');
+    log('  지금 표는 2026-07-28 실측 기록입니다.');
+  }
+};
+const sw=$('#sw'),sm=$('#smenu');
+sw.onclick=function(e){e.stopPropagation();sm.classList.toggle('open');};
+document.addEventListener('click',function(){sm.classList.remove('open');});
+renderMatrix(); renderSide();
 </script>
 </body>
 </html>
