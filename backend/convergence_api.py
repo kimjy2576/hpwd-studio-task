@@ -396,6 +396,36 @@ def history() -> List[Dict[str, Any]]:
         return []
 
 
+def _smoke(omc: Optional[str]) -> Dict[str, Any]:
+    """omc 로 모델 로드까지 실제 시도. 즉시 실패의 원인을 좁힌다."""
+    if not omc:
+        return {"ok": False, "reason": "omc 경로를 찾지 못했습니다."}
+    work = BACKEND / "_omc_work" / "_smoke"
+    try:
+        work.mkdir(parents=True, exist_ok=True)
+        (work / "s.mos").write_text(
+            f'runScript("{REPO}/verify/load_all.mos");\n'
+            'getErrorString();\n', encoding="utf-8")
+    except Exception as e:
+        return {"ok": False, "reason": f"작업 파일을 쓰지 못했습니다: {e}"}
+    try:
+        p = subprocess.run([omc, "s.mos"], cwd=work, timeout=180,
+                           capture_output=True, text=True)
+    except Exception as e:
+        return {"ok": False, "reason": f"omc 를 실행하지 못했습니다: "
+                                       f"{type(e).__name__}: {e}"}
+    out = ((p.stdout or "") + (p.stderr or "")).strip()
+    err = [l.strip()[:120] for l in out.splitlines()
+           if "Error" in l or "error" in l or "not found" in l][:3]
+    return {"ok": p.returncode == 0 and not err,
+            "rc": p.returncode,
+            "stdout_len": len(p.stdout or ""),
+            "stderr_len": len(p.stderr or ""),
+            "errors": err,
+            "head": out[:300],
+            "cwd": str(work)}
+
+
 @convergence_router.get("/recipes")
 def recipes() -> Dict[str, Any]:
     """어떤 조합을 실행할 수 있는지. UI 가 표를 검증할 때 쓴다."""
@@ -426,6 +456,10 @@ def recipes() -> Dict[str, Any]:
         "work_dir": str(BACKEND / "_omc_work"),
         "work_writable": os.access(BACKEND, os.W_OK),
         "cwd": os.getcwd(),
+        # 2026-07-30: omc 를 실제로 한 번 호출해 본다.
+        #   --version 은 되는데 스크립트 실행이 안 되는 경우가 있어
+        #   loadFile 까지 시켜 본다(경로·라이브러리·권한 종합 점검).
+        "smoke": _smoke(omc),
     }
 
 

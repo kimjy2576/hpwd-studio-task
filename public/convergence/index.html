@@ -361,6 +361,16 @@ $('#diag').onclick=async function(){
     log('  작업 디렉터리 '+(d.work_writable?'쓰기 가능':'쓰기 불가  ← 문제')+'  '+d.work_dir);
     if(!d.loader_exists||!d.modelica_dir_exists||!d.work_writable)
       log('  → Modelica 실행이 즉시 실패하는 원인입니다.');
+    const sm2=d.smoke||{};
+    log('── omc 실전 호출 (모델 로드까지) ──');
+    log('  결과         '+(sm2.ok?'성공':'실패  ← 여기가 원인'));
+    if(sm2.reason) log('  이유         '+sm2.reason);
+    if(sm2.rc!=null) log('  종료코드     '+sm2.rc
+      +'   stdout '+sm2.stdout_len+'B / stderr '+sm2.stderr_len+'B');
+    (sm2.errors||[]).forEach(function(e){ log('  오류         '+e); });
+    if(sm2.head) log('  출력 앞부분  '+String(sm2.head).replace(/\n/g,' | ').slice(0,220));
+    if(sm2.rc===0 && sm2.stdout_len===0)
+      log('  → omc 가 출력 없이 끝났습니다. 실행 파일이 껍데기(래퍼)일 수 있습니다.');
   }catch(e){ log('환경을 확인하지 못했습니다 — '+e.message); }
 };
 
