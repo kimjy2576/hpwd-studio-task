@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -507,8 +508,12 @@ def _smoke(omc: Optional[str]) -> Dict[str, Any]:
         return {"ok": False, "reason": f"omc 를 실행하지 못했습니다: "
                                        f"{type(e).__name__}: {e}"}
     out = ((p.stdout or "") + (p.stderr or "")).strip()
+    # 2026-07-30 판정 정정: getErrorString() 이라는 함수 이름에 'Error' 가 있어
+    #   omc 가 스크립트를 echo 하면 정상인데도 오류로 잡혔다.
+    #   omc 의 실제 오류는 'Error:' 또는 'error:' 로 시작하는 형태다.
     err = [l.strip()[:140] for l in out.splitlines()
-           if "Error" in l or "error" in l or "not found" in l][:5]
+           if re.search(r"(^|\s)(Error|error|Warning: .*failed):", l)
+           or "Failed to load" in l or "not found in scope" in l][:5]
     # 2026-07-30: loadModel(Modelica) 은 true, loadFile 은 파일별로 true/false 를
     #   찍는다. false 가 하나라도 있으면 그 파일을 못 읽은 것이다.
     trues = out.count("true")
