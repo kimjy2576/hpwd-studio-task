@@ -102,11 +102,14 @@ def find_omc() -> Optional[str]:
       - 서버가 PATH 를 물려받지 못한 경우(systemd, IDE 터미널 등)
       - Windows/WSL2 에서 omc.exe 로 설치된 경우
       - OpenModelica 기본 설치 경로에만 있는 경우
-    환경변수 OMC_PATH 로 직접 지정할 수도 있다.
+    환경변수 OMC_BIN (server.py 와 동일) 또는 OMC_PATH 로 지정 가능.
     """
-    env = os.environ.get("OMC_PATH")
-    if env and Path(env).exists():
-        return env
+    # 2026-07-30: 기존 server.py 는 $OMC_BIN 을 쓴다. 같은 이름을 우선한다.
+    #   (OMC_PATH 로 잘못 찾아 '설치 필요' 로 오진했던 원인)
+    for var in ("OMC_BIN", "OMC_PATH"):
+        env = os.environ.get(var)
+        if env and Path(env).is_file():
+            return env
     for name in ("omc", "omc.exe"):
         w = shutil.which(name)
         if w:
@@ -257,7 +260,7 @@ def run_omc(rid: str, rec: Dict[str, Any], opts: Dict[str, Any]) -> RunResp:
     if not omc:
         return RunResp(id=rid, status="bad", metric="—",
                        note="omc 를 찾지 못했습니다. 환경변수 OMC_PATH 로 "
-                            "실행 파일 경로를 지정하십시오. "
+                            "실행 파일 경로를 지정하십시오 (OMC_BIN). "
                             "(GET /api/convergence/recipes 에서 탐색 결과 확인)")
 
     model = rec["model"]
@@ -385,6 +388,7 @@ def recipes() -> Dict[str, Any]:
         "omc_version": ver,
         "cpu_count": os.cpu_count(),
         "which_omc": shutil.which("omc"),
+        "env_OMC_BIN": os.environ.get("OMC_BIN"),
         "env_OMC_PATH": os.environ.get("OMC_PATH"),
         "env_OPENMODELICAHOME": os.environ.get("OPENMODELICAHOME"),
         "path_head": (os.environ.get("PATH") or "").split(os.pathsep)[:6],

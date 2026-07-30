@@ -306,6 +306,7 @@ $('#diag').onclick=async function(){
     if(d.omc_version) log('  omc 버전      '+d.omc_version);
     if(!d.omc_available){
       log('  which omc     '+(d.which_omc||'없음'));
+      log('  OMC_BIN       '+(d.env_OMC_BIN||'미설정')+'   (server.py 와 동일 변수)');
       log('  OMC_PATH      '+(d.env_OMC_PATH||'미설정'));
       log('  OPENMODELICAHOME '+(d.env_OPENMODELICAHOME||'미설정'));
       log('  PATH 앞부분   '+(d.path_head||[]).join(' : '));
