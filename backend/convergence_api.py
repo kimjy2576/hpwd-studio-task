@@ -141,19 +141,55 @@ RECIPES: Dict[str, Dict[str, Any]] = {
     },
 }
 
-def load_lines() -> str:
-    """모델 로드 스크립트를 현재 저장소 경로로 생성한다.
+def _fs(p: str) -> str:
+    """omc .mos 문자열은 '/' 만 안전하다 (Windows 백슬래시 문제).
 
-    2026-07-30: verify/load_all.mos 는 절대경로가 하드코딩돼 있어
-      (loadFile("/home/claude/repo/modelica/...")) 다른 환경에서 전부 실패한다.
-      그래서 0.8초 만에 '빌드 실패' 가 떴다.
-      여기서 modelica/*.mo 를 직접 훑어 경로를 만든다.
+    modelica/bridge.py 와 동일한 규약. 이걸 안 하면 Windows 에서
+    loadFile 이 전부 false 를 돌려주고, 모델이 하나도 로드되지 않은 채
+    simulate 가 즉시 실패한다.
     """
-    md = REPO / "modelica"
-    files = sorted(md.glob("*.mo")) if md.exists() else []
+    return str(p).replace("\\", "/")
+
+
+def _paths() -> Dict[str, Any]:
+    """모델 경로를 bridge 와 동일하게 결정한다.
+
+    2026-07-30: Cycle Runner(bridge) 는 되는데 수렴 테스트만 실패했다.
+      원인은 두 가지였다.
+        1) 경로 구분자 — bridge 는 _fs() 로 '/' 로 바꾼다
+        2) HelmholtzMedia — bridge 는 HELMHOLTZ_PATH 를 먼저 로드한다
+      bridge 의 상수를 그대로 import 해 쓰는 것이 가장 안전하다.
+      import 가 실패하면 저장소 상대경로로 추정한다.
+    """
+    md: Optional[str] = None
+    hm: Optional[str] = None
+    src = "bridge"
+    try:
+        from modelica.bridge import MODELICA_DIR as _MD, HELMHOLTZ_PATH as _HP
+        md, hm = str(_MD), str(_HP)
+    except Exception:
+        src = "추정"
+        md = os.environ.get("HPWD_MODELICA_DIR") or str(REPO / "modelica")
+        hm = os.environ.get("HELMHOLTZ_PATH")
+    return {"modelica_dir": md, "helmholtz": hm, "source": src}
+
+
+def load_lines() -> str:
+    """모델 로드 스크립트를 생성한다.
+
+    verify/load_all.mos 는 절대경로가 하드코딩돼 있어(이 컨테이너 경로)
+    다른 환경에서 전부 실패한다. 그래서 직접 만든다.
+    bridge 와 같은 규약: 경로는 '/', HelmholtzMedia 를 먼저 로드.
+    """
+    pp = _paths()
+    md = Path(pp["modelica_dir"])
+    hm = pp["helmholtz"]
     out = ["loadModel(Modelica); getErrorString();"]
+    if hm and Path(hm).exists():
+        out.append(f'loadFile("{_fs(hm)}"); getErrorString();')
+    files = sorted(md.glob("*.mo")) if md.exists() else []
     for f in files:
-        out.append(f'loadFile("{f.as_posix()}"); getErrorString();')
+        out.append(f'loadFile("{_fs(f)}"); getErrorString();')
     return "\n".join(out)
 
 
@@ -337,11 +373,11 @@ def run_omc(rid: str, rec: Dict[str, Any], opts: Dict[str, Any],
         return RunResp(id=rid, status="bad", metric="—",
                        note=f"작업 디렉터리를 만들지 못했습니다: {work} "
                             f"({type(e).__name__}: {e})")
-    md = REPO / "modelica"
+    md = Path(_paths()["modelica_dir"])
     if not md.exists() or not any(md.glob("*.mo")):
         return RunResp(id=rid, status="bad", metric="—",
                        note=f"모델 파일이 없습니다: {md} "
-                            "— 저장소 위치를 확인하십시오.")
+                            "— HPWD_MODELICA_DIR 을 확인하십시오.")
 
     flags = []
     if jac == "symbolic":
@@ -534,6 +570,7 @@ def recipes(smoke: bool = False) -> Dict[str, Any]:
         "env_OPENMODELICAHOME": os.environ.get("OPENMODELICAHOME"),
         "path_head": safe(lambda: (os.environ.get("PATH") or "").split(os.pathsep)[:6]),
         "repo": str(REPO),
+        "paths": safe(_paths, {}),
         "cwd": safe(os.getcwd),
         "loader": "내부 생성 (verify/load_all.mos 미사용)",
         "loader_exists": safe(lambda: md.exists()),

@@ -365,6 +365,9 @@ $('#diag').onclick=async function(){
     log('  실행 가능 조합 '+d.ids.length+'개');
     log('── 경로 ──');
     log('  저장소       '+d.repo);
+    const pp=d.paths||{};
+    log('  모델 경로     '+(pp.modelica_dir||'?')+'   (출처 '+(pp.source||'?')+')');
+    log('  HelmholtzMedia '+(pp.helmholtz||'미설정'));
     log('  현재 디렉터리 '+d.cwd);
     log('  모델 로더     '+(d.loader_exists?'있음':'없음  ← 문제')+'  '+d.loader);
     log('  modelica/    '+(d.modelica_dir_exists?'있음':'없음  ← 문제'));
