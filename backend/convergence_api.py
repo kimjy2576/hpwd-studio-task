@@ -49,10 +49,12 @@ RECIPES: Dict[str, Dict[str, Any]] = {
     "py-ss-part": {
         "kind": "py", "fn": "steady_partial",
         "desc": "부분 커플드 정상해 (공기 BC 고정, SH 구속)",
+        "opts": {"charge": 100, "sh": 6, "procs": 1},
     },
     "py-ss-full": {
         "kind": "py", "fn": "steady_full",
         "desc": "완전 커플드 정상해 (드럼 루프 + SH 구속)",
+        "opts": {"charge": 100, "sh": 6, "max_outer": 12, "procs": 1},
     },
     "py-ss-full-broy": {
         "kind": "py", "fn": "steady_full", "extra": {"use_broyden": True},
@@ -63,91 +65,81 @@ RECIPES: Dict[str, Dict[str, Any]] = {
         "desc": "부분 커플드 + 테이블 물성 (개선 전 기준)",
     },
     # ── Python 동적 ──
-    "py-dyn-60":    {"kind": "py", "fn": "dynamic", "extra": {"dt": 60.0}},
-    "py-dyn-20":    {"kind": "py", "fn": "dynamic", "extra": {"dt": 20.0}},
+    "py-dyn-60": {"kind": "py", "fn": "dynamic", "extra": {"dt": 60.0},
+        "opts": {"dt": 60, "stop": 300, "max_outer": 8, "sh": 6, "charge": 100}},
+    "py-dyn-20": {"kind": "py", "fn": "dynamic", "extra": {"dt": 20.0},
+        "opts": {"dt": 20, "stop": 300, "max_outer": 8, "sh": 6, "charge": 100}},
     "py-dyn-pulse": {"kind": "py", "fn": "dynamic",
-                     "extra": {"dt": 20.0, "use_pulse": True}},
+        "extra": {"dt": 20.0, "use_pulse": True},
+        "opts": {"dt": 20, "stop": 300, "pulse": "켬", "max_outer": 8, "sh": 6}},
     # ── Modelica ──
-    "omc-cond-tab-num": {"kind": "omc", "model": "CmpParts.Cond_L3",
-                         "solver": "ida", "jac": "numeric"},
-    "omc-cond-tab-sym": {"kind": "omc", "model": "CmpParts.Cond_L3",
-                         "solver": "ida", "jac": "symbolic"},
-    "omc-cond-ana-num": {"kind": "omc", "model": "CmpParts.Cond_L3",
-                         "solver": "ida", "jac": "numeric"},
-    "omc-cond-ana-sym": {"kind": "omc", "model": "CmpParts.Cond_L3",
-                         "solver": "ida", "jac": "symbolic"},
-    "omc-ss-tab-num":   {"kind": "omc", "model": "HPWDcycle.Cycle_L3_ssinit",
-                         "solver": "gbode", "jac": "numeric"},
-    "omc-ss-ana-num":   {"kind": "omc", "model": "HPWDcycle.Cycle_L3_ssinit",
-                         "solver": "gbode", "jac": "numeric"},
-    "omc-ss-ana-sym":   {"kind": "omc", "model": "HPWDcycle.Cycle_L3_ssinit",
-                         "solver": "gbode", "jac": "symbolic"},
-    "omc-cs-tab-num-ida": {"kind": "omc", "model": "HPWDcycle.Cycle_L3_coldstart_charge",
-                           "solver": "ida", "jac": "numeric"},
-    "omc-cs-ana-num-ida": {"kind": "omc", "model": "HPWDcycle.Cycle_L3_coldstart_charge",
-                           "solver": "ida", "jac": "numeric"},
-    "omc-cs-ana-num-das": {"kind": "omc", "model": "HPWDcycle.Cycle_L3_coldstart_charge",
-                           "solver": "dassl", "jac": "numeric"},
-    "omc-cs-ana-sym-das": {"kind": "omc", "model": "HPWDcycle.Cycle_L3_coldstart_charge",
-                           "solver": "dassl", "jac": "symbolic"},
-    "omc-cs-ana-num-gbo": {"kind": "omc", "model": "HPWDcycle.Cycle_L3_coldstart_charge",
-                           "solver": "gbode", "jac": "numeric"},
-    "omc-cs-pulse":       {"kind": "omc", "model": "HPWDcycle.Cycle_L3_coldstart_charge",
-                           "solver": "dassl", "jac": "symbolic"},
+    # opts: 그 조합을 돌릴 때 내가 실제로 쓴 설정. UI 가 행을 누르면 이 값을 채운다.
+    # override: 모델 파라미터 직접 덮어쓰기 (simflags -override)
+    #
+    # ※ 물성(테이블/해석형)은 소스가 정한다 — override 로 못 바꾼다.
+    #   현재 main 은 해석형이다. 테이블 조합을 돌리려면
+    #   git checkout numeric-jac-ok -- modelica/  로 되돌려야 한다.
+    #   requires 필드에 그 사실을 적어 UI 가 안내한다.
+    "omc-cond-tab-num": {
+        "kind": "omc", "model": "CmpParts.Cond_L3", "solver": "ida", "jac": "numeric",
+        "opts": {"solver": "ida", "tol": "1e-3", "stop": 500, "threads": 1},
+        "requires": "테이블 물성 — git checkout numeric-jac-ok -- modelica/",
+    },
+    "omc-cond-tab-sym": {
+        "kind": "omc", "model": "CmpParts.Cond_L3", "solver": "ida", "jac": "symbolic",
+        "opts": {"solver": "ida", "tol": "1e-3", "stop": 500, "threads": 1},
+        "requires": "테이블 물성 — 빌드가 406 MB 로 폭발한다(재현 확인용)",
+    },
+    "omc-cond-ana-num": {
+        "kind": "omc", "model": "CmpParts.Cond_L3", "solver": "ida", "jac": "numeric",
+        "opts": {"solver": "ida", "tol": "1e-3", "stop": 500, "threads": 1},
+    },
+    "omc-cond-ana-sym": {
+        "kind": "omc", "model": "CmpParts.Cond_L3", "solver": "ida", "jac": "symbolic",
+        "opts": {"solver": "ida", "tol": "1e-3", "stop": 500, "threads": 1},
+    },
+    "omc-ss-tab-num": {
+        "kind": "omc", "model": "HPWDcycle.Cycle_L3_ssinit", "solver": "gbode", "jac": "numeric",
+        "opts": {"solver": "gbode", "tol": "1e-4", "stop": 10, "nseg": 2, "threads": 1},
+        "requires": "테이블 물성. 정상해는 ssinit-ok 이후 깨진 상태다",
+    },
+    "omc-ss-ana-num": {
+        "kind": "omc", "model": "HPWDcycle.Cycle_L3_ssinit", "solver": "gbode", "jac": "numeric",
+        "opts": {"solver": "gbode", "tol": "1e-4", "stop": 10, "nseg": 2, "threads": 1},
+    },
+    "omc-ss-ana-sym": {
+        "kind": "omc", "model": "HPWDcycle.Cycle_L3_ssinit", "solver": "gbode", "jac": "symbolic",
+        "opts": {"solver": "gbode", "tol": "1e-4", "stop": 10, "nseg": 2, "threads": 1},
+    },
+    "omc-cs-tab-num-ida": {
+        "kind": "omc", "model": "HPWDcycle.Cycle_L3_coldstart_charge", "solver": "ida", "jac": "numeric",
+        "opts": {"solver": "ida", "tol": "1e-2", "stop": 300, "nseg": 3, "threads": 1},
+        "override": {"R290Tab.DHB": 100.0},
+        "requires": "테이블 물성 · DHB=100 — 이 조합이 93초 완주 실적이다",
+    },
+    "omc-cs-ana-num-ida": {
+        "kind": "omc", "model": "HPWDcycle.Cycle_L3_coldstart_charge", "solver": "ida", "jac": "numeric",
+        "opts": {"solver": "ida", "tol": "1e-3", "stop": 120, "nseg": 2, "threads": 1},
+    },
+    "omc-cs-ana-num-das": {
+        "kind": "omc", "model": "HPWDcycle.Cycle_L3_coldstart_charge", "solver": "dassl", "jac": "numeric",
+        "opts": {"solver": "dassl", "tol": "1e-3", "stop": 20, "nseg": 2, "threads": 1},
+    },
+    "omc-cs-ana-sym-das": {
+        "kind": "omc", "model": "HPWDcycle.Cycle_L3_coldstart_charge", "solver": "dassl", "jac": "symbolic",
+        "opts": {"solver": "dassl", "tol": "1e-3", "stop": 20, "nseg": 2, "threads": 1},
+    },
+    "omc-cs-ana-num-gbo": {
+        "kind": "omc", "model": "HPWDcycle.Cycle_L3_coldstart_charge", "solver": "gbode", "jac": "numeric",
+        "opts": {"solver": "gbode", "tol": "1e-3", "stop": 20, "nseg": 2, "threads": 1},
+    },
+    "omc-cs-pulse": {
+        "kind": "omc", "model": "HPWDcycle.Cycle_L3_coldstart_charge", "solver": "dassl", "jac": "symbolic",
+        "opts": {"solver": "dassl", "tol": "1e-3", "stop": 60, "nseg": 2, "threads": 1},
+        "override": {"ctrl.use_pulse": "true", "ctrl.n_max": 500,
+                     "ctrl.pps_max": 30.0, "ctrl.T_ctrl": 1.0, "ctrl.deadband": 0.5},
+    },
 }
-
-def load_lines() -> str:
-    """모델 로드 스크립트를 현재 저장소 경로로 생성한다.
-
-    2026-07-30: verify/load_all.mos 는 절대경로가 하드코딩돼 있어
-      (loadFile("/home/claude/repo/modelica/...")) 다른 환경에서 전부 실패한다.
-      그래서 0.8초 만에 '빌드 실패' 가 떴다.
-      여기서 modelica/*.mo 를 직접 훑어 경로를 만든다.
-    """
-    md = REPO / "modelica"
-    files = sorted(md.glob("*.mo")) if md.exists() else []
-    out = ["loadModel(Modelica); getErrorString();"]
-    for f in files:
-        out.append(f'loadFile("{f.as_posix()}"); getErrorString();')
-    return "\n".join(out)
-
-
-def find_omc() -> Optional[str]:
-    """omc 실행 파일을 찾는다.
-
-    2026-07-30: shutil.which('omc') 만으로는 못 찾는 환경이 있다.
-      - 서버가 PATH 를 물려받지 못한 경우(systemd, IDE 터미널 등)
-      - Windows/WSL2 에서 omc.exe 로 설치된 경우
-      - OpenModelica 기본 설치 경로에만 있는 경우
-    환경변수 OMC_BIN (server.py 와 동일) 또는 OMC_PATH 로 지정 가능.
-    """
-    # 2026-07-30: 기존 server.py 는 $OMC_BIN 을 쓴다. 같은 이름을 우선한다.
-    #   (OMC_PATH 로 잘못 찾아 '설치 필요' 로 오진했던 원인)
-    for var in ("OMC_BIN", "OMC_PATH"):
-        env = os.environ.get(var)
-        if env and Path(env).is_file():
-            return env
-    for name in ("omc", "omc.exe"):
-        w = shutil.which(name)
-        if w:
-            return w
-    cands = [
-        "/usr/bin/omc", "/usr/local/bin/omc", "/opt/openmodelica/bin/omc",
-        "/C:/Program Files/OpenModelica/bin/omc.exe",
-        "/mnt/c/Program Files/OpenModelica/bin/omc.exe",
-    ]
-    for c in cands:
-        if Path(c).exists():
-            return c
-    # OPENMODELICAHOME 이 있으면 그 아래 bin
-    home = os.environ.get("OPENMODELICAHOME")
-    if home:
-        for name in ("omc", "omc.exe"):
-            c = Path(home) / "bin" / name
-            if c.exists():
-                return str(c)
-    return None
-
 
 GEOM = {
     "V_n1": 1.832e-5, "V_n2": 9.99e-6, "V_n3": 3.66e-6,
@@ -393,7 +385,8 @@ def run(req: RunReq) -> RunResp:
         if rec["kind"] == "py":
             res = run_py(req.id, rec, req.opts)
         else:
-            res = run_omc(req.id, rec, req.opts, req.override)
+            ov = {**(rec.get("override") or {}), **req.override}
+            res = run_omc(req.id, rec, req.opts, ov)
     except Exception as e:  # 실행 실패를 정직하게 돌려준다
         res = RunResp(id=req.id, status="bad", metric="예외",
                       note=f"{type(e).__name__}: {e}"[:120])
@@ -453,6 +446,12 @@ def recipes() -> Dict[str, Any]:
             ver = f"실행하지 못했습니다: {type(e).__name__}"
     return {
         "ids": sorted(RECIPES),
+        "presets": {k: {"opts": v.get("opts", {}),
+                        "override": v.get("override", {}),
+                        "requires": v.get("requires"),
+                        "model": v.get("model"),
+                        "desc": v.get("desc")}
+                    for k, v in RECIPES.items()},
         "omc_available": omc is not None,
         "omc_path": omc,
         "omc_version": ver,

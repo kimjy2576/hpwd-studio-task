@@ -246,7 +246,7 @@ const OPTS = {
   sh:{label:'SH 목표 [K]',type:'number',val:6,min:0,max:20},
   pulse:{label:'EEV 펄스',type:'select',val:'끔',opts:['끔','켬']},
 };
-let sel=null;
+let sel=null, PRESETS={};
 const $=s=>document.querySelector(s);
 const fmt=(v,d=3)=>v==null?'—':(typeof v==='number'?String(v.toFixed(d)).replace(/\.?0+$/,''):v);
 function badge(s){const m={ok:['통과','ok'],warn:['부분','warn'],bad:['실패','bad'],none:['미검증','none']};
@@ -278,7 +278,17 @@ function renderSide(){
     ['솔버',r.solver],['해석',r.kind],
     ['최근 시간',r.t==null?'—':fmt(r.t,r.t<10?3:1)+' s'],['성능',r.metric],['판정',badge(r.status)]]
     .map(a=>'<div class="kvr"><span>'+a[0]+'</span><b>'+a[1]+'</b></div>').join('');
-  $('#opts').innerHTML=Object.keys(OPTS).map(function(k){
+  // 조합별 프리셋을 실행 설정에 자동 반영 (내가 그 조합을 돌릴 때 쓴 값)
+  const ps=PRESETS[sel]||{};
+  Object.keys(ps.opts||{}).forEach(function(k){
+    if(OPTS[k]!=null) OPTS[k].val=ps.opts[k];});
+  const req=ps.requires, ov=ps.override||{};
+  const extra=(req?'<div class="pres" style="margin:0 0 10px;border-left:2px solid var(--warn)">'
+      +'<b style="color:var(--warn)">준비 필요</b> · '+req+'</div>':'')
+    +(Object.keys(ov).length?'<div class="pres" style="margin:0 0 10px">'
+      +'<b>모델 파라미터</b> '+Object.keys(ov).map(k=>k+'='+ov[k]).join('  ')+'</div>':'')
+    +(ps.model?'<div class="pres" style="margin:0 0 10px"><b>모델</b> '+ps.model+'</div>':'');
+  $('#opts').innerHTML=extra+Object.keys(OPTS).map(function(k){
     const o=OPTS[k]; if(o.only&&o.only!==r.eng) return '';
     const ctl=o.type==='select'
       ? '<select data-k="'+k+'">'+o.opts.map(v=>'<option'+(v==o.val?' selected':'')+'>'+v+'</option>').join('')+'</select>'
@@ -448,7 +458,19 @@ $('#planall').onclick=async function(){
   }
 };
 
-renderMatrix(); renderSide(); loadPlan();
+async function loadPresets(){
+  try{
+    const res=await fetch('/api/convergence/recipes');
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    const d=await res.json();
+    PRESETS=d.presets||{};
+    log('조합 설정 '+Object.keys(PRESETS).length+'건을 불러왔습니다.');
+    if(sel) renderSide();
+  }catch(e){ log('조합 설정을 불러오지 못했습니다 — '+e.message);
+    log('  설정을 직접 입력하십시오.'); }
+}
+
+renderMatrix(); renderSide(); loadPlan(); loadPresets();
 </script>
 </body>
 </html>
