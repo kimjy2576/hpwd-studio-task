@@ -252,6 +252,7 @@ const OPTS = {
   charge:{label:'충전량 [g]',type:'number',val:100,min:50,max:200},
   sh:{label:'SH 목표 [K]',type:'number',val:6,min:0,max:20},
   pulse:{label:'EEV 펄스',type:'select',val:'끔',opts:['끔','켬']},
+  max_outer:{label:'외부 반복 상한',type:'number',val:8,min:1,max:40,hint:'공기 연성'},
 };
 let sel=null, PRESETS={};
 const $=s=>document.querySelector(s);
@@ -428,6 +429,7 @@ function renderPlan(){
   if(!PLAN.length){ el.innerHTML='<div class="pres">계획을 불러오지 못했습니다. '
     +'백엔드에 GET /api/convergence/plan 이 필요합니다.</div>'; return; }
   el.innerHTML=PLAN.map(function(it){
+   try{
     const st=it.state||'pending';
     const dep=(it.depends||[]).length? ' · 선행 '+it.depends.join(','):'';
     const opts=Object.keys(it.opts||{}).map(k=>k+'='+it.opts[k]).join('  ');
@@ -451,7 +453,8 @@ function renderPlan(){
       +(it.prev?'<dt>직전</dt><dd style="color:var(--ink-3)">'+it.prev+'</dd>':'')
       +'</dl>'
       +'<div class="popts" id="po-'+it.id+'">'+POPT.map(function(k){
-          const o=OPTS[k]; if(o.only&&o.only!==it.engine) return '';
+          const o=OPTS[k]; if(!o) return '';   // 정의 없는 키는 건너뛴다
+          if(o.only&&o.only!==it.engine) return '';
           const v=(PO[it.id]&&PO[it.id][k]!=null)?PO[it.id][k]
                  :(it.opts&&it.opts[k]!=null?it.opts[k]:o.val);
           const ctl=o.type==='select'
@@ -465,6 +468,13 @@ function renderPlan(){
          +(r.t==null?'—':r.t+' s')+' · '+r.metric+(r.note?' · '+r.note:'')
          +'<span style="color:var(--ink-3)">  '+(r.at||'')+'</span></div>':'')
       +'</div></div>';
+   }catch(e){
+     return '<div class="pitem failed"><div class="pbar"></div><div class="pbody">'
+       +'<div class="prow1"><span class="pid">'+(it.id||'?')+'</span>'
+       +'<span class="ptitle">'+(it.title||'항목')+'</span></div>'
+       +'<div class="pres">이 항목을 표시하지 못했습니다 — '+e.message+'</div>'
+       +'</div></div>';
+   }
   }).join('');
   el.querySelectorAll('[data-run]').forEach(function(b){
     b.onclick=function(){runPlan(b.dataset.run);};});
