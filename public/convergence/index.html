@@ -353,6 +353,14 @@ $('#diag').onclick=async function(){
       log('  → 서버를 띄울 때 OMC_PATH 로 실행 파일 경로를 지정하십시오.');
     }
     log('  실행 가능 조합 '+d.ids.length+'개');
+    log('── 경로 ──');
+    log('  저장소       '+d.repo);
+    log('  현재 디렉터리 '+d.cwd);
+    log('  모델 로더     '+(d.loader_exists?'있음':'없음  ← 문제')+'  '+d.loader);
+    log('  modelica/    '+(d.modelica_dir_exists?'있음':'없음  ← 문제'));
+    log('  작업 디렉터리 '+(d.work_writable?'쓰기 가능':'쓰기 불가  ← 문제')+'  '+d.work_dir);
+    if(!d.loader_exists||!d.modelica_dir_exists||!d.work_writable)
+      log('  → Modelica 실행이 즉시 실패하는 원인입니다.');
   }catch(e){ log('환경을 확인하지 못했습니다 — '+e.message); }
 };
 

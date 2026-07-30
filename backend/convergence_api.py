@@ -274,7 +274,17 @@ def run_omc(rid: str, rec: Dict[str, Any], opts: Dict[str, Any],
     stop = _f(opts, "stop", 120.0)
     threads = int(_f(opts, "threads", 1))
     work = BACKEND / "_omc_work" / rid
-    work.mkdir(parents=True, exist_ok=True)
+    try:
+        work.mkdir(parents=True, exist_ok=True)
+    except Exception as e:
+        return RunResp(id=rid, status="bad", metric="—",
+                       note=f"작업 디렉터리를 만들지 못했습니다: {work} "
+                            f"({type(e).__name__}: {e})")
+    loader = REPO / "verify" / "load_all.mos"
+    if not loader.exists():
+        return RunResp(id=rid, status="bad", metric="—",
+                       note=f"모델 로더가 없습니다: {loader} "
+                            "— 저장소 루트에서 서버를 띄웠는지 확인하십시오.")
 
     flags = []
     if jac == "symbolic":
@@ -303,14 +313,23 @@ def run_omc(rid: str, rec: Dict[str, Any], opts: Dict[str, Any],
 
     exe = work / model
     csv = work / f"{model}_res.csv"
+    (work / "omc.log").write_text(out, encoding="utf-8", errors="replace")
     if "Failed to build" in out or not exe.exists():
+        # 2026-07-30: 1초 만에 '빌드 안됨' 이 뜨는 경우가 있어 원인을 좁힌다.
+        #   rc!=0 이면 omc 가 실행 자체를 못 한 것(경로·권한·라이브러리)
+        #   rc==0 인데 실패면 모델 오류
         err = ""
         for line in out.splitlines():
-            if "Error" in line or "error:" in line:
-                err = line.strip()[:90]
+            if "Error" in line or "error:" in line or "not found" in line:
+                err = line.strip()[:100]
                 break
-        return RunResp(id=rid, status="bad", t=round(w, 1), metric="빌드 실패",
-                       note=err or "빌드 로그를 확인하십시오.")
+        if w < 2.0 and not out.strip():
+            err = (f"omc 가 출력 없이 즉시 종료했습니다 (rc={p.returncode}, {w:.2f}s). "
+                   f"omc={omc} · cwd={work}")
+        elif w < 2.0:
+            err = f"즉시 실패 (rc={p.returncode}) — {err or out.strip()[:80]}"
+        return RunResp(id=rid, status="bad", t=round(w, 2), metric="빌드 실패",
+                       note=(err or "원인 불명") + f" · 로그 {work / 'omc.log'}")
 
     # 결과 판독
     if not csv.exists():
@@ -399,6 +418,14 @@ def recipes() -> Dict[str, Any]:
         "env_OMC_PATH": os.environ.get("OMC_PATH"),
         "env_OPENMODELICAHOME": os.environ.get("OPENMODELICAHOME"),
         "path_head": (os.environ.get("PATH") or "").split(os.pathsep)[:6],
+        # 2026-07-30: '1초 만에 빌드 안됨' 진단용 경로 점검
+        "repo": str(REPO),
+        "loader": str(REPO / "verify" / "load_all.mos"),
+        "loader_exists": (REPO / "verify" / "load_all.mos").exists(),
+        "modelica_dir_exists": (REPO / "modelica").exists(),
+        "work_dir": str(BACKEND / "_omc_work"),
+        "work_writable": os.access(BACKEND, os.W_OK),
+        "cwd": os.getcwd(),
     }
 
 
