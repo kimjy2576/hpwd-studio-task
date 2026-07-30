@@ -48,6 +48,27 @@ body{
 }
 .cond b{color:var(--ink); font-weight:500}
 .spacer{flex:1}
+.switch{position:relative}
+.sbtn{
+  font-family:var(--mono); font-size:11.5px; color:var(--ink-2);
+  background:var(--panel-2); border:1px solid var(--line); border-radius:6px;
+  padding:6px 11px; cursor:pointer;
+}
+.sbtn:hover{color:var(--ink); border-color:var(--accent)}
+.smenu{
+  display:none; position:absolute; top:calc(100% + 6px); left:0; z-index:50;
+  background:var(--panel); border:1px solid var(--line); border-radius:9px;
+  min-width:232px; padding:5px; box-shadow:0 12px 32px rgba(0,0,0,.45);
+}
+.smenu.open{display:block}
+.smenu a{
+  display:block; padding:8px 10px; border-radius:6px;
+  color:var(--ink-2); text-decoration:none; font-size:12.5px;
+}
+.smenu a em{display:block; font-style:normal; font-size:10.5px; color:var(--ink-3); margin-top:1px}
+.smenu a:hover{background:var(--panel-2); color:var(--ink)}
+.smenu a.cur{color:var(--accent)}
+.smenu a.cur em{color:var(--ink-3)}
 .btn{
   font-family:var(--mono); font-size:11.5px;
   background:var(--panel-2); color:var(--ink-2);
@@ -144,6 +165,18 @@ svg{display:block; width:100%; overflow:visible}
 <body>
 
 <div class="top">
+  <div class="switch">
+    <button class="sbtn" id="sw">■ 수렴 테스트 ▾</button>
+    <div class="smenu" id="smenu">
+      <a href="/">HPWD Studio<em>시뮬 캔버스</em></a>
+      <a href="/cycle-runner/">Cycle Runner<em>사이클 조합·실행</em></a>
+      <a href="/component-studio/">Component Studio<em>컴포넌트 작성</em></a>
+      <a href="/calibration-studio/">Calibration Studio<em>Calibration &amp; Validation</em></a>
+      <a href="/on-design-studio/">On-Design Studio<em>On-design 모델 설계</em></a>
+      <a href="/model-docs/">Model Docs<em>수학적 모델링 문서</em></a>
+      <a class="cur" href="/convergence/">수렴 테스트<em>과도·정상 수렴 확인</em></a>
+    </div>
+  </div>
   <h1>수렴 테스트</h1>
   <div class="cond" id="cond"></div>
   <div class="spacer"></div>
@@ -393,6 +426,10 @@ function parseInto(name, text){
   document.querySelectorAll('[data-src]').forEach(x=>
     x.classList.toggle('on', x.dataset.src===src));
 }
+
+const sw=document.getElementById('sw'), sm=document.getElementById('smenu');
+sw.onclick=e=>{ e.stopPropagation(); sm.classList.toggle('open'); };
+document.addEventListener('click',()=>sm.classList.remove('open'));
 
 render();
 </script>
