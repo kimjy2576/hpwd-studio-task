@@ -71,6 +71,19 @@ except Exception as e:
     import traceback
     traceback.print_exc()
 
+# ─── 수렴 테스트 router 등록 (/api/convergence/*) ───────────────────
+# 조합 매트릭스(public/convergence/) 가 쓰는 실행·기록 API.
+# Python 은 직접 호출, Modelica 는 omc 빌드+실행. 기록은 JSON 에 누적.
+_conv_status = {'mounted': False, 'error': None}
+try:
+    from convergence_api import convergence_router
+    app.include_router(convergence_router)
+    _conv_status['mounted'] = True
+    print("[OK]   Convergence router mounted at /api/convergence/*")
+except Exception as e:
+    _conv_status['error'] = f"{type(e).__name__}: {e}"
+    print(f"[WARN] Convergence router 마운트 실패: {_conv_status['error']}")
+
 # ─── Modelica 브릿지 (canvas→.mo→omc) — 로컬 dev 전용 ────────────────
 # import는 omc 불필요(안전). 실제 실행 시에만 omc 필요 → 배포본(omc 없음)은
 # /compute_modelica 호출 시 친절한 에러만 반환하고 /compute(Python)는 정상 동작.
