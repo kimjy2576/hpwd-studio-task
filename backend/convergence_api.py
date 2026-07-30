@@ -471,14 +471,24 @@ def _smoke(omc: Optional[str]) -> Dict[str, Any]:
         return {"ok": False, "reason": f"omc 를 실행하지 못했습니다: "
                                        f"{type(e).__name__}: {e}"}
     out = ((p.stdout or "") + (p.stderr or "")).strip()
-    err = [l.strip()[:120] for l in out.splitlines()
-           if "Error" in l or "error" in l or "not found" in l][:3]
-    return {"ok": p.returncode == 0 and not err,
+    err = [l.strip()[:140] for l in out.splitlines()
+           if "Error" in l or "error" in l or "not found" in l][:5]
+    # 2026-07-30: loadModel(Modelica) 은 true, loadFile 은 파일별로 true/false 를
+    #   찍는다. false 가 하나라도 있으면 그 파일을 못 읽은 것이다.
+    trues = out.count("true")
+    falses = out.count("false")
+    md = REPO / "modelica"
+    n_mo = len(list(md.glob("*.mo"))) if md.exists() else 0
+    return {"ok": p.returncode == 0 and not err and falses == 0,
             "rc": p.returncode,
             "stdout_len": len(p.stdout or ""),
             "stderr_len": len(p.stderr or ""),
+            "loaded_true": trues,
+            "loaded_false": falses,
+            "expect": n_mo + 1,
             "errors": err,
-            "head": out[:300],
+            "head": out[:800],
+            "mos": (work / "s.mos").read_text(encoding="utf-8")[:300],
             "cwd": str(work)}
 
 

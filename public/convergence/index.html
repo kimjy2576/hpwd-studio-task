@@ -346,7 +346,7 @@ $('#reload').onclick=async function(){
 };
 $('#diag').onclick=async function(){
   try{
-    const res=await fetch('/api/convergence/recipes');
+    const res=await fetch('/api/convergence/recipes?smoke=1');
     if(!res.ok) throw new Error('HTTP '+res.status);
     const d=await res.json();
     log('── 실행 환경 ──');
@@ -377,8 +377,14 @@ $('#diag').onclick=async function(){
     if(sm2.reason) log('  이유         '+sm2.reason);
     if(sm2.rc!=null) log('  종료코드     '+sm2.rc
       +'   stdout '+sm2.stdout_len+'B / stderr '+sm2.stderr_len+'B');
+    if(sm2.loaded_true!=null)
+      log('  모델 로드     성공 '+sm2.loaded_true+' / 실패 '+sm2.loaded_false
+        +'   (기대 '+sm2.expect+')'+(sm2.loaded_false>0?'  ← 못 읽은 파일이 있습니다':''));
     (sm2.errors||[]).forEach(function(e){ log('  오류         '+e); });
-    if(sm2.head) log('  출력 앞부분  '+String(sm2.head).replace(/\n/g,' | ').slice(0,220));
+    if(sm2.mos) log('  스크립트 앞부분\n               '
+      +String(sm2.mos).replace(/\n/g,'\n               '));
+    if(sm2.cwd) log('  작업 경로    '+sm2.cwd);
+    if(sm2.head) log('  출력 전체    '+String(sm2.head).replace(/\n/g,'\n               '));
     if(sm2.rc===0 && sm2.stdout_len===0)
       log('  → omc 가 출력 없이 끝났습니다. 실행 파일이 껍데기(래퍼)일 수 있습니다.');
   }catch(e){ log('환경을 확인하지 못했습니다 — '+e.message); }
