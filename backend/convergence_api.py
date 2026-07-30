@@ -380,6 +380,10 @@ def run_omc(rid: str, rec: Dict[str, Any], opts: Dict[str, Any],
                        note=f"모델 파일이 없습니다: {md} "
                             "— HPWD_MODELICA_DIR 을 확인하십시오.")
 
+    cyc = "Cycle" in model
+    vfilter = ("(M_total|Pc_bar|Pe_bar|SH|comp\\.N|evap\\.x_out|ctrl\\.n_act|vol4\\.M)"
+               if cyc else "(cond\\.Q_total|evap\\.Q_total|cond\\.M_tot|evap\\.M_tot)")
+
     flags = []
     if jac == "symbolic":
         flags.append('setCommandLineOptions("--generateDynamicJacobian=symbolic");')
@@ -389,7 +393,10 @@ def run_omc(rid: str, rec: Dict[str, Any], opts: Dict[str, Any],
         f'method="{solver}", outputFormat="csv", '
         + (f'simflags="{" ".join(f"-override={k}={v}" for k, v in override.items())} '
            f'-jacobianThreads={threads}", ' if (override or threads > 1) else '')
-        + 'variableFilter="(M_total|Pc_bar|Pe_bar|SH|comp.N|evap.x_out|ctrl.n_act)");',
+        # 2026-07-30: 단품 모델에는 M_total·Pc_bar 가 없다.
+        #   존재하지 않는 변수만 지정하면 결과가 비어 판독이 실패한다.
+        #   사이클/단품을 구분해 필터를 준다.
+        + (f'variableFilter="{vfilter}");'),
         "getErrorString();",
     ])
     (work / "run.mos").write_text(mos, encoding="utf-8")
@@ -405,8 +412,15 @@ def run_omc(rid: str, rec: Dict[str, Any], opts: Dict[str, Any],
                        note="15분 안에 끝나지 않았습니다. 워크스테이션 CLI 를 쓰십시오.")
     w = time.time() - t0
 
-    exe = work / model
-    csv = work / f"{model}_res.csv"
+    # 2026-07-30: Windows 에서 omc 는 <model>.exe 를 만든다.
+    #   bridge.py 에도 '실행파일 탐색 (Windows)' 주석이 있는데 놓쳤다.
+    #   그래서 빌드가 성공했는데도 '빌드 실패' 로 판정했다
+    #   (omc.log 에 오류가 한 줄도 없는데 실패로 뜬 원인).
+    exe = next((c for c in (work / model, work / f"{model}.exe") if c.exists()),
+               work / model)
+    csv = next((c for c in (work / f"{model}_res.csv",
+                            work / f"{model}_res.mat") if c.exists()),
+               work / f"{model}_res.csv")
     (work / "omc.log").write_text(out, encoding="utf-8", errors="replace")
     if "Failed to build" in out or not exe.exists():
         # 2026-07-30: 1초 만에 '빌드 안됨' 이 뜨는 경우가 있어 원인을 좁힌다.
@@ -450,11 +464,18 @@ def run_omc(rid: str, rec: Dict[str, Any], opts: Dict[str, Any],
 
     t_end = data[-1][0]
     im = col("M_total")
+    iq = col("Q_total")
     drift = (max(abs(r[im] / 0.1 - 1) for r in data) * 100) if im else 0.0
     done = t_end >= stop * 0.98
     failed = "Integrator failed" in out
-    st = "ok" if (done and drift < 0.5) else ("warn" if t_end > stop * 0.1 else "bad")
-    metric = f"드리프트 {drift:.3f} %" if im else f"t={t_end:.2f}"
+    st = ("ok" if (done and (im is None or drift < 0.5))
+          else ("warn" if t_end > stop * 0.1 else "bad"))
+    if im is not None:
+        metric = f"드리프트 {drift:.3f} %"
+    elif iq is not None:
+        metric = f"Q={data[-1][iq]:.4f}"
+    else:
+        metric = f"t={t_end:.2f}"
     note = f"t={t_end:.2f} / {stop:.0f} s"
     if failed:
         note += " · 적분 실패"
