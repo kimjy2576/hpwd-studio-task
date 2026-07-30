@@ -96,6 +96,22 @@ RECIPES: Dict[str, Dict[str, Any]] = {
                            "solver": "dassl", "jac": "symbolic"},
 }
 
+def load_lines() -> str:
+    """모델 로드 스크립트를 현재 저장소 경로로 생성한다.
+
+    2026-07-30: verify/load_all.mos 는 절대경로가 하드코딩돼 있어
+      (loadFile("/home/claude/repo/modelica/...")) 다른 환경에서 전부 실패한다.
+      그래서 0.8초 만에 '빌드 실패' 가 떴다.
+      여기서 modelica/*.mo 를 직접 훑어 경로를 만든다.
+    """
+    md = REPO / "modelica"
+    files = sorted(md.glob("*.mo")) if md.exists() else []
+    out = ["loadModel(Modelica); getErrorString();"]
+    for f in files:
+        out.append(f'loadFile("{f.as_posix()}"); getErrorString();')
+    return "\n".join(out)
+
+
 def find_omc() -> Optional[str]:
     """omc 실행 파일을 찾는다.
 
@@ -280,17 +296,17 @@ def run_omc(rid: str, rec: Dict[str, Any], opts: Dict[str, Any],
         return RunResp(id=rid, status="bad", metric="—",
                        note=f"작업 디렉터리를 만들지 못했습니다: {work} "
                             f"({type(e).__name__}: {e})")
-    loader = REPO / "verify" / "load_all.mos"
-    if not loader.exists():
+    md = REPO / "modelica"
+    if not md.exists() or not any(md.glob("*.mo")):
         return RunResp(id=rid, status="bad", metric="—",
-                       note=f"모델 로더가 없습니다: {loader} "
-                            "— 저장소 루트에서 서버를 띄웠는지 확인하십시오.")
+                       note=f"모델 파일이 없습니다: {md} "
+                            "— 저장소 위치를 확인하십시오.")
 
     flags = []
     if jac == "symbolic":
         flags.append('setCommandLineOptions("--generateDynamicJacobian=symbolic");')
     mos = "\n".join(flags + [
-        f'runScript("{REPO}/verify/load_all.mos");',
+        load_lines(),
         f'simulate({model}, stopTime={stop}, tolerance={tol}, '
         f'method="{solver}", outputFormat="csv", '
         + (f'simflags="{" ".join(f"-override={k}={v}" for k, v in override.items())} '
@@ -403,9 +419,7 @@ def _smoke(omc: Optional[str]) -> Dict[str, Any]:
     work = BACKEND / "_omc_work" / "_smoke"
     try:
         work.mkdir(parents=True, exist_ok=True)
-        (work / "s.mos").write_text(
-            f'runScript("{REPO}/verify/load_all.mos");\n'
-            'getErrorString();\n', encoding="utf-8")
+        (work / "s.mos").write_text(load_lines() + "\n", encoding="utf-8")
     except Exception as e:
         return {"ok": False, "reason": f"작업 파일을 쓰지 못했습니다: {e}"}
     try:
@@ -450,8 +464,9 @@ def recipes() -> Dict[str, Any]:
         "path_head": (os.environ.get("PATH") or "").split(os.pathsep)[:6],
         # 2026-07-30: '1초 만에 빌드 안됨' 진단용 경로 점검
         "repo": str(REPO),
-        "loader": str(REPO / "verify" / "load_all.mos"),
-        "loader_exists": (REPO / "verify" / "load_all.mos").exists(),
+        "mo_count": len(list((REPO / "modelica").glob("*.mo"))) if (REPO / "modelica").exists() else 0,
+        "loader": "내부 생성 (verify/load_all.mos 미사용 — 절대경로 하드코딩 문제)",
+        "loader_exists": (REPO / "modelica").exists(),
         "modelica_dir_exists": (REPO / "modelica").exists(),
         "work_dir": str(BACKEND / "_omc_work"),
         "work_writable": os.access(BACKEND, os.W_OK),
