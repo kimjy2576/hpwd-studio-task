@@ -92,6 +92,39 @@ tbody tr:hover td{background:var(--panel)}
   max-height:150px;overflow-y:auto;white-space:pre-wrap;line-height:1.6}
 .log::-webkit-scrollbar{width:5px}
 .log::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px}
+/* ── 실행 계획 ── */
+.plan{margin-bottom:28px}
+.pitem{background:var(--panel);border:1px solid var(--line);border-radius:9px;
+  padding:0;margin-bottom:9px;display:grid;grid-template-columns:3px 1fr;overflow:hidden}
+.pitem .pbar{background:var(--none)}
+.pitem.done .pbar{background:var(--ok)}
+.pitem.failed .pbar{background:var(--bad)}
+.pitem.running .pbar{background:var(--accent)}
+.pbody{padding:12px 14px}
+.prow1{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.pid{font-family:var(--mono);font-size:10px;color:var(--accent);letter-spacing:.06em}
+.ptitle{font-size:13.5px;font-weight:600}
+.peng{font-family:var(--mono);font-size:10px;color:var(--ink-3);
+  border:1px solid var(--line-2);border-radius:3px;padding:1px 5px}
+.pact{margin-left:auto;display:flex;gap:6px;align-items:center}
+.pwhy{font-size:12px;color:var(--ink-2);margin-top:7px;line-height:1.55}
+.pmeta{display:grid;grid-template-columns:64px 1fr;gap:4px 10px;
+  font-size:11.5px;margin-top:9px;align-items:baseline}
+.pmeta dt{font-family:var(--mono);font-size:9.5px;letter-spacing:.07em;
+  color:var(--ink-3);text-transform:uppercase;padding-top:2px}
+.pmeta dd{color:var(--ink-2)}
+.pmeta dd code{font-family:var(--mono);font-size:11px;color:var(--ink);
+  background:var(--panel-2);padding:1px 5px;border-radius:3px}
+.pres{font-family:var(--mono);font-size:11px;margin-top:9px;padding:7px 9px;
+  background:var(--panel-2);border-radius:6px;color:var(--ink-2)}
+.pres b{color:var(--ink);font-weight:500}
+.psm{font-family:var(--mono);font-size:10.5px;padding:4px 10px;
+  background:var(--accent);color:#fff;border:none;border-radius:5px;cursor:pointer}
+.psm:hover{filter:brightness(1.12)}
+.psm:disabled{opacity:.4;cursor:not-allowed}
+.psm.ghost{background:var(--panel-2);color:var(--ink-2);border:1px solid var(--line)}
+.psm.ghost:hover{color:var(--ink);border-color:var(--accent)}
+
 @media(max-width:1100px){.wrap{grid-template-columns:1fr}}
 </style>
 </head>
@@ -117,6 +150,13 @@ tbody tr:hover td{background:var(--panel)}
 </div>
 <div class="wrap">
   <div class="main">
+    <div class="mhead">
+      <div class="mtitle">실행 계획</div>
+      <div class="msub">대화에서 정한 과제 · 눌러서 실행</div>
+      <div class="legend"><button class="psm ghost" id="planall">대기 항목 전부 실행</button></div>
+    </div>
+    <div class="plan" id="plan"></div>
+
     <div class="mhead">
       <div class="mtitle">조합 매트릭스</div>
       <div class="msub">행을 눌러 조건을 고르고 · 실행</div>
@@ -319,7 +359,78 @@ $('#diag').onclick=async function(){
 const sw=$('#sw'),sm=$('#smenu');
 sw.onclick=function(e){e.stopPropagation();sm.classList.toggle('open');};
 document.addEventListener('click',function(){sm.classList.remove('open');});
-renderMatrix(); renderSide();
+// ══ 실행 계획 ══
+let PLAN=[];
+function renderPlan(){
+  const el=$('#plan');
+  if(!PLAN.length){ el.innerHTML='<div class="pres">계획을 불러오지 못했습니다. '
+    +'백엔드에 GET /api/convergence/plan 이 필요합니다.</div>'; return; }
+  el.innerHTML=PLAN.map(function(it){
+    const st=it.state||'pending';
+    const dep=(it.depends||[]).length? ' · 선행 '+it.depends.join(','):'';
+    const opts=Object.keys(it.opts||{}).map(k=>k+'='+it.opts[k]).join('  ');
+    const ov=it.override? Object.keys(it.override).map(k=>k+'='+it.override[k]).join('  '):'';
+    const sw=it.sweep? Object.keys(it.sweep).map(k=>k+' '+it.sweep[k].join('/')).join('  '):'';
+    const r=it.result;
+    return '<div class="pitem '+st+'" data-p="'+it.id+'"><div class="pbar"></div><div class="pbody">'
+      +'<div class="prow1"><span class="pid">'+it.id+'</span>'
+      +'<span class="ptitle">'+it.title+'</span>'
+      +'<span class="peng">'+it.engine+'</span>'
+      +'<span class="pact">'+(st==='done'?badge('ok'):st==='failed'?badge('bad'):
+         st==='running'?'<span class="badge none">실행 중</span>':badge('none'))
+      +'<button class="psm" data-run="'+it.id+'"'+(st==='running'?' disabled':'')+'>실행</button>'
+      +'</span></div>'
+      +'<div class="pwhy">'+it.why+'</div>'
+      +'<dl class="pmeta">'
+      +'<dt>조건</dt><dd><code>'+it.recipe+'</code> '+opts+(ov?'  <code>'+ov+'</code>':'')
+        +(sw?'  스윕 '+sw:'')+dep+'</dd>'
+      +'<dt>확인</dt><dd>'+it.check+'</dd>'
+      +(it.prev?'<dt>직전</dt><dd style="color:var(--ink-3)">'+it.prev+'</dd>':'')
+      +'</dl>'
+      +(r?'<div class="pres"><b>'+String(r.status).toUpperCase()+'</b> · '
+         +(r.t==null?'—':r.t+' s')+' · '+r.metric+(r.note?' · '+r.note:'')
+         +'<span style="color:var(--ink-3)">  '+(r.at||'')+'</span></div>':'')
+      +'</div></div>';
+  }).join('');
+  el.querySelectorAll('[data-run]').forEach(function(b){
+    b.onclick=function(){runPlan(b.dataset.run);};});
+}
+async function loadPlan(){
+  try{
+    const res=await fetch('/api/convergence/plan');
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    const d=await res.json(); PLAN=d.items||[]; renderPlan();
+    log('실행 계획 '+PLAN.length+'건 · 대기 '
+      +PLAN.filter(x=>(x.state||'pending')==='pending').length+'건');
+  }catch(e){ renderPlan(); log('계획을 불러오지 못했습니다 — '+e.message); }
+}
+async function runPlan(pid){
+  const it=PLAN.find(x=>x.id===pid); if(!it) return;
+  it.state='running'; renderPlan();
+  log('▶ '+pid+' '+it.title);
+  try{
+    const res=await fetch('/api/convergence/plan/run',{method:'POST',
+      headers:{'Content-Type':'application/json'},body:JSON.stringify({plan_id:pid})});
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    const d=await res.json();
+    it.result={status:d.status,t:d.t,steps:d.steps,metric:d.metric,note:d.note,at:'방금'};
+    it.state=(d.status==='ok'||d.status==='warn')?'done':
+             (d.status==='none'?'pending':'failed');
+    log('  '+String(d.status).toUpperCase()+' · '+(d.t==null?'—':d.t+' s')+' · '+d.metric);
+    if(d.note) log('  '+d.note);
+  }catch(e){ it.state='failed'; log('  실행하지 못했습니다 — '+e.message); }
+  renderPlan();
+}
+$('#planall').onclick=async function(){
+  for(const it of PLAN.filter(x=>(x.state||'pending')==='pending')){
+    if((it.depends||[]).some(d=>{const p=PLAN.find(x=>x.id===d);
+      return !p||p.state!=='done';})){
+      log('· '+it.id+' 건너뜀 — 선행 항목이 아직입니다'); continue; }
+    await runPlan(it.id);
+  }
+};
+
+renderMatrix(); renderSide(); loadPlan();
 </script>
 </body>
 </html>

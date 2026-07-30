@@ -39,6 +39,7 @@ convergence_router = APIRouter(prefix="/api/convergence", tags=["convergence"])
 BACKEND = Path(__file__).resolve().parent
 REPO = BACKEND.parent
 HISTORY = BACKEND / "_convergence_history.json"
+PLAN = BACKEND / "convergence_plan.json"
 
 # 조합 id -> 실행 방법. UI ROWS 의 id 와 일치해야 한다.
 #   kind='py'  : 파이썬 함수 직접 호출
@@ -148,6 +149,8 @@ class RunReq(BaseModel):
     solver: str = "hybr"
     kind: str = ""
     opts: Dict[str, Any] = Field(default_factory=dict)
+    # Modelica 파라미터 직접 덮어쓰기 (예: {"ctrl.deadband": 2.0})
+    override: Dict[str, Any] = Field(default_factory=dict)
 
 
 class RunResp(BaseModel):
@@ -254,7 +257,8 @@ def run_py(rid: str, rec: Dict[str, Any], opts: Dict[str, Any]) -> RunResp:
 # ══════════════════════════════════════════════════════════════
 # Modelica 실행기
 # ══════════════════════════════════════════════════════════════
-def run_omc(rid: str, rec: Dict[str, Any], opts: Dict[str, Any]) -> RunResp:
+def run_omc(rid: str, rec: Dict[str, Any], opts: Dict[str, Any],
+            override: Optional[Dict[str, Any]] = None) -> RunResp:
     """omc 로 빌드 후 실행. 오래 걸리므로 timeout 을 넉넉히 준다."""
     omc = find_omc()
     if not omc:
@@ -279,12 +283,15 @@ def run_omc(rid: str, rec: Dict[str, Any], opts: Dict[str, Any]) -> RunResp:
         f'runScript("{REPO}/verify/load_all.mos");',
         f'simulate({model}, stopTime={stop}, tolerance={tol}, '
         f'method="{solver}", outputFormat="csv", '
-        'variableFilter="(M_total|Pc_bar|Pe_bar|SH|comp.N|evap.x_out|ctrl.n_act)");',
+        + (f'simflags="{" ".join(f"-override={k}={v}" for k, v in override.items())} '
+           f'-jacobianThreads={threads}", ' if (override or threads > 1) else '')
+        + 'variableFilter="(M_total|Pc_bar|Pe_bar|SH|comp.N|evap.x_out|ctrl.n_act)");',
         "getErrorString();",
     ])
     (work / "run.mos").write_text(mos, encoding="utf-8")
 
     t0 = time.time()
+    ov = " ".join(f"-override={k}={v}" for k, v in (override or {}).items())
     try:
         p = subprocess.run([omc, "run.mos"], cwd=work, timeout=900,
                            capture_output=True, text=True)
@@ -351,7 +358,7 @@ def run(req: RunReq) -> RunResp:
         if rec["kind"] == "py":
             res = run_py(req.id, rec, req.opts)
         else:
-            res = run_omc(req.id, rec, req.opts)
+            res = run_omc(req.id, rec, req.opts, req.override)
     except Exception as e:  # 실행 실패를 정직하게 돌려준다
         res = RunResp(id=req.id, status="bad", metric="예외",
                       note=f"{type(e).__name__}: {e}"[:120])
@@ -393,3 +400,92 @@ def recipes() -> Dict[str, Any]:
         "env_OPENMODELICAHOME": os.environ.get("OPENMODELICAHOME"),
         "path_head": (os.environ.get("PATH") or "").split(os.pathsep)[:6],
     }
+
+
+# ══════════════════════════════════════════════════════════════
+# 실행 계획 — 대화에서 정한 구체 과제
+# ══════════════════════════════════════════════════════════════
+class PlanRunReq(BaseModel):
+    plan_id: str
+    opts_patch: Dict[str, Any] = Field(default_factory=dict)
+
+
+def _plan() -> Dict[str, Any]:
+    if not PLAN.exists():
+        return {"items": []}
+    try:
+        return json.loads(PLAN.read_text(encoding="utf-8"))
+    except Exception as e:
+        return {"items": [], "error": f"{type(e).__name__}: {e}"}
+
+
+@convergence_router.get("/plan")
+def plan() -> Dict[str, Any]:
+    """실행 계획 조회. 기록(history)과 병합해 최근 결과를 함께 돌려준다."""
+    pl = _plan()
+    hist = {h["id"]: h for h in history()}
+    for it in pl.get("items", []):
+        r = hist.get("PLAN:" + it["id"])
+        if r:
+            it["result"] = {k: r.get(k) for k in
+                            ("status", "t", "steps", "metric", "note", "at")}
+            it["state"] = "done" if r.get("status") in ("ok", "warn") else "failed"
+    return pl
+
+
+@convergence_router.post("/plan/run", response_model=RunResp)
+def plan_run(req: PlanRunReq) -> RunResp:
+    """계획 항목 하나를 실행한다.
+
+    sweep 이 있으면 값별로 순차 실행하고 마지막 결과 + 요약을 돌려준다.
+    bisect 항목은 자동 실행하지 않는다(수동 판단이 필요).
+    """
+    items = {i["id"]: i for i in _plan().get("items", [])}
+    it = items.get(req.plan_id)
+    if it is None:
+        return RunResp(id=req.plan_id, status="bad", metric="—",
+                       note=f"계획에 없는 항목입니다: {req.plan_id}")
+    if it.get("bisect"):
+        b = it["bisect"]
+        return RunResp(id=req.plan_id, status="none", metric="수동 작업",
+                       note=f"이분 탐색은 자동 실행하지 않습니다. "
+                            f"git bisect start {b['bad']} {b['good']} -- {b['path']}")
+
+    rec = RECIPES.get(it["recipe"])
+    if rec is None:
+        return RunResp(id=req.plan_id, status="bad", metric="—",
+                       note=f"실행 방법이 없습니다: {it['recipe']}")
+
+    base = {**it.get("opts", {}), **req.opts_patch}
+    ov = it.get("override") or {}
+    sweep = it.get("sweep") or {}
+    results: List[RunResp] = []
+    runs = ([{**base, k: v} for k, vs in sweep.items() for v in vs]
+            if sweep else [base])
+
+    for o in runs:
+        rid = it["recipe"]
+        try:
+            r = (run_py(rid, rec, o) if rec["kind"] == "py"
+                 else run_omc(rid, rec, o, ov))
+        except Exception as e:
+            r = RunResp(id=rid, status="bad", metric="예외",
+                        note=f"{type(e).__name__}: {e}"[:120])
+        results.append(r)
+
+    last = results[-1]
+    if sweep:
+        k = next(iter(sweep))
+        summary = " · ".join(
+            f"{k}={o[k]}: {r.t}s" for o, r in zip(runs, results))
+        last = RunResp(id=req.plan_id, status=last.status, t=last.t,
+                       steps=last.steps, metric=summary,
+                       note=f"{len(results)} 회 스윕")
+    else:
+        last = RunResp(id=req.plan_id, **{k: getattr(last, k) for k in
+                       ("status", "t", "steps", "metric", "note")})
+
+    _save({**last.model_dump(exclude={"series"}),
+           "id": "PLAN:" + req.plan_id,
+           "at": datetime.now(timezone.utc).isoformat(timespec="seconds")})
+    return last
