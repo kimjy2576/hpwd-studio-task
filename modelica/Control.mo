@@ -39,11 +39,11 @@ package HPWDctrl "제어 컴포넌트"
     parameter Real opening_init = 50.0;
     parameter Real opening_min = 5.0, opening_max = 100.0;
     parameter Real T_aw = 1.0;
-    parameter Boolean use_pulse = true;
+    parameter Boolean use_pulse = false;
     parameter Integer n_max = 500 "EEV 전체 스텝수 (실측)";
     parameter Real pps_max = 30.0 "초당 최대 펄스 [step/s] (실측)";
     parameter Real T_ctrl = 1.0 "제어 주기 [s]";
-    parameter Real deadband = 0.5 "데드밴드 [K]";
+    parameter Real deadband = 2.0 "데드밴드 [K] — 과도구간 이벤트 완화";
     Modelica.Blocks.Interfaces.RealInput SH_meas;
     Modelica.Blocks.Interfaces.RealOutput opening;
     Real I(start = opening_init) "적분 상태";
