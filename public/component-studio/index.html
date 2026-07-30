@@ -257,6 +257,7 @@ function AppSwitcher({ current }) {
     { id: 'calibration-studio', label: 'Calibration Studio', desc: 'Calibration & Validation', href: '/calibration-studio/' },
     { id: 'on-design-studio',   label: 'On-Design Studio',   desc: 'On-design 모델 설계',    href: '/on-design-studio/' },
     { id: 'convergence', label: '수렴 테스트', desc: '과도·정상 수렴 확인', href: '/convergence/' },
+
   ];
   const active = apps.find(a => a.id === current) || apps[0];
 
