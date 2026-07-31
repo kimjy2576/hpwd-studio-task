@@ -513,9 +513,17 @@ function ResultsPanel({ result, running }) {
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-sm font-bold text-slate-700">결과</h3>
         <span className={`mono text-[11px] px-2 py-0.5 rounded ${result.converged ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'}`}>
-          {result.converged ? `✓ 수렴 (${result.iterations}회)` : '~ 미수렴'}
+          {result.converged ? `✓ 수렴 (${result.iterations}회)` : (result.error ? '✕ 실행 실패' : '~ 미수렴')}
         </span>
       </div>
+      {result.error && (
+        <div className="mb-3 px-3 py-2 rounded bg-rose-50 border-l-2 border-rose-400 text-[12px] text-rose-700">
+          {result.error}
+          <div className="text-[11px] text-rose-500 mt-1">
+            백엔드 /cycle/run 응답을 확인하십시오.
+          </div>
+        </div>
+      )}
       <div className="grid grid-cols-3 gap-3">
         {metrics.map(m => (
           <div key={m.label} className="bg-slate-50 rounded-xl p-3">
@@ -629,32 +637,27 @@ function CycleRunner() {
         t_end: op.t_end, dt: op.dt,
       } : null,
     };
-    // TODO(6단계): fetch('/run_cycle_runner', {method:'POST', body: JSON.stringify(payload)})
-
-    setTimeout(() => {
-      // 샘플 결과 (백엔드 cycle_runner 반환 형식)
-      const sample = {
-        converged: true,
-        iterations: op.dynamic ? 6 : 22,
-        P_evap: 5.055 + Math.random() * 0.1,
-        P_cond: 9.9 + Math.random() * 0.3,
-        m_dot: 0.00206 + Math.random() * 0.0001,
-        Q_cond: 570 + Math.random() * 20,
-        Q_evap: 460 + Math.random() * 20,
-        SH: op.SH_target + (Math.random() - 0.5) * 0.3,
-      };
-      if (op.dynamic) {
-        // 샘플 궤적 (해석 시간 t_end까지 dt 간격, 건조율 %)
-        const nPts = Math.min(12, Math.floor(op.t_end / op.dt));
-        const X0 = op.X0_pct / 100;
-        sample.trajectory = Array.from({ length: nPts }, (_, i) => ({
-          t: (i + 1) * op.dt,
-          X_dry: Math.max(0, X0 - i * 0.001),
-        }));
-      }
-      setResult(sample);
-      setRunning(false);
-    }, 900);
+    // 2026-07-30: 샘플 대신 실제 백엔드 호출.
+    //   엔드포인트는 cycle_runner/cycle_api.py 의 /cycle/run (Python 전용).
+    //   기존 코드는 존재하지 않는 /run_cycle_runner 를 TODO 로 두고
+    //   setTimeout 으로 난수 샘플을 보여주고 있었다.
+    fetch('/cycle/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+      .then((r) => {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+      })
+      .then((d) => {
+        setResult(d);
+        setRunning(false);
+      })
+      .catch((e) => {
+        setResult({ converged: false, error: String(e.message || e) });
+        setRunning(false);
+      });
   };
 
   return (
