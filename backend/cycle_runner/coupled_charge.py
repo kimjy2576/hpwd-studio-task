@@ -56,7 +56,16 @@ def solve(ref_fidelity, air_fidelity, operating, air_inlet,
           params_override=None, air_states=None,
           sh_warmup=3, sh_air_tol=1.0, dt=1.0, method='hybr',
           on_progress=None,   # 2026-07-30: outer 마다 호출 (실시간 진행 표시용)
-          max_outer=20, tol_air=0.05, alpha_air=0.6, inner_xtol=1e-6,
+          max_outer=20, tol_air=0.05,
+          # 2026-07-31: alpha_air 0.6 -> 1.0.
+          #   0.6 은 초반 4회가 dT_cond 0.18~0.23 에서 정체해 오히려 느렸다.
+          #   실측 (fan=4, SH 8.6, tol 0.05)
+          #     alpha 0.6  : 8회 55s  0.190 0.179 0.228 0.209 0.152 0.106 0.067 0.047
+          #     alpha 0.85 : 6회 35s
+          #     alpha 1.0  : 5회 47s  0.190 0.417 0.127 0.105 0.042
+          #   1.0 은 2회차에 한 번 튀지만(0.417) 이후 빠르게 내려간다.
+          #   팬 위치를 바꿔도 순서가 같아 완화가 이 문제에는 방해였다.
+          alpha_air=1.0, inner_xtol=1e-6,
           dry_accumulator=True, verbose=False):
     """완전 연성 정상해.
 
