@@ -285,11 +285,22 @@ def _step_L3(input, params, state, dt):
 
     # ── 입구 공기 상태 (input) ──
     T_in = float(input.get('T_in', 25.0))       # °C
-    RH_in = input.get('RH_in', None)
-    if RH_in is not None:
-        omega = _humidity_ratio(T_in, float(RH_in))
+    # 2026-07-30 수정: RH 단위·우선순위 버그.
+    #   _humidity_ratio 는 RH 를 분율(0~1)로 받는데 호출부는 퍼센트(38.94)를 준다.
+    #   3894% 습도로 계산되어 omega=94022 kg/kg, W_shaft=1.8e10 W,
+    #   T_out=2230 °C 로 발산했다 (공기 루프 전체가 터진 원인).
+    #   또한 omega 를 직접 받았는데도 RH 를 우선해 정확한 값을 버렸다.
+    #   => omega 가 있으면 그것을 쓰고, 없을 때만 RH 로 환산한다.
+    #      RH 는 1 보다 크면 퍼센트로 보고 100 으로 나눈다.
+    if input.get('omega') is not None:
+        omega = float(input['omega'])             # kg/kg_da (직접 지정 우선)
     else:
-        omega = float(input.get('omega', 0.010))  # kg/kg_da
+        RH_in = input.get('RH_in', None)
+        if RH_in is not None:
+            rh = float(RH_in)
+            omega = _humidity_ratio(T_in, rh / 100.0 if rh > 1.0 else rh)
+        else:
+            omega = 0.010
     P_in = float(input.get('P_in', 101325.0))     # Pa
 
     # ── 운전점 유량 (input): dry-air mass flow 또는 V̇ 직접 ──

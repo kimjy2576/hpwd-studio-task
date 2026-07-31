@@ -55,25 +55,39 @@ class EEVPulseController:
     def step(self, SH_meas, dt):
         """한 시간 스텝 진행 후 개도 [%] 반환.
 
+        2026-07-30 수정: dt 를 통째로 적분하면 발산한다.
+          기존에는 self.I += dt * (...) 로 한 번에 적분했는데,
+          동적해의 dt(20~60 s)가 제어 주기 T_ctrl(1 s)보다 훨씬 커서
+          적분기가 폭주했다 (실측: I 가 -1.9e3 -> 1.1e5 -> -6.6e6).
+          반포화 항 (opening-opening_raw)/T_aw 도 T_aw=1 s 인데 dt=60 이
+          곱해져 같이 터졌다.
+          => dt 를 T_ctrl 단위로 쪼개 실제 제어 주기대로 여러 번 돈다.
+             실제 EEV 도 1초마다 갱신하지 60초를 한 번에 움직이지 않는다.
+
         Args:
           SH_meas: 측정 과열도 [K] — 2상이면 음수 (부호 있는 SH)
           dt     : 시간 스텝 [s]
         """
-        self._t += dt
         err = SH_meas - self.SH_target
+        n_sub = max(1, int(round(dt / self.T_ctrl)))
+        h = dt / n_sub          # 실제 적분 간격 (= T_ctrl)
 
-        # PI (anti-windup back-calculation, Modelica 와 동일)
-        opening_raw = self.Kp * err + self.I
-        opening_cont = max(self.opening_min, min(self.opening_max, opening_raw))
-        self.I += dt * (self.Ki * err + (self.opening - opening_raw) / self.T_aw)
+        for _ in range(n_sub):
+            self._t += h
+            opening_raw = self.Kp * err + self.I
+            opening_cont = max(self.opening_min,
+                               min(self.opening_max, opening_raw))
+            # anti-windup back-calculation (Modelica PI_Controller 와 동일 형태)
+            self.I += h * (self.Ki * err
+                           + (self.opening - opening_raw) / self.T_aw)
+            # 적분 상태도 물리 범위로 제한 — 반포화가 못 잡는 폭주 방지
+            self.I = max(-2.0 * self.opening_max,
+                         min(2.0 * self.opening_max, self.I))
 
-        if not self.use_pulse:
-            self.opening = opening_cont
-            return self.opening
+            if not self.use_pulse:
+                self.opening = opening_cont
+                continue
 
-        # 제어 주기마다만 스텝 갱신 (Modelica when sample(0, T_ctrl) 대응)
-        if self._t - self._t_last_ctrl >= self.T_ctrl - 1e-9:
-            self._t_last_ctrl = self._t
             if abs(err) > self.deadband:
                 target = opening_cont / 100.0 * self.n_max
                 step_lim = self.pps_max * self.T_ctrl
@@ -82,8 +96,8 @@ class EEVPulseController:
             self.n_act = max(self.opening_min / 100.0 * self.n_max,
                              min(self.opening_max / 100.0 * self.n_max,
                                  round(self.n_act)))
+            self.opening = self.n_act / self.n_max * 100.0
 
-        self.opening = self.n_act / self.n_max * 100.0
         return self.opening
 
     def state(self):
