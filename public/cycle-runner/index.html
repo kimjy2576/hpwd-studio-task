@@ -198,16 +198,14 @@ const AIR_CORE = [
   { key: 'condenser',  label: '응축기', en: 'Condenser' },
 ];
 
-// 2026-07-30: 냉매 사이클은 L3 만 쓴다.
-//   L1(상수/UA)·L2(moving-boundary)는 개발 초기 비교용이었고
-//   지금은 검증·튜닝이 L3 에만 되어 있어 선택지로 두면 오해를 준다.
-//   공기측(드럼·팬)은 L1~L3 가 실제로 구현돼 있어 그대로 둔다.
+// 2026-07-30: Cycle Runner 는 L3 조합 시험이 목적이므로 L3 만 쓴다.
+//   L1(off-design 상수/UA)·L2(moving-boundary)는 개발 초기 비교용이었고
+//   검증·튜닝이 L3 에만 되어 있다. 선택지로 두면 고를 수 있는 것처럼 보여
+//   잘못된 결과를 낳는다. 냉매·공기 모두 L3.
 const FIDELITY = [
-  { v: 1, label: 'L1', desc: 'off-design (상수/UA)' },
-  { v: 2, label: 'L2', desc: 'moving-boundary' },
   { v: 3, label: 'L3', desc: 'on-design (셀별)' },
 ];
-const FIDELITY_REF = FIDELITY.filter(f => f.v === 3);   // 냉매: L3 고정
+const FIDELITY_REF = FIDELITY;
 
 // fidelity 세그먼트 색상
 const fidColor = (v) => ({ 1: '#64748b', 2: '#0891b2', 3: '#2563eb' }[v]);
@@ -653,7 +651,7 @@ function CycleRunner() {
   //   shared:  evaporator, condenser (냉매+공기 교차 컴포넌트)
   const [fid, setFid] = useState({
     compressor: 3, eev: 3,           // 냉매 전용
-    drum: 1, filter: 1, fan: 3,      // 공기 전용
+    drum: 3, filter: 3, fan: 3,      // 공기 전용 (L3 통일)
     evaporator: 3, condenser: 3,     // 공유 (교차)
   });
   const [fanPosition, setFanPosition] = useState(null);
