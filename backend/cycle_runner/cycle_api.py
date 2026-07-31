@@ -280,23 +280,13 @@ def _run_job(job_id: str, req: CycleRunRequest):
 
         _update(progress=0.15, message='커플드 사이클 수렴 중 (fidelity에 따라 수초~수분)')
 
-        if req.dynamic:
-            # 동적: 콜드스타트 → 기동 → 정상
-            opts = req.dynamic_opts or {}
-            with contextlib.redirect_stdout(io.StringIO()):
-                res = dynamic_runner.run(
-                    req.ref_fidelity, req.air_fidelity, engine_op, air_inlet,
-                    fan_position=req.fan_position,
-                    params_override=override,
-                    t_end=opts.get('t_end', 1800.0),
-                    dt=opts.get('dt', 60.0),
-                    N_target=req.operating.get('comp_rpm', 1800.0),
-                    ramp_time=opts.get('ramp_time', 120.0),
-                    P_equalize=opts.get('P_equalize', 7.0),
-                )
-            result = _serialize_dynamic(res)
-        elif req.use_charge:
-            # 충전량 구속 동적 (EEV 펄스 선택)
+        # 2026-07-30: opts 를 분기 앞에서 정의한다.
+        #   기존에는 if req.dynamic 안에서만 만들어 다른 분기에서
+        #   UnboundLocalError 가 났다.
+        opts = req.dynamic_opts or {}
+
+        if req.dynamic and req.use_charge:
+            # 충전량 없는 기존 동적 (호환용)
             with contextlib.redirect_stdout(io.StringIO()):
                 res = dynamic_charge.run(
                     req.ref_fidelity, req.air_fidelity, engine_op, air_inlet,
@@ -311,6 +301,21 @@ def _run_job(job_id: str, req: CycleRunRequest):
                     on_progress=_prog,
                 )
             result = _serialize_dynamic_charge(res, req)
+        elif req.dynamic:
+            # 동적: 콜드스타트 → 기동 → 정상
+            opts = req.dynamic_opts or {}
+            with contextlib.redirect_stdout(io.StringIO()):
+                res = dynamic_runner.run(
+                    req.ref_fidelity, req.air_fidelity, engine_op, air_inlet,
+                    fan_position=req.fan_position,
+                    params_override=override,
+                    t_end=opts.get('t_end', 1800.0),
+                    dt=opts.get('dt', 60.0),
+                    N_target=req.operating.get('comp_rpm', 1800.0),
+                    ramp_time=opts.get('ramp_time', 120.0),
+                    P_equalize=opts.get('P_equalize', 7.0),
+                )
+            result = _serialize_dynamic(res)
         else:
             # 정상상태 커플드
             # 2026-07-30: use_charge 면 충전량 구속 계층을 쓴다
