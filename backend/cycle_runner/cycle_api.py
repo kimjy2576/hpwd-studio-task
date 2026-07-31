@@ -50,6 +50,15 @@ class CycleRunRequest(BaseModel):
     dynamic: bool = False               # True면 dynamic_runner (콜드스타트→기동)
     dynamic_opts: Optional[dict] = None # {P_equalize, ramp_time, t_end, dt}
     params_override: Optional[dict] = None  # 컴포넌트별 설계변수 오버라이드
+    # 2026-07-30: 충전량 구속·EEV 펄스 지원
+    #   use_charge=True 면 coupled_charge/dynamic_charge 를 쓴다
+    #   (오일 용해 + 어큐 + 충전량 보존 + SH 구속).
+    #   False 면 기존 coupled_solver/dynamic_runner (충전량 없음).
+    use_charge: bool = True
+    M_charge_g: float = 100.0           # 냉매 충전량 [g]
+    geom: Optional[dict] = None         # 체적 (미지정 시 기본 HPWD 값)
+    use_pulse: bool = False             # EEV 스텝모터 펄스
+    eev: Optional[dict] = None          # {n_max, pps_max, T_ctrl, deadband}
 
 
 class CycleRunResponse(BaseModel):
@@ -99,6 +108,92 @@ def _to_air_inlet(op: dict) -> dict:
     }
 
 
+# 기본 체적 [m3] — HPWD 실측 (배관 3구간 + 어큐 200cc + 오일 160cc + 쉘 400cc)
+DEFAULT_GEOM = {
+    'V_n1': 1.832e-5, 'V_n2': 9.99e-6, 'V_n3': 3.66e-6,
+    'V_acc': 2.226e-4, 'V_oil_cc': 160.0, 'V_shell': 4.0e-4,
+}
+
+
+def _serialize_steady_charge(res: dict) -> dict:
+    """충전량 구속 정상해 → UI 응답.
+
+    2026-07-30: 기존 _serialize_steady 가 못 담던 것들을 추가한다.
+      충전량 수지 · 어큐 액축적 · 출구 퀄리티 · 개도
+    UI 가 이 값들로 SH<0 상태를 진단할 수 있다.
+    """
+    rr = res.get('refrigerant') or {}
+    st = rr.get('state') or {}
+    ev = st.get('evaporator') or {}
+    cd = st.get('condenser') or {}
+    cp = st.get('compressor') or {}
+    chg = rr.get('charge') or {}
+    Qe = ev.get('Q_total') or 0.0
+    Qc = cd.get('Q_total') or 0.0
+    W = cp.get('W_elec') or cp.get('W_shaft') or 0.0
+    out = {
+        'converged': bool(res.get('converged')),
+        'iterations': res.get('outer_iter'),
+        'P_evap': rr.get('P_evap'), 'P_cond': rr.get('P_cond'),
+        'm_dot': cp.get('m_dot'),
+        'Q_cond': Qc, 'Q_evap': Qe, 'W_comp': W,
+        'COP': (Qc / W) if W else None,
+        'SH': rr.get('SH_evap'),
+        'opening': rr.get('opening'),
+        'x_out': ev.get('x_out'),
+        # 충전량 수지
+        'M_charge_g': (chg.get('M_charge') or 0.0) * 1000 if chg else None,
+        'M_total_g': (chg.get('M_total') or 0.0) * 1000 if chg else None,
+        'M_acc_g': (chg.get('M_acc') or 0.0) * 1000 if chg else None,
+        'M_oil_dis_g': (chg.get('M_oil_dis') or 0.0) * 1000 if chg else None,
+    }
+    if out['M_charge_g'] and out['M_total_g']:
+        out['charge_err_pct'] = (out['M_total_g'] / out['M_charge_g'] - 1) * 100
+    return out
+
+
+def _serialize_dynamic_charge(res: dict, req) -> dict:
+    """충전량 구속 동적해 → UI 응답.
+
+    건조 성능(SMER)과 EEV 펄스 궤적을 포함한다.
+      SMER = 제거 수분량 [kg] / 소비 전력량 [kWh]
+             건조기의 목적 함수. COP 만으로는 건조 성능을 알 수 없다.
+    """
+    tr = res.get('trajectory') or []
+    ok = [x for x in tr if x.get('ok')]
+    mw = [x['m_w'] for x in tr if x.get('m_w') is not None]
+    dried = (mw[0] - mw[-1]) if len(mw) >= 2 else 0.0
+
+    # 소비 전력량 [kWh] — 스텝별 W_comp 를 시간 적분
+    kwh, prev_t = 0.0, None
+    for x in tr:
+        w = x.get('W_comp')
+        if w is not None and prev_t is not None:
+            kwh += w * (x['t'] - prev_t) / 3.6e6
+        if x.get('t') is not None:
+            prev_t = x['t']
+
+    last = ok[-1] if ok else (tr[-1] if tr else {})
+    return {
+        'converged': bool(ok) and len(ok) == len([x for x in tr if x.get('phase') != 'stopped']),
+        'iterations': len(ok),
+        'total_steps': res.get('total_steps'),
+        'converged_steps': res.get('converged_steps'),
+        'phase_switch_t': res.get('phase_switch_t'),
+        'P_evap': last.get('Pe'), 'P_cond': last.get('Pc'),
+        'SH': last.get('SH'), 'opening': last.get('opening'),
+        'x_out': last.get('x_out'),
+        # 건조 성능
+        'dried_kg': dried, 'energy_kwh': kwh or None,
+        'SMER': (dried / kwh) if kwh else None,
+        'use_pulse': bool(req.use_pulse),
+        'M_charge_g': req.M_charge_g,
+        'trajectory': [{k: x.get(k) for k in
+                        ('t', 'N', 'phase', 'Pc', 'Pe', 'SH', 'opening',
+                         'n_act', 'x_out', 'm_w', 'X_dry', 'ok')} for x in tr],
+    }
+
+
 # ─── 백그라운드 계산 실행 ─────────────────────────────────────────
 def _run_job(job_id: str, req: CycleRunRequest):
     """스레드에서 실행 — coupled_solver.solve 또는 dynamic_runner.run."""
@@ -113,7 +208,8 @@ def _run_job(job_id: str, req: CycleRunRequest):
         # import는 여기서 (registration 로그 억제)
         _buf = io.StringIO()
         with contextlib.redirect_stdout(_buf):
-            from cycle_runner import coupled_solver, dynamic_runner
+            from cycle_runner import (coupled_solver, dynamic_runner,
+                                      coupled_charge, dynamic_charge)
 
         engine_op = _to_engine_operating(req.operating)
         air_inlet = _to_air_inlet(req.operating)
@@ -159,16 +255,44 @@ def _run_job(job_id: str, req: CycleRunRequest):
                     P_equalize=opts.get('P_equalize', 7.0),
                 )
             result = _serialize_dynamic(res)
+        elif req.use_charge:
+            # 충전량 구속 동적 (EEV 펄스 선택)
+            with contextlib.redirect_stdout(io.StringIO()):
+                res = dynamic_charge.run(
+                    req.ref_fidelity, req.air_fidelity, engine_op, air_inlet,
+                    req.M_charge_g / 1000.0, req.geom or DEFAULT_GEOM,
+                    fan_position=req.fan_position,
+                    SH_target=SH_target,
+                    use_pulse=req.use_pulse, eev_cfg=req.eev,
+                    t_end=opts.get('t_end', 1800.0),
+                    dt=opts.get('dt', 20.0),
+                    N_target=req.operating.get('comp_rpm', 1800.0),
+                    ramp_time=opts.get('ramp_time', 120.0),
+                )
+            result = _serialize_dynamic_charge(res, req)
         else:
             # 정상상태 커플드
+            # 2026-07-30: use_charge 면 충전량 구속 계층을 쓴다
+            #   (오일 용해 + 어큐 + M_total=M_charge + SH 구속).
+            #   기존 coupled_solver 는 충전량이 없어 어큐 액축적을 못 본다.
             with contextlib.redirect_stdout(io.StringIO()):
-                res = coupled_solver.solve(
-                    req.ref_fidelity, req.air_fidelity, engine_op, air_inlet,
-                    fan_position=req.fan_position,
-                    params_override=override,
-                    SH_target=SH_target,
-                )
-            result = _serialize_steady(res)
+                if req.use_charge:
+                    res = coupled_charge.solve(
+                        req.ref_fidelity, req.air_fidelity, engine_op, air_inlet,
+                        req.M_charge_g / 1000.0, req.geom or DEFAULT_GEOM,
+                        fan_position=req.fan_position,
+                        params_override=override,
+                        SH_target=SH_target,
+                    )
+                    result = _serialize_steady_charge(res)
+                else:
+                    res = coupled_solver.solve(
+                        req.ref_fidelity, req.air_fidelity, engine_op, air_inlet,
+                        fan_position=req.fan_position,
+                        params_override=override,
+                        SH_target=SH_target,
+                    )
+                    result = _serialize_steady(res)
 
         elapsed = time.time() - t0
         _update(status='done', progress=1.0,

@@ -437,6 +437,50 @@ function OperatingInputs({ op, setOp }) {
         </div>
       </div>
 
+      {/* 냉매 충전량 — 2026-07-30 추가.
+          정상해의 핵심 구속인데 입력이 없어 100 g 고정으로 돌고 있었다.
+          끄면 오일·어큐·질량보존이 빠진 기존 경로(coupled_solver)를 쓴다. */}
+      <div>
+        <div className="mono text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-2">냉매 충전량</div>
+        <div className="grid grid-cols-2 gap-3 items-end">
+          <NumberField label="충전량" value={op.M_charge_g} unit="g" min={30} max={300}
+            onChange={v => set('M_charge_g', v)} />
+          <label className="flex items-center gap-2 text-[12px] text-slate-600 pb-1">
+            <input type="checkbox" checked={op.use_charge}
+              onChange={e => set('use_charge', e.target.checked)} />
+            충전량 구속 (오일·어큐 포함)
+          </label>
+        </div>
+        {!op.use_charge && (
+          <div className="mt-2 text-[11px] text-amber-600">
+            끄면 오일 용해·어큐·질량보존이 빠집니다. 어큐 액축적을 볼 수 없습니다.
+          </div>
+        )}
+      </div>
+
+      {/* EEV 스텝모터 펄스 — 실제 밸브는 이산 스텝이고 초당 최대 펄스가 있다.
+          과도 구간에서 SH 가 목표에 고정되지 않고 진동하는 원인. */}
+      <div>
+        <div className="mono text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-2">EEV 구동</div>
+        <label className="flex items-center gap-2 text-[12px] text-slate-600 mb-2">
+          <input type="checkbox" checked={op.use_pulse}
+            onChange={e => set('use_pulse', e.target.checked)} />
+          스텝모터 펄스 모사
+        </label>
+        {op.use_pulse && (
+          <div className="grid grid-cols-2 gap-3">
+            <NumberField label="전체 스텝" value={op.n_max} unit="step" min={50} max={2000}
+              onChange={v => set('n_max', v)} />
+            <NumberField label="초당 최대 펄스" value={op.pps_max} unit="step/s" min={1} max={200}
+              onChange={v => set('pps_max', v)} />
+            <NumberField label="제어 주기" value={op.T_ctrl} unit="s" min={0.1} max={30}
+              onChange={v => set('T_ctrl', v)} />
+            <NumberField label="데드밴드" value={op.deadband} unit="K" min={0} max={5}
+              onChange={v => set('deadband', v)} />
+          </div>
+        )}
+      </div>
+
       {/* 제어 (SH 타겟 → EEV PI) */}
       <div>
         <div className="mono text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-2">제어 목표</div>
@@ -500,6 +544,7 @@ function ResultsPanel({ result, running }) {
       </div>
     );
   }
+  const pct = (v) => (v == null ? null : v);
   const metrics = [
     { label: '증발압력', value: result.P_evap, unit: 'bar', color: 'var(--evap)' },
     { label: '응축압력', value: result.P_cond, unit: 'bar', color: 'var(--cond)' },
@@ -507,7 +552,25 @@ function ResultsPanel({ result, running }) {
     { label: '응축열량', value: result.Q_cond, unit: 'W', color: 'var(--cond)' },
     { label: '증발열량', value: result.Q_evap, unit: 'W', color: 'var(--evap)' },
     { label: '과열도', value: result.SH, unit: 'K', color: 'var(--eev)' },
-  ];
+      // 2026-07-30 추가 — 충전량 수지·출구 상태·건조 성능
+    ...(result.M_total_g != null ? [
+      { label: '충전량 수지', value: result.M_total_g, unit: 'g', color: 'var(--cond)' },
+      { label: '충전량 오차', value: result.charge_err_pct, unit: '%', color: 'var(--evap)' },
+    ] : []),
+    ...(result.M_acc_g != null ? [
+      { label: '어큐 액축적', value: result.M_acc_g, unit: 'g', color: 'var(--evap)' },
+    ] : []),
+    ...(result.x_out != null ? [
+      { label: '출구 퀄리티', value: result.x_out, unit: '', color: 'var(--evap)' },
+    ] : []),
+    ...(result.opening != null ? [
+      { label: 'EEV 개도', value: result.opening, unit: '%', color: 'var(--comp)' },
+    ] : []),
+    ...(result.SMER != null ? [
+      { label: 'SMER', value: result.SMER, unit: 'kg/kWh', color: 'var(--cond)' },
+      { label: '제거 수분', value: result.dried_kg, unit: 'kg', color: 'var(--cond)' },
+    ] : []),
+];
   return (
     <div className="bg-white rounded-2xl border border-slate-200 p-6">
       <div className="flex items-center justify-between mb-4">
@@ -583,6 +646,10 @@ function CycleRunner() {
     SH_target: 8.6,
     M_dry: 3.0, X0_pct: 60, fabric: 'cotton',
     dynamic: false, P_equalize: 7.0, ramp_time: 60, t_end: 1800, dt: 60,
+    // 2026-07-30 추가
+    use_charge: true, M_charge_g: 100,      // 충전량 구속 (오일·어큐·M_total)
+    use_pulse: false,                        // EEV 스텝모터 펄스
+    n_max: 500, pps_max: 30, T_ctrl: 1.0, deadband: 0.5,
   });
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState(null);
@@ -635,6 +702,13 @@ function CycleRunner() {
       dynamic_opts: op.dynamic ? {
         P_equalize: op.P_equalize, ramp_time: op.ramp_time,
         t_end: op.t_end, dt: op.dt,
+      } : null,
+      use_charge: op.use_charge,
+      M_charge_g: op.M_charge_g,
+      use_pulse: op.use_pulse,
+      eev: op.use_pulse ? {
+        n_max: op.n_max, pps_max: op.pps_max,
+        T_ctrl: op.T_ctrl, deadband: op.deadband,
       } : null,
     };
     // 2026-07-30: 샘플 대신 실제 백엔드 호출.
