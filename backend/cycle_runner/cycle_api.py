@@ -83,6 +83,8 @@ class CycleStatusResponse(BaseModel):
     live: Optional[dict] = None
     live_step: Optional[int] = None
     live_total: Optional[int] = None
+    residuals: Optional[list] = None    # [{i, '공기 (응축기)':.., '과열도 오차':..}]
+    tol_air: Optional[float] = None     # 수렴 판정 기준선
 
 
 # ─── operating 변환 (UI 페이로드 → 엔진 규약) ─────────────────────
@@ -242,14 +244,31 @@ def _run_job(job_id: str, req: CycleRunRequest):
 
         # 2026-07-30: 실시간 진행 보고.
         #   반복/스텝마다 현재 값을 job 상태에 담아 UI 가 폴링으로 본다.
+        # 잔차 이력 — CFD 솔버처럼 반복별 잔차를 쌓아 UI 가 곡선으로 그린다.
+        _resid: list = []
+
         def _prog(rec, i, n):
             frac = 0.15 + 0.8 * (i + 1) / max(n, 1)
             keys = ('dT_cond', 'dT_evap', 'Pc', 'Pe', 'SH', 'opening',
                     't', 'N', 'phase', 'x_out', 'm_w', 'ok')
+            # 잔차 한 점. 정상해는 공기 루프 잔차 + SH 오차,
+            # 동적해는 스텝별 SH 오차(수렴 여부는 ok 로 구분).
+            pt = {'i': i + 1}
+            if rec.get('dT_cond') is not None:
+                pt['공기 (응축기)'] = abs(float(rec['dT_cond']))
+            if rec.get('dT_evap') is not None:
+                pt['공기 (증발기)'] = abs(float(rec['dT_evap']))
+            if rec.get('SH') is not None and SH_target is not None:
+                pt['과열도 오차'] = abs(float(rec['SH']) - float(SH_target))
+            if 't' in rec:
+                pt['t'] = rec['t']
+            if len(pt) > 1:
+                _resid.append(pt)
             _update(progress=min(frac, 0.95),
                     message=_fmt_prog(rec, i, n),
                     live={k: rec.get(k) for k in keys if k in rec},
-                    live_step=i + 1, live_total=n)
+                    live_step=i + 1, live_total=n,
+                    residuals=list(_resid), tol_air=0.05)
 
         engine_op = _to_engine_operating(req.operating)
         air_inlet = _to_air_inlet(req.operating)
@@ -482,6 +501,8 @@ def cycle_status(job_id: str):
         live=j.get('live'),
         live_step=j.get('live_step'),
         live_total=j.get('live_total'),
+        residuals=j.get('residuals'),
+        tol_air=j.get('tol_air'),
     )
 
 

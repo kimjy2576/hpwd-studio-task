@@ -563,6 +563,107 @@ function OperatingInputs({ op, setOp }) {
 // ── 실시간 진행 패널 (2026-07-30) ──
 //   기존에는 '수렴 중' 메시지만 있어 진행 여부를 알 수 없었다.
 //   백엔드가 반복/스텝마다 live 를 채워 보내므로 그대로 보여준다.
+// ── 잔차 수렴 곡선 (2026-07-30) ──
+//   CFD 솔버처럼 반복별 잔차를 로그 스케일로 그린다.
+//   수렴하는지, 진동하는지, 발산하는지가 한눈에 보인다.
+//   (실측: 공기 잔차가 0.15~0.23 에서 진동해 tol 0.05 에 못 미쳤다)
+function ResidualChart({ residuals, tol }) {
+  if (!residuals || residuals.length < 1) return null;
+  const W = 560, H = 170, ML = 46, MR = 12, MT = 10, MB = 22;
+  const keys = [];
+  residuals.forEach(function (p) {
+    Object.keys(p).forEach(function (k) {
+      if (k !== 'i' && k !== 't' && typeof p[k] === 'number' && keys.indexOf(k) < 0) keys.push(k);
+    });
+  });
+  if (!keys.length) return null;
+
+  const vals = [];
+  residuals.forEach(function (p) {
+    keys.forEach(function (k) { if (p[k] > 0) vals.push(p[k]); });
+  });
+  if (tol > 0) vals.push(tol);
+  if (!vals.length) return null;
+
+  // 로그 스케일 — 잔차는 여러 자릿수를 오가므로 선형으로는 안 보인다
+  const lo = Math.floor(Math.log10(Math.min.apply(null, vals))) - 0.2;
+  const hi = Math.ceil(Math.log10(Math.max.apply(null, vals))) + 0.2;
+  const Y = (v) => MT + (hi - Math.log10(Math.max(v, 1e-12))) / (hi - lo) * (H - MT - MB);
+  const n = residuals.length;
+  const X = (i) => ML + (n <= 1 ? 0 : (i / (n - 1)) * (W - ML - MR));
+
+  const COLORS = ['#2563eb', '#0891b2', '#d97706', '#7c3aed'];
+  const ticks = [];
+  for (let e = Math.ceil(lo); e <= Math.floor(hi); e++) ticks.push(e);
+
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 p-4 mb-3">
+      <div className="flex items-baseline gap-3 mb-1">
+        <span className="text-sm font-bold text-slate-700">잔차</span>
+        <span className="mono text-[10px] text-slate-400">로그 스케일 · 반복</span>
+        <div className="ml-auto flex gap-3">
+          {keys.map(function (k, ki) {
+            return (
+              <span key={k} className="mono text-[10px] text-slate-500">
+                <i style={{ display: 'inline-block', width: 9, height: 2,
+                            background: COLORS[ki % COLORS.length],
+                            marginRight: 4, verticalAlign: 'middle' }} />
+                {k}
+              </span>
+            );
+          })}
+        </div>
+      </div>
+      <svg viewBox={'0 0 ' + W + ' ' + H} style={{ width: '100%', display: 'block' }}>
+        {ticks.map(function (e) {
+          return (
+            <g key={e}>
+              <line x1={ML} y1={Y(Math.pow(10, e))} x2={W - MR} y2={Y(Math.pow(10, e))}
+                    stroke="#e2e8f0" strokeWidth="1" />
+              <text x={ML - 6} y={Y(Math.pow(10, e)) + 3} textAnchor="end"
+                    fontSize="9" fill="#94a3b8" fontFamily="ui-monospace,monospace">
+                {'1e' + e}
+              </text>
+            </g>
+          );
+        })}
+        {tol > 0 && (
+          <g>
+            <line x1={ML} y1={Y(tol)} x2={W - MR} y2={Y(tol)}
+                  stroke="#22c55e" strokeWidth="1" strokeDasharray="4 3" />
+            <text x={W - MR} y={Y(tol) - 4} textAnchor="end"
+                  fontSize="9" fill="#22c55e" fontFamily="ui-monospace,monospace">
+              수렴 기준 {tol}
+            </text>
+          </g>
+        )}
+        {keys.map(function (k, ki) {
+          const pts = residuals.map(function (p, i) {
+            return p[k] > 0 ? X(i) + ',' + Y(p[k]) : null;
+          }).filter(Boolean);
+          if (!pts.length) return null;
+          return (
+            <g key={k}>
+              <polyline points={pts.join(' ')} fill="none"
+                        stroke={COLORS[ki % COLORS.length]} strokeWidth="1.6" />
+              {residuals.map(function (p, i) {
+                return p[k] > 0 ? (
+                  <circle key={i} cx={X(i)} cy={Y(p[k])} r="2"
+                          fill={COLORS[ki % COLORS.length]} />
+                ) : null;
+              })}
+            </g>
+          );
+        })}
+        <text x={ML} y={H - 6} fontSize="9" fill="#94a3b8"
+              fontFamily="ui-monospace,monospace">1</text>
+        <text x={W - MR} y={H - 6} textAnchor="end" fontSize="9" fill="#94a3b8"
+              fontFamily="ui-monospace,monospace">{n}</text>
+      </svg>
+    </div>
+  );
+}
+
 function ProgressPanel({ prog }) {
   if (!prog) return null;
   const p = Math.round((prog.progress || 0) * 100);
@@ -590,6 +691,7 @@ function ProgressPanel({ prog }) {
         <div className="h-full bg-blue-500 transition-all duration-300"
              style={{ width: p + '%' }} />
       </div>
+      <ResidualChart residuals={prog.residuals} tol={prog.tol_air} />
       {rows.length > 0 && (
         <div className="grid grid-cols-4 gap-2">
           {rows.map(function (r) {
