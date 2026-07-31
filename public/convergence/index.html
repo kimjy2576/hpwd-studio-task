@@ -157,6 +157,13 @@ tbody tr:hover td{background:var(--panel)}
 </div>
 <div class="wrap">
   <div class="main">
+    <div class="pres" style="margin-bottom:18px;border-left:2px solid var(--accent)">
+      <b>2026-07-30 방침</b> · 정상·과도 해석은 <b>Python 으로 통일</b>합니다.
+      Modelica 는 <b>해석물성 + 기호 야코비안</b> 조합만 유지하며(Dymola 벤치마크 목적),
+      나머지 조합은 기록으로만 남깁니다.
+      P3~P6 이 모두 실패해 EEV 이산 이벤트 가설은 배제됐습니다.
+    </div>
+
     <div class="mhead">
       <div class="mtitle">실행 계획</div>
       <div class="msub">대화에서 정한 과제 · 눌러서 실행</div>
@@ -224,7 +231,8 @@ const ROWS = [
 {id:'omc-cs-ana-num-gbo',eng:'OMC',props:'해석형',jac:'수치',solver:'gbode',kind:'과도',
  status:'bad',t:null,steps:332,metric:'M_total 음수',note:'발산'},
 {id:'omc-cs-pulse',eng:'OMC',props:'해석형',jac:'기호',solver:'dassl',kind:'과도+펄스',
- status:'warn',t:null,steps:null,metric:'드리프트 0.118 %',note:'t=4.60 — EEV 이산 이벤트'},
+ status:'bad',t:null,steps:null,metric:'드리프트 0.118 %',
+ note:'t=4.60 · 데드밴드·제어주기·Nseg 조정 모두 실패'},
 {g:'Python · 정상해'},
 {id:'py-ss-part',eng:'Python',props:'해석형',jac:'수치',solver:'hybr',kind:'정상 (부분 커플드)',
  status:'ok',t:5.7,steps:13,metric:'Pc 10.4572',note:'SH 구속 · 개도 22.68'},
