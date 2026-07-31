@@ -99,7 +99,10 @@ def run(ref_fidelity, air_fidelity, operating, air_inlet,
                 rec = {'t': t, 'N': N, 'phase': 'charge',
                        'Pc': rr['P_cond'], 'Pe': rr['P_evap'],
                        'SH': rr['SH_evap'], 'opening': rr.get('opening'),
-                       'ok': bool(rr['success']), 'outer': r['outer_iter']}
+                       # 2026-07-31: 냉매 뉴턴 성공만 보면 공기 연성이 안 붙었는데도
+                #   ok=True 로 찍힌다 (실측: outer=8, converged=False 인데 ok).
+                #   둘 다 만족해야 그 스텝을 신뢰할 수 있다.
+                'ok': bool(rr['success']) and bool(r.get('converged', True)), 'outer': r['outer_iter']}
                 op_ws['P_evap'] = rr['P_evap']
                 op_ws['P_cond'] = rr['P_cond']
                 op_ws['h_suc'] = rr['h_suc']
