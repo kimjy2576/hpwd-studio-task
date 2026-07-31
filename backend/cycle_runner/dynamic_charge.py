@@ -52,6 +52,11 @@ def run(ref_fidelity, air_fidelity, operating, air_inlet,
         ctrl = EEVPulseController(SH_target=(SH_target or 6.0),
                                   opening_init=operating.get('opening', 18.0),
                                   **cfg)
+        # 2026-07-31: dt 가 전 스트로크 시간보다 크면 펄스 제한이 무의미해지고
+        #   개도가 하한↔상한만 왕복한다(한계주기). 경고를 결과에 담는다.
+        warn = ctrl.check_dt(dt)
+        if warn:
+            print(f"[경고] EEV 펄스 — {warn}")
     persistent_drum = None
     op_ws = dict(operating)
     conv = 0
@@ -147,5 +152,6 @@ def run(ref_fidelity, air_fidelity, operating, air_inlet,
             print(f"  t={t:6.0f} N={N:6.0f} {rec.get('phase')} "
                   f"Pc={rec.get('Pc')} Pe={rec.get('Pe')} X={rec.get('X_dry')}")
 
-    return {'trajectory': traj, 'converged_steps': conv,
+    return {'trajectory': traj,
+            'eev_warning': (ctrl.check_dt(dt) if ctrl else None), 'converged_steps': conv,
             'total_steps': n_steps, 'phase_switch_t': switch_t}

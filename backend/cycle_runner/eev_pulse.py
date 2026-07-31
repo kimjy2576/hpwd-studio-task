@@ -19,6 +19,7 @@ Modelica 대응
     PI_Controller_Pulse.n_max, pps_max, T_ctrl, deadband, use_pulse
     와 이름·기본값이 같다.
 """
+from typing import Optional
 
 
 class EEVPulseController:
@@ -69,36 +70,61 @@ class EEVPulseController:
           dt     : 시간 스텝 [s]
         """
         err = SH_meas - self.SH_target
-        n_sub = max(1, int(round(dt / self.T_ctrl)))
-        h = dt / n_sub          # 실제 적분 간격 (= T_ctrl)
+        self._t += dt
 
-        for _ in range(n_sub):
-            self._t += h
-            opening_raw = self.Kp * err + self.I
-            opening_cont = max(self.opening_min,
-                               min(self.opening_max, opening_raw))
-            # anti-windup back-calculation (Modelica PI_Controller 와 동일 형태)
-            self.I += h * (self.Ki * err
-                           + (self.opening - opening_raw) / self.T_aw)
-            # 적분 상태도 물리 범위로 제한 — 반포화가 못 잡는 폭주 방지
-            self.I = max(-2.0 * self.opening_max,
-                         min(2.0 * self.opening_max, self.I))
+        # 2026-07-31 정정: 측정 1회 = 제어 1회.
+        #   앞서는 dt 를 T_ctrl 로 쪼개 60번 돌렸는데, 그 60번 동안 SH 가
+        #   갱신되지 않아(동적해가 dt 마다 한 번만 준다) 같은 오차로
+        #   피드백 없이 밀어붙였다. 결과는 한계주기(bang-bang):
+        #     실측 dt=60 → 개도가 6%(하한) ↔ 100%(상한) 만 왕복,
+        #                  SH 가 1.18 K ↔ 36.67 K 두 점에서 진동.
+        #   실제 제어기는 1초마다 '새 측정' 으로 판단하므로 그렇게 되지 않는다.
+        #   측정이 하나뿐이면 판단도 한 번이어야 한다.
+        opening_raw = self.Kp * err + self.I
+        opening_cont = max(self.opening_min, min(self.opening_max, opening_raw))
+        # anti-windup back-calculation (Modelica PI_Controller 와 동일 형태)
+        self.I += dt * (self.Ki * err + (self.opening - opening_raw) / self.T_aw)
+        self.I = max(-2.0 * self.opening_max,
+                     min(2.0 * self.opening_max, self.I))
 
-            if not self.use_pulse:
-                self.opening = opening_cont
-                continue
+        if not self.use_pulse:
+            self.opening = opening_cont
+            return self.opening
 
-            if abs(err) > self.deadband:
-                target = opening_cont / 100.0 * self.n_max
-                step_lim = self.pps_max * self.T_ctrl
-                delta = max(-step_lim, min(step_lim, target - self.n_act))
-                self.n_act = self.n_act + delta
-            self.n_act = max(self.opening_min / 100.0 * self.n_max,
-                             min(self.opening_max / 100.0 * self.n_max,
-                                 round(self.n_act)))
-            self.opening = self.n_act / self.n_max * 100.0
-
+        if abs(err) > self.deadband:
+            target = opening_cont / 100.0 * self.n_max
+            # 이동 상한: 이 dt 동안 모터가 물리적으로 갈 수 있는 거리
+            step_lim = self.pps_max * dt
+            delta = max(-step_lim, min(step_lim, target - self.n_act))
+            self.n_act = self.n_act + delta
+        self.n_act = max(self.opening_min / 100.0 * self.n_max,
+                         min(self.opening_max / 100.0 * self.n_max,
+                             round(self.n_act)))
+        self.opening = self.n_act / self.n_max * 100.0
         return self.opening
+
+    def full_stroke_time(self) -> float:
+        """전 스트로크 통과 시간 [s] = n_max / pps_max."""
+        return self.n_max / max(self.pps_max, 1e-9)
+
+    def check_dt(self, dt: float) -> Optional[str]:
+        """dt 가 펄스 모사에 적절한지 판정. 부적절하면 사유를 돌려준다.
+
+        밸브가 한 스텝에 전 구간을 갈 수 있으면 pps 제한이 무의미해지고,
+        SH 가 그 사이 갱신되지 않아 한계주기(개도 하한↔상한 왕복)에 빠진다.
+        전 스트로크 시간의 1/4 이하를 권한다.
+        """
+        fs = self.full_stroke_time()
+        if dt > fs:
+            return (f"dt={dt:.0f} s 가 전 스트로크 시간({fs:.1f} s)보다 큽니다. "
+                    f"밸브가 매 스텝 전 구간을 왕복할 수 있어 펄스 제한이 "
+                    f"무의미해지고 개도가 하한↔상한만 오갑니다. "
+                    f"dt ≤ {fs/4:.0f} s 를 권합니다.")
+        if dt > fs / 4.0:
+            return (f"dt={dt:.0f} s 가 전 스트로크 시간({fs:.1f} s)의 1/4보다 "
+                    f"큽니다. 제어가 거칠어져 과열도가 진동할 수 있습니다. "
+                    f"dt ≤ {fs/4:.0f} s 를 권합니다.")
+        return None
 
     def state(self):
         """진단용 상태."""

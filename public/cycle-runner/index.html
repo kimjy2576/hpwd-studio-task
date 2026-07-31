@@ -505,6 +505,16 @@ function OperatingInputs({ op, setOp }) {
               onChange={v => set('deadband', v)} />
           </div>
         )}
+        {op.use_pulse && op.dynamic && (() => {
+          const fs = op.n_max / Math.max(op.pps_max, 1e-9);   // 전 스트로크 [s]
+          return op.dt > fs / 4 ? (
+            <div className="mt-2 text-[11px] text-amber-600">
+              전 스트로크 통과에 {fs.toFixed(1)} s 걸립니다. 지금 스텝 {op.dt} s 로는
+              밸브가 매 스텝 전 구간을 왕복할 수 있어 과열도가 하한↔상한만 오갑니다.
+              스텝을 {(fs / 4).toFixed(0)} s 이하로 낮추십시오.
+            </div>
+          ) : null;
+        })()}
       </div>
 
       {/* 제어 (SH 타겟 → EEV PI) */}
@@ -756,6 +766,11 @@ function ResultsPanel({ result, running }) {
           {result.converged ? `✓ 수렴 (${result.iterations}회)` : (result.error ? '✕ 실행 실패' : '~ 미수렴')}
         </span>
       </div>
+      {result.eev_warning && (
+        <div className="mb-3 px-3 py-2 rounded bg-amber-50 border-l-2 border-amber-400 text-[12px] text-amber-800">
+          <b>EEV 펄스 경고</b> · {result.eev_warning}
+        </div>
+      )}
       {result.error && (
         <div className="mb-3 px-3 py-2 rounded bg-rose-50 border-l-2 border-rose-400 text-[12px] text-rose-700">
           {result.error}

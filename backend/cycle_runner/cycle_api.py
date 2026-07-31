@@ -212,6 +212,7 @@ def _serialize_dynamic_charge(res: dict, req) -> dict:
         'dried_kg': dried, 'energy_kwh': kwh or None,
         'SMER': (dried / kwh) if kwh else None,
         'use_pulse': bool(req.use_pulse),
+        'eev_warning': res.get('eev_warning'),
         'M_charge_g': req.M_charge_g,
         'trajectory': [{k: x.get(k) for k in
                         ('t', 'N', 'phase', 'Pc', 'Pe', 'SH', 'opening',
