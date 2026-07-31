@@ -205,9 +205,25 @@ def _serialize_dynamic_charge(res: dict, req) -> dict:
             prev_t = x['t']
 
     last = ok[-1] if ok else (tr[-1] if tr else {})
+
+    # 2026-07-31 판정 정정: 기동 램프(startup)는 수렴 조건에서 뺀다.
+    #   저rpm 구간은 SH 구속을 만족하는 해가 물리적으로 없어 일부러 구속을
+    #   푼 채로 돈다. 그 스텝을 미수렴으로 세면 물리가 정상인데도
+    #   'converged=False' 가 되어 실패로 보인다.
+    #   (실측: 4/6 수렴, charge 구간은 전부 ok, SH=8.6 목표 달성인데 False)
+    charge = [x for x in tr if x.get('phase') == 'charge']
+    startup = [x for x in tr if x.get('phase') == 'startup']
+    charge_ok = [x for x in charge if x.get('ok')]
+    conv = bool(charge) and len(charge_ok) == len(charge)
+
     return {
-        'converged': bool(ok) and len(ok) == len([x for x in tr if x.get('phase') != 'stopped']),
+        'converged': conv,
         'iterations': len(ok),
+        'phase_counts': {
+            'charge_ok': len(charge_ok), 'charge': len(charge),
+            'startup_ok': len([x for x in startup if x.get('ok')]),
+            'startup': len(startup),
+        },
         'total_steps': res.get('total_steps'),
         'converged_steps': res.get('converged_steps'),
         'phase_switch_t': res.get('phase_switch_t'),

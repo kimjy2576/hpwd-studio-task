@@ -472,15 +472,21 @@ function OperatingInputs({ op, setOp }) {
         )}
       </div>
 
-      {/* 계산 자원 — 2026-07-30.
-          BLAS/OpenMP 스레드. CoolProp·numpy 내부 병렬에 쓰인다.
-          GPU 는 두지 않는다: 순차 시간적분이고 scipy·CoolProp 에 GPU 경로가 없다. */}
+      {/* 계산 자원 — 2026-07-31 정정.
+          CPU 스레드 입력을 제거했다. 프로파일 결과 numpy·linalg 가 0.0%,
+          시간은 전부 파이썬 루프(_solve_segment 3040회, _poly2 31004회,
+          math.log 181199회)에 있다. 야코비안도 3~4 미지수라 BLAS 가 쓰일
+          자리가 없다. 스레드를 늘려도 아무 효과가 없는데 입력을 두면
+          '설정했으니 빨라졌겠지' 라는 오해만 만든다. */}
       <div>
         <div className="mono text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-2">계산 자원</div>
-        <NumberField label="CPU 스레드 (0=기본)" value={op.threads} unit="개" min={0} max={64}
-          onChange={v => set('threads', v)} />
-        <div className="mt-1 text-[11px] text-slate-400">
-          GPU 설정은 없습니다 — 순차 시간적분이라 이 규모에서는 전송 비용이 더 큽니다.
+        <div className="text-[11px] text-slate-400 leading-relaxed">
+          이 해석은 단일 코어로 돕니다. 시간의 대부분이 파이썬 루프
+          (HX 세그먼트 3040개 · 물성 다항식)에 있고 행렬 연산이 없어
+          스레드를 늘려도 효과가 없습니다.
+          <br />
+          속도가 필요하면 세그먼트 수를 줄이거나, 여러 조건을 볼 때
+          조건별로 프로세스를 나누는 편이 낫습니다.
         </div>
       </div>
 
@@ -788,6 +794,15 @@ function ResultsPanel({ result, running }) {
           {result.converged ? `✓ 수렴 (${result.iterations}회)` : (result.error ? '✕ 실행 실패' : '~ 미수렴')}
         </span>
       </div>
+      {result.phase_counts && (
+        <div className="mb-3 text-[11px] text-slate-500 mono">
+          기동 {result.phase_counts.startup_ok}/{result.phase_counts.startup} ·
+          {' '}제어 {result.phase_counts.charge_ok}/{result.phase_counts.charge}
+          <span className="text-slate-400 ml-2">
+            (기동 구간은 저rpm 이라 과열도 구속을 풀고 돕니다 — 수렴 판정에서 제외)
+          </span>
+        </div>
+      )}
       {result.eev_warning && (
         <div className="mb-3 px-3 py-2 rounded bg-amber-50 border-l-2 border-amber-400 text-[12px] text-amber-800">
           <b>EEV 펄스 경고</b> · {result.eev_warning}
