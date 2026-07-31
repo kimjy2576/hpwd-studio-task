@@ -599,6 +599,12 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     if initOpt == 1 then
       // 초기방정식 없음 (-iif 로 상태를 받을 때)
     elseif initOpt == 3 or (initOpt == 0 and steadyInit) then
+      // 2026-07-31: der(x)=0 은 필요하다.
+      //   equation 의 if initial() 이 정상상태 방정식으로 바꾸면
+      //   der(h_ref)·der(T_w) 가 어떤 방정식에도 나타나지 않게 되어
+      //   'preBalanceInitialSystem2 failed because variable $DER.evap.T_w[16]'
+      //   로 초기화 시스템 자체가 생성되지 않는다.
+      //   즉 이 둘은 짝이며, 구조적 특이의 원인은 다른 곳이다.
       for k in 1:M loop der(h_ref[k])=0; der(T_w[k])=0; end for;
       if use_momentum then der(m_ref_col)=0; end if;
       der(dp_lag)=0;
@@ -639,10 +645,24 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     end for;
     // 냉매 엔탈피 동특성 (upwind, path 순서; 응축기 방열 → −Q_ref)
     M_c[1]=R290Tab.rho_ph_a(P, h_ref[1])*V_cell;
-    M_c[1]*der(h_ref[1])=m_ref_col*(h_in - h_ref[1]) - Q_ref[1];
+    // 2026-07-31: 초기화 시 정상상태 방정식으로 대체 (OMC #14010 우회법).
+    //   기존은 initial equation 에 der(x)=0 을 '추가' 만 해서 원래 방정식이
+    //   그대로 남았고, OMC 백엔드가 lambda=0 에서 필요한 구조적 단순화를
+    //   하지 못해 큰 강결합 성분을 쪼개지 못했다 -> homotopy 가 lambda=0 에서 정체.
+    //   Dymola 는 이 단순화를 스스로 하지만 OMC 는 못 하므로,
+    //   if initial() 로 방정식 자체를 바꿔 단순화를 강제한다.
+    if initial() and steadyInit then
+      0=m_ref_col*(h_in - h_ref[1]) - Q_ref[1];
+    else
+      M_c[1]*der(h_ref[1])=m_ref_col*(h_in - h_ref[1]) - Q_ref[1];
+    end if;
     for k in 2:M loop
       M_c[k]=R290Tab.rho_ph_a(P, h_ref[k])*V_cell;
-      M_c[k]*der(h_ref[k])=m_ref_col*(h_ref[k - 1] - h_ref[k]) - Q_ref[k];
+      if initial() and steadyInit then
+        0=m_ref_col*(h_ref[k - 1] - h_ref[k]) - Q_ref[k];
+      else
+        M_c[k]*der(h_ref[k])=m_ref_col*(h_ref[k - 1] - h_ref[k]) - Q_ref[k];
+      end if;
     end for;
     // 공기측 march (행 방향) + Q_air (벽→공기)
     for s in 1:Nsc loop
@@ -656,7 +676,11 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     end for;
     // 벽 동특성 (냉매에서 받고 공기로 버림)
     for k in 1:M loop
-      C_wall_cell*der(T_w[k])=Q_ref[k] - Q_air[k];
+      if initial() and steadyInit then
+        0=Q_ref[k] - Q_air[k];
+      else
+        C_wall_cell*der(T_w[k])=Q_ref[k] - Q_air[k];
+      end if;
     end for;
     Q_total=Ncirc*sum(Q_ref);
     h_out=h_ref[M];
@@ -837,6 +861,12 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     if initOpt == 1 then
       // 초기방정식 없음 (-iif 로 상태를 받을 때)
     elseif initOpt == 3 or (initOpt == 0 and steadyInit) then
+      // 2026-07-31: der(x)=0 은 필요하다.
+      //   equation 의 if initial() 이 정상상태 방정식으로 바꾸면
+      //   der(h_ref)·der(T_w) 가 어떤 방정식에도 나타나지 않게 되어
+      //   'preBalanceInitialSystem2 failed because variable $DER.evap.T_w[16]'
+      //   로 초기화 시스템 자체가 생성되지 않는다.
+      //   즉 이 둘은 짝이며, 구조적 특이의 원인은 다른 곳이다.
       for k in 1:M loop der(h_ref[k])=0; der(T_w[k])=0; end for;
       if use_momentum then der(m_ref_col)=0; end if;
     else
@@ -890,14 +920,32 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     // path-order Q_ref 조립 + 벽 동특성
     for k in 1:M loop
       Q_ref[k]=Q_ref_c[rowOf[k], segOf[k]];
-      C_wall_cell*der(T_w[k])=Q_air_c[rowOf[k], segOf[k]] - Q_ref[k];
+      if initial() and steadyInit then
+        0=Q_air_c[rowOf[k], segOf[k]] - Q_ref[k];
+      else
+        C_wall_cell*der(T_w[k])=Q_air_c[rowOf[k], segOf[k]] - Q_ref[k];
+      end if;
     end for;
     // 냉매 엔탈피 동특성 (upwind, path 순서; 증발기 흡열 → +Q_ref)
     M_c[1]=R290Tab.rho_ph_a(P, h_ref[1])*V_cell;
-    M_c[1]*der(h_ref[1])=m_ref_col*(h_in - h_ref[1]) + Q_ref[1];
+    // 2026-07-31: 초기화 시 정상상태 방정식으로 대체 (OMC #14010 우회법).
+    //   기존은 initial equation 에 der(x)=0 을 '추가' 만 해서 원래 방정식이
+    //   그대로 남았고, OMC 백엔드가 lambda=0 에서 필요한 구조적 단순화를
+    //   하지 못해 큰 강결합 성분을 쪼개지 못했다 -> homotopy 가 lambda=0 에서 정체.
+    //   Dymola 는 이 단순화를 스스로 하지만 OMC 는 못 하므로,
+    //   if initial() 로 방정식 자체를 바꿔 단순화를 강제한다.
+    if initial() and steadyInit then
+      0=m_ref_col*(h_in - h_ref[1]) + Q_ref[1];
+    else
+      M_c[1]*der(h_ref[1])=m_ref_col*(h_in - h_ref[1]) + Q_ref[1];
+    end if;
     for k in 2:M loop
       M_c[k]=R290Tab.rho_ph_a(P, h_ref[k])*V_cell;
-      M_c[k]*der(h_ref[k])=m_ref_col*(h_ref[k - 1] - h_ref[k]) + Q_ref[k];
+      if initial() and steadyInit then
+        0=m_ref_col*(h_ref[k - 1] - h_ref[k]) + Q_ref[k];
+      else
+        M_c[k]*der(h_ref[k])=m_ref_col*(h_ref[k - 1] - h_ref[k]) + Q_ref[k];
+      end if;
     end for;
     Q_total=Ncirc*sum(Q_ref); Q_lat_total=Ncirc*sum(Q_lat_c);
     h_out=h_ref[M];
