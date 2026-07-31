@@ -688,7 +688,7 @@ function ResidualChart({ residuals, tol }) {
   );
 }
 
-function ProgressPanel({ prog }) {
+function ProgressPanel({ prog, onCancel }) {
   if (!prog) return null;
   const p = Math.round((prog.progress || 0) * 100);
   const L = prog.live || {};
@@ -710,6 +710,14 @@ function ProgressPanel({ prog }) {
         <span className="mono text-[11px] text-slate-400 ml-auto">
           {prog.live_step != null ? prog.live_step + '/' + prog.live_total : ''}
         </span>
+        {onCancel && (
+          <button onClick={onCancel}
+            className="mono text-[11px] px-2 py-0.5 rounded border border-rose-300
+                       text-rose-600 hover:bg-rose-50"
+            title="다음 반복/스텝에서 멈춥니다">
+            중단
+          </button>
+        )}
       </div>
       <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden mb-3">
         <div className="h-full bg-blue-500 transition-all duration-300"
@@ -863,7 +871,19 @@ function CycleRunner() {
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState(null);
   // 2026-07-30: 실시간 진행 — /cycle/run 은 job_id 만 주고 /cycle/status 로 폴링한다
-  const [prog, setProg] = useState(null);   // {progress, message, live, live_step, live_total}
+  const [prog, setProg] = useState(null);
+  const [jobId, setJobId] = useState(null);   // 중단 요청용
+
+  // 2026-07-31: 협조적 중단. 파이썬 스레드는 강제 종료가 안 되므로
+  //   플래그만 세우고 다음 진행 콜백(반복/스텝)에서 빠져나온다.
+  //   따라서 즉시 멈추지 않고 진행 중인 반복은 끝까지 간다.
+  const cancelRun = () => {
+    if (!jobId) return;
+    fetch('/cycle/cancel/' + jobId, { method: 'POST' })
+      .then((r) => r.json())
+      .then((d) => setProg((p) => (p ? { ...p, message: d.note || '중단 요청' } : p)))
+      .catch(() => {});
+  };   // {progress, message, live, live_step, live_total}
 
   // 설계변수 패널 상태 + 컴포넌트별 파라미터 오버라이드
   const [editComp, setEditComp] = useState(null);   // 열린 컴포넌트 key (null=닫힘)
@@ -942,6 +962,7 @@ function CycleRunner() {
       })
       .then((d) => {
         if (!d.job_id) throw new Error('job_id 를 받지 못했습니다');
+        setJobId(d.job_id);
         const poll = () => {
           fetch('/cycle/status/' + d.job_id)
             .then((r) => r.json())
@@ -950,8 +971,14 @@ function CycleRunner() {
               if (st.status === 'done') {
                 setResult(st.result);
                 setRunning(false);
+                setJobId(null);
               } else if (st.status === 'error') {
                 setResult({ converged: false, error: st.error || '계산 실패' });
+                setRunning(false);
+              } else if (st.status === 'cancelled') {
+                setResult({ converged: false,
+                            error: '사용자가 중단했습니다. ' +
+                                   '진행 중이던 반복까지의 결과는 버려집니다.' });
                 setRunning(false);
               } else {
                 setTimeout(poll, 700);
@@ -1014,7 +1041,7 @@ function CycleRunner() {
         {/* 조건 + 결과 (2열) */}
         <div className="grid lg:grid-cols-2 gap-5">
           <OperatingInputs op={op} setOp={setOp} />
-          {(running || prog) && <ProgressPanel prog={prog} />}
+          {(running || prog) && <ProgressPanel prog={prog} onCancel={running ? cancelRun : null} />}
           <ResultsPanel result={result} running={running} />
         </div>
       </main>

@@ -15,6 +15,7 @@
 공기 순환 순서는 AIR_CORE = ['drum','filter','evaporator','condenser'].
 팬은 fan_position 으로 임의 지점에 삽입한다(발열 위치가 성능에 영향).
 """
+from .cancel import Cancelled
 from .air_loop import one_pass as air_pass, AIR_CORE
 from .charge_closure import solve_forward
 
@@ -201,8 +202,10 @@ def solve(ref_fidelity, air_fidelity, operating, air_inlet,
         if on_progress:
             try:
                 on_progress(hist[-1], outer, max_outer)
+            except Cancelled:
+                raise      # 취소는 삼키지 않는다
             except Exception:
-                pass   # 보고 실패가 계산을 막지 않는다
+                pass       # 보고 실패는 계산을 막지 않는다
 
         if verbose:
             print(f"  outer{outer}: dT_e={dT_e:.3f} dT_c={dT_c:.3f} "

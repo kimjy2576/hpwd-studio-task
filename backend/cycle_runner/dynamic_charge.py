@@ -15,6 +15,7 @@ warm start
   이전 스텝의 (P_evap, P_cond, h_suc, opening) 과 공기 BC 를 이월한다.
   정상해 1점이 32초이나 warm start 로 outer 반복이 2~3회로 줄어든다.
 """
+from .cancel import Cancelled
 from .coupled_solver import solve as coupled_solve
 from .coupled_charge import solve as charge_solve
 from .eev_pulse import EEVPulseController
@@ -146,8 +147,10 @@ def run(ref_fidelity, air_fidelity, operating, air_inlet,
         if on_progress:
             try:
                 on_progress(rec, k, n_steps)
+            except Cancelled:
+                raise      # 취소는 삼키지 않는다
             except Exception:
-                pass
+                pass       # 보고 실패는 계산을 막지 않는다
         if verbose:
             print(f"  t={t:6.0f} N={N:6.0f} {rec.get('phase')} "
                   f"Pc={rec.get('Pc')} Pe={rec.get('Pe')} X={rec.get('X_dry')}")

@@ -13,7 +13,7 @@ import time
 import uuid
 import threading
 import contextlib
-from typing import Any, Optional
+from typing import Any, Optional, Dict
 
 from fastapi import APIRouter
 from pydantic import BaseModel
@@ -120,6 +120,12 @@ def _to_air_inlet(op: dict) -> dict:
 
 
 # 기본 체적 [m3] — HPWD 실측 (배관 3구간 + 어큐 200cc + 오일 160cc + 쉘 400cc)
+# 2026-07-31: 취소 예외는 cycle_runner.cancel 에 공용으로 둔다.
+#   솔버의 콜백 가드가 except Exception 으로 보고 실패를 삼키는데,
+#   전용 예외여야 그 가드를 통과해 계산을 실제로 멈출 수 있다.
+from .cancel import Cancelled as _Cancelled
+
+
 def _fmt_prog(rec: dict, i: int, n: int) -> str:
     """진행 메시지 — 무엇이 얼마나 수렴했는지 한 줄로."""
     if 't' in rec:   # 동적
@@ -249,6 +255,9 @@ def _run_job(job_id: str, req: CycleRunRequest):
         _resid: list = []
 
         def _prog(rec, i, n):
+            with _JOBS_LOCK:
+                if _JOBS.get(job_id, {}).get('cancel'):
+                    raise _Cancelled()
             frac = 0.15 + 0.8 * (i + 1) / max(n, 1)
             keys = ('dT_cond', 'dT_evap', 'Pc', 'Pe', 'SH', 'opening',
                     't', 'N', 'phase', 'x_out', 'm_w', 'ok')
@@ -373,6 +382,9 @@ def _run_job(job_id: str, req: CycleRunRequest):
         _update(status='done', progress=1.0,
                 message=f'완료 ({elapsed:.1f}s)',
                 result=result, finished=time.time())
+    except _Cancelled:
+        _update(status='cancelled', progress=1.0, message='사용자 중단',
+                finished=time.time())
     except Exception as e:
         import traceback
         tb = traceback.format_exc()
@@ -618,3 +630,24 @@ def cycle_params():
                 params = AIR_MANUAL[comp].get(str(fid))
             meta[comp][str(fid)] = params or []
     return meta
+
+
+@cycle_router.post("/cancel/{job_id}")
+def cycle_cancel(job_id: str) -> Dict[str, Any]:
+    """실행 중인 job 에 중단을 요청한다.
+
+    파이썬 스레드는 강제 종료할 수 없어 협조적 중단만 가능하다.
+    플래그를 세우면 다음 진행 콜백(정상해 outer 반복, 동적해 스텝)에서
+    빠져나온다. 반복 하나가 수십 초 걸릴 수 있으므로 즉시 멈추지는 않는다.
+    """
+    with _JOBS_LOCK:
+        job = _JOBS.get(job_id)
+        if job is None:
+            return {'job_id': job_id, 'ok': False, 'note': 'job_id 없음'}
+        if job.get('status') in ('done', 'error', 'cancelled'):
+            return {'job_id': job_id, 'ok': False,
+                    'note': f"이미 끝났습니다 ({job.get('status')})"}
+        job['cancel'] = True
+        job['message'] = '중단 요청 — 다음 반복에서 멈춥니다'
+    return {'job_id': job_id, 'ok': True,
+            'note': '다음 반복/스텝에서 멈춥니다. 진행 중인 반복은 끝까지 갑니다.'}
