@@ -117,6 +117,21 @@ def one_pass(fidelity, air_inlet, states, hx_refrigerant, fan_position=None,
     new_states = {}
 
     for comp in path:
+        # 2026-07-30: 발산 가드.
+        #   공기 온도가 물리 범위를 벗어나면 _cin_for 안의 습공기 물성 계산이
+        #   CoolProp 'outside the range of validity' 로 터진다.
+        #   그 메시지만으로는 어느 컴포넌트에서 무엇이 발산했는지 알 수 없어
+        #   여기서 먼저 잡고 지점·값·경로를 알려준다.
+        _T = air.get('T')
+        if _T is None or not (-60.0 <= float(_T) <= 200.0):
+            raise RuntimeError(
+                f"공기 루프 발산 — {comp} 입구 온도 "
+                f"{'없음' if _T is None else f'{float(_T):.1f} °C'} "
+                f"(물리 범위 -60~200). 경로 {' → '.join(path)}. "
+                f"직전 상태 W={air.get('W')}, RH={air.get('RH')}. "
+                "드럼 루프가 감쇠되지 않고 있습니다 — "
+                "SH 목표·팬 위치·초기 압력 추정을 확인하십시오.")
+
         # 공기측 입력 (통일 상태 → 컴포넌트 입력 키)
         cin = _cin_for(comp, air, m_dot_air)
 
