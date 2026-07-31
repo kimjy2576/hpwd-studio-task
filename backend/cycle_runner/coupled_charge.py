@@ -54,6 +54,7 @@ def solve(ref_fidelity, air_fidelity, operating, air_inlet,
           M_charge, geom, oil_cfg=None, SH_target=None, fan_position=None,
           params_override=None, air_states=None,
           sh_warmup=3, sh_air_tol=1.0, dt=1.0, method='hybr',
+          on_progress=None,   # 2026-07-30: outer 마다 호출 (실시간 진행 표시용)
           max_outer=20, tol_air=0.05, alpha_air=0.6, inner_xtol=1e-6,
           dry_accumulator=True, verbose=False):
     """완전 연성 정상해.
@@ -195,6 +196,14 @@ def solve(ref_fidelity, air_fidelity, operating, air_inlet,
                      'SH': ref_res['SH_evap'],
                      'opening': ref_res.get('opening'),
                      'ok': ref_res['success']})
+        # 2026-07-30: 실시간 진행 보고. UI 가 수렴 추이를 볼 수 있게 한다.
+        #   기존에는 '수렴 중' 메시지만 있어 진행 여부를 알 수 없었다.
+        if on_progress:
+            try:
+                on_progress(hist[-1], outer, max_outer)
+            except Exception:
+                pass   # 보고 실패가 계산을 막지 않는다
+
         if verbose:
             print(f"  outer{outer}: dT_e={dT_e:.3f} dT_c={dT_c:.3f} "
                   f"Pc={ref_res['P_cond']:.4f} Pe={ref_res['P_evap']:.4f} ok={ref_res['success']}")

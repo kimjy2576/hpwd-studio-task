@@ -8,6 +8,7 @@ L3 커플드는 수십초~수분 걸리므로 동기 요청은 UI를 멈춤. 그
 Modelica 기반 /run_cycle (server.py)과 별개 — 이건 순수 Python 엔진.
 """
 import io
+import os
 import time
 import uuid
 import threading
@@ -59,6 +60,10 @@ class CycleRunRequest(BaseModel):
     geom: Optional[dict] = None         # 체적 (미지정 시 기본 HPWD 값)
     use_pulse: bool = False             # EEV 스텝모터 펄스
     eev: Optional[dict] = None          # {n_max, pps_max, T_ctrl, deadband}
+    # 2026-07-30: 계산 자원 설정
+    #   threads: BLAS/OpenMP 스레드 (CoolProp·numpy 내부 병렬)
+    #   GPU 는 두지 않는다 — 순차 시간적분이고 scipy/CoolProp 에 GPU 경로가 없다
+    threads: int = 0                    # 0 이면 기본값 유지
 
 
 class CycleRunResponse(BaseModel):
@@ -74,6 +79,10 @@ class CycleStatusResponse(BaseModel):
     result: Optional[dict] = None
     error: Optional[str] = None
     elapsed: Optional[float] = None
+    # 2026-07-30: 실시간 진행 — 반복/스텝별 현재 값
+    live: Optional[dict] = None
+    live_step: Optional[int] = None
+    live_total: Optional[int] = None
 
 
 # ─── operating 변환 (UI 페이로드 → 엔진 규약) ─────────────────────
@@ -109,6 +118,20 @@ def _to_air_inlet(op: dict) -> dict:
 
 
 # 기본 체적 [m3] — HPWD 실측 (배관 3구간 + 어큐 200cc + 오일 160cc + 쉘 400cc)
+def _fmt_prog(rec: dict, i: int, n: int) -> str:
+    """진행 메시지 — 무엇이 얼마나 수렴했는지 한 줄로."""
+    if 't' in rec:   # 동적
+        sh = rec.get('SH')
+        return (f"스텝 {i+1}/{n} · t={rec.get('t', 0):.0f}s"
+                + (f" · SH {sh:.2f} K" if sh is not None else "")
+                + (" · 수렴" if rec.get('ok') else " · 미수렴"))
+    dtc = rec.get('dT_cond')
+    return (f"반복 {i+1}/{n}"
+            + (f" · 공기 잔차 {dtc:.4f} K" if dtc is not None else "")
+            + (f" · Pc {rec['Pc']:.3f} bar" if rec.get('Pc') else "")
+            + (f" · SH {rec['SH']:.2f} K" if rec.get('SH') is not None else ""))
+
+
 DEFAULT_GEOM = {
     'V_n1': 1.832e-5, 'V_n2': 9.99e-6, 'V_n3': 3.66e-6,
     'V_acc': 2.226e-4, 'V_oil_cc': 160.0, 'V_shell': 4.0e-4,
@@ -202,6 +225,12 @@ def _run_job(job_id: str, req: CycleRunRequest):
             if job_id in _JOBS:
                 _JOBS[job_id].update(kw)
 
+    # 2026-07-30: 스레드 설정은 import 전에 해야 BLAS 가 읽는다.
+    if req.threads and req.threads > 0:
+        for var in ('OMP_NUM_THREADS', 'OPENBLAS_NUM_THREADS',
+                    'MKL_NUM_THREADS', 'NUMEXPR_NUM_THREADS'):
+            os.environ[var] = str(req.threads)
+
     _update(status='running', progress=0.05, message='엔진 초기화')
     t0 = time.time()
     try:
@@ -210,6 +239,17 @@ def _run_job(job_id: str, req: CycleRunRequest):
         with contextlib.redirect_stdout(_buf):
             from cycle_runner import (coupled_solver, dynamic_runner,
                                       coupled_charge, dynamic_charge)
+
+        # 2026-07-30: 실시간 진행 보고.
+        #   반복/스텝마다 현재 값을 job 상태에 담아 UI 가 폴링으로 본다.
+        def _prog(rec, i, n):
+            frac = 0.15 + 0.8 * (i + 1) / max(n, 1)
+            keys = ('dT_cond', 'dT_evap', 'Pc', 'Pe', 'SH', 'opening',
+                    't', 'N', 'phase', 'x_out', 'm_w', 'ok')
+            _update(progress=min(frac, 0.95),
+                    message=_fmt_prog(rec, i, n),
+                    live={k: rec.get(k) for k in keys if k in rec},
+                    live_step=i + 1, live_total=n)
 
         engine_op = _to_engine_operating(req.operating)
         air_inlet = _to_air_inlet(req.operating)
@@ -268,6 +308,7 @@ def _run_job(job_id: str, req: CycleRunRequest):
                     dt=opts.get('dt', 20.0),
                     N_target=req.operating.get('comp_rpm', 1800.0),
                     ramp_time=opts.get('ramp_time', 120.0),
+                    on_progress=_prog,
                 )
             result = _serialize_dynamic_charge(res, req)
         else:
@@ -283,6 +324,7 @@ def _run_job(job_id: str, req: CycleRunRequest):
                         fan_position=req.fan_position,
                         params_override=override,
                         SH_target=SH_target,
+                        on_progress=_prog,
                     )
                     result = _serialize_steady_charge(res)
                 else:
@@ -432,6 +474,9 @@ def cycle_status(job_id: str):
         job_id=job_id, status=j['status'], progress=j.get('progress', 0.0),
         message=j.get('message', ''), result=j.get('result'),
         error=j.get('error'), elapsed=elapsed,
+        live=j.get('live'),
+        live_step=j.get('live_step'),
+        live_total=j.get('live_total'),
     )
 
 

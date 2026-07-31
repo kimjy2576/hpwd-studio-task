@@ -472,6 +472,18 @@ function OperatingInputs({ op, setOp }) {
         )}
       </div>
 
+      {/* 계산 자원 — 2026-07-30.
+          BLAS/OpenMP 스레드. CoolProp·numpy 내부 병렬에 쓰인다.
+          GPU 는 두지 않는다: 순차 시간적분이고 scipy·CoolProp 에 GPU 경로가 없다. */}
+      <div>
+        <div className="mono text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-2">계산 자원</div>
+        <NumberField label="CPU 스레드 (0=기본)" value={op.threads} unit="개" min={0} max={64}
+          onChange={v => set('threads', v)} />
+        <div className="mt-1 text-[11px] text-slate-400">
+          GPU 설정은 없습니다 — 순차 시간적분이라 이 규모에서는 전송 비용이 더 큽니다.
+        </div>
+      </div>
+
       {/* EEV 스텝모터 펄스 — 실제 밸브는 이산 스텝이고 초당 최대 펄스가 있다.
           과도 구간에서 SH 가 목표에 고정되지 않고 진동하는 원인. */}
       <div>
@@ -548,6 +560,55 @@ function OperatingInputs({ op, setOp }) {
 }
 
 // ── 결과 패널 (샘플 데이터) ──
+// ── 실시간 진행 패널 (2026-07-30) ──
+//   기존에는 '수렴 중' 메시지만 있어 진행 여부를 알 수 없었다.
+//   백엔드가 반복/스텝마다 live 를 채워 보내므로 그대로 보여준다.
+function ProgressPanel({ prog }) {
+  if (!prog) return null;
+  const p = Math.round((prog.progress || 0) * 100);
+  const L = prog.live || {};
+  const rows = [
+    ['공기 잔차', L.dT_cond, 'K', 4],
+    ['고압', L.Pc, 'bar', 3],
+    ['저압', L.Pe, 'bar', 3],
+    ['과열도', L.SH, 'K', 2],
+    ['개도', L.opening, '%', 2],
+    ['시각', L.t, 's', 0],
+    ['출구 퀄리티', L.x_out, '', 3],
+    ['잔수', L.m_w, 'kg', 4],
+  ].filter(r => r[1] != null);
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 p-4 mb-3">
+      <div className="flex items-baseline gap-3 mb-2">
+        <span className="text-sm font-bold text-slate-700">진행</span>
+        <span className="mono text-[11px] text-slate-500">{prog.message}</span>
+        <span className="mono text-[11px] text-slate-400 ml-auto">
+          {prog.live_step != null ? prog.live_step + '/' + prog.live_total : ''}
+        </span>
+      </div>
+      <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden mb-3">
+        <div className="h-full bg-blue-500 transition-all duration-300"
+             style={{ width: p + '%' }} />
+      </div>
+      {rows.length > 0 && (
+        <div className="grid grid-cols-4 gap-2">
+          {rows.map(function (r) {
+            return (
+              <div key={r[0]} className="bg-slate-50 rounded-lg px-2 py-1.5">
+                <div className="text-[10px] text-slate-400">{r[0]}</div>
+                <div className="mono text-[12px] text-slate-700">
+                  {typeof r[1] === 'number' ? r[1].toFixed(r[3]) : String(r[1])}
+                  <span className="text-[10px] text-slate-400 ml-0.5">{r[2]}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ResultsPanel({ result, running }) {
   if (!result) {
     return (
@@ -664,9 +725,12 @@ function CycleRunner() {
     use_charge: true, M_charge_g: 100,      // 충전량 구속 (오일·어큐·M_total)
     use_pulse: false,                        // EEV 스텝모터 펄스
     n_max: 500, pps_max: 30, T_ctrl: 1.0, deadband: 0.5,
+    threads: 0,                              // 0=기본값 유지
   });
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState(null);
+  // 2026-07-30: 실시간 진행 — /cycle/run 은 job_id 만 주고 /cycle/status 로 폴링한다
+  const [prog, setProg] = useState(null);   // {progress, message, live, live_step, live_total}
 
   // 설계변수 패널 상태 + 컴포넌트별 파라미터 오버라이드
   const [editComp, setEditComp] = useState(null);   // 열린 컴포넌트 key (null=닫힘)
@@ -720,6 +784,7 @@ function CycleRunner() {
       use_charge: op.use_charge,
       M_charge_g: op.M_charge_g,
       use_pulse: op.use_pulse,
+      threads: op.threads,
       eev: op.use_pulse ? {
         n_max: op.n_max, pps_max: op.pps_max,
         T_ctrl: op.T_ctrl, deadband: op.deadband,
@@ -729,6 +794,10 @@ function CycleRunner() {
     //   엔드포인트는 cycle_runner/cycle_api.py 의 /cycle/run (Python 전용).
     //   기존 코드는 존재하지 않는 /run_cycle_runner 를 TODO 로 두고
     //   setTimeout 으로 난수 샘플을 보여주고 있었다.
+    // /cycle/run 은 job_id 만 돌려준다. /cycle/status/{id} 를 폴링해야
+    // 진행과 결과를 받는다. 기존 코드는 응답을 바로 결과로 써서
+    // job_id 만 받고 '미수렴' 으로 보였다.
+    setProg(null);
     fetch('/cycle/run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -739,8 +808,28 @@ function CycleRunner() {
         return r.json();
       })
       .then((d) => {
-        setResult(d);
-        setRunning(false);
+        if (!d.job_id) throw new Error('job_id 를 받지 못했습니다');
+        const poll = () => {
+          fetch('/cycle/status/' + d.job_id)
+            .then((r) => r.json())
+            .then((st) => {
+              setProg(st);
+              if (st.status === 'done') {
+                setResult(st.result);
+                setRunning(false);
+              } else if (st.status === 'error') {
+                setResult({ converged: false, error: st.error || '계산 실패' });
+                setRunning(false);
+              } else {
+                setTimeout(poll, 700);
+              }
+            })
+            .catch((e) => {
+              setResult({ converged: false, error: '상태 조회 실패: ' + e.message });
+              setRunning(false);
+            });
+        };
+        poll();
       })
       .catch((e) => {
         setResult({ converged: false, error: String(e.message || e) });
@@ -792,6 +881,7 @@ function CycleRunner() {
         {/* 조건 + 결과 (2열) */}
         <div className="grid lg:grid-cols-2 gap-5">
           <OperatingInputs op={op} setOp={setOp} />
+          {(running || prog) && <ProgressPanel prog={prog} />}
           <ResultsPanel result={result} running={running} />
         </div>
       </main>

@@ -34,7 +34,7 @@ def run(ref_fidelity, air_fidelity, operating, air_inlet,
         SH_target=None, use_pulse=False, eev_cfg=None,
         t_end=1800.0, dt=60.0,
         N_target=1800.0, ramp_time=120.0, N_charge_min=1200.0,
-        max_outer=6, method='hybr', verbose=False):
+        max_outer=6, method='hybr', on_progress=None, verbose=False):
     """완전 연성 동적 해석.
 
     Returns:
@@ -137,6 +137,12 @@ def run(ref_fidelity, air_fidelity, operating, air_inlet,
             rec = {'t': t, 'N': N, 'phase': 'error', 'error': str(e)[:80]}
 
         traj.append(rec)
+        # 2026-07-30: 스텝마다 진행 보고 (UI 실시간 표시)
+        if on_progress:
+            try:
+                on_progress(rec, k, n_steps)
+            except Exception:
+                pass
         if verbose:
             print(f"  t={t:6.0f} N={N:6.0f} {rec.get('phase')} "
                   f"Pc={rec.get('Pc')} Pe={rec.get('Pe')} X={rec.get('X_dry')}")
