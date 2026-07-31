@@ -352,6 +352,14 @@ def _run_job(job_id: str, req: CycleRunRequest):
                         on_progress=_prog,
                     )
                     result = _serialize_steady_charge(res)
+                    # 2026-07-31: 정상해는 SH 를 구속해 풀므로 개도가 해의
+                    #   일부로 나온다. 제어기가 개입할 자리가 없어 펄스는
+                    #   무시된다. 켜 두고 '적용됐다' 고 오해하지 않도록 알린다.
+                    if req.use_pulse:
+                        result['eev_warning'] = (
+                            "EEV 펄스는 정상해에서 무시됩니다 — 과열도를 구속해 "
+                            "풀기 때문에 개도가 해의 일부로 결정됩니다. "
+                            "펄스 거동을 보려면 동적 시뮬레이션을 켜십시오.")
                 else:
                     res = coupled_solver.solve(
                         req.ref_fidelity, req.air_fidelity, engine_op, air_inlet,

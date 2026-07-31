@@ -488,11 +488,19 @@ function OperatingInputs({ op, setOp }) {
           과도 구간에서 SH 가 목표에 고정되지 않고 진동하는 원인. */}
       <div>
         <div className="mono text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-2">EEV 구동</div>
-        <label className="flex items-center gap-2 text-[12px] text-slate-600 mb-2">
-          <input type="checkbox" checked={op.use_pulse}
+        <label className={'flex items-center gap-2 text-[12px] mb-2 '
+            + (op.dynamic ? 'text-slate-600' : 'text-slate-400')}>
+          <input type="checkbox" checked={op.use_pulse && op.dynamic}
+            disabled={!op.dynamic}
             onChange={e => set('use_pulse', e.target.checked)} />
           스텝모터 펄스 모사
         </label>
+        {!op.dynamic && (
+          <div className="text-[11px] text-slate-400 mb-2">
+            동적 시뮬레이션에서만 동작합니다. 정상해는 과열도를 구속해 풀기 때문에
+            EEV 개도가 해의 일부로 나옵니다 — 제어기가 개입할 자리가 없습니다.
+          </div>
+        )}
         {op.use_pulse && (
           <div className="grid grid-cols-2 gap-3">
             <NumberField label="전체 스텝" value={op.n_max} unit="step" min={50} max={2000}
@@ -512,6 +520,12 @@ function OperatingInputs({ op, setOp }) {
               전 스트로크 통과에 {fs.toFixed(1)} s 걸립니다. 지금 스텝 {op.dt} s 로는
               밸브가 매 스텝 전 구간을 왕복할 수 있어 과열도가 하한↔상한만 오갑니다.
               스텝을 {(fs / 4).toFixed(0)} s 이하로 낮추십시오.
+              <button
+                className="ml-2 px-2 py-0.5 rounded bg-amber-500 text-white text-[11px]"
+                onClick={() => { set('dt', Math.max(1, Math.round(fs / 4)));
+                                 set('t_end', 300); }}>
+                권장값 적용 (dt {Math.max(1, Math.round(fs / 4))} s · 300 s)
+              </button>
             </div>
           ) : null;
         })()}
@@ -837,7 +851,9 @@ function CycleRunner() {
     comp_rpm: 1800, fan_rpm: 3000, drum_rpm: 45,
     SH_target: 8.6,
     M_dry: 3.0, X0_pct: 60, fabric: 'cotton',
-    dynamic: false, P_equalize: 7.0, ramp_time: 60, t_end: 1800, dt: 60,
+    // 2026-07-31: dt 60 -> 20. 60 은 EEV 전 스트로크(16.7 s)보다 커서
+    //   펄스를 켜면 개도가 하한↔상한만 왕복한다.
+    dynamic: false, P_equalize: 7.0, ramp_time: 60, t_end: 1800, dt: 20,
     // 2026-07-30 추가
     use_charge: true, M_charge_g: 100,      // 충전량 구속 (오일·어큐·M_total)
     use_pulse: false,                        // EEV 스텝모터 펄스
