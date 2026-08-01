@@ -133,7 +133,9 @@ package HPWDctrl "제어 컴포넌트"
     parameter Real d_open   =  4.0 "5단계 증가량 [pulse]";
     parameter Real dt_close = 10.0 "3단계 주기 [s]";
     parameter Real dt_open  = 30.0 "5단계 주기 [s]";
-    parameter Real rate_norm = 5.0 "정상제어 속도 [pulse/s]";
+    parameter Real rate_norm = 5.0 "정상제어 최대 속도 [pulse/s]. PI 출력의 포화 한계";
+    parameter Real Kp_eev = 2.5 "EEV PI 비례게인 [pulse/s/K]. 오차 2K 에서 최대속도";
+    parameter Real Ki_eev = 0.05 "EEV PI 적분게인 [pulse/s/K/s]";
     parameter Real db_smooth = 0.3
       "데드밴드 경계 완화폭 [K] (2026-07-31). 0 에 가까울수록 계단에 가깝다";
     parameter Real t_comp_on =  0.0 "압축기 기동 시각 [s]";
@@ -148,6 +150,9 @@ package HPWDctrl "제어 컴포넌트"
     Real n_cont(start=0.0, fixed=true) "정상제어 누적 이동량 [pulse]";
     Real v_norm "정상제어 이동 속도 [pulse/s]";
     Real db_active "데드밴드 밖 여부 [0~1] (2026-07-31)";
+    Real err_sh "과열도 오차 [K]";
+    Real v_pi "PI 가 요구하는 속도 [pulse/s] (포화 전)";
+    Real I_eev(start=0.0, fixed=true) "PI 적분 상태";
   equation
     // 6단계 정상제어: 비대칭 데드밴드. 사이(3~6K)에서는 멈춘다.
     // 2026-07-31: 데드밴드 경계를 매끄럽게.
@@ -164,10 +169,20 @@ package HPWDctrl "제어 컴포넌트"
     //     3~6K           -> 정지
     //   방향은 (SH - sh_set)의 부호로 정하고, 크기는 데드밴드 밖일 때만 산다.
     //   active 는 tanh 로 매끄럽게 이어 이벤트를 만들지 않는다.
+    // 2026-07-31: rate_norm 은 '최대' 속도다. 항상 그 속도로 움직이는 것이
+    //   아니라 PI 가 요구하는 속도를 그 값으로 제한한다.
+    //   기존 tanh 식은 데드밴드 밖이면 곧바로 최대 속도가 되어
+    //   목표 근처에서 과도하게 움직였다(헌팅 원인).
+    //     v_pi   = Kp*(SH - sh_set) + Ki*I     오차에 비례
+    //     v_norm = 데드밴드 밖일 때만, ±rate_norm 으로 포화
+    //   데드밴드 안에서는 적분도 멈춘다(와인드업 방지).
     db_active = 0.5*(1.0 + tanh((SH - sh_hi)/db_smooth))
               + 0.5*(1.0 + tanh((sh_lo - SH)/db_smooth));
+    err_sh = SH - sh_set;
+    v_pi = Kp_eev*err_sh + Ki_eev*I_eev;
+    der(I_eev) = if normal then db_active*err_sh else 0.0;
     v_norm = if not normal then 0.0
-             else rate_norm*db_active*tanh((SH - sh_set)/db_smooth);
+             else db_active*max(-rate_norm, min(rate_norm, v_pi));
     der(n_cont) = v_norm;
     // 2026-07-31: 6단계 진입 시 n_pulse 가 n_step -> n_base+n_cont 로
     //   갈아타며 불연속이 생겨 적분이 멈췄다(실측: t=210 에서 이벤트 반복).
