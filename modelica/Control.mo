@@ -30,4 +30,56 @@ package HPWDctrl "제어 컴포넌트"
     ctrl.SH_meas = SH_plant;
   end PI_Test;
 
+
+  model CompStartSequencer "압축기 기동 시퀀서 — 실제 제어 로직 (2026-07-31)
+
+    docs/CONTROL_LOGIC.md 참조. 숫자는 전부 파라미터이므로 바꿀 수 있다.
+
+    1단계  0 -> 최소(f_min)        rate_fast (2 rps/s)
+    2단계  최소 도달              rate_slow (1 rps/s) 전환
+    3단계  중간1(f_mid1) 도달     hold_mid 유지
+    4단계  유지 후                rate_slow 재상승
+    최우선 설정 Hz 와 무관하게 기동 시 f_hold(35Hz) 도달하면
+           hold_start(2분) 무조건 유지 후 목표로 간다.
+
+    TimeTable 로는 조건부 유지를 표현할 수 없어 상태기계로 구현한다.
+    상태는 이산이지만 f 는 연속이므로 적분기가 다루기 쉽다.
+  "
+    parameter Real f_target = 60.0 "목표 주파수 [Hz]";
+    parameter Real f_min    = 30.0 "최소 주파수 [Hz]";
+    parameter Real f_hold   = 35.0 "기동 강제 유지 주파수 [Hz]";
+    parameter Real f_mid1   = 55.0 "중간1 주파수 [Hz]";
+    parameter Boolean use_mid1 = true "중간1 유지 사용";
+    parameter Real rate_fast = 2.0 "최소까지 상승률 [rps/s]";
+    parameter Real rate_slow = 1.0 "이후 상승률 [rps/s]";
+    parameter Real hold_start = 120.0 "f_hold 유지 시간 [s]";
+    parameter Real hold_mid   =  60.0 "중간1 유지 시간 [s]";
+
+    Modelica.Blocks.Interfaces.RealOutput N "회전수 [rpm]";
+    Real f(start=0, fixed=true) "주파수 [Hz]";
+    discrete Real t_hold_end(start=-1, fixed=true) "현재 유지 종료 시각 [s]";
+    discrete Boolean done_start(start=false, fixed=true) "35Hz 유지 완료";
+    discrete Boolean done_mid1(start=false, fixed=true) "중간1 유지 완료";
+    Real rate "현재 상승률 [Hz/s] (rps=Hz)";
+  equation
+    // 유지 중이면 0, 아니면 구간별 상승률
+    rate = if time < t_hold_end then 0.0
+           elseif f < f_min then rate_fast
+           else rate_slow;
+    der(f) = if f >= f_target then 0.0 else rate;
+    N = f*60.0;
+
+  algorithm
+    // 35Hz 강제 유지 — 다른 어떤 단계보다 우선한다
+    when (not done_start) and f >= f_hold then
+      t_hold_end := time + hold_start;
+      done_start := true;
+    end when;
+    // 중간1 유지 (35Hz 유지를 마친 뒤에만)
+    when use_mid1 and done_start and (not done_mid1) and f >= f_mid1 then
+      t_hold_end := time + hold_mid;
+      done_mid1 := true;
+    end when;
+  end CompStartSequencer;
+
 end HPWDctrl;
