@@ -151,6 +151,8 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     parameter Modelica.Units.SI.SpecificEnthalpy h_start=265.5e3;
     parameter Boolean fixedState=false;
     parameter Real dx_sep=0.02 "상분리 전이대 [quality] (이벤트 없는 tanh 전이)";
+    parameter Real M_liq_ref=1.0e-3
+      "분리가 온전해지는 액 질량 기준 [kg] (2026-07-31). 이보다 적으면 분리 효율이 떨어진다";
     input Real m_ext = 0 "외부 질량추출 [kg/s]. 기본 0 이라 기존 모델 하위호환. 오일 섬프 연결 시 vol(m_ext=oil.m_flow) 로 결속";
     // ThermoPower Water.mo:735 패턴. steadyStateNoP 같은 별도 모드 대신
     // 컴포넌트별 플래그로 중복 초기방정식을 하나만 제거한다.
@@ -162,7 +164,7 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     Modelica.Units.SI.SpecificEnthalpy h(start=h_start, fixed=false, stateSelect=StateSelect.prefer);
     final parameter Real rho_start = R290Tab.rho_ph(p_start, h_start);
     Real rho(start=rho_start, nominal=100.0);
-    Real hL, hV, xq, w_sep, h_out;
+    Real hL, hV, xq, w_sep, h_out, M_liq, f_liq;
     Real M(start=rho_start*V, fixed=false, nominal=1e-3,
            stateSelect=StateSelect.prefer) "냉매 질량 [kg] — 보존 상태";
     Real U "내부에너지 [J]";
@@ -174,7 +176,17 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     hV=R290Tab.hv(p);
     xq=(h - hL)/max(hV - hL, 1.0);
     // 2상 구간에서만 포화증기 토출. 과냉/과열에서는 벌크 엔탈피 그대로.
-    w_sep=0.25*(1.0 + tanh(xq/dx_sep))*(1.0 + tanh((1.0 - xq)/dx_sep));
+    // 2026-07-31: 액 재고 의존성 추가.
+    //   기존 w_sep 은 퀄리티 xq 만 보므로, 어큐에 액이 거의 없어도
+    //   xq 가 0.1~0.9 면 '증기만 내보낸다'(w_sep=1)고 판단했다.
+    //   실제로는 액이 없으면 분리할 것이 없다. 액이 마르는 순간
+    //   h_out=hV 를 유지하려다 계가 특이해져 적분이 실패했다
+    //   (실측: 어큐 0.0154 -> 0.0026 kg 고갈 시 t~231 정체).
+    //   액 질량이 M_liq_ref 이하로 떨어지면 분리 효율을 매끄럽게 낮춰
+    //   벌크 엔탈피를 그대로 내보내도록 한다 — 물리적으로도 옳다.
+    M_liq=max(M*(1.0 - min(max(xq, 0.0), 1.0)), 0.0) "어큐 내 액 질량 [kg]";
+    f_liq=tanh(M_liq/M_liq_ref) "액 재고 기반 분리 가능도 [0~1]";
+    w_sep=f_liq*0.25*(1.0 + tanh(xq/dx_sep))*(1.0 + tanh((1.0 - xq)/dx_sep));
     h_out=w_sep*hV + (1.0 - w_sep)*h "토출 엔탈피 — 액은 남기고 증기만";
     port_a.p=p; port_b.p=p;
     port_a.h_outflow=h "역류 시 벌크";
