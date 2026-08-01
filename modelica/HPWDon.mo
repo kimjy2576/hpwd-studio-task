@@ -111,6 +111,8 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     // ─ 흡입 경로 (shell 흡입가열 + 흡입 압력손실) ─
     parameter Real zeta_su = 2.823 "흡입 손실계수 [-] (흡입관·머플러·밸브). 설계점서 dP≈5% (L2 Winandy dP_su와 정합)";
     parameter Real AU_su = 3.0 "흡입 가열 UA [W/K] (shell → 흡입가스)";
+    parameter Real AU_dis = 30.0
+      "토출가스 → shell UA [W/K]. 고압쉘: 토출가스가 쉘 내부를 채운다 (2026-07-31)";
     parameter Real AU_loss = 5.0 "shell 외부 열손실 UA [W/K]";
     parameter Modelica.Units.SI.Temperature T_amb = 308.15 "shell 주위 온도 [K]";
     // ─ 손실/누설 ─
@@ -121,8 +123,8 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     parameter Real N_rated = 1800.0;
     parameter Real over_comp_factor = 0.3;
     // ─ 마찰/모터 ─
-    parameter Real W_f_const = 20.0;
-    parameter Real alpha_f_rpm = 8e-6;
+    parameter Real W_loss0 = 15.0 "정수 기계손실 [W] (Winandy). L2 는 30.0";
+    parameter Real alpha_loss = 0.1 "비례 기계손실 [-] (Winandy). L2 와 동일";
     parameter Real eta_motor = 0.90;
     parameter Real eta_inv = 0.95;
     // ─ 파생 상수 ─
@@ -140,6 +142,8 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     Real P_int, h_dis_is, w_is, v_internal, w_overunder;
     Real dP_in, W_valve_in, rho_dis_est, dP_out, W_valve_out;
     Real w_chamber, W_indicated, h_dis, eta_is, W_friction, W_shaft, W_elec, T_dis;
+    Real Q_shell "토출가스 -> 쉘 열流 [W] (2026-07-31)";
+    Real W_motor_loss "모터+인버터 손실 [W]. 쉘 내부에서 발생 (2026-07-31)";
   equation
     // ── 흡입 경로: 포트(1) → 흡입 압력손실(유량의존) → shell 가열 → 챔버 흡입 ──
     p_su1  = port_a.p;
@@ -156,7 +160,22 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     NTU_su = min(AU_su/max(m_dot_port*cp_su1, 1e-6), 20.0);
     eps_su = 1.0 - exp(-NTU_su);
     h_su   = h_su1 + eps_su*cp_su1*(T_w - T_su1);
-    AU_loss*(T_w - T_amb) + AU_su*(T_w - T_su1) = W_friction;
+    // 2026-07-31: 토출가스-쉘 열결합 추가.
+    //   고압쉘 압축기는 토출가스가 쉘 내부를 채우므로 쉘 온도가
+    //   토출온도에 가깝다. 기존에는 이 항이 없어 마찰손실(45.9 W)만으로
+    //   주위(35C)와 흡입가스(17C) 사이에서 평형을 이뤄 T_w=30~32C 였다.
+    //   그 결과 오일 용해도가 폭증(w=0.43, 평형 90g)해 어큐가 마르고
+    //   t~231 에서 적분이 실패했다.
+    //   AU_dis 는 고압쉘이므로 크게 잡는다 — 토출가스가 쉘 전체를 감싼다.
+    // 2026-07-31: 모터 손실을 쉘 열원에 추가.
+    //   밀폐형 압축기는 모터가 쉘 안에 있고 그 손실이 쉘과 흡입가스를 데운다.
+    //   기존에는 W_elec = W_shaft/(eta_motor*eta_inv) 로 나누기만 하고
+    //   손실분 W_elec - W_shaft 가 어디에도 들어가지 않았다 — 에너지 누락.
+    //   이 열은 전기에서 오므로 토출가스를 식히지 않는다.
+    //   eta_motor=0.90, eta_inv=0.95 -> 손실 14.5%
+    W_motor_loss = W_elec - W_shaft;
+    AU_loss*(T_w - T_amb) + AU_su*(T_w - T_su1)
+      = W_friction + W_motor_loss + AU_dis*(T_dis - T_w);   // T_ph 는 K 반환
 
     p_dis  = port_b.p;
     rho_su = R290Tab.rho_ph(p_su, h_su);
@@ -199,12 +218,31 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     // indicated 일 + 실제 토출엔탈피
     w_chamber   = w_is + w_overunder;
     W_indicated = m_dot*w_chamber + W_valve_in + W_valve_out;
-    h_dis       = h_su + w_chamber + (W_valve_in + W_valve_out)/m_dot;
+    // 2026-07-31: 쉘로 빠져나간 열을 토출 엔탈피에서 차감한다.
+    //   앞서 쉘 열수지에 AU_dis*(T_dis - T_w) 를 넣었는데 여기서 빼지 않아
+    //   에너지가 복제됐다. 그 결과 고압이 19.5 bar 로 치솟았다(정상 10~11).
+    //   토출가스가 쉘을 데우면 그만큼 자신은 식어야 한다.
+    Q_shell     = AU_dis*(T_dis - T_w);
+    h_dis       = h_su + w_chamber + (W_valve_in + W_valve_out)/m_dot
+                  - Q_shell/max(m_dot, 1e-9);
     T_dis       = R290Tab.T_ph(p_dis, h_dis);
     // 등엔트로피 효율
     eta_is = max(0.05, min(0.99, w_is/w_chamber));
     // 마찰 + 모터
-    W_friction = W_f_const + alpha_f_rpm*N^2;
+    // 2026-07-31: Winandy 형태로 교체 (L2 Comp_Winandy 와 동일 규약).
+    //   기존 W_f_const + alpha_f_rpm*N^2 은 출처가 없는 임의식이었다.
+    //   문헌(Winandy, Saavedra, Lebrun 2002, Int J Thermal Sci 41(2);
+    //   ASHRAE Toolkit / Popovic-Shapiro 1995 계열)은
+    //     W_loss = W_loss,0 + alpha * (압축동력)
+    //   으로 상수항과 비례항으로 분해한다. N^2 형태는 문헌에 없고
+    //   압력비 변화를 반영하지 못한다(마찰은 압축일에 비례해야 한다).
+    //   L2 는 이미 W_loss0 + alpha_loss*W_shaft 를 쓰므로 규약을 통일한다.
+    //
+    //   검산 (정격 396W, 4600BTU/hr, EER 11.62, 60Hz, 7.5cc)
+    //     eta_motor*eta_inv=0.855 -> W_shaft 339W, 모터손실 57W
+    //     alpha=0.1, W_loss0=15W -> 마찰 ~49W (정격의 12%)
+    //     기존 N^2 식이 N=1800 에서 준 45.9W 와 부합한다.
+    W_friction = W_loss0 + alpha_loss*W_indicated;
     W_shaft    = W_indicated + W_friction;
     W_elec     = W_shaft/(eta_motor*eta_inv);
 
@@ -222,7 +260,7 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
       V_disp_cm3 = 10.0, clearance_ratio = 0.04, rv_in = 2.5,
       A_valve_in_mm2 = 8.0, A_valve_out_mm2 = 6.0, zeta_valve = 1.5,
       A_leak_mm2 = 0.02, Cd_leak = 0.6, n_leak_rpm = 0.5, N_rated = 3000.0,
-      over_comp_factor = 0.3, W_f_const = 20.0, alpha_f_rpm = 8e-6,
+      over_comp_factor = 0.3, W_loss0 = 15.0, alpha_loss = 0.1,
       eta_motor = 0.92, eta_inv = 0.95);
     HPWD.Sink snk(p = 18.0e5, h = 650.0e3);
     Modelica.Blocks.Sources.Constant Nsig(k = 3000.0);
