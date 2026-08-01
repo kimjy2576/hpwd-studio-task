@@ -123,8 +123,8 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     parameter Real N_rated = 1800.0;
     parameter Real over_comp_factor = 0.3;
     // ─ 마찰/모터 ─
-    parameter Real W_f_const = 20.0;
-    parameter Real alpha_f_rpm = 8e-6;
+    parameter Real W_loss0 = 15.0 "정수 기계손실 [W] (Winandy). L2 는 30.0";
+    parameter Real alpha_loss = 0.1 "비례 기계손실 [-] (Winandy). L2 와 동일";
     parameter Real eta_motor = 0.90;
     parameter Real eta_inv = 0.95;
     // ─ 파생 상수 ─
@@ -229,7 +229,20 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     // 등엔트로피 효율
     eta_is = max(0.05, min(0.99, w_is/w_chamber));
     // 마찰 + 모터
-    W_friction = W_f_const + alpha_f_rpm*N^2;
+    // 2026-07-31: Winandy 형태로 교체 (L2 Comp_Winandy 와 동일 규약).
+    //   기존 W_f_const + alpha_f_rpm*N^2 은 출처가 없는 임의식이었다.
+    //   문헌(Winandy, Saavedra, Lebrun 2002, Int J Thermal Sci 41(2);
+    //   ASHRAE Toolkit / Popovic-Shapiro 1995 계열)은
+    //     W_loss = W_loss,0 + alpha * (압축동력)
+    //   으로 상수항과 비례항으로 분해한다. N^2 형태는 문헌에 없고
+    //   압력비 변화를 반영하지 못한다(마찰은 압축일에 비례해야 한다).
+    //   L2 는 이미 W_loss0 + alpha_loss*W_shaft 를 쓰므로 규약을 통일한다.
+    //
+    //   검산 (정격 396W, 4600BTU/hr, EER 11.62, 60Hz, 7.5cc)
+    //     eta_motor*eta_inv=0.855 -> W_shaft 339W, 모터손실 57W
+    //     alpha=0.1, W_loss0=15W -> 마찰 ~49W (정격의 12%)
+    //     기존 N^2 식이 N=1800 에서 준 45.9W 와 부합한다.
+    W_friction = W_loss0 + alpha_loss*W_indicated;
     W_shaft    = W_indicated + W_friction;
     W_elec     = W_shaft/(eta_motor*eta_inv);
 
@@ -247,7 +260,7 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
       V_disp_cm3 = 10.0, clearance_ratio = 0.04, rv_in = 2.5,
       A_valve_in_mm2 = 8.0, A_valve_out_mm2 = 6.0, zeta_valve = 1.5,
       A_leak_mm2 = 0.02, Cd_leak = 0.6, n_leak_rpm = 0.5, N_rated = 3000.0,
-      over_comp_factor = 0.3, W_f_const = 20.0, alpha_f_rpm = 8e-6,
+      over_comp_factor = 0.3, W_loss0 = 15.0, alpha_loss = 0.1,
       eta_motor = 0.92, eta_inv = 0.95);
     HPWD.Sink snk(p = 18.0e5, h = 650.0e3);
     Modelica.Blocks.Sources.Constant Nsig(k = 3000.0);
