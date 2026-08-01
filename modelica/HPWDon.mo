@@ -142,6 +142,7 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     Real P_int, h_dis_is, w_is, v_internal, w_overunder;
     Real dP_in, W_valve_in, rho_dis_est, dP_out, W_valve_out;
     Real w_chamber, W_indicated, h_dis, eta_is, W_friction, W_shaft, W_elec, T_dis;
+    Real Q_shell "토출가스 -> 쉘 열流 [W] (2026-07-31)";
   equation
     // ── 흡입 경로: 포트(1) → 흡입 압력손실(유량의존) → shell 가열 → 챔버 흡입 ──
     p_su1  = port_a.p;
@@ -209,7 +210,13 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     // indicated 일 + 실제 토출엔탈피
     w_chamber   = w_is + w_overunder;
     W_indicated = m_dot*w_chamber + W_valve_in + W_valve_out;
-    h_dis       = h_su + w_chamber + (W_valve_in + W_valve_out)/m_dot;
+    // 2026-07-31: 쉘로 빠져나간 열을 토출 엔탈피에서 차감한다.
+    //   앞서 쉘 열수지에 AU_dis*(T_dis - T_w) 를 넣었는데 여기서 빼지 않아
+    //   에너지가 복제됐다. 그 결과 고압이 19.5 bar 로 치솟았다(정상 10~11).
+    //   토출가스가 쉘을 데우면 그만큼 자신은 식어야 한다.
+    Q_shell     = AU_dis*(T_dis - T_w);
+    h_dis       = h_su + w_chamber + (W_valve_in + W_valve_out)/m_dot
+                  - Q_shell/max(m_dot, 1e-9);
     T_dis       = R290Tab.T_ph(p_dis, h_dis);
     // 등엔트로피 효율
     eta_is = max(0.05, min(0.99, w_is/w_chamber));
