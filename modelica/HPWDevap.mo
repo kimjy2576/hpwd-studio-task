@@ -121,7 +121,9 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     Real Q[Nr,Nseg], Q_lat[Nr,Nseg], T_w[Nr,Nseg](each start=15.0), h_i[Nr,Nseg];
     Real eta_o[Nr,Nseg], b[Nr,Nseg], T_fin[Nr,Nseg];
     Real xq[Nr,Nseg], T_ref_g[Nr,Nseg], cp_a[Nr,Nseg], h_air_c[Nr,Nseg], h_ref_c[Nr,Nseg];
-    Boolean is_wet[Nr,Nseg];
+    Boolean is_wet[Nr,Nseg] "이벤트 판정용(출력·후처리). 물리식은 w_wet 을 쓴다";
+    Real w_wet[Nr,Nseg] "습표면 가중 0~1 (2026-07-31, C1 전이)";
+    parameter Real dT_wet = 0.3 "습/건 전이 폭 [K]. 작을수록 계단에 가깝다";
     Real T_aen[Nr + 1,Nseg](each start=30.0) "공기 진입온도 (행1=입구)";
     Real W_aen[Nr + 1,Nseg](each start=0.017);
     Real Q_total, Q_lat_total, x_out, T_air_out;
@@ -142,7 +144,14 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
         h_ref_c[p,s]=hpath[kOf[p,s] + 1];
         xq[p,s]=(h_ref_c[p,s] - hl)/h_fg;
         T_ref_g[p,s]=if xq[p,s] < 1.0 then T_satC else min(R290Tab.T_ph(P, h_ref_c[p,s]) - 273.15, T_aen[p,s]);
-        is_wet[p,s]=T_w[p,s] < T_dp;
+        // 2026-07-31: 습표면 판정을 매끄럽게 (Bell/Quoilin, Energies 2014, 7, 1621).
+      //   is_wet 은 Boolean 이라 T_w 가 T_dp 를 지날 때마다 이벤트가 난다.
+      //   셀이 12개(Nseg 3 x 4행)이므로 SH 형성 구간에서 전이가 쏟아지고,
+      //   물리는 완만한데 적분이 멈춘다(실측: t=180 정체, dSH/dt=0.29 K/s).
+      //   문헌 방법: 전이 폭을 0 이 아니게 잡고 C1 함수로 보간한다.
+      //   w_wet 은 0~1 연속이며 dT_wet 폭에서 매끄럽게 전환된다.
+      w_wet[p,s]=0.5*(1.0 + tanh((T_dp - T_w[p,s])/dT_wet));
+      is_wet[p,s]=T_w[p,s] < T_dp;
         cp_a[p,s]=HXCorr.cp_air_moist(W_aen[p,s]);
         h_air_c[p,s]=HXCorr.h_moist(T_aen[p,s], W_aen[p,s]);
         h_i[p,s]=HPWDon.hi_dispatch_evap(xq[p,s], G_ref, Di, abs(T_aen[p,s] - T_w[p,s])*h_o,
@@ -150,8 +159,9 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
         T_fin[p,s]=T_aen[p,s] - eta_o[p,s]*(T_aen[p,s] - T_w[p,s]);
         b[p,s]=if is_wet[p,s] then max(1.0 + HPWDon.hfgWater(T_fin[p,s])*HPWDon.dWsdT(T_fin[p,s], Patm)/cp_a[p,s], 1.0) else 1.0;
         eta_o[p,s]=if is_wet[p,s] then HPWDon.finEffWet(h_o, b[p,s], Dc, Xm, XL, k_fin, fin_t, A_fin_ratio) else eta_o_dry;
-        Q[p,s]=if is_wet[p,s] then eta_o[p,s]*h_o*A_o_seg/cp_a[p,s]*(h_air_c[p,s] - HXCorr.h_air_sat(T_w[p,s], Patm))
-               else (1.0/(1.0/(eta_o[p,s]*h_o*A_o_seg) + 1.0/(h_i[p,s]*A_i_seg)))*(T_aen[p,s] - T_ref_g[p,s]);
+        // 2026-07-31: 계단 대신 가중합. 습/건 열전달이 dT_wet 폭에서 연속 전환된다.
+        Q[p,s]=w_wet[p,s]*(eta_o[p,s]*h_o*A_o_seg/cp_a[p,s]*(h_air_c[p,s] - HXCorr.h_air_sat(T_w[p,s], Patm)))
+               + (1.0 - w_wet[p,s])*((1.0/(1.0/(eta_o[p,s]*h_o*A_o_seg) + 1.0/(h_i[p,s]*A_i_seg)))*(T_aen[p,s] - T_ref_g[p,s]));
         T_w[p,s]=T_ref_g[p,s] + Q[p,s]/(h_i[p,s]*A_i_seg);
         Q_lat[p,s]=if is_wet[p,s] then max(Q[p,s] - eta_o[p,s]*h_o*A_o_seg*(T_aen[p,s] - T_w[p,s]), 0.0) else 0.0;
         // 공기 행진행 (행 p → p+1)
@@ -234,7 +244,9 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     Real Q[Nr,Nseg], Q_lat[Nr,Nseg], T_w[Nr,Nseg](each start=10.0, each min=-40.0, each max=90.0), h_i[Nr,Nseg];
     Real eta_o[Nr,Nseg](each start=0.75, each min=0.05, each max=1.0), b[Nr,Nseg](each start=1.05, each min=1.0, each max=8.0), T_fin[Nr,Nseg](each start=15.0);
     Real xq[Nr,Nseg], T_ref_g[Nr,Nseg], cp_a[Nr,Nseg], h_air_c[Nr,Nseg], h_ref_c[Nr,Nseg];
-    Boolean is_wet[Nr,Nseg];
+    Boolean is_wet[Nr,Nseg] "이벤트 판정용(출력·후처리). 물리식은 w_wet 을 쓴다";
+    Real w_wet[Nr,Nseg] "습표면 가중 0~1 (2026-07-31, C1 전이)";
+    parameter Real dT_wet = 0.3 "습/건 전이 폭 [K]. 작을수록 계단에 가깝다";
     Real T_aen[Nr + 1,Nseg](each start=30.0, each min=-30.0, each max=80.0), W_aen[Nr + 1,Nseg](each start=0.017, each min=0.0, each max=0.1);
     Real Q_total, Q_lat_total, x_out, T_air_out, h_out, SH;
     Real x_in_q, dp_fric, dp_accel, dp_bend, dp_total, rho_mix, x_mid;
@@ -270,7 +282,14 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
         h_ref_c[p,s]=hpath[kOf[p,s] + 1];
         xq[p,s]=(h_ref_c[p,s] - hl)/h_fg;
         T_ref_g[p,s]=if xq[p,s] < 1.0 then T_satC else min(R290Tab.T_ph(P, h_ref_c[p,s]) - 273.15, T_aen[p,s]);
-        is_wet[p,s]=T_w[p,s] < T_dp;
+        // 2026-07-31: 습표면 판정을 매끄럽게 (Bell/Quoilin, Energies 2014, 7, 1621).
+      //   is_wet 은 Boolean 이라 T_w 가 T_dp 를 지날 때마다 이벤트가 난다.
+      //   셀이 12개(Nseg 3 x 4행)이므로 SH 형성 구간에서 전이가 쏟아지고,
+      //   물리는 완만한데 적분이 멈춘다(실측: t=180 정체, dSH/dt=0.29 K/s).
+      //   문헌 방법: 전이 폭을 0 이 아니게 잡고 C1 함수로 보간한다.
+      //   w_wet 은 0~1 연속이며 dT_wet 폭에서 매끄럽게 전환된다.
+      w_wet[p,s]=0.5*(1.0 + tanh((T_dp - T_w[p,s])/dT_wet));
+      is_wet[p,s]=T_w[p,s] < T_dp;
         cp_a[p,s]=HXCorr.cp_air_moist(W_aen[p,s]);
         h_air_c[p,s]=HXCorr.h_moist(T_aen[p,s], W_aen[p,s]);
         h_i[p,s]=HPWDon.hi_dispatch_evap(xq[p,s], G_ref, Di, abs(T_aen[p,s] - T_w[p,s])*h_o,
