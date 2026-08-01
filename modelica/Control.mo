@@ -134,6 +134,8 @@ package HPWDctrl "제어 컴포넌트"
     parameter Real dt_close = 10.0 "3단계 주기 [s]";
     parameter Real dt_open  = 30.0 "5단계 주기 [s]";
     parameter Real rate_norm = 5.0 "정상제어 속도 [pulse/s]";
+    parameter Real db_smooth = 0.3
+      "데드밴드 경계 완화폭 [K] (2026-07-31). 0 에 가까울수록 계단에 가깝다";
     parameter Real t_comp_on =  0.0 "압축기 기동 시각 [s]";
 
     Modelica.Blocks.Interfaces.RealInput SH "측정 과열도 [K]";
@@ -145,12 +147,27 @@ package HPWDctrl "제어 컴포넌트"
     discrete Boolean normal(start=false, fixed=true) "6단계 정상제어 진입";
     Real n_cont(start=0.0, fixed=true) "정상제어 누적 이동량 [pulse]";
     Real v_norm "정상제어 이동 속도 [pulse/s]";
+    Real db_active "데드밴드 밖 여부 [0~1] (2026-07-31)";
   equation
     // 6단계 정상제어: 비대칭 데드밴드. 사이(3~6K)에서는 멈춘다.
+    // 2026-07-31: 데드밴드 경계를 매끄럽게.
+    //   기존 if 문은 SH 가 sh_hi/sh_lo 를 지날 때마다 v_norm 이
+    //   0 <-> ±rate_norm 으로 계단 변화해 이벤트를 만든다.
+    //   6단계 진입(t=210) 순간 SH 8.6K > sh_hi 6K 라 v_norm 이
+    //   0 에서 +5 로 튀며 적분이 멈췄다(실측: 단일 식으로 바꿔도 동일).
+    //   tanh 로 폭 db_smooth 만큼 부드럽게 잇는다. 데드밴드 자체는 유지된다.
+    // 2026-07-31 정정: 목표는 sh_set(4K)이고 데드밴드는 '언제 움직일지'만 정한다.
+    //   기존은 sh_hi/sh_lo 를 목표처럼 써서 SH 8.6K 에서 무조건 열었다.
+    //   사양: 4K 를 향해 제어하되, 3~6K 안에서는 멈춘다(헌팅 방지).
+    //     SH > sh_hi(6K) -> 4K 로 내리려면 개도를 연다 (증발량↑ -> SH↓)
+    //     SH < sh_lo(3K) -> 4K 로 올리려면 개도를 닫는다
+    //     3~6K           -> 정지
+    //   방향은 (SH - sh_set)의 부호로 정하고, 크기는 데드밴드 밖일 때만 산다.
+    //   active 는 tanh 로 매끄럽게 이어 이벤트를 만들지 않는다.
+    db_active = 0.5*(1.0 + tanh((SH - sh_hi)/db_smooth))
+              + 0.5*(1.0 + tanh((sh_lo - SH)/db_smooth));
     v_norm = if not normal then 0.0
-             elseif SH >= sh_hi then  rate_norm
-             elseif SH <= sh_lo then -rate_norm
-             else 0.0;
+             else rate_norm*db_active*tanh((SH - sh_set)/db_smooth);
     der(n_cont) = v_norm;
     // 2026-07-31: 6단계 진입 시 n_pulse 가 n_step -> n_base+n_cont 로
     //   갈아타며 불연속이 생겨 적분이 멈췄다(실측: t=210 에서 이벤트 반복).
