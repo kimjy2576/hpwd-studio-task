@@ -121,7 +121,10 @@ package HPWDctrl "제어 컴포넌트"
   "
     parameter Real n_full   = 450.0 "전체 스트로크 [pulse]";
     parameter Real n_init   = 450.0 "초기 개도 [pulse]";
-    parameter Real n_min    =  75.0 "최소 개도 [pulse]";
+    parameter Real n_min    =  75.0
+      "3~4단계 하한 [pulse]. 여기 도달하면 5단계 판정으로 넘어간다";
+    parameter Real n_valve_min = 30.0
+      "밸브 물리 최소 개도 [pulse] (2026-07-31). 정상제어는 여기까지 닫을 수 있다";
     parameter Real n_max5   = 300.0 "5단계 상한 [pulse]";
     parameter Real hold_init = 120.0 "기동 후 유지 시간 [s]";
     parameter Real sh_close =  5.0 "3단계 조임 판정 과열도 [K]";
@@ -210,7 +213,10 @@ package HPWDctrl "제어 컴포넌트"
     //   순간 점프로 구현했더니 압축기 감속과 겹칠 때 적분이 멈췄다
     //   (실측: tol 1e-2/1e-3 모두 t=145 에서 정체, 4739점까지 쪼갬).
     //   n_cmd(이산 목표)를 rate_norm 으로 추종하는 1차 지연으로 바꾼다.
-    n_cmd = min(max(n_step + n_cont, n_min), n_full);
+    // 2026-07-31: 하한을 밸브 물리 최소(30)로. n_min(75)은 3~4단계 하한일 뿐이다.
+    //   기존에는 정상제어도 75 에서 막혀 SH 가 계속 떨어지는데 더 닫지 못했다
+    //   (실측: t=350 에서 개도 75 고정, SH 13.4 -> 1.48 로 하강, 제어 불능).
+    n_cmd = min(max(n_step + n_cont, n_valve_min), n_full);
     der(n_pulse) = max(-rate_norm, min(rate_norm, (n_cmd - n_pulse)/tau_move));
     opening = n_pulse/n_full*100.0;
 
