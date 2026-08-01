@@ -10,6 +10,7 @@ package R290Tab "R290 tabulated media — (p,h) basis, 2상 안전, 미분가능
     포화선에서 62.6배 점프(실측 p=10bar: 액상 -4.42e-4 / 2상 -2.77e-2)해 Volume_L3 의
     der(rho*V) 질량수지 야코비안 조건수를 무너뜨림. rho 자체는 연속이라 블렌딩이
     값은 거의 안 바꾸고 도함수만 평활화함.";
+  constant Real DTB=1000.0 "T_ph 포화선 블렌딩 폭 [J/kg] (2026-07-31)";
   constant Real dP=(P1-P0)/(nP-1);
   constant Real dH=(H1-H0)/(nH-1);
   constant Real SATTsat[nP]={240.3319,248.5853,255.2521,260.9046,265.8457,270.2567,274.2556,277.9235,281.3191,284.4862,287.4582,290.2617,292.9178,295.4437,297.8537,300.1598,302.3719,304.4988,306.5478,308.5254,310.4373,312.2883,314.0829,315.825,317.5181,319.1652,320.7692,322.3327,323.8579,325.347,326.8019,328.2243,329.6159,330.9781,332.3123,333.6199,334.9019,336.1595,337.3936,338.6053,339.7954,340.9647,342.114,343.2441,344.3556,345.4491,346.5253,347.5847,348.6279,349.6553,350.6674,351.6647,352.6476,353.6165,354.5717,355.5136,356.4425,357.3588,358.2627,359.1545};
@@ -1165,24 +1166,53 @@ package R290Tab "R290 tabulated media — (p,h) basis, 2상 안전, 미분가능
   function T_ph
     input Real p; input Real h; output Real T;
   protected
-    Real hL,hV;
+    Real hL,hV,Tsat,w;
   algorithm
     hL:=lin1(SAThl,p); hV:=lin1(SAThv,p);
-    if h>hL and h<hV then T:=lin1(SATTsat,p);
-    elseif h<=hL then T:=bilinC(TBLT,SATTsat,1,p,h);
-    else T:=bilinC(TBLT,SATTsat,2,p,h); end if;
+    // 2026-07-31: 포화선 도함수 점프 전수 측정 결과 T_ph 가 최악이었다.
+    //   2상은 등온이라 dT/dh=0, 단상은 3.6e-4(액)/4.9e-4(증기) -> 배율 무한대.
+    //   T_w, T_ref_g 가 도처에 쓰이므로 이 꺾임이 계 전체로 퍼진다.
+    //   (실측: SH 0->4.5K, 즉 hV 통과 구간에서 적분이 t=180 에 멈춤)
+    //   양 경계에 폭 DTB 밴드를 두고 tanh 로 잇는다.
+    //   대가: 2상 온도가 밴드 안에서 최대 0.25K 기울어진다(DTB=1000 기준).
+    //   SH 는 엔탈피 기준이라 영향 없고, 열전달은 dT 10~20K 대비 1~2% 다.
+    Tsat:=lin1(SATTsat,p);
+    if h < hL - DTB then
+      T:=bilinC(TBLT,SATTsat,1,p,h);
+    elseif h < hL + DTB then
+      w:=0.5*(1.0+tanh((h-hL)/(0.5*DTB)));
+      T:=(1.0-w)*bilinC(TBLT,SATTsat,1,p,h) + w*Tsat;
+    elseif h < hV - DTB then
+      T:=Tsat;
+    elseif h < hV + DTB then
+      w:=0.5*(1.0+tanh((h-hV)/(0.5*DTB)));
+      T:=(1.0-w)*Tsat + w*bilinC(TBLT,SATTsat,2,p,h);
+    else
+      T:=bilinC(TBLT,SATTsat,2,p,h);
+    end if;
     annotation(derivative=T_ph_d);
   end T_ph;
   function T_ph_d
     input Real p; input Real h; input Real dp; input Real dh; output Real dT;
   protected
-    Real hL,hV;
+    Real hL,hV,w,dT_sat,dT_sp;
   algorithm
     hL:=lin1(SAThl,p); hV:=lin1(SAThv,p);
-    if h>hL and h<hV then
-      dT:=lin1(SATdTsdp,p)*dp;
+    // 값과 같은 밴드로 도함수도 잇는다. 둘이 어긋나면 오히려 해롭다.
+    dT_sat:=lin1(SATdTsdp,p)*dp;
+    dT_sp :=bilin(TBLdTdp,p,h)*dp+bilin(TBLdTdh,p,h)*dh;
+    if h < hL - DTB then
+      dT:=dT_sp;
+    elseif h < hL + DTB then
+      w:=0.5*(1.0+tanh((h-hL)/(0.5*DTB)));
+      dT:=(1.0-w)*dT_sp + w*dT_sat;
+    elseif h < hV - DTB then
+      dT:=dT_sat;
+    elseif h < hV + DTB then
+      w:=0.5*(1.0+tanh((h-hV)/(0.5*DTB)));
+      dT:=(1.0-w)*dT_sat + w*dT_sp;
     else
-      dT:=bilin(TBLdTdp,p,h)*dp+bilin(TBLdTdh,p,h)*dh;
+      dT:=dT_sp;
     end if;
   end T_ph_d;
 
