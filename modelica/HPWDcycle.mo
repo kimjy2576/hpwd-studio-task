@@ -379,13 +379,17 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     HPWDevap.Evap_On evap;
     Volume_L3 vol4(V=V_node, p_start=p_rest, h_start=h_rest, fixedState=true);
     Modelica.Blocks.Sources.TimeTable Nsig(table=[
+        // 2026-07-31: 저rpm 500 평탄 구간(11~21) 제거.
+        //   그 구간에는 충전량 구속을 만족하는 해가 물리적으로 없어
+        //   SH 가 포화선에 고착(0.005)하고 t~13 에서 적분이 깨진다.
+        //   (tol=1e-3/3e-3 모두 t=13.0 에서 DASSL error test 반복 실패.
+        //    tol=1e-2 만 이 구간을 뭉개고 지나갔다.)
+        //   main 의 해석물성판은 이미 같은 이유로 제거돼 있었다.
         0.0,    0.0;
-        1.0,    300.0;
-        11.0,   500.0;
-        21.0,   500.0;
-        31.0,   1500.0;
-        41.0,   1500.0;
-        51.0,   N_final;
+        0.5,    600.0;
+        1.5,    1200.0;
+        3.0,    1500.0;
+        10.0,   N_final;
         81.0,   N_final;
         120.0,  N_final;
         200.0,  N_final;
@@ -431,13 +435,17 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     HPWDevap.Evap_On_Dyn evap(Nseg=3, h_ref_start=h_rest, T_w_start=35.0);
     Volume_L3 vol4(V=V_node, p_start=p_rest, h_start=h_rest, fixedState=true);
     Modelica.Blocks.Sources.TimeTable Nsig(table=[
+        // 2026-07-31: 저rpm 500 평탄 구간(11~21) 제거.
+        //   그 구간에는 충전량 구속을 만족하는 해가 물리적으로 없어
+        //   SH 가 포화선에 고착(0.005)하고 t~13 에서 적분이 깨진다.
+        //   (tol=1e-3/3e-3 모두 t=13.0 에서 DASSL error test 반복 실패.
+        //    tol=1e-2 만 이 구간을 뭉개고 지나갔다.)
+        //   main 의 해석물성판은 이미 같은 이유로 제거돼 있었다.
         0.0,    0.0;
-        1.0,    300.0;
-        11.0,   500.0;
-        21.0,   500.0;
-        31.0,   1500.0;
-        41.0,   1500.0;
-        51.0,   N_final;
+        0.5,    600.0;
+        1.5,    1200.0;
+        3.0,    1500.0;
+        10.0,   N_final;
         500.0,  N_final]);
     Modelica.Blocks.Sources.Constant opsig(k=eev_opening);
     Real Pc_bar, Pe_bar, mdot, SH, Q_evap, Q_cond, W_comp;
@@ -537,13 +545,17 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
       smoothness=Modelica.Blocks.Types.Smoothness.ContinuousDerivative,
       extrapolation=Modelica.Blocks.Types.Extrapolation.HoldLastPoint,
       table=[
+        // 2026-07-31: 저rpm 500 평탄 구간(11~21) 제거.
+        //   그 구간에는 충전량 구속을 만족하는 해가 물리적으로 없어
+        //   SH 가 포화선에 고착(0.005)하고 t~13 에서 적분이 깨진다.
+        //   (tol=1e-3/3e-3 모두 t=13.0 에서 DASSL error test 반복 실패.
+        //    tol=1e-2 만 이 구간을 뭉개고 지나갔다.)
+        //   main 의 해석물성판은 이미 같은 이유로 제거돼 있었다.
         0.0,    0.0;
-        1.0,    300.0;
-        11.0,   500.0;
-        21.0,   500.0;
-        31.0,   1500.0;
-        41.0,   1500.0;
-        51.0,   N_final;
+        0.5,    600.0;
+        1.5,    1200.0;
+        3.0,    1500.0;
+        10.0,   N_final;
         // 평탄 구간 절점 — 51->500 단일구간이면 Akima 가 직전 급상승
         //   (41->51: 1500->1800) 기울기를 이어받아 오버슛한다.
         61.0,   N_final;
