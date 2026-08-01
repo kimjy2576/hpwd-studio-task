@@ -136,13 +136,16 @@ package HPWDctrl "제어 컴포넌트"
     parameter Real rate_norm = 5.0 "정상제어 최대 속도 [pulse/s]. PI 출력의 포화 한계";
     parameter Real Kp_eev = 2.5 "EEV PI 비례게인 [pulse/s/K]. 오차 2K 에서 최대속도";
     parameter Real Ki_eev = 0.05 "EEV PI 적분게인 [pulse/s/K/s]";
+    parameter Real tau_move = 1.0
+      "지령 추종 시상수 [s] (2026-07-31). 작을수록 속도제한에 바로 붙는다";
     parameter Real db_smooth = 0.3
       "데드밴드 경계 완화폭 [K] (2026-07-31). 0 에 가까울수록 계단에 가깝다";
     parameter Real t_comp_on =  0.0 "압축기 기동 시각 [s]";
 
     Modelica.Blocks.Interfaces.RealInput SH "측정 과열도 [K]";
     Modelica.Blocks.Interfaces.RealOutput opening "개도 [%]";
-    Real n_pulse "현재 개도 [pulse]";
+    Real n_pulse(start=450.0, fixed=true) "현재 개도 [pulse]. 모터 속도 제한을 받는다";
+    Real n_cmd "지령 개도 [pulse]. 단계 로직이 정한 목표";
     discrete Real n_step(start=450.0, fixed=true) "이산 단계에서 정한 개도";
     discrete Boolean at_min(start=false, fixed=true) "n_min 도달 (5단계 진입)";
     discrete Real t_min_reached(start=-1e9, fixed=true) "n_min 도달 시각 [s]";
@@ -201,7 +204,14 @@ package HPWDctrl "제어 컴포넌트"
     //   noEvent 로 감싸도 when 절이 이벤트를 만들어 t=210 정체가 반복됐다.
     //   n_step(이산 단계) + n_cont(정상제어 누적)를 항상 더하는 하나의 식으로
     //   두면 전환이 사라진다. 정상제어 전에는 n_cont=0 이므로 값은 동일하다.
-    n_pulse = min(max(n_step + n_cont, n_min), n_full);
+    // 2026-07-31: 개도를 순간 점프시키지 않는다.
+    //   실제 스텝모터는 50 pulse 를 순간에 못 움직인다. 5 pulse/s 이므로
+    //   50 pulse 이동에 10초가 걸리고, 그것이 '10초 주기'의 실제 의미다.
+    //   순간 점프로 구현했더니 압축기 감속과 겹칠 때 적분이 멈췄다
+    //   (실측: tol 1e-2/1e-3 모두 t=145 에서 정체, 4739점까지 쪼갬).
+    //   n_cmd(이산 목표)를 rate_norm 으로 추종하는 1차 지연으로 바꾼다.
+    n_cmd = min(max(n_step + n_cont, n_min), n_full);
+    der(n_pulse) = max(-rate_norm, min(rate_norm, (n_cmd - n_pulse)/tau_move));
     opening = n_pulse/n_full*100.0;
 
   algorithm
