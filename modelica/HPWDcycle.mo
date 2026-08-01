@@ -397,11 +397,14 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
         //   (tol=1e-3/3e-3 모두 t=13.0 에서 DASSL error test 반복 실패.
         //    tol=1e-2 만 이 구간을 뭉개고 지나갔다.)
         //   main 의 해석물성판은 이미 같은 이유로 제거돼 있었다.
-        0.0,    0.0;
-        0.5,    600.0;
-        1.5,    1200.0;
-        3.0,    1500.0;
-        10.0,   N_final;
+        // 2026-07-31: 실제 사양(Ramp up 1 rps/s)에 맞춘다.
+        //   1800 rpm = 30 rps 이므로 30초에 도달해야 한다.
+        //   기존은 3초에 1500rpm(25rps)으로 8.3 rps/s — 사양의 8배였다.
+        //   급한 기동이 초반 적분 난이도를 높였을 가능성이 있다.
+        0.0,     0.0;
+        10.0,   600.0;
+        20.0,  1200.0;
+        30.0,  N_final;
         81.0,   N_final;
         120.0,  N_final;
         200.0,  N_final;
@@ -453,11 +456,14 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
         //   (tol=1e-3/3e-3 모두 t=13.0 에서 DASSL error test 반복 실패.
         //    tol=1e-2 만 이 구간을 뭉개고 지나갔다.)
         //   main 의 해석물성판은 이미 같은 이유로 제거돼 있었다.
-        0.0,    0.0;
-        0.5,    600.0;
-        1.5,    1200.0;
-        3.0,    1500.0;
-        10.0,   N_final;
+        // 2026-07-31: 실제 사양(Ramp up 1 rps/s)에 맞춘다.
+        //   1800 rpm = 30 rps 이므로 30초에 도달해야 한다.
+        //   기존은 3초에 1500rpm(25rps)으로 8.3 rps/s — 사양의 8배였다.
+        //   급한 기동이 초반 적분 난이도를 높였을 가능성이 있다.
+        0.0,     0.0;
+        10.0,   600.0;
+        20.0,  1200.0;
+        30.0,  N_final;
         500.0,  N_final]);
     Modelica.Blocks.Sources.Constant opsig(k=eev_opening);
     Real Pc_bar, Pe_bar, mdot, SH, Q_evap, Q_cond, W_comp;
@@ -548,6 +554,11 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     parameter Real N_const = 0.0 "0 이면 램프표 사용. >0 이면 그 값으로 고정 [rpm]" annotation(Evaluate=false);
     parameter Real Kp_c = 1.0 "PI 비례게인. Kp_c=Ki_c=0 이면 개도가 open_init 로 고정 (개도고정 시험용)";
     parameter Real Ki_c = 0.3 "PI 적분게인";
+    parameter Boolean use_real_ctrl = false
+      "true: 실제 제어 로직(docs/CONTROL_LOGIC.md). false: 기존 TimeTable+PI";
+    parameter Real f_target_Hz = 30.0 "실제 제어 목표 주파수 [Hz]. 30Hz=1800rpm";
+    HPWDctrl.CompStartSequencer seq(f_target=f_target_Hz);
+    HPWDctrl.EEV_Sequencer eevctl;
     HPWDctrl.PI_Controller ctrl(SH_target=SH_target, Kp=Kp_c, Ki=Ki_c, opening_init=open_init, opening_min=6.0, I(fixed=true));
     // 2026-07-26: TimeTable -> CombiTimeTable(Akima).
     //   TimeTable 은 선형보간이라 표 절점마다 도함수가 꺾인다(t=1,11,21,31,41,51).
@@ -563,11 +574,14 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
         //   (tol=1e-3/3e-3 모두 t=13.0 에서 DASSL error test 반복 실패.
         //    tol=1e-2 만 이 구간을 뭉개고 지나갔다.)
         //   main 의 해석물성판은 이미 같은 이유로 제거돼 있었다.
-        0.0,    0.0;
-        0.5,    600.0;
-        1.5,    1200.0;
-        3.0,    1500.0;
-        10.0,   N_final;
+        // 2026-07-31: 실제 사양(Ramp up 1 rps/s)에 맞춘다.
+        //   1800 rpm = 30 rps 이므로 30초에 도달해야 한다.
+        //   기존은 3초에 1500rpm(25rps)으로 8.3 rps/s — 사양의 8배였다.
+        //   급한 기동이 초반 적분 난이도를 높였을 가능성이 있다.
+        0.0,     0.0;
+        10.0,   600.0;
+        20.0,  1200.0;
+        30.0,  N_final;
         // 평탄 구간 절점 — 51->500 단일구간이면 Akima 가 직전 급상승
         //   (41->51: 1500->1800) 기울기를 이어받아 오버슛한다.
         61.0,   N_final;
@@ -592,10 +606,15 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     connect(vol3.port_b, evap.port_a);
     connect(evap.port_b, vol4.port_a);
     connect(vol4.port_b, comp.port_a);
-    comp.N = if N_const > 0 then N_const else N_scale*Nsig.y[1]
+    // 2026-07-31: 실제 제어 로직 스위치.
+    //   use_real_ctrl=true 면 CompStartSequencer/EEV_Sequencer 출력을 쓴다.
+    //   false 면 기존 TimeTable + PI (하위호환).
+    comp.N = if use_real_ctrl then seq.N
+             elseif N_const > 0 then N_const else N_scale*Nsig.y[1]
       "N_const>0 이면 램프표 무시하고 고정속도 (정상해 검증용)";
-    connect(ctrl.opening, eev.opening);
+    eev.opening = if use_real_ctrl then eevctl.opening else ctrl.opening;
     ctrl.SH_meas = evap.SH;
+    eevctl.SH = evap.SH;
     Pc_bar=vol1.p/1e5;
     Pe_bar=vol3.p/1e5;
     mdot=comp.m_dot;
@@ -736,5 +755,6 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     // 충전량 구속 — h0 를 결정
     M_total = M_charge;
   end Cycle_L3_coldstart_charge;
+
 
 end HPWDcycle;
