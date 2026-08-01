@@ -144,7 +144,6 @@ package HPWDctrl "제어 컴포넌트"
     discrete Real t_min_reached(start=-1e9, fixed=true) "n_min 도달 시각 [s]";
     discrete Boolean normal(start=false, fixed=true) "6단계 정상제어 진입";
     Real n_cont(start=0.0, fixed=true) "정상제어 누적 이동량 [pulse]";
-    discrete Real n_base(start=450.0, fixed=true) "정상제어 진입 시점 개도";
     Real v_norm "정상제어 이동 속도 [pulse/s]";
   equation
     // 6단계 정상제어: 비대칭 데드밴드. 사이(3~6K)에서는 멈춘다.
@@ -153,7 +152,16 @@ package HPWDctrl "제어 컴포넌트"
              elseif SH <= sh_lo then -rate_norm
              else 0.0;
     der(n_cont) = v_norm;
-    n_pulse = if normal then min(max(n_base + n_cont, n_min), n_full) else n_step;
+    // 2026-07-31: 6단계 진입 시 n_pulse 가 n_step -> n_base+n_cont 로
+    //   갈아타며 불연속이 생겨 적분이 멈췄다(실측: t=210 에서 이벤트 반복).
+    //   n_base 를 진입 시점 n_step 으로 잡고 n_cont 를 0 에서 시작하므로
+    //   값은 이어지지만, OMC 가 두 식 사이의 전환을 이벤트로 처리한다.
+    //   noEvent 로 감싸 전환에서 이벤트를 만들지 않게 한다.
+    // 2026-07-31: 두 식 사이 전환 자체를 없앤다.
+    //   noEvent 로 감싸도 when 절이 이벤트를 만들어 t=210 정체가 반복됐다.
+    //   n_step(이산 단계) + n_cont(정상제어 누적)를 항상 더하는 하나의 식으로
+    //   두면 전환이 사라진다. 정상제어 전에는 n_cont=0 이므로 값은 동일하다.
+    n_pulse = min(max(n_step + n_cont, n_min), n_full);
     opening = n_pulse/n_full*100.0;
 
   algorithm
@@ -186,7 +194,6 @@ package HPWDctrl "제어 컴포넌트"
     when at_min and (time > t_min_reached + dt_open)
          and (time > t_comp_on + hold_init) and SH < sh_open then
       normal := true;
-      n_base := n_step;
     end when;
   end EEV_Sequencer;
 
