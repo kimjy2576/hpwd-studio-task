@@ -153,6 +153,8 @@ package HPWDctrl "제어 컴포넌트"
     Real err_sh "과열도 오차 [K]";
     Real v_pi "PI 가 요구하는 속도 [pulse/s] (포화 전)";
     Real I_eev(start=0.0, fixed=true) "PI 적분 상태";
+    discrete Integer act(start=0, fixed=true)
+      "제어 상태: +1 여는중, -1 닫는중, 0 정지 (히스테리시스)";
   equation
     // 6단계 정상제어: 비대칭 데드밴드. 사이(3~6K)에서는 멈춘다.
     // 2026-07-31: 데드밴드 경계를 매끄럽게.
@@ -176,13 +178,19 @@ package HPWDctrl "제어 컴포넌트"
     //     v_pi   = Kp*(SH - sh_set) + Ki*I     오차에 비례
     //     v_norm = 데드밴드 밖일 때만, ±rate_norm 으로 포화
     //   데드밴드 안에서는 적분도 멈춘다(와인드업 방지).
-    db_active = 0.5*(1.0 + tanh((SH - sh_hi)/db_smooth))
-              + 0.5*(1.0 + tanh((sh_lo - SH)/db_smooth));
+    // 2026-07-31 정정: 데드밴드가 아니라 히스테리시스다.
+    //   시작 조건과 정지 조건이 다르다 (목표 sh_set 기준).
+    //     여는 제어  SH > sh_hi(+2K) 에서 시작 -> sh_set(0) 도달하면 정지
+    //     닫는 제어  SH < sh_lo(-1K) 에서 시작 -> sh_set(0) 도달하면 정지
+    //   즉 시작 데드밴드 (+2, -1), 정지 데드밴드 (0, 0).
+    //   대칭 데드밴드로 두면 6K->5K 로 내려오는 도중 멈춰버려 4K 에 못 간다.
+    //   act 상태(+1 여는중 / -1 닫는중 / 0 정지)를 기억한다.
     err_sh = SH - sh_set;
     v_pi = Kp_eev*err_sh + Ki_eev*I_eev;
-    der(I_eev) = if normal then db_active*err_sh else 0.0;
-    v_norm = if not normal then 0.0
-             else db_active*max(-rate_norm, min(rate_norm, v_pi));
+    der(I_eev) = if act <> 0 then err_sh else 0.0;
+    db_active = abs(act);
+    v_norm = if not normal or act == 0 then 0.0
+             else max(-rate_norm, min(rate_norm, v_pi));
     der(n_cont) = v_norm;
     // 2026-07-31: 6단계 진입 시 n_pulse 가 n_step -> n_base+n_cont 로
     //   갈아타며 불연속이 생겨 적분이 멈췄다(실측: t=210 에서 이벤트 반복).
@@ -215,6 +223,20 @@ package HPWDctrl "제어 컴포넌트"
       if at_min and (not normal) and SH >= sh_open then
         n_step := min(n_step + d_open, n_max5);
       end if;
+    end when;
+
+    // 히스테리시스: 시작은 sh_hi/sh_lo, 정지는 sh_set
+    when normal and SH > sh_hi then
+      act := 1;                       // 여는 제어 시작 (4K 로 내리려)
+    end when;
+    when normal and SH < sh_lo then
+      act := -1;                      // 닫는 제어 시작 (4K 로 올리려)
+    end when;
+    when act == 1 and SH <= sh_set then
+      act := 0;                       // 목표 도달 -> 정지
+    end when;
+    when act == -1 and SH >= sh_set then
+      act := 0;
     end when;
 
     // 6단계 진입: 기동 유지 경과 && 과열도가 5단계 기준 아래
