@@ -143,6 +143,7 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     Real dP_in, W_valve_in, rho_dis_est, dP_out, W_valve_out;
     Real w_chamber, W_indicated, h_dis, eta_is, W_friction, W_shaft, W_elec, T_dis;
     Real Q_shell "토출가스 -> 쉘 열流 [W] (2026-07-31)";
+    Real W_motor_loss "모터+인버터 손실 [W]. 쉘 내부에서 발생 (2026-07-31)";
   equation
     // ── 흡입 경로: 포트(1) → 흡입 압력손실(유량의존) → shell 가열 → 챔버 흡입 ──
     p_su1  = port_a.p;
@@ -166,8 +167,15 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     //   그 결과 오일 용해도가 폭증(w=0.43, 평형 90g)해 어큐가 마르고
     //   t~231 에서 적분이 실패했다.
     //   AU_dis 는 고압쉘이므로 크게 잡는다 — 토출가스가 쉘 전체를 감싼다.
+    // 2026-07-31: 모터 손실을 쉘 열원에 추가.
+    //   밀폐형 압축기는 모터가 쉘 안에 있고 그 손실이 쉘과 흡입가스를 데운다.
+    //   기존에는 W_elec = W_shaft/(eta_motor*eta_inv) 로 나누기만 하고
+    //   손실분 W_elec - W_shaft 가 어디에도 들어가지 않았다 — 에너지 누락.
+    //   이 열은 전기에서 오므로 토출가스를 식히지 않는다.
+    //   eta_motor=0.90, eta_inv=0.95 -> 손실 14.5%
+    W_motor_loss = W_elec - W_shaft;
     AU_loss*(T_w - T_amb) + AU_su*(T_w - T_su1)
-      = W_friction + AU_dis*(T_dis - T_w);   // T_ph 는 K 반환 (실측 310.9 K)
+      = W_friction + W_motor_loss + AU_dis*(T_dis - T_w);   // T_ph 는 K 반환
 
     p_dis  = port_b.p;
     rho_su = R290Tab.rho_ph(p_su, h_su);
