@@ -111,6 +111,8 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     // ─ 흡입 경로 (shell 흡입가열 + 흡입 압력손실) ─
     parameter Real zeta_su = 2.823 "흡입 손실계수 [-] (흡입관·머플러·밸브). 설계점서 dP≈5% (L2 Winandy dP_su와 정합)";
     parameter Real AU_su = 3.0 "흡입 가열 UA [W/K] (shell → 흡입가스)";
+    parameter Real AU_dis = 30.0
+      "토출가스 → shell UA [W/K]. 고압쉘: 토출가스가 쉘 내부를 채운다 (2026-07-31)";
     parameter Real AU_loss = 5.0 "shell 외부 열손실 UA [W/K]";
     parameter Modelica.Units.SI.Temperature T_amb = 308.15 "shell 주위 온도 [K]";
     // ─ 손실/누설 ─
@@ -156,7 +158,15 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     NTU_su = min(AU_su/max(m_dot_port*cp_su1, 1e-6), 20.0);
     eps_su = 1.0 - exp(-NTU_su);
     h_su   = h_su1 + eps_su*cp_su1*(T_w - T_su1);
-    AU_loss*(T_w - T_amb) + AU_su*(T_w - T_su1) = W_friction;
+    // 2026-07-31: 토출가스-쉘 열결합 추가.
+    //   고압쉘 압축기는 토출가스가 쉘 내부를 채우므로 쉘 온도가
+    //   토출온도에 가깝다. 기존에는 이 항이 없어 마찰손실(45.9 W)만으로
+    //   주위(35C)와 흡입가스(17C) 사이에서 평형을 이뤄 T_w=30~32C 였다.
+    //   그 결과 오일 용해도가 폭증(w=0.43, 평형 90g)해 어큐가 마르고
+    //   t~231 에서 적분이 실패했다.
+    //   AU_dis 는 고압쉘이므로 크게 잡는다 — 토출가스가 쉘 전체를 감싼다.
+    AU_loss*(T_w - T_amb) + AU_su*(T_w - T_su1)
+      = W_friction + AU_dis*(T_dis - T_w);   // T_ph 는 K 반환 (실측 310.9 K)
 
     p_dis  = port_b.p;
     rho_su = R290Tab.rho_ph(p_su, h_su);
