@@ -61,12 +61,29 @@ package HPWDctrl "제어 컴포넌트"
     discrete Boolean done_start(start=false, fixed=true) "35Hz 유지 완료";
     discrete Boolean done_mid1(start=false, fixed=true) "중간1 유지 완료";
     Real rate "현재 상승률 [Hz/s] (rps=Hz)";
+    Real f_cmd "실효 목표 주파수 [Hz]. 35Hz 유지 전에는 f_hold 이상";
   equation
     // 유지 중이면 0, 아니면 구간별 상승률
+    // 2026-07-31: 목표가 현재보다 낮으면 감속한다.
+    //   35Hz 강제 유지 후 목표가 30Hz 이면 내려가야 하는데
+    //   기존 der(f)=if f>=f_target then 0 은 35Hz 에 머물렀다.
+    //   상승·하강 모두 rate_slow 로 움직인다(유지 중에는 0).
     rate = if time < t_hold_end then 0.0
            elseif f < f_min then rate_fast
            else rate_slow;
-    der(f) = if f >= f_target then 0.0 else rate;
+    // 2026-07-31: 35Hz 강제 유지는 설정 Hz 와 무관하다.
+    //   목표가 30Hz 여도 일단 f_hold(35Hz)까지 올라가 2분 유지한 뒤
+    //   목표로 내려온다. 그래서 유지를 마치기 전의 실효 목표는 f_hold 다.
+    //   (실측: 이 처리가 없으면 30Hz 에서 멈춰 35Hz 유지가 발동하지 않았다)
+    //   f_cmd 를 정확히 f_hold 로 두면 f 가 35.0 에서 멈춰
+    //   when (f >= f_hold) 이 이산 전이를 만들지 못한다(실측: done_start 가
+    //   끝까지 false). 아주 조금 넘어서도록 여유를 준다.
+    f_cmd = if done_start then f_target else max(f_target, f_hold) + 0.01;
+    //   감속에도 유지(rate=0)가 적용돼야 한다. rate 는 유지 중 0 이므로
+    //   부호만 바꿔 쓴다. -rate_slow 를 직접 쓰면 유지 중에도 내려간다.
+    der(f) = if abs(f - f_cmd) < 1e-6 then 0.0
+             elseif f < f_cmd then rate
+             else -rate;
     N = f*60.0;
 
   algorithm
