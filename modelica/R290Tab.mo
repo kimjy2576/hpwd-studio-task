@@ -6,7 +6,7 @@ package R290Tab "R290 tabulated media — (p,h) basis, 2상 안전, 미분가능
   constant Real P1=3500000;
   constant Real H0=120000;
   constant Real H1=800000;
-  constant Real DHB=50.0 "포화선 블렌딩 폭 [J/kg] (2026-07-25). rho_ph 의 d(rho)/dh 가
+  constant Real DHB=100.0 "포화선 블렌딩 폭 [J/kg] (2026-07-25). rho_ph 의 d(rho)/dh 가
     포화선에서 62.6배 점프(실측 p=10bar: 액상 -4.42e-4 / 2상 -2.77e-2)해 Volume_L3 의
     der(rho*V) 질량수지 야코비안 조건수를 무너뜨림. rho 자체는 연속이라 블렌딩이
     값은 거의 안 바꾸고 도함수만 평활화함.";
@@ -758,13 +758,11 @@ package R290Tab "R290 tabulated media — (p,h) basis, 2상 안전, 미분가능
     input Real p; output Integer i;
   algorithm
     i := noEvent(min(max(integer(floor((min(max(p,P0),P1)-P0)/dP))+1,1),nP-1)) "noEvent: 격자 인덱스는 순수 조회 — 이벤트 생성 금지(셀별 압력 시 240셀 이벤트 폭발)";
-    annotation(Inline=false);
   end idxP;
   function idxH
     input Real h; output Integer j;
   algorithm
     j := noEvent(min(max(integer(floor((min(max(h,H0),H1)-H0)/dH))+1,1),nH-1)) "noEvent: 동일 사유";
-    annotation(Inline=false);
   end idxH;
   function lin1
     input Real F[nP]; input Real p; output Real y;
@@ -1057,12 +1055,7 @@ package R290Tab "R290 tabulated media — (p,h) basis, 2상 안전, 미분가능
     dh := (drho - dRdp*dp)/(if abs(dRdh) < 1e-12 then -1e-12 else dRdh);
   end h_rhop_d;
 
-  function p_rhoh "밀도·엔탈피에서 압력 역산 [Pa]. 보존형 정식화용.
-
-    2026-07-26: 내부 조회를 rho_ph -> rho_ph_a 로 전환.
-    볼륨은 p=p_rhoh(rho,h) 로 압력을 역산하는데 여기만 테이블판을 쓰면
-    다른 곳(해석형)과 물성이 섞여 모순이 생기고 초기화가 발산한다
-    (실측: 사이클 ssinit 이 lambda=0 에서 residual 2.06e+20 으로 폭주)
+  function p_rhoh "밀도·엔탈피에서 압력 역산 [Pa]. 보존형 정식화용 (2026-07-26)
 
     보존형(상태 = M, h)에서는 rho = M/V 가 먼저 정해지고 p 를 역산해야 한다.
     rho_ph 는 고정 h 에서 p 에 대해 단조증가(압력이 오르면 액쪽으로 이동)이므로
@@ -1080,24 +1073,24 @@ package R290Tab "R290 tabulated media — (p,h) basis, 2상 안전, 미분가능
     //   2) 셀 안에서 선형 역산 (bilinC 분기면 이것으로 정확)
     //   3) 2상·블렌딩 분기는 셀 안에서도 비선형이므로 시컨트 3회 보정
     // 물성호출 30회 -> 약 11회.
-    if rho <= rho_ph_a(P0, h) then
+    if rho <= rho_ph(P0, h) then
       p := P0;
-    elseif rho >= rho_ph_a(P1, h) then
+    elseif rho >= rho_ph(P1, h) then
       p := P1;
     else
       ilo := 1; ihi := nP;
       while ihi - ilo > 1 loop
         imid := div(ilo + ihi, 2);
-        if rho_ph_a(P0 + (imid - 1)*dP, h) > rho then ihi := imid; else ilo := imid; end if;
+        if rho_ph(P0 + (imid - 1)*dP, h) > rho then ihi := imid; else ilo := imid; end if;
       end while;
       lo := P0 + (ilo - 1)*dP;  hi := P0 + (ihi - 1)*dP;
-      rlo := rho_ph_a(lo, h);     rhi := rho_ph_a(hi, h);
+      rlo := rho_ph(lo, h);     rhi := rho_ph(hi, h);
       p := if abs(rhi - rlo) < 1e-12 then 0.5*(lo + hi)
            else lo + (rho - rlo)*(hi - lo)/(rhi - rlo);
       // 블렌딩 밴드는 셀 안에서도 비선형이라 3회 필요 (2회면 상대오차 7e-5)
       for k in 1:3 loop
         mid := min(max(p, lo), hi);
-        f := rho_ph_a(mid, h);
+        f := rho_ph(mid, h);
         if f > rho then hi := mid; rhi := f; else lo := mid; rlo := f; end if;
         p := if abs(rhi - rlo) < 1e-12 then 0.5*(lo + hi)
              else lo + (rho - rlo)*(hi - lo)/(rhi - rlo);
@@ -1120,8 +1113,8 @@ package R290Tab "R290 tabulated media — (p,h) basis, 2상 안전, 미분가능
     Real p, dRdp, dRdh;
   algorithm
     p    := p_rhoh(rho, h);
-    dRdp := rho_ph_a_d(p, h, 1.0, 0.0);
-    dRdh := rho_ph_a_d(p, h, 0.0, 1.0);
+    dRdp := rho_ph_d(p, h, 1.0, 0.0);
+    dRdh := rho_ph_d(p, h, 0.0, 1.0);
     // dRdp 가 0 에 가까우면(2상 평탄부) 가드
     dp := (drho - dRdh*dh)/(if abs(dRdp) < 1e-12 then 1e-12 else dRdp);
   end p_rhoh_d;
@@ -1191,23 +1184,7 @@ package R290Tab "R290 tabulated media — (p,h) basis, 2상 안전, 미분가능
     else
       dT:=bilin(TBLdTdp,p,h)*dp+bilin(TBLdTdh,p,h)*dh;
     end if;
-    annotation(derivative(order=2)=T_ph_dd);
   end T_ph_d;
-  function T_ph_dd "T_ph_d 의 도함수 자리표시자 (2026-07-26).
-
-    T_ph_d 에 annotation 이 없으면 2차 미분 경로에서 T_ph_d 가 통째로 인라인되고
-    그 안의 bilin(TBLdTdh,...) 가 60x160 테이블을 리터럴로 전개한다.
-    셀 240개분 반복되어 기호 야코비안이 406.7MB 로 폭발했다.
-    T_ph_d 를 함수 호출로 유지시키는 것이 목적이며, 2차 도함수 값 자체는
-    현재 사용처가 없어 0 으로 둔다 (야코비안은 1차만 필요).
-    ※ 2차 도함수가 실제로 필요해지면 여기를 채워야 함.
-  "
-    input Real p; input Real h; input Real dp; input Real dh;
-    input Real d2p; input Real d2h; output Real d2T;
-  algorithm
-    d2T := 0.0;
-  end T_ph_dd;
-
 
   // ===== 단일상 수송물성 (영역인지, 값) =====
   function mu_ph
@@ -1219,22 +1196,7 @@ package R290Tab "R290 tabulated media — (p,h) basis, 2상 안전, 미분가능
     if h>hL and h<hV then x:=(h-hL)/(hV-hL); mu:=(1-x)*lin1(SATmul,p)+x*lin1(SATmuv,p);
     elseif h<=hL then mu:=bilinC(TBLmu,SATmul,1,p,h);
     else mu:=bilinC(TBLmu,SATmuv,2,p,h); end if;
-    annotation(derivative=mu_ph_d, Inline=false);
   end mu_ph;
-  function mu_ph_d "mu_ph 도함수 (중심차분).
-    annotation 이 없으면 기호 야코비안 생성 시 이 함수가 인라인되고
-    내부 lin1/bilinC 의 idxP(integer(floor)) 가 미분경로에 들어가
-    switch(double) 코드가 생성되어 clang 이 거부한다 (2026-07-26).
-    압축기에서 각 1회만 쓰이므로 차분 비용은 무시 가능."
-    input Real p; input Real h; input Real dp; input Real dh; output Real dy;
-  protected
-    Real ep,eh;
-  algorithm
-    ep := 1.0e3; eh := 1.0e2;
-    dy := ((mu_ph(p+ep,h) - mu_ph(p-ep,h))/(2.0*ep))*dp
-        + ((mu_ph(p,h+eh) - mu_ph(p,h-eh))/(2.0*eh))*dh;
-    annotation(Inline=false);
-  end mu_ph_d;
   function k_ph
     input Real p; input Real h; output Real k;
   protected
@@ -1254,22 +1216,7 @@ package R290Tab "R290 tabulated media — (p,h) basis, 2상 안전, 미분가능
     if h>hL and h<hV then x:=(h-hL)/(hV-hL); cp:=(1-x)*lin1(SATcpl,p)+x*lin1(SATcpv,p);
     elseif h<=hL then cp:=bilinC(TBLcp,SATcpl,1,p,h);
     else cp:=bilinC(TBLcp,SATcpv,2,p,h); end if;
-    annotation(derivative=cp_ph_d, Inline=false);
   end cp_ph;
-  function cp_ph_d "cp_ph 도함수 (중심차분).
-    annotation 이 없으면 기호 야코비안 생성 시 이 함수가 인라인되고
-    내부 lin1/bilinC 의 idxP(integer(floor)) 가 미분경로에 들어가
-    switch(double) 코드가 생성되어 clang 이 거부한다 (2026-07-26).
-    압축기에서 각 1회만 쓰이므로 차분 비용은 무시 가능."
-    input Real p; input Real h; input Real dp; input Real dh; output Real dy;
-  protected
-    Real ep,eh;
-  algorithm
-    ep := 1.0e3; eh := 1.0e2;
-    dy := ((cp_ph(p+ep,h) - cp_ph(p-ep,h))/(2.0*ep))*dp
-        + ((cp_ph(p,h+eh) - cp_ph(p,h-eh))/(2.0*eh))*dh;
-    annotation(Inline=false);
-  end cp_ph_d;
 
   // ===== 엔트로피 / cv / gamma / 등엔트로피 (컴프용) =====
   function s_ph "엔트로피 s(p,h) [J/kgK] — 영역인지"
@@ -1281,22 +1228,7 @@ package R290Tab "R290 tabulated media — (p,h) basis, 2상 안전, 미분가능
     if h>hL and h<hV then x:=(h-hL)/(hV-hL); s:=(1-x)*lin1(SATsl,p)+x*lin1(SATsv,p);
     elseif h<=hL then s:=bilinC(TBLs,SATsl,1,p,h);
     else s:=bilinC(TBLs,SATsv,2,p,h); end if;
-    annotation(derivative=s_ph_d, Inline=false);
   end s_ph;
-  function s_ph_d "s_ph 도함수 (중심차분).
-    annotation 이 없으면 기호 야코비안 생성 시 이 함수가 인라인되고
-    내부 lin1/bilinC 의 idxP(integer(floor)) 가 미분경로에 들어가
-    switch(double) 코드가 생성되어 clang 이 거부한다 (2026-07-26).
-    압축기에서 각 1회만 쓰이므로 차분 비용은 무시 가능."
-    input Real p; input Real h; input Real dp; input Real dh; output Real dy;
-  protected
-    Real ep,eh;
-  algorithm
-    ep := 1.0e3; eh := 1.0e2;
-    dy := ((s_ph(p+ep,h) - s_ph(p-ep,h))/(2.0*ep))*dp
-        + ((s_ph(p,h+eh) - s_ph(p,h-eh))/(2.0*eh))*dh;
-    annotation(Inline=false);
-  end s_ph_d;
 
   function cv_ph "정적비열 cv(p,h) — 영역인지"
     input Real p; input Real h; output Real cv;
@@ -1307,43 +1239,13 @@ package R290Tab "R290 tabulated media — (p,h) basis, 2상 안전, 미분가능
     if h>hL and h<hV then x:=(h-hL)/(hV-hL); cv:=(1-x)*lin1(SATcvl,p)+x*lin1(SATcvv,p);
     elseif h<=hL then cv:=bilinC(TBLcv,SATcvl,1,p,h);
     else cv:=bilinC(TBLcv,SATcvv,2,p,h); end if;
-    annotation(derivative=cv_ph_d, Inline=false);
   end cv_ph;
-  function cv_ph_d "cv_ph 도함수 (중심차분).
-    annotation 이 없으면 기호 야코비안 생성 시 이 함수가 인라인되고
-    내부 lin1/bilinC 의 idxP(integer(floor)) 가 미분경로에 들어가
-    switch(double) 코드가 생성되어 clang 이 거부한다 (2026-07-26).
-    압축기에서 각 1회만 쓰이므로 차분 비용은 무시 가능."
-    input Real p; input Real h; input Real dp; input Real dh; output Real dy;
-  protected
-    Real ep,eh;
-  algorithm
-    ep := 1.0e3; eh := 1.0e2;
-    dy := ((cv_ph(p+ep,h) - cv_ph(p-ep,h))/(2.0*ep))*dp
-        + ((cv_ph(p,h+eh) - cv_ph(p,h-eh))/(2.0*eh))*dh;
-    annotation(Inline=false);
-  end cv_ph_d;
 
   function gamma_ph "비열비 cp/cv"
     input Real p; input Real h; output Real g;
   algorithm
     g:=cp_ph(p,h)/cv_ph(p,h);
-    annotation(derivative=gamma_ph_d, Inline=false);
   end gamma_ph;
-  function gamma_ph_d "gamma_ph 도함수 (중심차분).
-    annotation 이 없으면 기호 야코비안 생성 시 이 함수가 인라인되고
-    내부 lin1/bilinC 의 idxP(integer(floor)) 가 미분경로에 들어가
-    switch(double) 코드가 생성되어 clang 이 거부한다 (2026-07-26).
-    압축기에서 각 1회만 쓰이므로 차분 비용은 무시 가능."
-    input Real p; input Real h; input Real dp; input Real dh; output Real dy;
-  protected
-    Real ep,eh;
-  algorithm
-    ep := 1.0e3; eh := 1.0e2;
-    dy := ((gamma_ph(p+ep,h) - gamma_ph(p-ep,h))/(2.0*ep))*dp
-        + ((gamma_ph(p,h+eh) - gamma_ph(p,h-eh))/(2.0*eh))*dh;
-    annotation(Inline=false);
-  end gamma_ph_d;
 
   function h_ps "등엔트로피: (p, s_target) -> h. s_ph에 Newton 역산 (ds=dh/T)"
     input Real p; input Real s_target; output Real h;
@@ -1355,464 +1257,5 @@ package R290Tab "R290 tabulated media — (p,h) basis, 2상 안전, 미분가능
       sN := s_ph(p,h); T := T_ph(p,h);
       h := h + (s_target - sN)*T;
     end for;
-    annotation(Inline=false);
   end h_ps;
-  // ═══ 해석형 T_ph (2026-07-26) ═══
-  // 테이블 기반 T_ph 는 기호 야코비안 생성 시 TBLT/TBLdTdh(60x160)가 리터럴로
-  // 전개되어 _12jac.c 가 406.7MB 로 폭발했다. 셀 240개마다 호출되기 때문.
-  // 해석형은 상수배열이 6개짜리 다항계수뿐이라 전개돼도 무해하다.
-  //
-  // 형태: T - Tsat(p) = sum_k a_k(p) * (h - h_sat(p))^(3-k),  k=0..3
-  //       a_k(p) = 5차 다항
-  // 정확도(CoolProp 대조, 2~30bar):
-  //   액상  h in [hl-60k, hl-2k]   최대 0.024 K
-  //   증기  h in [hv+2k, hv+180k]  최대 0.167 K
-  constant Real TCL[4,6] = {{-7.105628038e-48, -1.482784810e-42, 6.770858730e-35, -3.424793425e-28, 2.000092478e-22, -1.832329621e-16},
-                            {-4.038099831e-42, 2.605905503e-35, -8.580458847e-29, 1.049734615e-22, -1.381225342e-16, -1.970950239e-10},
-                            {-1.679563407e-36, 1.515820216e-29, -5.696197281e-23, 1.065963930e-16, -1.541141597e-10, 4.558072453e-04},
-                            {5.185545926e-35, -2.672607829e-28, 6.609012642e-22, -6.417300542e-16, 4.942029418e-10, -1.052847239e-04}} "액상 T 계수";
-  constant Real TCV[4,6] = {{-1.607213570e-47, 1.478569292e-40, -5.731984123e-34, 1.046481544e-27, -1.589198188e-21, 4.604239992e-16},
-                            {1.243638051e-41, -1.152612943e-34, 4.386158618e-28, -8.138058199e-22, 1.129953876e-15, -6.167997577e-10},
-                            {-4.802357695e-36, 4.506484242e-29, -1.696679412e-22, 3.200191700e-16, -4.159538110e-10, 7.213976650e-04},
-                            {-3.560007963e-34, 2.278420793e-27, -6.148518356e-21, 1.731622354e-15, -2.797780568e-08, -1.297233529e-02}} "증기 T 계수";
-
-  function polyv "다항 평가 (내림차순 계수)"
-    input Real c[:]; input Real x; output Real y;
-  algorithm
-    y := 0.0;
-    for i in 1:size(c,1) loop y := y*x + c[i]; end for;
-    annotation(derivative=polyv_d);
-  end polyv;
-
-  function polyv_d "polyv 의 x 에 대한 도함수"
-    input Real c[:]; input Real x; input Real dc[:]; input Real dx; output Real dy;
-  protected
-    Real d;
-  algorithm
-    d := 0.0;
-    for i in 1:(size(c,1)-1) loop d := d*x + (size(c,1)-i)*c[i]; end for;
-    dy := d*dx;
-  end polyv_d;
-
-  function T_ph_a "해석형 T_ph — 테이블 없음. 기호 야코비안 친화적."
-    input Real p; input Real h; output Real T;
-  protected
-    Real Ts,hL,hV,dh,a[4];
-  algorithm
-    Ts := Tsat_a(p); hL := hl_a(p); hV := hv_a(p);  // 해석형 — 미분경로에서 테이블 제거
-    if h > hL and h < hV then
-      T := Ts;
-    else
-      if h <= hL then
-        dh := h - hL;
-        a[1] := polyv(TCL[1,:], p); a[2] := polyv(TCL[2,:], p);
-        a[3] := polyv(TCL[3,:], p); a[4] := polyv(TCL[4,:], p);
-      else
-        dh := h - hV;
-        a[1] := polyv(TCV[1,:], p); a[2] := polyv(TCV[2,:], p);
-        a[3] := polyv(TCV[3,:], p); a[4] := polyv(TCV[4,:], p);
-      end if;
-      T := Ts + ((a[1]*dh + a[2])*dh + a[3])*dh + a[4];
-    end if;
-    annotation(derivative=T_ph_a_d);
-  end T_ph_a;
-
-  function T_ph_a_d "T_ph_a 의 전미분"
-    input Real p; input Real h; input Real dp; input Real dh_in; output Real dT;
-  protected
-    Real Ts,hL,hV,dh,a[4],dTdh,dTdp,eps,Tp,Tm;
-  algorithm
-    hL := hl_a(p); hV := hv_a(p);
-    if h > hL and h < hV then
-      dT := Tsat_a_d(p, dp);
-    else
-      if h <= hL then
-        dh := h - hL;
-        a[1] := polyv(TCL[1,:], p); a[2] := polyv(TCL[2,:], p);
-        a[3] := polyv(TCL[3,:], p); a[4] := polyv(TCL[4,:], p);
-      else
-        dh := h - hV;
-        a[1] := polyv(TCV[1,:], p); a[2] := polyv(TCV[2,:], p);
-        a[3] := polyv(TCV[3,:], p); a[4] := polyv(TCV[4,:], p);
-      end if;
-      // dT/dh 는 해석적으로
-      dTdh := (3.0*a[1]*dh + 2.0*a[2])*dh + a[3];
-      // dT/dp 는 중심차분 (계수·포화선이 모두 p 에 의존해 식이 길어짐)
-      eps := 1.0e2;
-      Tp := T_ph_a(p + eps, h); Tm := T_ph_a(p - eps, h);
-      dTdp := (Tp - Tm)/(2.0*eps);
-      dT := dTdh*dh_in + dTdp*dp;
-    end if;
-  end T_ph_a_d;
-
-  // ═══ 해석형 포화선 (2026-07-26) ═══
-  // lin1(SAT*,p) 는 idxP 의 integer(floor(...)) 를 타는데, 이 정수 인덱스는
-  // 미분 불가능이라 기호 야코비안이 어느 OMC 버전에서도 실패했다
-  //   1.25 / 1.27 : switch(double) clang 오류
-  //   1.28 새백엔드: 'Variable $fDER_i is used before it is assigned'
-  // log(p) 7차 다항으로 대체해 미분 경로에서 테이블을 완전히 제거한다.
-  // 정확도(CoolProp, 2~30bar): Tsat 0.00037 K, hl 33 J/kg, hv 47 J/kg
-  function Tsat_a "해석형 포화온도 [K]"
-    input Real p; output Real T;
-  protected
-    Real x;
-  algorithm
-    x := log(min(max(p, P0), P1));
-    T := (((((((-5.8568321336e-03*x + 5.4409513135e-01)*x - 2.1658325307e+01)*x + 4.7889496682e+02)*x - 6.3523509732e+03)*x + 5.0547784191e+04)*x - 2.2340371167e+05)*x + 4.2318837646e+05);
-    annotation(derivative=Tsat_a_d);
-  end Tsat_a;
-
-  function Tsat_a_d "Tsat_a 도함수"
-    input Real p; input Real dp; output Real dT;
-  protected
-    Real x,pc,d;
-  algorithm
-    pc := min(max(p, P0), P1); x := log(pc);
-    d := 0.0;
-    d := ((((((-4.0997824935e-02*x + 3.2645707881e+00)*x - 1.0829162653e+02)*x + 1.9155798673e+03)*x - 1.9057052920e+04)*x + 1.0109556838e+05)*x - 2.2340371167e+05);
-    dT := if (p <= P0 or p >= P1) then 0.0 else d/pc*dp;
-  end Tsat_a_d;
-
-  function hl_a "해석형 포화액 엔탈피 [J/kg]"
-    input Real p; output Real h;
-  protected
-    Real x;
-  algorithm
-    x := log(min(max(p, P0), P1));
-    h := (((((((2.7527849399e+02*x - 2.5757436934e+04)*x + 1.0325452903e+06)*x - 2.2986758475e+07)*x + 3.0691577333e+08)*x - 2.4576645156e+09)*x + 1.0928382824e+10)*x - 2.0816551755e+10);
-    annotation(derivative=hl_a_d);
-  end hl_a;
-
-  function hl_a_d "hl_a 도함수"
-    input Real p; input Real dp; output Real dh;
-  protected
-    Real x,pc,d;
-  algorithm
-    pc := min(max(p, P0), P1); x := log(pc);
-    d := ((((((1.9269494579e+03*x - 1.5454462160e+05)*x + 5.1627264516e+06)*x - 9.1947033901e+07)*x + 9.2074732000e+08)*x - 4.9153290312e+09)*x + 1.0928382824e+10);
-    dh := if (p <= P0 or p >= P1) then 0.0 else d/pc*dp;
-  end hl_a_d;
-
-  function hv_a "해석형 포화증기 엔탈피 [J/kg]"
-    input Real p; output Real h;
-  protected
-    Real x;
-  algorithm
-    x := log(min(max(p, P0), P1));
-    h := (((((((-4.7098627826e+02*x + 4.4039861081e+04)*x - 1.7642198471e+06)*x + 3.9248300940e+07)*x - 5.2367709839e+08)*x + 4.1905574981e+09)*x - 1.8621451030e+10)*x + 3.5447252901e+10);
-    annotation(derivative=hv_a_d);
-  end hv_a;
-
-  function hv_a_d "hv_a 도함수"
-    input Real p; input Real dp; output Real dh;
-  protected
-    Real x,pc,d;
-  algorithm
-    pc := min(max(p, P0), P1); x := log(pc);
-    d := ((((((-3.2969039478e+03*x + 2.6423916649e+05)*x - 8.8210992354e+06)*x + 1.5699320376e+08)*x - 1.5710312952e+09)*x + 8.3811149962e+09)*x - 1.8621451030e+10);
-    dh := if (p <= P0 or p >= P1) then 0.0 else d/pc*dp;
-  end hv_a_d;
-
-  // ═══ 해석형 밀도 (2026-07-26) ═══
-  // rho_ph 의 bilinC(TBLrho) 는 idxP/idxH 의 integer(floor(...)) 를 타서
-  // 기호 야코비안이 불가능하다. 해석형으로 대체한다.
-  //   포화밀도 : log(rho_sat) = 8차 다항(log p)   rhol 0.008%, rhov 0.010%
-  //   단상보정 : rho/rho_sat - 1 = 다항(h - h_sat), 계수는 다항(log p)
-  //              액 h3xp6 (0.027%), 증기 h5xp7 (0.022%)
-  function rhol_a "해석형 포화액 밀도 [kg/m3]"
-    input Real p; output Real r;
-  protected
-    Real lp;
-  algorithm
-    lp := log(min(max(p, P0), P1));
-    r := exp(((((((((-1.5211024121e-03*lp + 1.6356747427e-01)*lp - 7.6920313393e+00)*lp + 2.0661839230e+02)*lp - 3.4673185972e+03)*lp + 3.7222944840e+04)*lp - 2.4964092463e+05)*lp + 9.5628426417e+05)*lp - 1.6018993622e+06));
-    annotation(derivative=rhol_a_d);
-  end rhol_a;
-
-  function rhol_a_d "rhol_a 도함수"
-    input Real p; input Real dp; output Real dr;
-  protected
-    Real lp,pc,d;
-  algorithm
-    pc := min(max(p, P0), P1); lp := log(pc);
-    d := (((((((-1.2168819297e-02*lp + 1.1449723199e+00)*lp - 4.6152188036e+01)*lp + 1.0330919615e+03)*lp - 1.3869274389e+04)*lp + 1.1166883452e+05)*lp - 4.9928184926e+05)*lp + 9.5628426417e+05);
-    dr := if (p <= P0 or p >= P1) then 0.0 else rhol_a(pc)*d/pc*dp;
-  end rhol_a_d;
-
-  function rhov_a "해석형 포화증기 밀도 [kg/m3]"
-    input Real p; output Real r;
-  protected
-    Real lp;
-  algorithm
-    lp := log(min(max(p, P0), P1));
-    r := exp(((((((((2.0984743019e-03*lp - 2.2546473416e-01)*lp + 1.0594223781e+01)*lp - 2.8434982363e+02)*lp + 4.7680705855e+03)*lp - 5.1148546077e+04)*lp + 3.4278385052e+05)*lp - 1.3121435612e+06)*lp + 2.1964816850e+06));
-    annotation(derivative=rhov_a_d);
-  end rhov_a;
-
-  function rhov_a_d "rhov_a 도함수"
-    input Real p; input Real dp; output Real dr;
-  protected
-    Real lp,pc,d;
-  algorithm
-    pc := min(max(p, P0), P1); lp := log(pc);
-    d := (((((((1.6787794415e-02*lp - 1.5782531391e+00)*lp + 6.3565342684e+01)*lp - 1.4217491181e+03)*lp + 1.9072282342e+04)*lp - 1.5344563823e+05)*lp + 6.8556770104e+05)*lp - 1.3121435612e+06);
-    dr := if (p <= P0 or p >= P1) then 0.0 else rhov_a(pc)*d/pc*dp;
-  end rhov_a_d;
-
-  function rho_sp_a "해석형 단상 밀도 [kg/m3]. side=1 액, 2 증기"
-    input Real p; input Real h; input Integer side; output Real r;
-  protected
-    Real lp,dh,rs,b1,b2,b3,b4,b5,b6;
-  algorithm
-    lp := log(min(max(p, P0), P1));
-    if side == 1 then
-      rs := rhol_a(p); dh := h - hl_a(p);
-      b1 := ((((((-3.5698617068e-18*lp + 2.8684486518e-16)*lp - 9.5975210133e-15)*lp + 1.7115551744e-13)*lp - 1.7157760094e-12)*lp + 9.1672505973e-12)*lp - 2.0394437926e-11);
-      b2 := ((((((-6.6882494093e-13*lp + 5.3704927822e-11)*lp - 1.7957667453e-09)*lp + 3.2005280316e-08)*lp - 3.2066079443e-07)*lp + 1.7123493348e-06)*lp - 3.8075480482e-06);
-      b3 := ((((((-6.6626082072e-08*lp + 5.3422324003e-06)*lp - 1.7839248204e-04)*lp + 3.1754302562e-03)*lp - 3.1777058835e-02)*lp + 1.6950266498e-01)*lp - 3.7650745651e-01);
-      b4 := ((((((1.0219198481e-05*lp - 8.2226990363e-04)*lp + 2.7548697953e-02)*lp - 4.9190644460e-01)*lp + 4.9371750728e+00)*lp - 2.6409592086e+01)*lp + 5.8819147952e+01);
-      r := rs*(1.0 + ((b1*dh + b2)*dh + b3)*dh + b4);
-    else
-      rs := rhov_a(p); dh := h - hv_a(p);
-      b1 := (((((((2.6836607255e-29*lp - 2.5496641961e-27)*lp + 1.0371181950e-25)*lp - 2.3414008942e-24)*lp + 3.1685201994e-23)*lp - 2.5702584048e-22)*lp + 1.1572276785e-21)*lp - 2.2309186245e-21);
-      b2 := (((((((-1.2591722151e-23*lp + 1.1980051087e-21)*lp - 4.8795698449e-20)*lp + 1.1029854927e-18)*lp - 1.4943681184e-17)*lp + 1.2135402802e-16)*lp - 5.4694575730e-16)*lp + 1.0554344697e-15);
-      b3 := (((((((1.8611555021e-18*lp - 1.7787877631e-16)*lp + 7.2757710614e-15)*lp - 1.6511129058e-13)*lp + 2.2452414104e-12)*lp - 1.8296043380e-11)*lp + 8.2728039070e-11)*lp - 1.6012576966e-10);
-      b4 := (((((((-3.2604619422e-14*lp + 3.3577914560e-12)*lp - 1.4651392394e-10)*lp + 3.5184949691e-09)*lp - 5.0300995412e-08)*lp + 4.2859224457e-07)*lp - 2.0171194822e-06)*lp + 4.0480967577e-06);
-      b5 := (((((((-1.4673537559e-08*lp + 1.3638450531e-06)*lp - 5.4321024645e-05)*lp + 1.2017952597e-03)*lp - 1.5950033412e-02)*lp + 1.2698379434e-01)*lp - 5.6150666081e-01)*lp + 1.0638106303e+00);
-      b6 := (((((((1.4951964055e-05*lp - 1.4212503508e-03)*lp + 5.7847275000e-02)*lp - 1.3068974136e+00)*lp + 1.7699945553e+01)*lp - 1.4370632176e+02)*lp + 6.4763625554e+02)*lp - 1.2497841803e+03);
-      r := rs*(1.0 + ((((b1*dh + b2)*dh + b3)*dh + b4)*dh + b5)*dh + b6);
-    end if;
-  end rho_sp_a;
-
-  function rho_ph_a "해석형 rho_ph — 테이블·정수인덱스 없음 (2026-07-26).
-
-    구조는 테이블판과 동일하되 모든 조회를 해석식으로 대체:
-      액       rho_sp_a(p,h,1)
-      블렌딩   hL±6*DHB 에서 tanh (액 <-> 2상)
-      2상      1/((1-x)/rhol_a + x/rhov_a)
-      증기     rho_sp_a(p,h,2)
-    정확도(10.5bar, 테이블 대비): 액 0.049%, 증기 0.107%
-  "
-    input Real p; input Real h; output Real rho;
-  protected
-    Real hL,hV,rL,rV,x,xc,rho_l,rho_2p,w1;
-  algorithm
-    hL := hl_a(p); hV := hv_a(p);
-    rL := rhol_a(p); rV := rhov_a(p);
-    x  := (h-hL)/(hV-hL);
-    xc := min(max(x,-0.02),1.2);
-    if h < hL - 6.0*DHB then
-      rho := rho_sp_a(p,h,1);
-    elseif h < hL + 6.0*DHB then
-      rho_2p := 1.0/((1.0-xc)/rL+xc/rV);
-      rho_l  := rho_sp_a(p,h,1);
-      w1     := 0.5*(1.0+tanh((h-hL)/DHB));
-      rho    := (1.0-w1)*rho_l + w1*rho_2p;
-    elseif h < hV then
-      rho := 1.0/((1.0-xc)/rL+xc/rV);
-    else
-      rho := rho_sp_a(p,h,2);
-    end if;
-    annotation(derivative=rho_ph_a_d);
-  end rho_ph_a;
-
-  function rho_ph_a_d "rho_ph_a 전미분. dh 는 해석, dp 는 중심차분.
-
-    dp 방향은 계수 b_k(p) 와 포화선이 모두 p 에 의존해 해석식이 길어지므로
-    차분을 유지한다. dh 를 해석화해 rho_ph_a 호출을 4회 -> 2회로 줄였다.
-  "
-    input Real p; input Real h; input Real dp; input Real dh; output Real drho;
-  protected
-    Real ep,drdp;
-  algorithm
-    // 2026-07-27: ep=1e4(0.1bar) 는 2상 블렌딩 구간(DHB=100 J/kg)을 통째로
-    //   건너뛰어 적분기가 필요로 하는 국소 도함수와 어긋난다.
-    //   실측: 사이클 콜드스타트가 t=1.598 에서 Integrator failed.
-    //   ep 를 100Pa 로 줄이고 dp==0 실수비교도 제거한다.
-    ep := 1.0e2;
-    drdp := (rho_ph_a(p + ep, h) - rho_ph_a(p - ep, h))/(2.0*ep);
-    drho := drdp*dp + drho_dh_a(p, h)*dh;
-  end rho_ph_a_d;
-
-  function drho_dh_a "해석형 d(rho)/dh [kg/m3 / (J/kg)] (2026-07-26).
-
-    rho_ph_a 의 엔탈피 편도함수를 해석적으로 계산한다.
-    중심차분(rho_ph_a 4회 호출)을 쓰면 초기화 반복에서 비용이 누적되어
-    사이클 ssinit 이 2분 이상 걸렸다. dh 방향만 해석화하면 호출이 절반으로 준다.
-      단상: rho = rs(p)*(1 + P(dh)) 이므로 d/dh = rs*P'(dh)
-      2상 : rho = 1/((1-x)/rL + x/rV), dx/dh = 1/(hV-hL)
-            d(rho)/dh = -rho^2 * (1/rV - 1/rL) * dx/dh
-      블렌딩: 곱미분 (tanh 가중의 도함수 포함)
-  "
-    input Real p; input Real h; output Real drdh;
-  protected
-    Real lp,hL,hV,rL,rV,dh,rs,x,xc,b1,b2,b3,b4,b5,b6;
-    Real rho2p,drho2p,rhol_s,drhol_s,w1,dw1,den;
-  algorithm
-    lp := log(min(max(p, P0), P1));
-    hL := hl_a(p); hV := hv_a(p); rL := rhol_a(p); rV := rhov_a(p);
-    x  := (h-hL)/(hV-hL); xc := min(max(x,-0.02),1.2);
-    // 2상 가지
-    den    := (1.0-xc)/rL + xc/rV;
-    rho2p  := 1.0/den;
-    drho2p := if (x > -0.02 and x < 1.2)
-              then -rho2p*rho2p*(1.0/rV - 1.0/rL)/(hV-hL) else 0.0;
-    // 액상 가지
-    rs := rhol_a(p); dh := h - hL;
-      b1 := ((((((-3.5698617068e-18*lp + 2.8684486518e-16)*lp - 9.5975210133e-15)*lp + 1.7115551744e-13)*lp - 1.7157760094e-12)*lp + 9.1672505973e-12)*lp - 2.0394437926e-11);
-      b2 := ((((((-6.6882494093e-13*lp + 5.3704927822e-11)*lp - 1.7957667453e-09)*lp + 3.2005280316e-08)*lp - 3.2066079443e-07)*lp + 1.7123493348e-06)*lp - 3.8075480482e-06);
-      b3 := ((((((-6.6626082072e-08*lp + 5.3422324003e-06)*lp - 1.7839248204e-04)*lp + 3.1754302562e-03)*lp - 3.1777058835e-02)*lp + 1.6950266498e-01)*lp - 3.7650745651e-01);
-      b4 := ((((((1.0219198481e-05*lp - 8.2226990363e-04)*lp + 2.7548697953e-02)*lp - 4.9190644460e-01)*lp + 4.9371750728e+00)*lp - 2.6409592086e+01)*lp + 5.8819147952e+01);
-    rhol_s  := rs*(1.0 + ((b1*dh + b2)*dh + b3)*dh + b4);
-    drhol_s := rs*((3.0*b1*dh + 2.0*b2)*dh + b3);
-    if h < hL - 6.0*DHB then
-      drdh := drhol_s;
-    elseif h < hL + 6.0*DHB then
-      w1   := 0.5*(1.0+tanh((h-hL)/DHB));
-      dw1  := 0.5*(1.0 - tanh((h-hL)/DHB)^2)/DHB;
-      drdh := (1.0-w1)*drhol_s + w1*drho2p + dw1*(rho2p - rhol_s);
-    elseif h < hV then
-      drdh := drho2p;
-    else
-      rs := rhov_a(p); dh := h - hV;
-      b1 := (((((((2.6836607255e-29*lp - 2.5496641961e-27)*lp + 1.0371181950e-25)*lp - 2.3414008942e-24)*lp + 3.1685201994e-23)*lp - 2.5702584048e-22)*lp + 1.1572276785e-21)*lp - 2.2309186245e-21);
-      b2 := (((((((-1.2591722151e-23*lp + 1.1980051087e-21)*lp - 4.8795698449e-20)*lp + 1.1029854927e-18)*lp - 1.4943681184e-17)*lp + 1.2135402802e-16)*lp - 5.4694575730e-16)*lp + 1.0554344697e-15);
-      b3 := (((((((1.8611555021e-18*lp - 1.7787877631e-16)*lp + 7.2757710614e-15)*lp - 1.6511129058e-13)*lp + 2.2452414104e-12)*lp - 1.8296043380e-11)*lp + 8.2728039070e-11)*lp - 1.6012576966e-10);
-      b4 := (((((((-3.2604619422e-14*lp + 3.3577914560e-12)*lp - 1.4651392394e-10)*lp + 3.5184949691e-09)*lp - 5.0300995412e-08)*lp + 4.2859224457e-07)*lp - 2.0171194822e-06)*lp + 4.0480967577e-06);
-      b5 := (((((((-1.4673537559e-08*lp + 1.3638450531e-06)*lp - 5.4321024645e-05)*lp + 1.2017952597e-03)*lp - 1.5950033412e-02)*lp + 1.2698379434e-01)*lp - 5.6150666081e-01)*lp + 1.0638106303e+00);
-      b6 := (((((((1.4951964055e-05*lp - 1.4212503508e-03)*lp + 5.7847275000e-02)*lp - 1.3068974136e+00)*lp + 1.7699945553e+01)*lp - 1.4370632176e+02)*lp + 6.4763625554e+02)*lp - 1.2497841803e+03);
-      drdh := rs*((((5.0*b1*dh + 4.0*b2)*dh + 3.0*b3)*dh + 2.0*b4)*dh + b5);
-    end if;
-  end drho_dh_a;
-
-  // ═══ 해석형 수송물성 (2026-07-26) ═══
-  // log(y) = 7차 다항(log p). 정확도: mul 0.030%, kl 0.006%, cpl 0.170%,
-  //          muv 0.026%, kv 0.068%, cpv 0.225% (HTC 상관식 입력이라 충분)
-  function mul_a "해석형 mul"
-    input Real p; output Real y;
-  protected
-    Real lp;
-  algorithm
-    lp := log(min(max(p, P0), P1));
-    y := exp((((((((-2.9613106465e-03*lp + 2.7725840000e-01)*lp - 1.1121221938e+01)*lp + 2.4773021697e+02)*lp - 3.3096135536e+03)*lp + 2.6517834073e+04)*lp - 1.1798584712e+05)*lp + 2.2486771345e+05));
-    annotation(derivative=mul_a_d, Inline=false);
-  end mul_a;
-
-  function mul_a_d "mul_a 도함수"
-    input Real p; input Real dp; output Real dy;
-  protected
-    Real lp,pc,d;
-  algorithm
-    pc := min(max(p, P0), P1); lp := log(pc);
-    d := ((((((-2.0729174526e-02*lp + 1.6635504000e+00)*lp - 5.5606109689e+01)*lp + 9.9092086786e+02)*lp - 9.9288406607e+03)*lp + 5.3035668145e+04)*lp - 1.1798584712e+05);
-    dy := if (p <= P0 or p >= P1) then 0.0 else mul_a(pc)*d/pc*dp;
-    annotation(Inline=false);
-  end mul_a_d;
-
-  function kl_a "해석형 kl"
-    input Real p; output Real y;
-  protected
-    Real lp;
-  algorithm
-    lp := log(min(max(p, P0), P1));
-    y := exp((((((((4.8166824384e-05*lp - 4.8671926339e-03)*lp + 2.0910181021e-01)*lp - 4.9569898237e+00)*lp + 7.0093663705e+01)*lp - 5.9164063757e+02)*lp + 2.7617386221e+03)*lp - 5.5041848437e+03));
-    annotation(derivative=kl_a_d, Inline=false);
-  end kl_a;
-
-  function kl_a_d "kl_a 도함수"
-    input Real p; input Real dp; output Real dy;
-  protected
-    Real lp,pc,d;
-  algorithm
-    pc := min(max(p, P0), P1); lp := log(pc);
-    d := ((((((3.3716777069e-04*lp - 2.9203155803e-02)*lp + 1.0455090511e+00)*lp - 1.9827959295e+01)*lp + 2.1028099111e+02)*lp - 1.1832812751e+03)*lp + 2.7617386221e+03);
-    dy := if (p <= P0 or p >= P1) then 0.0 else kl_a(pc)*d/pc*dp;
-    annotation(Inline=false);
-  end kl_a_d;
-
-  function cpl_a "해석형 cpl"
-    input Real p; output Real y;
-  protected
-    Real lp;
-  algorithm
-    lp := log(min(max(p, P0), P1));
-    y := exp((((((((1.4195065985e-02*lp - 1.3323945249e+00)*lp + 5.3571069537e+01)*lp - 1.1959923922e+03)*lp + 1.6012008980e+04)*lp - 1.2855174171e+05)*lp + 5.7305584391e+05)*lp - 1.0941874000e+06));
-    annotation(derivative=cpl_a_d, Inline=false);
-  end cpl_a;
-
-  function cpl_a_d "cpl_a 도함수"
-    input Real p; input Real dp; output Real dy;
-  protected
-    Real lp,pc,d;
-  algorithm
-    pc := min(max(p, P0), P1); lp := log(pc);
-    d := ((((((9.9365461896e-02*lp - 7.9943671491e+00)*lp + 2.6785534768e+02)*lp - 4.7839695687e+03)*lp + 4.8036026941e+04)*lp - 2.5710348342e+05)*lp + 5.7305584391e+05);
-    dy := if (p <= P0 or p >= P1) then 0.0 else cpl_a(pc)*d/pc*dp;
-    annotation(Inline=false);
-  end cpl_a_d;
-
-  function muv_a "해석형 muv"
-    input Real p; output Real y;
-  protected
-    Real lp;
-  algorithm
-    lp := log(min(max(p, P0), P1));
-    y := exp((((((((2.7223679599e-03*lp - 2.5482906597e-01)*lp + 1.0219267795e+01)*lp - 2.2758873252e+02)*lp + 3.0398687100e+03)*lp - 2.4351323936e+04)*lp + 1.0832339735e+05)*lp - 2.0642792392e+05));
-    annotation(derivative=muv_a_d, Inline=false);
-  end muv_a;
-
-  function muv_a_d "muv_a 도함수"
-    input Real p; input Real dp; output Real dy;
-  protected
-    Real lp,pc,d;
-  algorithm
-    pc := min(max(p, P0), P1); lp := log(pc);
-    d := ((((((1.9056575719e-02*lp - 1.5289743958e+00)*lp + 5.1096338975e+01)*lp - 9.1035493008e+02)*lp + 9.1196061300e+03)*lp - 4.8702647871e+04)*lp + 1.0832339735e+05);
-    dy := if (p <= P0 or p >= P1) then 0.0 else muv_a(pc)*d/pc*dp;
-    annotation(Inline=false);
-  end muv_a_d;
-
-  function kv_a "해석형 kv"
-    input Real p; output Real y;
-  protected
-    Real lp;
-  algorithm
-    lp := log(min(max(p, P0), P1));
-    y := exp((((((((6.3830915764e-03*lp - 5.9882670274e-01)*lp + 2.4065058262e+01)*lp - 5.3701289992e+02)*lp + 7.1864038016e+03)*lp - 5.7671567515e+04)*lp + 2.5698421165e+05)*lp - 4.9050281606e+05));
-    annotation(derivative=kv_a_d, Inline=false);
-  end kv_a;
-
-  function kv_a_d "kv_a 도함수"
-    input Real p; input Real dp; output Real dy;
-  protected
-    Real lp,pc,d;
-  algorithm
-    pc := min(max(p, P0), P1); lp := log(pc);
-    d := ((((((4.4681641035e-02*lp - 3.5929602164e+00)*lp + 1.2032529131e+02)*lp - 2.1480515997e+03)*lp + 2.1559211405e+04)*lp - 1.1534313503e+05)*lp + 2.5698421165e+05);
-    dy := if (p <= P0 or p >= P1) then 0.0 else kv_a(pc)*d/pc*dp;
-    annotation(Inline=false);
-  end kv_a_d;
-
-  function cpv_a "해석형 cpv"
-    input Real p; output Real y;
-  protected
-    Real lp;
-  algorithm
-    lp := log(min(max(p, P0), P1));
-    y := exp((((((((2.3558622633e-02*lp - 2.2116207731e+00)*lp + 8.8934157093e+01)*lp - 1.9857398719e+03)*lp + 2.6588311139e+04)*lp - 2.1348597423e+05)*lp + 9.5176651083e+05)*lp - 1.8174582102e+06));
-    annotation(derivative=cpv_a_d, Inline=false);
-  end cpv_a;
-
-  function cpv_a_d "cpv_a 도함수"
-    input Real p; input Real dp; output Real dy;
-  protected
-    Real lp,pc,d;
-  algorithm
-    pc := min(max(p, P0), P1); lp := log(pc);
-    d := ((((((1.6491035843e-01*lp - 1.3269724639e+01)*lp + 4.4467078546e+02)*lp - 7.9429594874e+03)*lp + 7.9764933418e+04)*lp - 4.2697194846e+05)*lp + 9.5176651083e+05);
-    dy := if (p <= P0 or p >= P1) then 0.0 else cpv_a(pc)*d/pc*dp;
-    annotation(Inline=false);
-  end cpv_a_d;
-
-
 end R290Tab;

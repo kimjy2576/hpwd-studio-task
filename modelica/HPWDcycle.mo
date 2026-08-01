@@ -98,38 +98,18 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     //   p 는 R290Tab.p_rhoh(rho,h) 로 명시적 역산 — 음함수가 없어
     //   지수축약 실패를 피한다 (상태 (M,U) 방식은 그 문제로 빌드 실패했음).
     //   p_rhoh 의 도함수는 음함수 정리로 rho_ph_d 에서 유도됨.
-    // Modelica.Fluid / ThermoPower 방식: 질량 동특성을 파라미터로 선택.
-    //   true  = 보존형. 상태 (M,h), p 는 p_rhoh 로 역산. 질량이 정확히 보존됨.
-    //           과도해석용. 콜드스타트에서 드리프트 -2.77% -> +0.04%.
-    //   false = 기존형. 상태 (p,h), 질량은 rho_ph_a(p,h)*V 로 계산.
-    //           정상해용. ssinit 은 시간적분이 없어 드리프트 자체가 없으므로
-    //           보존형이 불필요하고, homotopy 에서 rho 가 반복변수가 되면
-    //           p_rhoh 역산이 발산한다 (2026-07-26 실측: residual 2.06e+20).
-    parameter Boolean conservativeMass = true "질량 동특성: true=보존형(M,h), false=(p,h)";
-    Modelica.Units.SI.Pressure p(start=p_start,
-      stateSelect=if conservativeMass then StateSelect.default else StateSelect.prefer);
-    Modelica.Units.SI.SpecificEnthalpy h(start=h_start, fixed=false, stateSelect=StateSelect.prefer, nominal=4.0e5);
+    Modelica.Units.SI.Pressure p(start=p_start);
+    Modelica.Units.SI.SpecificEnthalpy h(start=h_start, fixed=false, stateSelect=StateSelect.prefer);
     // start 값 필수: 보존형에서 rho 가 반복변수가 되는데 기본 start=0 이면
     // 초기 비선형계가 밀도 0 에서 출발해 실패한다 (2026-07-26 실측).
-    final parameter Real rho_start = R290Tab.rho_ph_a(p_start, h_start);
+    final parameter Real rho_start = R290Tab.rho_ph(p_start, h_start);
     Real rho(start=rho_start, nominal=100.0);
     Real M(start=rho_start*V, fixed=false, nominal=1e-3,
-           stateSelect=if conservativeMass then StateSelect.prefer else StateSelect.never)
-           "냉매 질량 [kg]. conservativeMass=true 면 상태";
+           stateSelect=StateSelect.prefer) "냉매 질량 [kg] — 보존 상태";
     Real U "내부에너지 [J]";
   equation
-    // Modelica.Fluid 방식: 질량 동특성을 파라미터로 분기.
-    //   보존형  : rho=M/V 로 두고 p 를 역산. M 이 상태라 질량이 정확히 보존.
-    //   비보존형: p 가 상태이고 rho=rho_ph_a(p,h), M=rho*V 로 계산.
-    //             정상해(ssinit)는 시간적분이 없어 드리프트가 없으므로 이쪽.
-    //             homotopy 에서 rho 가 반복변수가 되면 p_rhoh 역산이 발산한다.
-    if conservativeMass then
-      rho = M/V;
-      p   = R290Tab.p_rhoh(rho, h);
-    else
-      rho = R290Tab.rho_ph_a(p, h);
-      M   = rho*V;
-    end if;
+    rho=M/V;
+    p=R290Tab.p_rhoh(rho, h);
     U=M*h - p*V;
     port_a.p=p; port_b.p=p;
     port_a.h_outflow=h; port_b.h_outflow=h;
@@ -153,13 +133,9 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     elseif noInitialPressure then
       der(h)=0;
     elseif noInitialEnthalpy then
-      if conservativeMass then der(M)=0; else der(p)=0; end if;
+      der(p)=0;
     else
-      // Casella 2011 / arXiv 2411.12666 권고: 폐회로 정상초기화에서는
-      // 압력이 아니라 질량수지에 der=0 을 건다. der(p)=0 은 압력만 고정할 뿐
-      // 질량 보존을 보장하지 않아, 총 충전량이 미결정인 채로 계가 특이해진다.
-      // 보존형이면 M 이 상태이므로 der(M)=0 이 곧 질량수지 정상조건이다.
-      if conservativeMass then der(M)=0; else der(p)=0; end if;
+      der(p)=0;
       der(h)=0;
     end if;
   end Volume_L3;
@@ -182,33 +158,20 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     parameter Boolean noInitialEnthalpy = false "정상초기화에서 der(h)=0 을 제거";
     parameter Integer initOpt = 0 "0=legacy 1=noInit 2=fixedState 3=steadyState";
     // 보존형 전환 (Volume_L3 주석 참조)
-    parameter Boolean conservativeMass = true "질량 동특성: true=보존형(M,h), false=(p,h)";
-    Modelica.Units.SI.Pressure p(start=p_start,
-      stateSelect=if conservativeMass then StateSelect.default else StateSelect.prefer);
-    Modelica.Units.SI.SpecificEnthalpy h(start=h_start, fixed=false, stateSelect=StateSelect.prefer, nominal=4.0e5);
-    final parameter Real rho_start = R290Tab.rho_ph_a(p_start, h_start);
+    Modelica.Units.SI.Pressure p(start=p_start);
+    Modelica.Units.SI.SpecificEnthalpy h(start=h_start, fixed=false, stateSelect=StateSelect.prefer);
+    final parameter Real rho_start = R290Tab.rho_ph(p_start, h_start);
     Real rho(start=rho_start, nominal=100.0);
     Real hL, hV, xq, w_sep, h_out;
     Real M(start=rho_start*V, fixed=false, nominal=1e-3,
-           stateSelect=if conservativeMass then StateSelect.prefer else StateSelect.never)
-           "냉매 질량 [kg]. conservativeMass=true 면 상태";
+           stateSelect=StateSelect.prefer) "냉매 질량 [kg] — 보존 상태";
     Real U "내부에너지 [J]";
   equation
-    // Modelica.Fluid 방식: 질량 동특성을 파라미터로 분기.
-    //   보존형  : rho=M/V 로 두고 p 를 역산. M 이 상태라 질량이 정확히 보존.
-    //   비보존형: p 가 상태이고 rho=rho_ph_a(p,h), M=rho*V 로 계산.
-    //             정상해(ssinit)는 시간적분이 없어 드리프트가 없으므로 이쪽.
-    //             homotopy 에서 rho 가 반복변수가 되면 p_rhoh 역산이 발산한다.
-    if conservativeMass then
-      rho = M/V;
-      p   = R290Tab.p_rhoh(rho, h);
-    else
-      rho = R290Tab.rho_ph_a(p, h);
-      M   = rho*V;
-    end if;
+    rho=M/V;
+    p=R290Tab.p_rhoh(rho, h);
     U=M*h - p*V;
-    hL=R290Tab.hl_a(p);
-    hV=R290Tab.hv_a(p);
+    hL=R290Tab.hl(p);
+    hV=R290Tab.hv(p);
     xq=(h - hL)/max(hV - hL, 1.0);
     // 2상 구간에서만 포화증기 토출. 과냉/과열에서는 벌크 엔탈피 그대로.
     w_sep=0.25*(1.0 + tanh(xq/dx_sep))*(1.0 + tanh((1.0 - xq)/dx_sep));
@@ -236,13 +199,9 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     elseif noInitialPressure then
       der(h)=0;
     elseif noInitialEnthalpy then
-      if conservativeMass then der(M)=0; else der(p)=0; end if;
+      der(p)=0;
     else
-      // Casella 2011 / arXiv 2411.12666 권고: 폐회로 정상초기화에서는
-      // 압력이 아니라 질량수지에 der=0 을 건다. der(p)=0 은 압력만 고정할 뿐
-      // 질량 보존을 보장하지 않아, 총 충전량이 미결정인 채로 계가 특이해진다.
-      // 보존형이면 M 이 상태이므로 der(M)=0 이 곧 질량수지 정상조건이다.
-      if conservativeMass then der(M)=0; else der(p)=0; end if;
+      der(p)=0;
       der(h)=0;
     end if;
   end Accumulator_L3;
@@ -420,18 +379,13 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     HPWDevap.Evap_On evap;
     Volume_L3 vol4(V=V_node, p_start=p_rest, h_start=h_rest, fixedState=true);
     Modelica.Blocks.Sources.TimeTable Nsig(table=[
-        // 2026-07-27: 저rpm 평탄 구간(11~21 의 500rpm) 제거.
-        //   그 구간에는 충전량 구속을 만족하는 해가 물리적으로 없어
-        //   t=13.31 에서 Integrator failed 했다 (SH=0.005 로 포화선 고착).
-        //   저rpm 을 빠르게 통과하도록 연속 상승으로 바꾼다.
-        // 2026-07-27 2차: 저rpm 구간을 더 빠르게 통과.
-        //   N=936 에서도 SH 가 포화선에 붙어 실패했으므로
-        //   1200rpm 이상까지 3초 안에 올린다.
         0.0,    0.0;
-        0.5,    600.0;
-        1.5,    1200.0;
-        3.0,    1500.0;
-        10.0,   N_final;
+        1.0,    300.0;
+        11.0,   500.0;
+        21.0,   500.0;
+        31.0,   1500.0;
+        41.0,   1500.0;
+        51.0,   N_final;
         81.0,   N_final;
         120.0,  N_final;
         200.0,  N_final;
@@ -470,25 +424,20 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     parameter Modelica.Units.SI.Volume V_node = 2e-3 "노드 체적 [m3]";
     HPWDon.Comp_Chamber comp(V_disp_cm3=7.5);
     Volume_L3 vol1(V=V_node, p_start=p_rest, h_start=h_rest, fixedState=true);
-    HPWDevap.Cond_On_Dyn cond(Nseg=2, h_ref_start=h_rest, T_w_start=25.0);
+    HPWDevap.Cond_On_Dyn cond(Nseg=3, h_ref_start=h_rest, T_w_start=25.0);
     Volume_L3 vol2(V=V_node, p_start=p_rest, h_start=h_rest, fixedState=true);
     HPWDon.EEV_On eev(D_seat=1.0e-3, stroke_max=1.0e-3);
     Volume_L3 vol3(V=V_node, p_start=p_rest, h_start=h_rest, fixedState=true);
-    HPWDevap.Evap_On_Dyn evap(Nseg=2, h_ref_start=h_rest, T_w_start=35.0);
+    HPWDevap.Evap_On_Dyn evap(Nseg=3, h_ref_start=h_rest, T_w_start=35.0);
     Volume_L3 vol4(V=V_node, p_start=p_rest, h_start=h_rest, fixedState=true);
     Modelica.Blocks.Sources.TimeTable Nsig(table=[
-        // 2026-07-27: 저rpm 평탄 구간(11~21 의 500rpm) 제거.
-        //   그 구간에는 충전량 구속을 만족하는 해가 물리적으로 없어
-        //   t=13.31 에서 Integrator failed 했다 (SH=0.005 로 포화선 고착).
-        //   저rpm 을 빠르게 통과하도록 연속 상승으로 바꾼다.
-        // 2026-07-27 2차: 저rpm 구간을 더 빠르게 통과.
-        //   N=936 에서도 SH 가 포화선에 붙어 실패했으므로
-        //   1200rpm 이상까지 3초 안에 올린다.
         0.0,    0.0;
-        0.5,    600.0;
-        1.5,    1200.0;
-        3.0,    1500.0;
-        10.0,   N_final;
+        1.0,    300.0;
+        11.0,   500.0;
+        21.0,   500.0;
+        31.0,   1500.0;
+        41.0,   1500.0;
+        51.0,   N_final;
         500.0,  N_final]);
     Modelica.Blocks.Sources.Constant opsig(k=eev_opening);
     Real Pc_bar, Pe_bar, mdot, SH, Q_evap, Q_cond, W_comp;
@@ -556,13 +505,13 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     Volume_L3 vshell(V=V_shell, p_start=p1_0, h_start=h1_0, fixedState=true,
                      m_ext=if use_oil then oil.m_flow else 0);
     Volume_L3 vol1(V=V_n1, p_start=p1_0, h_start=h1_0, fixedState=true);
-    HPWDevap.Cond_On_Dyn cond(Nseg=2, h_ref_start=h_rest, T_w_start=20.0, T_air_in_start=T_air_cond);
+    HPWDevap.Cond_On_Dyn cond(Nseg=3, h_ref_start=h_rest, T_w_start=20.0, T_air_in_start=T_air_cond);
     Volume_L3 vol2(V=V_n2, p_start=p2_0, h_start=h2_0, fixedState=true);
     HPWDon.EEV_On eev(D_seat=1.0e-3, stroke_max=1.0e-3);
     Volume_L3 vol3(V=V_n3, p_start=p3_0, h_start=h3_0, fixedState=true);
-    HPWDevap.Evap_On_Dyn evap(Nseg=2, h_ref_start=h_rest, T_w_start=20.0);
+    HPWDevap.Evap_On_Dyn evap(Nseg=3, h_ref_start=h_rest, T_w_start=20.0);
     Accumulator_L3 vol4(V=V_n4, p_start=p4_0, h_start=h4_0, fixedState=true);
-    parameter Real open_init = 18.0 "적분기 초기값 [%]. Kp=1,err=-6 이므로 초기개도=open_init-6.
+    parameter Real open_init = 30.0 "적분기 초기값 [%]. Kp=1,err=-6 이므로 초기개도=open_init-6.
       12 이면 초기개도가 곧바로 최소 6%% 라 콜드스타트 트랩. 설계개도 23.586%% 근처를 주려면 30.";
     // ── 오일 용해 (2026-07-25) ──
     parameter Boolean use_oil = false "true: 압축기 오일 섬프를 충전량 싱크로 연결" annotation(Evaluate=false);
@@ -579,7 +528,7 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     parameter Real N_const = 0.0 "0 이면 램프표 사용. >0 이면 그 값으로 고정 [rpm]" annotation(Evaluate=false);
     parameter Real Kp_c = 1.0 "PI 비례게인. Kp_c=Ki_c=0 이면 개도가 open_init 로 고정 (개도고정 시험용)";
     parameter Real Ki_c = 0.3 "PI 적분게인";
-    HPWDctrl.PI_Controller_Pulse ctrl(SH_target=SH_target, Kp=Kp_c, Ki=Ki_c, opening_init=open_init, opening_min=6.0, I(fixed=true));
+    HPWDctrl.PI_Controller ctrl(SH_target=SH_target, Kp=Kp_c, Ki=Ki_c, opening_init=open_init, opening_min=6.0, I(fixed=true));
     // 2026-07-26: TimeTable -> CombiTimeTable(Akima).
     //   TimeTable 은 선형보간이라 표 절점마다 도함수가 꺾인다(t=1,11,21,31,41,51).
     //   그 꺾임이 적분기를 반복 재시작시켜 램프 구간(t=13~29)에서 정체를 유발했다.
@@ -588,18 +537,13 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
       smoothness=Modelica.Blocks.Types.Smoothness.ContinuousDerivative,
       extrapolation=Modelica.Blocks.Types.Extrapolation.HoldLastPoint,
       table=[
-        // 2026-07-27: 저rpm 평탄 구간(11~21 의 500rpm) 제거.
-        //   그 구간에는 충전량 구속을 만족하는 해가 물리적으로 없어
-        //   t=13.31 에서 Integrator failed 했다 (SH=0.005 로 포화선 고착).
-        //   저rpm 을 빠르게 통과하도록 연속 상승으로 바꾼다.
-        // 2026-07-27 2차: 저rpm 구간을 더 빠르게 통과.
-        //   N=936 에서도 SH 가 포화선에 붙어 실패했으므로
-        //   1200rpm 이상까지 3초 안에 올린다.
         0.0,    0.0;
-        0.5,    600.0;
-        1.5,    1200.0;
-        3.0,    1500.0;
-        10.0,   N_final;
+        1.0,    300.0;
+        11.0,   500.0;
+        21.0,   500.0;
+        31.0,   1500.0;
+        41.0,   1500.0;
+        51.0,   N_final;
         // 평탄 구간 절점 — 51->500 단일구간이면 Akima 가 직전 급상승
         //   (41->51: 1500->1800) 기울기를 이어받아 오버슛한다.
         61.0,   N_final;
@@ -654,8 +598,8 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
       cond(steadyInit=true, h_ref_start=362350, T_w_start=27.0),
       evap(steadyInit=true, h_ref_start=334610, T_w_start=10.0),
       oil(steadyInit=true),
-      vshell(fixedState=false, conservativeMass=false), vol1(fixedState=false, conservativeMass=false), vol2(fixedState=false, conservativeMass=false), vol3(fixedState=false, conservativeMass=false),
-      vol4(fixedState=false, conservativeMass=false, noInitialPressure=true),
+      vshell(fixedState=false), vol1(fixedState=false), vol2(fixedState=false), vol3(fixedState=false),
+      vol4(fixedState=false, noInitialPressure=true),
       // 가지 B(superheated) 근처 초기추정. 정상초기화에서 p_start/h_start 는
       // 고정값이 아니라 뉴턴 초기추정이므로 어느 정상해로 수렴할지에 영향.
       // 기본값(정지조건 8.365bar/265.5kJ/kg)은 두 가지 모두에서 멀다.
