@@ -139,6 +139,8 @@ package HPWDctrl "제어 컴포넌트"
     parameter Real rate_norm = 5.0 "정상제어 최대 속도 [pulse/s]. PI 출력의 포화 한계";
     parameter Real Kp_eev = 2.5 "EEV PI 비례게인 [pulse/s/K]. 오차 2K 에서 최대속도";
     parameter Real Ki_eev = 0.05 "EEV PI 적분게인 [pulse/s/K/s]";
+    parameter Real T_aw_eev = 2.0 "PI 반포화 시상수 [s] (2026-08-02 PH6).
+      비포화(v_norm==v_pi)에서는 보정 0 -> 기존 거동 그대로.";
     parameter Real tau_move = 1.0
       "지령 추종 시상수 [s] (2026-07-31). 작을수록 속도제한에 바로 붙는다";
     parameter Real db_smooth = 0.3
@@ -193,7 +195,12 @@ package HPWDctrl "제어 컴포넌트"
     //   act 상태(+1 여는중 / -1 닫는중 / 0 정지)를 기억한다.
     err_sh = SH - sh_set;
     v_pi = Kp_eev*err_sh + Ki_eev*I_eev;
-    der(I_eev) = if act <> 0 then err_sh else 0.0;
+    // 2026-08-02 PH6: 반포화 + 전환 리셋.
+    //   실측(PH1): t=250~490 닫힘 구간에서 err~-0.6K 지속 적립으로 I_eev 가
+    //   -200 수준까지 감. act 반전 후에도 Ki*I 음수가 Kp 항을 상쇄해
+    //   역전이 60~100s 지연, SH 9K 과도(목표 4K). 개도 재상승 시점(t~590)이
+    //   I 방전 시간(+5/s, ~50s)과 일치.
+    der(I_eev) = if act <> 0 then err_sh + (v_norm - v_pi)/T_aw_eev else 0.0;
     db_active = abs(act);
     v_norm = if not normal or act == 0 then 0.0
              else max(-rate_norm, min(rate_norm, v_pi));
@@ -219,6 +226,12 @@ package HPWDctrl "제어 컴포넌트"
     n_cmd = min(max(n_step + n_cont, n_valve_min), n_full);
     der(n_pulse) = max(-rate_norm, min(rate_norm, (n_cmd - n_pulse)/tau_move));
     opening = n_pulse/n_full*100.0;
+    // PH6: 제어 국면(act) 전환마다 적분을 새로 시작한다 — 이전 국면의
+    //   적립분을 끌고 가면 반전이 지연된다(위 실측). reinit 은 equation
+    //   when 에서만 허용되므로 여기 둔다.
+    when change(act) then
+      reinit(I_eev, 0.0);
+    end when;
 
   algorithm
     // 3~4단계: 기동 유지가 끝난 뒤, SH 가 낮으면 주기적으로 조인다
