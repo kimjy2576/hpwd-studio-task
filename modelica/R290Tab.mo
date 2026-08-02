@@ -1301,12 +1301,12 @@ package R290Tab "R290 tabulated media — (p,h) basis, 2상 안전, 미분가능
                             {-4.802357695e-36, 4.506484242e-29, -1.696679412e-22, 3.200191700e-16, -4.159538110e-10, 7.213976650e-04},
                             {-3.560007963e-34, 2.278420793e-27, -6.148518356e-21, 1.731622354e-15, -2.797780568e-08, -1.297233529e-02}} "증기 T 계수";
 
-  function T_ph_a "해석형 T_ph — 테이블 없음. 기호 야코비안 친화적."
+  function T_ph_a "해석형 T(p,h) — 값은 원본 유지 (2026-08-02: 값 블렌딩은 초기화 NLS 1198 을 깨뜨려 도함수만 블렌딩)"
     input Real p; input Real h; output Real T;
   protected
     Real Ts,hL,hV,dh,a[4];
   algorithm
-    Ts := Tsat_a(p); hL := hl_a(p); hV := hv_a(p);  // 해석형 — 미분경로에서 테이블 제거
+    Ts := Tsat_a(p); hL := hl_a(p); hV := hv_a(p);
     if h > hL and h < hV then
       T := Ts;
     else
@@ -1324,16 +1324,17 @@ package R290Tab "R290 tabulated media — (p,h) basis, 2상 안전, 미분가능
     annotation(derivative=T_ph_a_d);
   end T_ph_a;
 
-  function T_ph_a_d "T_ph_a 의 전미분"
+  function T_ph_a_d "T_ph_a 전미분 — 값과 동일한 DTB 밴드로 도함수를 잇는다 (2026-08-02)"
     input Real p; input Real h; input Real dp; input Real dh_in; output Real dT;
   protected
-    Real Ts,hL,hV,dh,a[4],dTdh,dTdp,eps,Tp,Tm;
+    Real Ts,hL,hV,dh,a[4],dTdh,dTdp,eps,Tp,Tm,w,dT_sat,dT_sp;
   algorithm
     hL := hl_a(p); hV := hv_a(p);
-    if h > hL and h < hV then
-      dT := Tsat_a_d(p, dp);
+    dT_sat := Tsat_a_d(p, dp);
+    if h > hL - DTB and h < hV + DTB and h > hL + DTB and h < hV - DTB then
+      dT := dT_sat;
     else
-      if h <= hL then
+      if h <= 0.5*(hL + hV) then
         dh := h - hL;
         a[1] := polyv(TCL[1,:], p); a[2] := polyv(TCL[2,:], p);
         a[3] := polyv(TCL[3,:], p); a[4] := polyv(TCL[4,:], p);
@@ -1342,13 +1343,24 @@ package R290Tab "R290 tabulated media — (p,h) basis, 2상 안전, 미분가능
         a[1] := polyv(TCV[1,:], p); a[2] := polyv(TCV[2,:], p);
         a[3] := polyv(TCV[3,:], p); a[4] := polyv(TCV[4,:], p);
       end if;
-      // dT/dh 는 해석적으로
       dTdh := (3.0*a[1]*dh + 2.0*a[2])*dh + a[3];
-      // dT/dp 는 중심차분 (계수·포화선이 모두 p 에 의존해 식이 길어짐)
       eps := 1.0e2;
       Tp := T_ph_a(p + eps, h); Tm := T_ph_a(p - eps, h);
       dTdp := (Tp - Tm)/(2.0*eps);
-      dT := dTdh*dh_in + dTdp*dp;
+      dT_sp := dTdh*dh_in + dTdp*dp;
+      if h < hL - DTB then
+        dT := dT_sp;
+      elseif h < hL + DTB then
+        w := 0.5*(1.0 + tanh((h - hL)/(0.5*DTB)));
+        dT := (1.0 - w)*dT_sp + w*dT_sat;
+      elseif h < hV - DTB then
+        dT := dT_sat;
+      elseif h < hV + DTB then
+        w := 0.5*(1.0 + tanh((h - hV)/(0.5*DTB)));
+        dT := (1.0 - w)*dT_sat + w*dT_sp;
+      else
+        dT := dT_sp;
+      end if;
     end if;
   end T_ph_a_d;
   function T_ph_dd "T_ph_d 의 도함수 자리표시자 (2026-07-26).

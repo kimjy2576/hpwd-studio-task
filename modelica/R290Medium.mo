@@ -171,10 +171,36 @@ package R290Medium "R290 (프로판) 매질 — Modelica.Media 계약 구현 (20
   function cpv_d input Real p; input Real dp; output Real dy; algorithm dy := R290Tab.cpv_a_d(p, dp); annotation(Inline=false); end cpv_d;
 
   // ── C군: 테이블 랩 (해석 미보유 — CoolProp→다항 생성기 과제로 이월) ──
-  function p_rhoh input Real rho; input Real h; output Real p; algorithm p := R290Tab.p_rhoh(rho, h); annotation(Inline=false); end p_rhoh;
-  function h_ps   input Real p; input Real s; output Real h;  algorithm h := R290Tab.h_ps(p, s);    annotation(Inline=false); end h_ps;
-  function s_ph   input Real p; input Real h; output Real s;  algorithm s := R290Tab.s_ph(p, h);    annotation(Inline=false); end s_ph;
-  function cp_ph  input Real p; input Real h; output Real cp; algorithm cp := R290Tab.cp_ph(p, h);  annotation(Inline=false); end cp_ph;
-  function mu_ph  input Real p; input Real h; output Real mu; algorithm mu := R290Tab.mu_ph(p, h);  annotation(Inline=false); end mu_ph;
-  function gamma_ph input Real p; input Real h; output Real g; algorithm g := R290Tab.gamma_ph(p, h); annotation(Inline=false); end gamma_ph;
+  function p_rhoh "해석 일관 역산: rho_ph_a(p,h)=rho 를 뉴턴으로 (2026-08-02).
+    테이블 p_rhoh 랩은 해석 rho_ph_a 와 미세 불일치를 만들어 볼륨 압력이
+    매 스텝 인위 강성을 유발했다(전체 전환 후 t=0.13 정체 실측). 고정 6회
+    반복(분기·이벤트 없음), 도함수는 음함수 정리(p_rhoh_der)."
+    input Real rho; input Real h; output Real p;
+  protected
+    Real f, df;
+  algorithm
+    p := R290Tab.p_rhoh(rho, h) "테이블 역산을 초기 추정으로 (이분법 강건성)";
+    for i in 1:3 loop
+      f  := R290Tab.rho_ph_a(p, h) - rho;
+      df := R290Tab.rho_ph_a_d(p, h, 1.0, 0.0);
+      p  := min(max(p - f/(if abs(df) < 1e-12 then 1e-12 else df), 1.6e5), 3.4e6);
+    end for;
+    annotation(Inline=false, derivative=p_rhoh_der);
+  end p_rhoh;
+  function p_rhoh_der "p_rhoh 전미분 (음함수 정리, rho_ph_a_d 기반)"
+    input Real rho; input Real h; input Real drho; input Real dh; output Real dp;
+  protected
+    Real p, dRdp, dRdh;
+  algorithm
+    p    := p_rhoh(rho, h);
+    dRdp := R290Tab.rho_ph_a_d(p, h, 1.0, 0.0);
+    dRdh := R290Tab.rho_ph_a_d(p, h, 0.0, 1.0);
+    dp := (drho - dRdh*dh)/(if abs(dRdp) < 1e-12 then 1e-12 else dRdp);
+    annotation(Inline=false);
+  end p_rhoh_der;
+  function h_ps   input Real p; input Real s; output Real h;  algorithm h := R290Tab.h_ps(p, s);    annotation(Inline=true); end h_ps;
+  function s_ph   input Real p; input Real h; output Real s;  algorithm s := R290Tab.s_ph(p, h);    annotation(Inline=true); end s_ph;
+  function cp_ph  input Real p; input Real h; output Real cp; algorithm cp := R290Tab.cp_ph(p, h);  annotation(Inline=true); end cp_ph;
+  function mu_ph  input Real p; input Real h; output Real mu; algorithm mu := R290Tab.mu_ph(p, h);  annotation(Inline=true); end mu_ph;
+  function gamma_ph input Real p; input Real h; output Real g; algorithm g := R290Tab.gamma_ph(p, h); annotation(Inline=true); end gamma_ph;
 end R290Medium;
