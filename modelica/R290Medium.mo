@@ -217,4 +217,30 @@ package R290Medium "R290 (프로판) 매질 — Modelica.Media 계약 구현 (20
           else R290Tab.T_ph_a(p, h) - R290Tab.Tsat_a(p);
     annotation(Inline=false);
   end SH_ph;
+
+  // ── PH3: 유효영역 계약 (2026-08-02) ──
+  // 방어 실행은 물성층(R290Tab 내부 클램프 38건)이 이미 담당한다. 여기서는
+  // 도메인을 '계약으로 노출'해 호출부·테스트가 숫자 복제 없이 참조하게 한다.
+  // 설계 원칙: 물성 도메인은 물성층이, 상관식 도메인(예: x∈[0.001,0.999])은
+  // 호출부가 지킨다 — 2026-08-02 전수조사에서 컴포넌트 9건 전부 후자로 판명.
+  constant Real p_min = R290Tab.P0 "물성 유효 하한 [Pa]";
+  constant Real p_max = R290Tab.P1 "물성 유효 상한 [Pa]";
+  constant Real h_min = R290Tab.H0 "물성 유효 하한 [J/kg]";
+  constant Real h_max = R290Tab.H1 "물성 유효 상한 [J/kg]";
+  // 연성 유효범위 (경계 밖 아님, 정확도 열화 구간 — P2 실측):
+  //   p > 3.0e6 : 임계 근접으로 cp 계열 오차 확대 (34 bar 에서 cpl 3.9%, cpv 4.6%)
+  //   rho_ph_a : 블렌딩 밴드 경계에서 p 국소 비단조 (12중 2 h라인, 최대 -0.97 kg/m3)
+  //              → 역산 금지 (p_rhoh 는 테이블 역산 사용, v3)
+
+  function domainMargin_ph "정규화 도메인 여유 — min(p축, h축), 음수면 이탈.
+    각 축을 전폭으로 나눠 0~0.5 스케일. assert/모니터용 진단 함수."
+    input Real p; input Real h; output Real m;
+  protected
+    Real mp, mh;
+  algorithm
+    mp := min(p - p_min, p_max - p)/(p_max - p_min);
+    mh := min(h - h_min, h_max - h)/(h_max - h_min);
+    m  := min(mp, mh);
+    annotation(Inline=false);
+  end domainMargin_ph;
 end R290Medium;
