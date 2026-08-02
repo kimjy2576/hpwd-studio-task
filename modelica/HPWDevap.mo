@@ -247,8 +247,9 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     Real eta_o[Nr,Nseg](each start=0.75, each min=0.05, each max=1.0), b[Nr,Nseg](each start=1.05, each min=1.0, each max=8.0), T_fin[Nr,Nseg](each start=15.0);
     Real xq[Nr,Nseg], T_ref_g[Nr,Nseg], cp_a[Nr,Nseg], h_air_c[Nr,Nseg], h_ref_c[Nr,Nseg];
     Boolean is_wet[Nr,Nseg] "이벤트 판정용(출력·후처리). 물리식은 w_wet 을 쓴다";
-    Real w_wet[Nr,Nseg] "습표면 가중 0~1 (2026-07-31, C1 전이)";
-    parameter Real dT_wet = 0.3 "습/건 전이 폭 [K]. 작을수록 계단에 가깝다";
+    Real w_wet[Nr,Nseg](each min=0.0, each max=1.0) "습윤 가중 (2026-08-02 PH2, Dyn 패턴 통일)";
+    parameter Real dT_wet=0.2 "습/건 전이대 [K]";
+    parameter Real eps_Q=1.0e-3 "smooth max 정규화 [W]";
     Real T_aen[Nr + 1,Nseg](each start=30.0, each min=-30.0, each max=80.0), W_aen[Nr + 1,Nseg](each start=0.017, each min=0.0, each max=0.1);
     Real Q_total, Q_lat_total, x_out, T_air_out, h_out, SH;
     Real x_in_q, dp_fric, dp_accel, dp_bend, dp_total, rho_mix, x_mid;
@@ -290,19 +291,19 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
       //   물리는 완만한데 적분이 멈춘다(실측: t=180 정체, dSH/dt=0.29 K/s).
       //   문헌 방법: 전이 폭을 0 이 아니게 잡고 C1 함수로 보간한다.
       //   w_wet 은 0~1 연속이며 dT_wet 폭에서 매끄럽게 전환된다.
-      w_wet[p,s]=0.5*(1.0 + tanh((T_dp - T_w[p,s])/dT_wet));
       is_wet[p,s]=T_w[p,s] < T_dp;
+        w_wet[p,s]=0.5*(1.0 + tanh((T_dp - T_w[p,s])/dT_wet));
         cp_a[p,s]=HXCorr.cp_air_moist(W_aen[p,s]);
         h_air_c[p,s]=HXCorr.h_moist(T_aen[p,s], W_aen[p,s]);
         h_i[p,s]=HPWDon.hi_dispatch_evap(xq[p,s], G_ref, Di, abs(T_aen[p,s] - T_w[p,s])*h_o,
                                          mu_l, k_l, Pr_l, rho_l, rho_v, mu_v, P_r, M_mol, h_v_gni)*(if xq[p,s] > 0.0 and xq[p,s] < 1.0 then EF_2ph else EF_sgl);
         T_fin[p,s]=T_aen[p,s] - eta_o[p,s]*(T_aen[p,s] - T_w[p,s]);
-        b[p,s]=if is_wet[p,s] then max(1.0 + HPWDon.hfgWater(T_fin[p,s])*HPWDon.dWsdT(T_fin[p,s], Patm)/cp_a[p,s], 1.0) else 1.0;
-        eta_o[p,s]=if is_wet[p,s] then HPWDon.finEffWet(h_o, b[p,s], Dc, Xm, XL, k_fin, fin_t, A_fin_ratio) else eta_o_dry;
-        Q[p,s]=if is_wet[p,s] then eta_o[p,s]*h_o*A_o_seg/cp_a[p,s]*(h_air_c[p,s] - HXCorr.h_air_sat(T_w[p,s], Patm))
-               else (1.0/(1.0/(eta_o[p,s]*h_o*A_o_seg) + 1.0/(h_i[p,s]*A_i_seg)))*(T_aen[p,s] - T_ref_g[p,s]);
+        b[p,s]=1.0 + w_wet[p,s]*(HPWDon.hfgWater(T_fin[p,s])*HPWDon.dWsdT(T_fin[p,s], Patm)/cp_a[p,s]) "w→0이면 b=1 (PH2)";
+        eta_o[p,s]=HPWDon.finEffWet(h_o, b[p,s], Dc, Xm, XL, k_fin, fin_t, A_fin_ratio) "b=1→건표면 (PH2)";
+        Q[p,s]=w_wet[p,s]*(eta_o[p,s]*h_o*A_o_seg/cp_a[p,s]*(h_air_c[p,s] - HXCorr.h_air_sat(T_w[p,s], Patm)))
+               + (1.0 - w_wet[p,s])*((1.0/(1.0/(eta_o[p,s]*h_o*A_o_seg) + 1.0/(h_i[p,s]*A_i_seg)))*(T_aen[p,s] - T_ref_g[p,s]));
         T_w[p,s]=T_ref_g[p,s] + Q[p,s]/(h_i[p,s]*A_i_seg);
-        Q_lat[p,s]=if is_wet[p,s] then max(Q[p,s] - eta_o[p,s]*h_o*A_o_seg*(T_aen[p,s] - T_w[p,s]), 0.0) else 0.0;
+        Q_lat[p,s]=w_wet[p,s]*0.5*((Q[p,s] - eta_o[p,s]*h_o*A_o_seg*(T_aen[p,s] - T_w[p,s])) + sqrt((Q[p,s] - eta_o[p,s]*h_o*A_o_seg*(T_aen[p,s] - T_w[p,s]))^2 + eps_Q^2)) "PH2: smooth-max";
         W_aen[p + 1,s]=max(W_aen[p,s] - Q_lat[p,s]/(m_air_seg*HPWDon.hfgWater(T_aen[p,s])), 0.0);
         T_aen[p + 1,s]=(h_air_c[p,s] - Q[p,s]/m_air_seg - W_aen[p + 1,s]*2501e3)/(1006.0 + 1860.0*W_aen[p + 1,s]);
       end for;
