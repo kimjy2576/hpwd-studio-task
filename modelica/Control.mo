@@ -136,8 +136,14 @@ package HPWDctrl "제어 컴포넌트"
     parameter Real d_open   =  4.0 "5단계 증가량 [pulse]";
     parameter Real dt_close = 10.0 "3단계 주기 [s]";
     parameter Real dt_open  = 30.0 "5단계 주기 [s]";
-    parameter Real rate_norm = 5.0 "정상제어 최대 속도 [pulse/s]. PI 출력의 포화 한계";
-    parameter Real Kp_eev = 2.5 "EEV PI 비례게인 [pulse/s/K]. 오차 2K 에서 최대속도";
+    parameter Real rate_norm = 5.0 "정상제어 최대 속도 [pulse/s]. PI 출력의 포화 한계.
+      ⚠ 하드웨어 사양(스텝모터 속도) — 튜닝 노브가 아니다. der(n_pulse) 추종에도
+      쓰이므로 낮추면 시퀀서 안무 전체가 깨진다 (2026-08-02 실측: 2.0 으로
+      낮추자 밸브가 못 따라가 SH +51K 폭주).";
+    parameter Real Kp_eev = 1.0 "EEV PI 비례게인 [pulse/s/K] (2026-08-02 PH6b: 2.5→1.0).
+      600s 스윕 실측 — 밴드내(3~6K) 체류 62.6→82.7%, MAE 2.00→0.86K,
+      종점 SH 7.8→4.5(목표 4K). 플랜트 열지연 대비 2.5 는 과대 게인으로
+      리밋사이클(±3~10K)을 키웠다.";
     parameter Real Ki_eev = 0.05 "EEV PI 적분게인 [pulse/s/K/s]";
     parameter Real T_aw_eev = 2.0 "PI 반포화 시상수 [s] (2026-08-02 PH6).
       비포화(v_norm==v_pi)에서는 보정 0 -> 기존 거동 그대로.";
