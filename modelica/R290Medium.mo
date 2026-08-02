@@ -77,11 +77,8 @@ package R290Medium "R290 (프로판) 매질 — Modelica.Media 계약 구현 (20
       phase = 0);
   end setState_ph;
 
-  redeclare function extends setSat_p "포화 상태 (압력 기준)"
-  algorithm
-    sat.psat := p;
-    sat.Tsat := R290Tab.Tsat_a(p);
-  end setSat_p;
+  // setSat_p 는 재선언하지 않는다 — MSL4 기본 구현이 algorithm 을 이미 가지며
+  // saturationTemperature(재선언됨)를 호출하므로 상속으로 충분하다 (2026-08-02).
 
   redeclare function extends bubbleEnthalpy "포화액 엔탈피"
   algorithm

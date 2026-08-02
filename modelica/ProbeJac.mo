@@ -43,4 +43,29 @@ package ProbeJac "P3' 최소 프로브 — 기호 야코비안 속도: 테이블
       rho[k]*V_cell*der(h[k]) = m_flow*((if k == 1 then hl_s + 2e4 else h[k-1]) - h[k]) + Q[k];
     end for;
   end ProbeAna;
+
+  model ProbeMed "Medium 계약 경유 — ProbeAna 와 수학 동일, 바인딩만 다름"
+    package Medium = R290Medium;
+    parameter Integer M = 12;
+    parameter Real V_cell = 2e-4, m_flow = 0.01, UA = 15.0, T_air = 30.0;
+    Real p(start=5e5, fixed=true, nominal=1e6);
+    Real h[M](each start=560e3, each fixed=true, each nominal=4e5);
+    Medium.ThermodynamicState st[M];
+    Medium.SaturationProperties sat;
+    Real T[M], rho[M], Q[M];
+    Real hl_s, hv_s, Tsat_s, rhol_s, rhov_s;
+  equation
+    sat = Medium.setSat_p(p);
+    hl_s = Medium.bubbleEnthalpy(sat); hv_s = Medium.dewEnthalpy(sat);
+    Tsat_s = sat.Tsat;
+    rhol_s = Medium.bubbleDensity(sat); rhov_s = Medium.dewDensity(sat);
+    der(p) = 2e3*sin(0.05*time) + 0.02*(hv_s - h[M]);
+    for k in 1:M loop
+      st[k] = Medium.setState_ph(p, h[k]);
+      T[k] = Medium.temperature(st[k]) - 273.15;
+      rho[k] = Medium.density(st[k]);
+      Q[k] = UA*(T_air - T[k])*(1.0 + 0.02*(rhol_s - rho[k])/rhol_s);
+      rho[k]*V_cell*der(h[k]) = m_flow*((if k == 1 then hl_s + 2e4 else h[k-1]) - h[k]) + Q[k];
+    end for;
+  end ProbeMed;
 end ProbeJac;
