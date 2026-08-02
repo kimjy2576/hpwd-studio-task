@@ -472,6 +472,56 @@ function OperatingInputs({ op, setOp }) {
         )}
       </div>
 
+      {/* 해석 엔진 — 2026-07-31.
+          Python 은 스텝마다 정상해를 푸는 준정상. Modelica 는 진짜 DAE 과도해.
+          Modelica 는 첫 실행에 빌드가 필요해 수 분 걸린다(이후 캐시). */}
+      <div>
+        <div className="mono text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-2">해석 엔진</div>
+        <div className="inline-flex rounded-lg bg-slate-100 p-0.5 mb-2">
+          {[['python','Python'],['modelica','Modelica']].map(function (e) {
+            const on = op.engine === e[0];
+            return (
+              <button key={e[0]} onClick={() => set('engine', e[0])}
+                className={'px-3 py-1 rounded-md text-[12px] font-semibold transition ' +
+                  (on ? 'bg-white shadow text-blue-600' : 'text-slate-500')}>
+                {e[1]}
+              </button>
+            );
+          })}
+        </div>
+        {op.engine === 'modelica' && (
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <div className="text-[11px] text-slate-500 mb-1">솔버</div>
+              <select value={op.mo_solver} onChange={e => set('mo_solver', e.target.value)}
+                className="w-full mono text-[12px] border border-slate-200 rounded px-2 py-1">
+                <option value="dassl">dassl (권장)</option>
+                <option value="ida">ida</option>
+                <option value="gbode">gbode</option>
+                <option value="cvode">cvode</option>
+              </select>
+            </div>
+            <NumberField label="해석 시간" value={op.mo_stop} unit="s" min={10} max={7200}
+              onChange={v => set('mo_stop', v)} />
+            <NumberField label="허용오차" value={op.mo_tol} unit="" min={1e-6} max={1e-1}
+              onChange={v => set('mo_tol', v)} />
+            <NumberField label="목표 주파수" value={op.mo_f_target} unit="Hz" min={20} max={60}
+              onChange={v => set('mo_f_target', v)} />
+            <label className="col-span-2 flex items-center gap-2 text-[12px] text-slate-600">
+              <input type="checkbox" checked={op.mo_real_ctrl}
+                onChange={e => set('mo_real_ctrl', e.target.checked)} />
+              실제 제어 로직 (압축기 기동 시퀀스 + EEV 단계제어)
+            </label>
+            <div className="col-span-2 text-[11px] text-slate-400 leading-relaxed">
+              검증된 조합: 테이블 물성 + 수치 야코비안 + dassl.
+              600 s 해석에 약 200 s 걸립니다. 첫 실행은 빌드로 수 분 더 걸립니다.
+              왼쪽 fidelity·팬 위치·충전량 설정은 Modelica 모드에서 쓰이지 않습니다
+              (모델이 고정 형상입니다).
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* 계산 자원 — 2026-07-31 정정.
           CPU 스레드 입력을 제거했다. 프로파일 결과 numpy·linalg 가 0.0%,
           시간은 전부 파이썬 루프(_solve_segment 3040회, _poly2 31004회,
@@ -882,6 +932,10 @@ function CycleRunner() {
     use_pulse: false,                        // EEV 스텝모터 펄스
     n_max: 500, pps_max: 30, T_ctrl: 1.0, deadband: 0.5,
     threads: 0,                              // 0=기본값 유지
+    // 2026-07-31: Modelica 엔진
+    engine: 'python',                        // python | modelica
+    mo_solver: 'dassl', mo_tol: 1e-3, mo_stop: 600,
+    mo_real_ctrl: true, mo_f_target: 30,
   });
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState(null);
@@ -953,6 +1007,9 @@ function CycleRunner() {
       M_charge_g: op.M_charge_g,
       use_pulse: op.use_pulse,
       threads: op.threads,
+      engine: op.engine,
+      mo_solver: op.mo_solver, mo_tol: op.mo_tol, mo_stop: op.mo_stop,
+      mo_real_ctrl: op.mo_real_ctrl, mo_f_target: op.mo_f_target,
       eev: op.use_pulse ? {
         n_max: op.n_max, pps_max: op.pps_max,
         T_ctrl: op.T_ctrl, deadband: op.deadband,

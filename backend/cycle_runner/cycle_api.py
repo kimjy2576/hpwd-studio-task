@@ -10,6 +10,7 @@ Modelica 기반 /run_cycle (server.py)과 별개 — 이건 순수 Python 엔진
 import io
 import os
 import time
+from pathlib import Path
 import uuid
 import threading
 import contextlib
@@ -64,6 +65,15 @@ class CycleRunRequest(BaseModel):
     #   threads: BLAS/OpenMP 스레드 (CoolProp·numpy 내부 병렬)
     #   GPU 는 두지 않는다 — 순차 시간적분이고 scipy/CoolProp 에 GPU 경로가 없다
     threads: int = 0                    # 0 이면 기본값 유지
+    # 2026-07-31: Modelica 엔진 선택
+    #   'python'   기존 Python 커플드 솔버 (기본)
+    #   'modelica' OMC 로 Cycle_L3_coldstart_charge 를 빌드·실행
+    engine: str = "python"
+    mo_solver: str = "dassl"            # dassl | ida | gbode | cvode
+    mo_tol: float = 1e-3
+    mo_stop: float = 600.0
+    mo_real_ctrl: bool = True           # 실제 제어 로직(docs/CONTROL_LOGIC.md)
+    mo_f_target: float = 30.0           # 목표 주파수 [Hz]
 
 
 class CycleRunResponse(BaseModel):
@@ -124,6 +134,140 @@ def _to_air_inlet(op: dict) -> dict:
 #   솔버의 콜백 가드가 except Exception 으로 보고 실패를 삼키는데,
 #   전용 예외여야 그 가드를 통과해 계산을 실제로 멈출 수 있다.
 from .cancel import Cancelled as _Cancelled
+
+
+def _run_modelica(req, update, prog) -> dict:
+    """OMC 로 Cycle_L3_coldstart_charge 를 빌드·실행한다 (2026-07-31).
+
+    convergence_api 의 검증된 경로를 따른다.
+      - verify/load_all.mos 는 절대경로가 하드코딩돼 있어 쓰지 않고
+        modelica/*.mo 를 직접 훑어 로드 스크립트를 만든다.
+      - Windows 에서 실행파일은 <model>.exe 다.
+      - -override 는 인자 하나에 쉼표로 이어야 한다.
+      - stopTime 은 -override 가 아니라 별도 인자다.
+    빌드는 캐시된다. 같은 옵션이면 두 번째 실행부터 빠르다.
+    """
+    import shutil
+    import subprocess
+
+    REPO = Path(__file__).resolve().parent.parent.parent
+    md = REPO / "modelica"
+    if not md.exists() or not any(md.glob("*.mo")):
+        return {"converged": False,
+                "error": f"모델 파일이 없습니다: {md}"}
+
+    omc = (os.environ.get("OMC_BIN") or os.environ.get("OMC_PATH")
+           or shutil.which("omc") or shutil.which("omc.exe"))
+    if not omc:
+        return {"converged": False,
+                "error": "omc 를 찾지 못했습니다. OMC_BIN 을 설정하십시오."}
+
+    model = "HPWDcycle.Cycle_L3_coldstart_charge"
+    work = Path(__file__).resolve().parent.parent / "_mo_cycle"
+    work.mkdir(parents=True, exist_ok=True)
+
+    update(progress=0.05, message="Modelica 모델 로드 스크립트 생성")
+    lines = ["loadModel(Modelica); getErrorString();"]
+    for f in sorted(md.glob("*.mo")):
+        lines.append(f'loadFile("{str(f).replace(chr(92), "/")}"); getErrorString();')
+    lines.append(
+        f'simulate({model}, stopTime={req.mo_stop}, tolerance={req.mo_tol}, '
+        f'method="{req.mo_solver}", outputFormat="csv", '
+        'variableFilter="(M_total|Pc_bar|Pe_bar|SH|comp.N|vol4.M|'
+        'eevctl.n_pulse|seq.f|mdot|Q_evap|Q_cond|W_comp)");')
+    lines.append("getErrorString();")
+    (work / "run.mos").write_text("\n".join(lines), encoding="utf-8")
+
+    exe = next((c for c in (work / model, work / f"{model}.exe") if c.exists()), None)
+    if exe is None:
+        update(progress=0.10, message="Modelica 빌드 중 (첫 실행은 수 분 걸립니다)")
+        try:
+            subprocess.run([omc, "run.mos"], cwd=work, timeout=1800,
+                           capture_output=True, text=True)
+        except Exception as e:
+            return {"converged": False,
+                    "error": f"빌드 실패: {type(e).__name__}: {e}"[:200]}
+        exe = next((c for c in (work / model, work / f"{model}.exe")
+                    if c.exists()), None)
+        if exe is None:
+            log = (work / "run.mos").parent / "omc.log"
+            return {"converged": False,
+                    "error": "빌드 실패 — 실행파일이 생성되지 않았습니다. "
+                             f"로그: {log}"}
+
+    update(progress=0.30, message=f"Modelica 실행 ({req.mo_solver}, {req.mo_stop:.0f}s)")
+    ov = (f"use_real_ctrl={'true' if req.mo_real_ctrl else 'false'},"
+          f"f_target_Hz={req.mo_f_target},M_charge={req.M_charge_g / 1000.0}")
+    args = [str(exe), "-s", req.mo_solver, f"-stopTime={req.mo_stop}",
+            f"-tolerance={req.mo_tol}", f"-override={ov}",
+            f"-r={work / 'res.csv'}"]
+    if req.threads and req.threads > 0:
+        args.append(f"-jacobianThreads={req.threads}")
+    t0 = time.time()
+    try:
+        p = subprocess.run(args, cwd=work, timeout=3600,
+                           capture_output=True, text=True)
+    except Exception as e:
+        return {"converged": False,
+                "error": f"실행 실패: {type(e).__name__}: {e}"[:200]}
+    elapsed = time.time() - t0
+
+    csv_path = work / "res.csv"
+    if not csv_path.exists():
+        tail = (p.stdout or p.stderr or "")[-300:]
+        return {"converged": False, "error": f"결과 파일 없음. {tail}"}
+
+    import csv as _csv
+    with open(csv_path, newline="") as fh:
+        rows = [r for r in _csv.reader(fh) if r]
+    if len(rows) < 2:
+        return {"converged": False, "error": "결과가 비어 있습니다."}
+    head = rows[0]
+    data = [[float(c) for c in r] for r in rows[1:] if len(r) == len(head)]
+    idx = {k: i for i, k in enumerate(head)}
+
+    def col(name, default=None):
+        i = idx.get(name)
+        return data[-1][i] if i is not None else default
+
+    # 질량 드리프트
+    drift = None
+    if "M_total" in idx:
+        mi = idx["M_total"]
+        m0 = req.M_charge_g / 1000.0
+        drift = max(abs(r[mi] / m0 - 1) for r in data) * 100
+
+    t_end = data[-1][0]
+    done = t_end >= req.mo_stop * 0.999
+    traj = [{"t": r[0],
+             "Pc": r[idx["Pc_bar"]] if "Pc_bar" in idx else None,
+             "Pe": r[idx["Pe_bar"]] if "Pe_bar" in idx else None,
+             "SH": r[idx["SH"]] if "SH" in idx else None,
+             "N": r[idx["comp.N"]] if "comp.N" in idx else None,
+             "n_act": r[idx["eevctl.n_pulse"]] if "eevctl.n_pulse" in idx else None,
+             "ok": True} for r in data[::max(1, len(data) // 400)]]
+
+    return {
+        "converged": done,
+        "iterations": len(data),
+        "engine": "modelica",
+        "solver": req.mo_solver,
+        "elapsed_s": round(elapsed, 1),
+        "t_end": t_end, "t_target": req.mo_stop,
+        "P_cond": col("Pc_bar"), "P_evap": col("Pe_bar"),
+        "SH": col("SH"), "m_dot": col("mdot"),
+        "Q_evap": col("Q_evap"), "Q_cond": col("Q_cond"),
+        "W_comp": col("W_comp"),
+        "COP": (col("Q_cond") / col("W_comp")) if col("W_comp") else None,
+        "M_charge_g": req.M_charge_g,
+        "M_total_g": (col("M_total") or 0) * 1000,
+        "charge_err_pct": drift,
+        "opening": col("eevctl.n_pulse"),
+        "trajectory": traj,
+        "note": (None if done else
+                 f"t={t_end:.1f}/{req.mo_stop:.0f}s 에서 멈췄습니다 "
+                 "— 적분 실패이거나 시간이 부족합니다."),
+    }
 
 
 def _fmt_prog(rec: dict, i: int, n: int) -> str:
@@ -295,6 +439,14 @@ def _run_job(job_id: str, req: CycleRunRequest):
                     live={k: rec.get(k) for k in keys if k in rec},
                     live_step=i + 1, live_total=n,
                     residuals=list(_resid), tol_air=0.05)
+
+        # 2026-07-31: Modelica 엔진 분기
+        if req.engine == "modelica":
+            result = _run_modelica(req, _update, _prog)
+            _update(status='done', progress=1.0, result=result,
+                    message=f"완료 ({time.time() - t0:.1f}s)",
+                    finished=time.time())
+            return
 
         engine_op = _to_engine_operating(req.operating)
         air_inlet = _to_air_inlet(req.operating)
