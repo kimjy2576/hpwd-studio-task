@@ -10,6 +10,7 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
   //  물성: R290Tab(p,h) — CoolProp 없이 OM 심볼릭 미분.
   // ════════════════════════════════════════════════════════════════════
   model EEV_On "EEV On-design — needle-cone 기하 + 2상 choke + Re-Cd, acausal stream TwoPort"
+    replaceable package Medium = R290Medium "냉매 물성 (P4'-5)";
     HPWD.RefPort port_a "inlet (상류, 응축기측 고압)";
     HPWD.RefPort port_b "outlet (하류, 증발기측 저압)";
     Modelica.Blocks.Interfaces.RealInput opening "개도 [%] (신호 입력)";
@@ -36,8 +37,8 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     Real dP, dP_eff, m1, D_h, Re, Cd_eff, pr, w_chk;
   equation
     h_in   = inStream(port_a.h_outflow);
-    rho_in = R290Tab.rho_ph(port_a.p, h_in);
-    mu_in  = R290Tab.mu_ph(port_a.p, h_in);
+    rho_in = Medium.rho_ph(port_a.p, h_in);
+    mu_in  = Medium.mu_ph(port_a.p, h_in);
 
     // needle-cone 기하 → throat 면적
     op       = max(opening_min, min(100.0, opening))/100.0;
@@ -365,6 +366,7 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
 
   // ── 냉매측 h_i: 2상 Chen + 단상 Gnielinski 검증 ──
   model TestHi "냉매 HTC h_i — Chen(2상)/Gnielinski(단상), Python h_with_transition 대조"
+    replaceable package Medium = R290Medium "냉매 물성 (P4'-5)";
     parameter Real P = 5.8e5 "압력 [Pa]";
     parameter Real x = 0.5 "quality";
     parameter Real G = 200.0 "질량유속 [kg/m2.s]";
@@ -377,12 +379,12 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     Real h_chen "2상 Chen HTC";
     Real h_gni "단상 Gnielinski HTC (Re=50000,Pr=0.85,k=0.018)";
   equation
-    mu_l  = R290Tab.mul(P);
-    k_l   = R290Tab.kl(P);
-    cp_l  = R290Tab.cpl(P);
-    rho_l = R290Tab.rhol(P);
-    rho_v = R290Tab.rhov(P);
-    mu_v  = R290Tab.muv(P);
+    mu_l  = Medium.mul(P);
+    k_l   = Medium.kl(P);
+    cp_l  = Medium.cpl(P);
+    rho_l = Medium.rhol(P);
+    rho_v = Medium.rhov(P);
+    mu_v  = Medium.muv(P);
     Pr_l  = cp_l*mu_l/k_l;
     P_r   = P/Pcrit;
     h_chen = HXCorr.h_evap_chen1966(x, G, Di, q_flux, mu_l, k_l, Pr_l, rho_l, rho_v, mu_v, P_r, M_mol);
@@ -391,6 +393,7 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
 
   // ── 냉매 N-세그먼트 all-2상 dry march 검증 ──
   model TestMarchDry "냉매 FV march (all-2상, dry, 고정P) — Python 레퍼런스 march 대조"
+    replaceable package Medium = R290Medium "냉매 물성 (P4'-5)";
     parameter Integer N = 10;
     parameter Real P = 5.8e5, x_in = 0.2, G_ref = 200.0;
     parameter Real T_air_C = 20.0, V_air = 2.0, P_atm = 101325.0;
@@ -440,9 +443,9 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     m_fin=sqrt(2.0*h_o/(k_fin*fin_thickness)); mr_phi=m_fin*r_i*phi_f;
     eta_fin=tanh(mr_phi)/mr_phi; eta_o=1.0-(A_fin/A_total)*(1.0-eta_fin);
     // 냉매 포화물성
-    T_sat=R290Tab.Tsat(P); h_fg=R290Tab.hv(P)-R290Tab.hl(P);
-    mu_l=R290Tab.mul(P); k_l=R290Tab.kl(P); cp_l=R290Tab.cpl(P); Pr_l=cp_l*mu_l/k_l;
-    rho_l=R290Tab.rhol(P); rho_v=R290Tab.rhov(P); mu_v=R290Tab.muv(P); P_r=P/Pcrit;
+    T_sat=Medium.Tsat(P); h_fg=Medium.hv(P)-Medium.hl(P);
+    mu_l=Medium.mul(P); k_l=Medium.kl(P); cp_l=Medium.cpl(P); Pr_l=cp_l*mu_l/k_l;
+    rho_l=Medium.rhol(P); rho_v=Medium.rhov(P); mu_v=Medium.muv(P); P_r=P/Pcrit;
     // FV march (각 세그먼트: q_flux↔h_i↔Q 비선형, OM이 풂)
     x[1]=x_in;
     for i in 1:N loop
@@ -499,6 +502,7 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
   end hi_dispatch_evap;
 
   model TestDispatch "위상 디스패치 h_i(x) 스윕 — Python 대조"
+    replaceable package Medium = R290Medium "냉매 물성 (P4'-5)";
     parameter Real P=5.8e5, G=200.0, Di=8.22e-3, q_flux=5000.0, Pcrit=4.2512e6, M_mol=44.0956;
     parameter Integer Nx=6;
     parameter Real xarr[Nx]={0.5, 0.85, 0.95, 1.0, 1.05, 1.2};
@@ -506,9 +510,9 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     Real muv, kv, cpv, Prv, Rev, h_gni;
     Real h_i[Nx];
   equation
-    mu_l=R290Tab.mul(P); k_l=R290Tab.kl(P); cp_l=R290Tab.cpl(P); Pr_l=cp_l*mu_l/k_l;
-    rho_l=R290Tab.rhol(P); rho_v=R290Tab.rhov(P); mu_v=R290Tab.muv(P); P_r=P/Pcrit;
-    muv=R290Tab.muv(P); kv=R290Tab.kv(P); cpv=R290Tab.cpv(P); Prv=cpv*muv/kv; Rev=G*Di/muv;
+    mu_l=Medium.mul(P); k_l=Medium.kl(P); cp_l=Medium.cpl(P); Pr_l=cp_l*mu_l/k_l;
+    rho_l=Medium.rhol(P); rho_v=Medium.rhov(P); mu_v=Medium.muv(P); P_r=P/Pcrit;
+    muv=Medium.muv(P); kv=Medium.kv(P); cpv=Medium.cpv(P); Prv=cpv*muv/kv; Rev=G*Di/muv;
     h_gni=HXCorr.gnielinski(Rev, Prv, kv, Di);
     for i in 1:Nx loop
       h_i[i]=hi_dispatch_evap(xarr[i], G, Di, q_flux, mu_l, k_l, Pr_l, rho_l, rho_v, mu_v, P_r, M_mol, h_gni);
@@ -516,6 +520,7 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
   end TestDispatch;
 
   model TestMarchSpan "enthalpy 마스터 march: 2상→과열 span (디스패치 통합)"
+    replaceable package Medium = R290Medium "냉매 물성 (P4'-5)";
     parameter Real P=5.8e5, Di=8.22e-3, G_ref=15.0;
     parameter Real T_air=328.15 "55 degC";
     parameter Real h_o=101.1756, eta_o=0.752039 "공기측 (별도 검증)";
@@ -529,15 +534,15 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     Real h_ref[N+1], x[N], T_ref[N], h_i[N], UA[N], Q[N], q_flux[N];
     Real Q_total, x_out, T_out, SH_out;
   equation
-    T_sat=R290Tab.Tsat(P); hl=R290Tab.hl(P); hv=R290Tab.hv(P); h_fg=hv-hl;
-    mu_l=R290Tab.mul(P); k_l=R290Tab.kl(P); cp_l=R290Tab.cpl(P); Pr_l=cp_l*mu_l/k_l;
-    rho_l=R290Tab.rhol(P); rho_v=R290Tab.rhov(P); mu_v=R290Tab.muv(P); P_r=P/Pcrit;
-    muv=R290Tab.muv(P); kv=R290Tab.kv(P); cpv=R290Tab.cpv(P); Prv=cpv*muv/kv; Rev=G_ref*Di/muv;
+    T_sat=Medium.Tsat(P); hl=Medium.hl(P); hv=Medium.hv(P); h_fg=hv-hl;
+    mu_l=Medium.mul(P); k_l=Medium.kl(P); cp_l=Medium.cpl(P); Pr_l=cp_l*mu_l/k_l;
+    rho_l=Medium.rhol(P); rho_v=Medium.rhov(P); mu_v=Medium.muv(P); P_r=P/Pcrit;
+    muv=Medium.muv(P); kv=Medium.kv(P); cpv=Medium.cpv(P); Prv=cpv*muv/kv; Rev=G_ref*Di/muv;
     h_v_gni=HXCorr.gnielinski(Rev, Prv, kv, Di);
     h_ref[1]=hl + x_in*h_fg;
     for i in 1:N loop
       x[i]=(h_ref[i] - hl)/h_fg;
-      T_ref[i]=if x[i] < 1.0 then T_sat else R290Tab.T_ph(P, h_ref[i]);
+      T_ref[i]=if x[i] < 1.0 then T_sat else Medium.T_ph(P, h_ref[i]);
       q_flux[i]=Q[i]/A_i_seg;
       h_i[i]=hi_dispatch_evap(x[i], G_ref, Di, q_flux[i],
                               mu_l, k_l, Pr_l, rho_l, rho_v, mu_v, P_r, M_mol, h_v_gni);
@@ -547,7 +552,7 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     end for;
     Q_total=sum(Q);
     x_out=(h_ref[N+1] - hl)/h_fg;
-    T_out=R290Tab.T_ph(P, h_ref[N+1]);
+    T_out=Medium.T_ph(P, h_ref[N+1]);
     SH_out=T_out - T_sat;
   end TestMarchSpan;
 
@@ -603,6 +608,7 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
   end finEffWet;
 
   model TestWetSeg "단일 습세그먼트: 엔탈피포텐셜 + b factor + T_w 음함수 solve"
+    replaceable package Medium = R290Medium "냉매 물성 (P4'-5)";
     parameter Real P=5.8e5, Di=8.22e-3, G_ref=200.0, x=0.5;
     parameter Real T_air=35.0, RH=0.5 "degC, frac";
     parameter Real h_o=104.81;
@@ -615,10 +621,10 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     Real T_w(start=10.0), T_fin(start=22.0), b(start=3.0), eta_o_wet(start=0.5);
     Real h_i(start=4600.0), q_flux_est, Q_total, Q_air, Q_lat;
   equation
-    T_sat_C=R290Tab.Tsat(P) - 273.15;
-    mu_l=R290Tab.mul(P); k_l=R290Tab.kl(P); cp_l=R290Tab.cpl(P); Pr_l=cp_l*mu_l/k_l;
-    rho_l=R290Tab.rhol(P); rho_v=R290Tab.rhov(P); mu_v=R290Tab.muv(P); P_r=P/Pcrit;
-    muv=R290Tab.muv(P); kv=R290Tab.kv(P); cpv=R290Tab.cpv(P); Prv=cpv*muv/kv;
+    T_sat_C=Medium.Tsat(P) - 273.15;
+    mu_l=Medium.mul(P); k_l=Medium.kl(P); cp_l=Medium.cpl(P); Pr_l=cp_l*mu_l/k_l;
+    rho_l=Medium.rhol(P); rho_v=Medium.rhov(P); mu_v=Medium.muv(P); P_r=P/Pcrit;
+    muv=Medium.muv(P); kv=Medium.kv(P); cpv=Medium.cpv(P); Prv=cpv*muv/kv;
     h_v_gni=HXCorr.gnielinski(G_ref*Di/muv, Prv, kv, Di);
     Wa=HXCorr.W_humid(T_air, RH, Patm);
     cp_a=HXCorr.cp_air_moist(Wa);
@@ -636,6 +642,7 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
   end TestWetSeg;
 
   model TestWetDryMarch "습/건 전환 enthalpy march (is_wet 세그먼트별 1회 결정)"
+    replaceable package Medium = R290Medium "냉매 물성 (P4'-5)";
     parameter Real P=5.8e5, Di=8.22e-3, G_ref=150.0, x_in=0.2;
     parameter Real T_air=35.0, RH=0.5 "degC, frac";
     parameter Real h_o=104.81;
@@ -656,10 +663,10 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     Boolean is_wet[N];
     Real Q_total, Q_lat_total, x_out;
   equation
-    T_satC=R290Tab.Tsat(P) - 273.15; hl=R290Tab.hl(P); hv=R290Tab.hv(P); h_fg=hv - hl;
-    mu_l=R290Tab.mul(P); k_l=R290Tab.kl(P); cp_l=R290Tab.cpl(P); Pr_l=cp_l*mu_l/k_l;
-    rho_l=R290Tab.rhol(P); rho_v=R290Tab.rhov(P); mu_v=R290Tab.muv(P); P_r=P/Pcrit;
-    muv=R290Tab.muv(P); kv=R290Tab.kv(P); cpv=R290Tab.cpv(P); Prv=cpv*muv/kv;
+    T_satC=Medium.Tsat(P) - 273.15; hl=Medium.hl(P); hv=Medium.hv(P); h_fg=hv - hl;
+    mu_l=Medium.mul(P); k_l=Medium.kl(P); cp_l=Medium.cpl(P); Pr_l=cp_l*mu_l/k_l;
+    rho_l=Medium.rhol(P); rho_v=Medium.rhov(P); mu_v=Medium.muv(P); P_r=P/Pcrit;
+    muv=Medium.muv(P); kv=Medium.kv(P); cpv=Medium.cpv(P); Prv=cpv*muv/kv;
     h_v_gni=HXCorr.gnielinski(G_ref*Di/muv, Prv, kv, Di);
     Wa=HXCorr.W_humid(T_air, RH, Patm); cp_a=HXCorr.cp_air_moist(Wa); h_air=HXCorr.h_moist(T_air, Wa);
     eta_o_dry=finEffWet(h_o, 1.0, Dc, Xm, XL, k_fin, fin_t, A_fin_ratio);
@@ -667,7 +674,7 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     h_ref[1]=hl + x_in*h_fg;
     for i in 1:N loop
       x[i]=(h_ref[i] - hl)/h_fg;
-      T_ref_g[i]=if x[i] < 1.0 then T_satC else R290Tab.T_ph(P, h_ref[i]) - 273.15;
+      T_ref_g[i]=if x[i] < 1.0 then T_satC else Medium.T_ph(P, h_ref[i]) - 273.15;
       is_wet[i]=((T_air + T_ref_g[i])/2.0) < T_dp;
       q_flux[i]=(T_air - T_w[i])*h_o;
       h_i[i]=hi_dispatch_evap(x[i], G_ref, Di, q_flux[i], mu_l, k_l, Pr_l, rho_l, rho_v, mu_v, P_r, M_mol, h_v_gni);

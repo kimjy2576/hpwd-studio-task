@@ -171,30 +171,26 @@ package R290Medium "R290 (프로판) 매질 — Modelica.Media 계약 구현 (20
   function cpv_d input Real p; input Real dp; output Real dy; algorithm dy := R290Tab.cpv_a_d(p, dp); annotation(Inline=false); end cpv_d;
 
   // ── C군: 테이블 랩 (해석 미보유 — CoolProp→다항 생성기 과제로 이월) ──
-  function p_rhoh "해석 일관 역산: rho_ph_a(p,h)=rho 를 뉴턴으로 (2026-08-02).
-    테이블 p_rhoh 랩은 해석 rho_ph_a 와 미세 불일치를 만들어 볼륨 압력이
-    매 스텝 인위 강성을 유발했다(전체 전환 후 t=0.13 정체 실측). 고정 6회
-    반복(분기·이벤트 없음), 도함수는 음함수 정리(p_rhoh_der)."
+  function p_rhoh "역산은 테이블판을 쓴다 (2026-08-02 v3 확정).
+    해석 rho_ph_a 는 블렌딩 밴드 경계에서 p 에 대해 국소 비단조
+    (12개 h 라인 중 2개, 최대 -0.97 kg/m3 역행 실측)라 역산이 불량정의다.
+    뉴턴(클램프 진동)·이분(비단조 오수렴) 모두 야코비안 트래시를 유발했다.
+    단조 제약(drho/dp|h > 0)을 하드 제약으로 갖는 재피팅은 CoolProp→다항
+    생성기 과제로 이월. 그때까지 rho_ph_a(p_rhoh(rho,h),h) != rho 의
+    ~0.1-0.3% 불일치가 남으며 과도 드리프트(+1.29% 실측)의 원천이다."
     input Real rho; input Real h; output Real p;
-  protected
-    Real f, df;
   algorithm
-    p := R290Tab.p_rhoh(rho, h) "테이블 역산을 초기 추정으로 (이분법 강건성)";
-    for i in 1:3 loop
-      f  := R290Tab.rho_ph_a(p, h) - rho;
-      df := R290Tab.rho_ph_a_d(p, h, 1.0, 0.0);
-      p  := min(max(p - f/(if abs(df) < 1e-12 then 1e-12 else df), 1.6e5), 3.4e6);
-    end for;
+    p := R290Tab.p_rhoh(rho, h);
     annotation(Inline=false, derivative=p_rhoh_der);
   end p_rhoh;
-  function p_rhoh_der "p_rhoh 전미분 (음함수 정리, rho_ph_a_d 기반)"
+  function p_rhoh_der "값(테이블 역산)과 정합 — 테이블 rho_ph_d 기반 음함수 정리"
     input Real rho; input Real h; input Real drho; input Real dh; output Real dp;
   protected
     Real p, dRdp, dRdh;
   algorithm
-    p    := p_rhoh(rho, h);
-    dRdp := R290Tab.rho_ph_a_d(p, h, 1.0, 0.0);
-    dRdh := R290Tab.rho_ph_a_d(p, h, 0.0, 1.0);
+    p    := R290Tab.p_rhoh(rho, h);
+    dRdp := R290Tab.rho_ph_d(p, h, 1.0, 0.0);
+    dRdh := R290Tab.rho_ph_d(p, h, 0.0, 1.0);
     dp := (drho - dRdh*dh)/(if abs(dRdp) < 1e-12 then 1e-12 else dRdp);
     annotation(Inline=false);
   end p_rhoh_der;

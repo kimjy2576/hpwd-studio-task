@@ -79,6 +79,7 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
   end OilSump;
 
   model Volume_L3 "냉매 control volume (압력 노드, R290Tab 기반, 정상상태)"
+    replaceable package Medium = R290Medium "냉매 물성 (P4'-5)";
     HPWD.RefPort port_a;
     HPWD.RefPort port_b;
     parameter Modelica.Units.SI.Volume V=5e-4;
@@ -95,21 +96,21 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     //   기존 상태 (p,h) 에서는 질량이 rho_ph(p,h)*V 로 계산되는 파생량이라
     //   적분오차로 표류했다 (ida tol=1e-2 -2.77%, 1e-3 -1.01%).
     //   M 을 상태로 두면 der(M)=유량합 이므로 기계정밀도로 보존된다.
-    //   p 는 R290Tab.p_rhoh(rho,h) 로 명시적 역산 — 음함수가 없어
+    //   p 는 Medium.p_rhoh(rho,h) 로 명시적 역산 — 음함수가 없어
     //   지수축약 실패를 피한다 (상태 (M,U) 방식은 그 문제로 빌드 실패했음).
     //   p_rhoh 의 도함수는 음함수 정리로 rho_ph_d 에서 유도됨.
     Modelica.Units.SI.Pressure p(start=p_start);
     Modelica.Units.SI.SpecificEnthalpy h(start=h_start, fixed=false, stateSelect=StateSelect.prefer);
     // start 값 필수: 보존형에서 rho 가 반복변수가 되는데 기본 start=0 이면
     // 초기 비선형계가 밀도 0 에서 출발해 실패한다 (2026-07-26 실측).
-    final parameter Real rho_start = R290Tab.rho_ph(p_start, h_start);
+    final parameter Real rho_start = Medium.rho_ph(p_start, h_start);
     Real rho(start=rho_start, nominal=100.0);
     Real M(start=rho_start*V, fixed=false, nominal=1e-3,
            stateSelect=StateSelect.prefer) "냉매 질량 [kg] — 보존 상태";
     Real U "내부에너지 [J]";
   equation
     rho=M/V;
-    p=R290Tab.p_rhoh(rho, h);
+    p=Medium.p_rhoh(rho, h);
     U=M*h - p*V;
     port_a.p=p; port_b.p=p;
     port_a.h_outflow=h; port_b.h_outflow=h;
@@ -141,6 +142,7 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
   end Volume_L3;
 
   model Accumulator_L3 "흡입측 어큐뮬레이터 — 액 저장, 포화증기 토출 (상분리)"
+    replaceable package Medium = R290Medium "냉매 물성 (P4'-5)";
     // 2026-07-24: 단순 체적(Volume_L3)은 상분리를 하지 않아 정지 상태(x≈0.04, 거의 액)
     // 에서 액이 그대로 압축기로 유입됨 -> 흡입밀도 30배 -> ṁ 이 설계의 3배(0.0067)로
     // 튀고 SH=0 에 고착. 실물은 어큐가 액을 잡아두고 증기만 보낸다.
@@ -162,7 +164,7 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     // 보존형 전환 (Volume_L3 주석 참조)
     Modelica.Units.SI.Pressure p(start=p_start);
     Modelica.Units.SI.SpecificEnthalpy h(start=h_start, fixed=false, stateSelect=StateSelect.prefer);
-    final parameter Real rho_start = R290Tab.rho_ph(p_start, h_start);
+    final parameter Real rho_start = Medium.rho_ph(p_start, h_start);
     Real rho(start=rho_start, nominal=100.0);
     Real hL, hV, xq, w_sep, h_out, M_liq, f_liq;
     Real M(start=rho_start*V, fixed=false, nominal=1e-3,
@@ -170,10 +172,10 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     Real U "내부에너지 [J]";
   equation
     rho=M/V;
-    p=R290Tab.p_rhoh(rho, h);
+    p=Medium.p_rhoh(rho, h);
     U=M*h - p*V;
-    hL=R290Tab.hl(p);
-    hV=R290Tab.hv(p);
+    hL=Medium.hl(p);
+    hV=Medium.hv(p);
     xq=(h - hL)/max(hV - hL, 1.0);
     // 2상 구간에서만 포화증기 토출. 과냉/과열에서는 벌크 엔탈피 그대로.
     // 2026-07-31: 액 재고 의존성 추가.

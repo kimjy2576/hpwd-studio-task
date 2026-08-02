@@ -32,6 +32,7 @@ package HPWD "HPWD 냉매 사이클 컴포넌트 (L1)"
   end Sink;
 
   model EEV_L1 "EEV Off-design — acausal stream TwoPort"
+    replaceable package Medium = R290Medium "냉매 물성 (P4'-5)";
     package M = HelmholtzMedia.HelmholtzFluids.Propane;
     RefPort port_a "inlet (상류)";
     RefPort port_b "outlet (하류)";
@@ -44,7 +45,7 @@ package HPWD "HPWD 냉매 사이클 컴포넌트 (L1)"
     op = max(opening_min, min(100.0, opening))/100.0;
     phi = c0 + c1*op + c2*op^2 + c3*op^3;
     h_in = inStream(port_a.h_outflow);
-    rho_in = R290Tab.rho_ph(port_a.p, h_in);
+    rho_in = Medium.rho_ph(port_a.p, h_in);
     port_a.m_flow = Cv_rated*A_orifice*phi*sqrt(max(1.0, 2.0*rho_in*(port_a.p - port_b.p)));
     port_a.m_flow + port_b.m_flow = 0;
     port_b.h_outflow = h_in;
@@ -82,6 +83,7 @@ package HPWD "HPWD 냉매 사이클 컴포넌트 (L1)"
   end Comp_AHRI;
 
   model Comp_Theoretical "이론적 압축기 — 체적효율 + 등엔트로피효율 (L1)"
+    replaceable package Medium = R290Medium "냉매 물성 (P4'-5)";
     package M = HelmholtzMedia.HelmholtzFluids.Propane;
     RefPort port_a "흡입 (저압)";
     RefPort port_b "토출 (고압)";
@@ -95,9 +97,9 @@ package HPWD "HPWD 냉매 사이클 컴포넌트 (L1)"
   equation
     N_eff = if t_ramp > 0.0 then N*min(1.0, time/t_ramp) else N;    // 정지(N=0)에서 운전점으로 단계 기동
     h_suc = inStream(port_a.h_outflow);
-    rho_suc = R290Tab.rho_ph(port_a.p, h_suc);
-    s_suc = R290Tab.s_ph(port_a.p, h_suc);
-    h_dis_s = R290Tab.h_ps(port_b.p, s_suc);   // 등엔트로피 토출
+    rho_suc = Medium.rho_ph(port_a.p, h_suc);
+    s_suc = Medium.s_ph(port_a.p, h_suc);
+    h_dis_s = Medium.h_ps(port_b.p, s_suc);   // 등엔트로피 토출
     m_dot = eta_vol*V_disp*(N_eff/60.0)*rho_suc;                    // ṁ = ηv·Vd·(N_eff/60)·ρ_suc
     W = m_dot*(h_dis_s - h_suc)/eta_isen;                           // 소요 동력
     h_dis = h_suc + (h_dis_s - h_suc)/eta_isen;                     // 실제 토출 엔탈피
@@ -108,6 +110,7 @@ package HPWD "HPWD 냉매 사이클 컴포넌트 (L1)"
   end Comp_Theoretical;
 
   model Comp_Winandy "압축기 Winandy 반경험 (L2) — 흡입가열·ηv(rp)·over/under-comp·열손실"
+    replaceable package Medium = R290Medium "냉매 물성 (P4'-5)";
     // Winandy E., Saavedra C., Lebrun J. (2002), Int. J. Thermal Sciences 41(2).
     // Python 원본 backend/components/compressor_winandy.py와 동일 식. T_wall fixed-point
     // iteration → Modelica 비인과 방정식(벽 에너지 균형) 1개로, 솔버가 동시해.
@@ -145,24 +148,24 @@ package HPWD "HPWD 냉매 사이클 컴포넌트 (L1)"
     P_su2 = port_a.p*(1.0 - dP_su);
     // 2. 흡입 shell 입구 (inStream → T_su1)
     h_su1 = inStream(port_a.h_outflow);
-    T_su1 = R290Tab.T_ph(port_a.p, h_su1);
-    cp_su1 = R290Tab.cp_ph(port_a.p, h_su1);
+    T_su1 = Medium.T_ph(port_a.p, h_su1);
+    cp_su1 = Medium.cp_ph(port_a.p, h_su1);
     // 3a. 흡입 가열 (ε-NTU: 뜨거운 벽 → 가스)
     eps_su = 1.0 - exp(-AU_su/max(m_dot*cp_su1, 1e-6));
     h_su2 = h_su1 + eps_su*cp_su1*(T_w - T_su1);
-    T_su2 = R290Tab.T_ph(P_su2, h_su2);
-    s_su2 = R290Tab.s_ph(P_su2, h_su2);
-    rho_su2 = R290Tab.rho_ph(P_su2, h_su2);
+    T_su2 = Medium.T_ph(P_su2, h_su2);
+    s_su2 = Medium.s_ph(P_su2, h_su2);
+    rho_su2 = Medium.rho_ph(P_su2, h_su2);
     v_su2 = 1.0/rho_su2;
     // 3b. 체적효율 (clearance 재팽창, ηv = V_se - c·(rp^(1/γ)-1))
-    gamma = R290Tab.gamma_ph(P_su2, h_su2);
+    gamma = Medium.gamma_ph(P_su2, h_su2);
     rp = port_b.p/port_a.p;
     clearance_term = max(0.0, rp^(1.0/gamma) - 1.0);
     eta_v = max(0.05, V_se - clearance_factor*clearance_term);
     // 3c. 질량유량
     m_dot = eta_v*V_disp*(N_eff/60.0)*rho_su2;
     // 3d. 등엔트로피 토출 + over/under-compression (built-in rv)
-    h_dis_is = R290Tab.h_ps(port_b.p, s_su2);
+    h_dis_is = Medium.h_ps(port_b.p, s_su2);
     w_is = h_dis_is - h_su2;
     P_internal = P_su2*(rv_in^gamma);
     w_extra_raw = v_su2*(port_b.p - P_internal);
@@ -176,7 +179,7 @@ package HPWD "HPWD 냉매 사이클 컴포넌트 (L1)"
     // 4-5. 전기입력 + 외부 열손실
     W_elec = (W_shaft + W_loss_mech)/eta_motor;
     Q_loss = AU_loss*(T_w - T_amb);
-    T_dis = R290Tab.T_ph(port_b.p, h_dis);
+    T_dis = Medium.T_ph(port_b.p, h_dis);
     // 포트 balance (acausal stream)
     port_a.m_flow = m_dot;
     port_a.m_flow + port_b.m_flow = 0;
