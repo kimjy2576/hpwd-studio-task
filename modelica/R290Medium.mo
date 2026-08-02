@@ -199,4 +199,22 @@ package R290Medium "R290 (프로판) 매질 — Modelica.Media 계약 구현 (20
   function cp_ph  input Real p; input Real h; output Real cp; algorithm cp := R290Tab.cp_ph(p, h);  annotation(Inline=true); end cp_ph;
   function mu_ph  input Real p; input Real h; output Real mu; algorithm mu := R290Tab.mu_ph(p, h);  annotation(Inline=true); end mu_ph;
   function gamma_ph input Real p; input Real h; output Real g; algorithm g := R290Tab.gamma_ph(p, h); annotation(Inline=true); end gamma_ph;
+
+  // ── PH1: 과열도 단일 정의 (2026-08-02) ──
+  function SH_ph "부호 있는 과열도 [K] — 2상이면 음수 (feat/analytic-props 7/27 정의의 단일화).
+    smooth-max 판(0.5*(x+sqrt(x^2+1e-4)))은 2상 출구를 표현하지 못해 SH 가
+    바닥값 0.005 에 고정되고, 이를 소비하는 EEV PI(목표 6K)가 err=-6 상수로
+    개도를 계속 조인다(기준선 종점 SH=0.005/개도 44 실측과 정합).
+    2상: 남은 증발 엔탈피를 cpv 로 환산해 음수로. 과열: T-Tsat."
+    input Real p; input Real h; output Real SH;
+  protected
+    Real hL, hV, x;
+  algorithm
+    hL := R290Tab.hl_a(p); hV := R290Tab.hv_a(p);
+    x  := (h - hL)/(hV - hL);
+    SH := if x < 1.0
+          then -(1.0 - max(x, 0.0))*(hV - hL)/max(R290Tab.cpv_a(p), 1.0)
+          else R290Tab.T_ph_a(p, h) - R290Tab.Tsat_a(p);
+    annotation(Inline=false);
+  end SH_ph;
 end R290Medium;

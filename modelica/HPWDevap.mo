@@ -310,8 +310,7 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     Q_total=Nt*sum(Q); Q_lat_total=Nt*sum(Q_lat);
     h_out=hpath[M + 1];
     x_out=(h_out - hl)/h_fg;
-    SH=0.5*((Medium.T_ph(P, h_out) - Medium.Tsat(P))
-            + sqrt((Medium.T_ph(P, h_out) - Medium.Tsat(P))^2 + 1e-4)) "증발기 출구 과열도 [K] (smooth max)";
+    SH=Medium.SH_ph(P, h_out) "증발기 출구 과열도 [K] (smooth max)";
     T_air_out=sum(T_aen[Nr + 1,s] for s in 1:Nseg)/Nseg;
     // 냉매측 dp: 2상 마찰(MSH) + 가속 + U-bend
     x_in_q=(h_in - hl)/h_fg;
@@ -921,8 +920,7 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     x_out=(h_out - hl)/h_fg;
     // smooth max — x_out 이 1.0 을 통과할 때 max() 가 상태이벤트를 만들어
     // 사이클 콜드스타트가 그 지점(t~55s)에서 정지함(2026-07-24 실측).
-    SH=0.5*((Medium.T_ph(P, h_out) - Medium.Tsat(P))
-            + sqrt((Medium.T_ph(P, h_out) - Medium.Tsat(P))^2 + 1e-4)) "출구 과열도 [K]";
+    SH=Medium.SH_ph(P, h_out) "출구 과열도 [K]";
     T_air_out=sum(T_aen[Nr + 1,s] for s in 1:Nsc)/Nsc;
     W_air_out=sum(W_aen[Nr + 1,s] for s in 1:Nsc)/Nsc "출구 절대습도 [kg/kg] (제습 반영) → 응축기 입력";
     // 냉매측 dp (명시적)
