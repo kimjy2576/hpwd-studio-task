@@ -732,6 +732,7 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
       cond(initOpt=1), evap(initOpt=1), oil(initOpt=1));
     // parameter + fixed=false: 초기화에서 풀리고 이후 상수로 유지되는 미지수.
     // Real 로 두면 t>0 에 방정식이 없어 시뮬레이션계가 1개 부족해진다.
+    parameter Real dp_init = 200.0 "초기 저압측 오프셋 [Pa] (S5)";
     parameter Real h0(fixed=false, start=3.0e5) "정지 균일 엔탈피 [J/kg] — 충전량 구속이 결정";
     Real M_total "시스템 총 냉매량 [kg]";
   equation
@@ -763,5 +764,195 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     M_total = M_charge;
   end Cycle_L3_coldstart_charge;
 
+
+
+
+
+  model Cycle_L3C_coldstart_PI "[PH4-A S5] 보존형 HX 판 — vol3 유지 (노드 상태 분리 기능 실측 확인, 2026-08-03)"
+  // 원본 docstring: "L3 동적 콜드스타트 + EEV PI(SH 제어) — starved 해소, 현실 운전점 수렴"
+    parameter Real N_final = 1800.0 "최종 회전수 [rpm]";
+    parameter Real SH_target = 6.0 "목표 과열도 [K]";
+    parameter Modelica.Units.SI.Pressure p_rest = 8.365e5
+      "20°C 포화압. 충전 100g / 시스템 총체적 414.1cc -> rho=241.5 kg/m3, x=0.040 (2026-07-24 실물 대조).
+       구값 12.5e5 는 T_sat 36.1°C 로 공기(20°C)보다 뜨거워 Q_evap 음수·x_out 1.0 고착을 유발했음";
+    parameter Modelica.Units.SI.SpecificEnthalpy h_rest = 265.5e3
+      "정지 엔탈피 = hl + x*hfg @8.365bar, x=0.040 (hl 251.6 / hv 595.9 kJ/kg).
+       구값 575e3 은 x=0.886 로 거의 증기 — 충전 100g 과 불일치";
+    // 노드 체적 = 실제 배관 + 부속 (2026-07-24 실물). 구값 2e-3 x4 = 8L 는 시스템의 98% 로 20배 과대.
+    parameter Modelica.Units.SI.Volume V_n1 = 1.832e-5 "압축기→응축기 1.0m (1/4\" 동관)";
+    parameter Modelica.Units.SI.Volume V_n2 = 9.99e-6  "응축기→EEV 0.2m + 응축기 리턴밴드 6.33cc";
+    parameter Modelica.Units.SI.Volume V_n3 = 3.66e-6  "EEV→증발기 0.2m";
+    parameter Modelica.Units.SI.Volume V_n4 = 2.226e-4 "증발기→압축기 1.0m + 어큐 200cc + 증발기 밴드 4.24cc";
+    // ── 공기 경계 모드 (2026-07-25) ──
+    // air_series=false : 응축기 공기 BC 독립 = 로드맵 2단계 '냉매 사이클(공기BC 고정)'.
+    //   증발기 출구를 응축기에 물리면 응축기 공기가 11.8C 까지 식어 냉매를 12.8C 로 과냉
+    //   -> 증발기 입구 x=0.044 -> 전잠열 증발에 823W 필요한데 공급 786W (4.5% 부족)
+    //   -> SH=0 -> 개도 최소 -> Pc 25bar 폭주. 드럼이 없어 응축기가 데운 34C 공기가
+    //   버려지고 증발기엔 계속 20C 가 들어가는 열린 경계가 원인.
+    // air_series=true  : 증발기 출구 -> 응축기 (직렬 덕트). 드럼 연결 후 커플드에서 사용.
+    parameter Boolean air_series = false "true: 증발기 출구 공기를 응축기 입구로";
+    parameter Real T_air_cond = 20.0 "응축기 공기 입구온도 [degC] (air_series=false)";
+    parameter Real RH_air_cond = 0.8 "응축기 공기 입구 상대습도 (air_series=false)";
+    final parameter Real W_air_cond = HXCorr.W_humid(T_air_cond, RH_air_cond, 101325.0);
+    HPWDon.Comp_Chamber comp(V_disp_cm3=7.5);
+    // ── 압축기 쉘 가스 체적 (2026-07-26 신설) ──
+    // 고압쉘이므로 쉘 내부는 토출압 가스로 채워지고, 오일 섬프도 그 안에 있다.
+    // 기존에는 이 체적이 인벤토리에 아예 없었고(체크리스트 414.1cc = HX+배관+어큐),
+    // 오일 질량 싱크를 18.3cc 토출배관(vol1, 냉매 0.366g)에 붙여놨었다.
+    // 그 결과 vol1.p -> M_eq -> m_ext -> vol1 질량 -> vol1.p 되먹임의 시상수가
+    //   dM_eq/dP = 33.7 g/bar,  dM1/dp = 0.035 g/bar,  tau_oil = 30s
+    //   -> tau_loop = 0.035/(33.7/30) ~ 0.031 s
+    // 로 다른 시상수(볼륨 ~s, HX벽 ~수십s)보다 1000배 빨라 사이클이 강성으로 정지했다.
+    // 실측: V_n1 18cc -> t=3 정체 / 100cc -> 완주.
+    // ★V_shell 은 실물 압축기 사양에서 확인할 것★ (행정체적 7.5cm3 와 무관한 값)
+    parameter Real V_shell = 4.0e-4 "압축기 쉘 가스 체적 [m3] ★실물 확인 필요★" annotation(Evaluate=false);
+    Volume_L3 vshell(V=V_shell, p_start=p1_0, h_start=h1_0, fixedState=true,
+                     m_ext=if use_oil then oil.m_flow else 0);
+    Volume_L3 vol1(V=V_n1, p_start=p1_0, h_start=h1_0, fixedState=true);
+    HPWDevapC.Cond_On_DynC cond(Nseg=3, h_ref_start=h_rest, T_w_start=20.0, T_air_in_start=T_air_cond);
+    Volume_L3 vol2(V=V_n2, p_start=p2_0, h_start=h2_0, fixedState=true);
+    HPWDon.EEV_On eev(D_seat=1.0e-3, stroke_max=1.0e-3);
+    Volume_L3 vol3(V=V_n3, p_start=p3_0, h_start=h3_0, fixedState=true);
+    HPWDevapC.Evap_On_DynC evap(Nseg=3, h_ref_start=h_rest, T_w_start=20.0) "P 는 vol3.p 알리아스";
+    HPWDctrl.FanSequencer fanseq "팬 시퀀서 (2026-08-03 C3)";
+    Accumulator_L3 vol4(V=V_n4, p_start=p4_0, h_start=h4_0, fixedState=true);
+    parameter Real open_init = 30.0 "적분기 초기값 [%]. Kp=1,err=-6 이므로 초기개도=open_init-6.
+      12 이면 초기개도가 곧바로 최소 6%% 라 콜드스타트 트랩. 설계개도 23.586%% 근처를 주려면 30.";
+    // ── 오일 용해 (2026-07-25) ──
+    parameter Boolean use_oil = false "true: 압축기 오일 섬프를 충전량 싱크로 연결" annotation(Evaluate=false);
+    parameter Real dT_offset = 0.0 "섬프 보정 오프셋 [K] (기본 0 — 쉘 벽온도를 그대로 사용)" annotation(Evaluate=false);
+    parameter Real M_charge = 0.100 "총 냉매 충전량 [kg]. 오일 용해 상한 연동용" annotation(Evaluate=false);
+    parameter Real M_dis_start = 0.084 "초기 오일 용해량 [kg]" annotation(Evaluate=false);
+    // ── 노드별 초기상태 (기본=정지조건. Python 정상해 주입용) ──
+    parameter Real p1_0 = p_rest; parameter Real h1_0 = h_rest annotation(Evaluate=false);
+    parameter Real p2_0 = p_rest; parameter Real h2_0 = h_rest annotation(Evaluate=false);
+    parameter Real p3_0 = p_rest; parameter Real h3_0 = h_rest annotation(Evaluate=false);
+    parameter Real p4_0 = p_rest; parameter Real h4_0 = h_rest annotation(Evaluate=false);
+    OilSump oil(V_oil_cc=160.0, dT_offset=dT_offset, M_dis_start=M_dis_start, M_eq_max=0.9*M_charge);
+    parameter Real N_scale = 1.0 "압축기 속도 배율 (1.0 = 표 그대로, 최종 1800rpm)";
+    parameter Real N_const = 0.0 "0 이면 램프표 사용. >0 이면 그 값으로 고정 [rpm]" annotation(Evaluate=false);
+    parameter Real Kp_c = 1.0 "PI 비례게인. Kp_c=Ki_c=0 이면 개도가 open_init 로 고정 (개도고정 시험용)";
+    parameter Real Ki_c = 0.3 "PI 적분게인";
+    parameter Boolean use_real_ctrl = false
+      "true: 실제 제어 로직(docs/CONTROL_LOGIC.md). false: 기존 TimeTable+PI";
+    parameter Real f_target_Hz = 30.0 "실제 제어 목표 주파수 [Hz]. 30Hz=1800rpm";
+    HPWDctrl.CompStartSequencer seq(f_target=f_target_Hz);
+    HPWDctrl.EEV_Sequencer eevctl;
+    // 2026-07-26: TimeTable -> CombiTimeTable(Akima).
+    //   TimeTable 은 선형보간이라 표 절점마다 도함수가 꺾인다(t=1,11,21,31,41,51).
+    //   그 꺾임이 적분기를 반복 재시작시켜 램프 구간(t=13~29)에서 정체를 유발했다.
+    //   실물 압축기는 매끄럽게 가속하므로 꺾인 램프는 모델링 인공물임.
+    Modelica.Blocks.Sources.CombiTimeTable Nsig(
+      smoothness=Modelica.Blocks.Types.Smoothness.ContinuousDerivative,
+      extrapolation=Modelica.Blocks.Types.Extrapolation.HoldLastPoint,
+      table=[
+        // 2026-07-31: 저rpm 500 평탄 구간(11~21) 제거.
+        //   그 구간에는 충전량 구속을 만족하는 해가 물리적으로 없어
+        //   SH 가 포화선에 고착(0.005)하고 t~13 에서 적분이 깨진다.
+        //   (tol=1e-3/3e-3 모두 t=13.0 에서 DASSL error test 반복 실패.
+        //    tol=1e-2 만 이 구간을 뭉개고 지나갔다.)
+        //   main 의 해석물성판은 이미 같은 이유로 제거돼 있었다.
+        // 2026-07-31: 실제 사양(Ramp up 1 rps/s)에 맞춘다.
+        //   1800 rpm = 30 rps 이므로 30초에 도달해야 한다.
+        //   기존은 3초에 1500rpm(25rps)으로 8.3 rps/s — 사양의 8배였다.
+        //   급한 기동이 초반 적분 난이도를 높였을 가능성이 있다.
+        0.0,     0.0;
+        10.0,   600.0;
+        20.0,  1200.0;
+        30.0,  N_final;
+        // 평탄 구간 절점 — 51->500 단일구간이면 Akima 가 직전 급상승
+        //   (41->51: 1500->1800) 기울기를 이어받아 오버슛한다.
+        61.0,   N_final;
+        81.0,   N_final;
+        120.0,  N_final;
+        200.0,  N_final;
+        500.0,  N_final]);
+    Real Pc_bar, Pe_bar, mdot, SH, Q_evap, Q_cond, W_comp, opening;
+  equation
+    evap.fan_ratio = fanseq.ratio;
+    cond.fan_ratio = fanseq.ratio;
+    // ── 공기 폐루프: 증발기 출구 → 응축기 입구 (온도·습도) ──
+    // 오일 섬프 입력 — 고압쉘이므로 섬프 압력 = 토출압
+    oil.P_dis = vshell.p "고압쉘 — 오일 섬프는 쉘 안";
+    oil.T_shell = comp.T_w "쉘 벽온도 = 섬프 온도 (고압쉘)";
+    cond.T_air_in = if air_series then evap.T_air_out else T_air_cond;
+    cond.Wi       = if air_series then evap.W_air_out else W_air_cond;
+    connect(comp.port_b, vshell.port_a);
+    connect(vshell.port_b, vol1.port_a);
+    connect(vol1.port_b, cond.port_a);
+    connect(cond.port_b, vol2.port_a);
+    connect(vol2.port_b, eev.port_a);
+    connect(eev.port_b, vol3.port_a);
+    connect(vol3.port_b, evap.port_a);
+    connect(evap.port_b, vol4.port_a);
+    connect(vol4.port_b, comp.port_a);
+    // 2026-07-31: 실제 제어 로직 스위치.
+    //   use_real_ctrl=true 면 CompStartSequencer/EEV_Sequencer 출력을 쓴다.
+    //   false 면 기존 TimeTable + PI (하위호환).
+    // S5: 실제어 전용 — 레거시 PI 경로 제거. if-식은 티어링 역해로
+    //   계수 0 나눗셈을 만든 이력(기록).
+    comp.N = seq.N;
+    eev.opening = eevctl.opening;
+    eevctl.SH = evap.SH;
+    Pc_bar=vol1.p/1e5;
+    Pe_bar=vol3.p/1e5;
+    mdot=comp.m_dot;
+    SH=evap.SH;
+    Q_evap=evap.Q_total;
+    Q_cond=cond.Q_total;
+    W_comp=comp.W_shaft;
+    opening=eevctl.opening;
+  end Cycle_L3C_coldstart_PI;
+
+  model Cycle_L3C_coldstart_charge "정지조건을 충전량에서 유도하는 콜드스타트 (2026-07-26)
+
+    문제: 기존 콜드스타트는 h_rest / M_dis_start 를 손으로 넣는 구조라
+    구성(쉘 체적, 오일 ON/OFF)이 바뀔 때마다 조용히 과충전됐다.
+      h_rest=265.5kJ/kg 은 '414.1cc 가 정확히 100g' 이 되도록 역산된 값이라
+      쉘 400cc 를 더하면 정지 충전량이 196g 이 된다(목표의 2배).
+      M_dis_start 도 회로에서 빠지지 않고 더해져 오일 ON 이면 +84% 과충전.
+
+    해결: ssinit 과 같은 방식으로 초기화에 충전량 구속을 건다.
+      정지상태는 전 시스템이 주위온도·포화압에서 균일하다고 보고
+      엔탈피를 단일 미지수 h0 로 두면, M_total = M_charge 가 h0 를 결정한다.
+      오일은 정지 평형(der(M_dis)=0 과 동치인 M_dis = M_eq)으로 둔다.
+      -> 구성이 바뀌어도 충전량이 자동으로 맞는다.
+  "
+    extends Cycle_L3C_coldstart_PI(
+      use_oil=true, air_series=true,
+      vshell(initOpt=1), vol1(initOpt=1), vol2(initOpt=1),
+      vol3(initOpt=1), vol4(initOpt=1),
+      cond(initOpt=1), evap(initOpt=1), oil(initOpt=1));
+    // parameter + fixed=false: 초기화에서 풀리고 이후 상수로 유지되는 미지수.
+    // Real 로 두면 t>0 에 방정식이 없어 시뮬레이션계가 1개 부족해진다.
+    parameter Real dp_init = 200.0 "초기 저압측 오프셋 [Pa] (S5)";
+    parameter Real h0(fixed=false, start=3.0e5) "정지 균일 엔탈피 [J/kg] — 충전량 구속이 결정";
+    Real M_total "시스템 총 냉매량 [kg]";
+  equation
+    M_total = vshell.M + vol1.M + vol2.M
+              + vol3.M + vol4.M
+              + cond.M_tot + evap.M_tot + oil.M_dis;
+  initial equation
+    // 압력: 주위온도 포화압으로 균일
+    vshell.p = p_rest; vol1.p = p_rest; vol2.p = p_rest;
+    vol3.p = p_rest;   vol4.p = p_rest;
+    // 엔탈피: 단일 미지수 h0 로 균일 (충전량이 결정)
+    vshell.h = h0; vol1.h = h0; vol2.h = h0; vol3.h = h0; vol4.h = h0;
+    for k in 1:cond.M loop
+      cond.h_ref[k] = h0;
+      cond.T_w[k] = T_air_cond;
+    end for;
+    for k in 1:evap.M loop
+      evap.h_ref[k] = h0;
+      evap.T_w[k] = evap.T_air_in;
+    end for;
+    cond.m_ref_col = 0.0;
+    evap.m_ref_col = 0.0;
+    cond.dp_lag = 0.0;
+    // 오일: 정지 평형 (der(M_dis)=0 과 동치)
+    oil.M_dis = oil.M_eq;
+    // 충전량 구속 — h0 를 결정
+    M_total = M_charge;
+  end Cycle_L3C_coldstart_charge;
 
 end HPWDcycle;
