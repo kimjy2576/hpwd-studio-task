@@ -483,6 +483,9 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
   end TestCondOn;
 
   model Cond_On_Dyn "L3 응축기 — 동적 유한체적 (냉매 엔탈피 h_ref + 벽온도 T_w 상태). 폐루프/콜드스타트용."
+    input Real fan_ratio "팬 공기측 배율 (운전점=1.0; 2026-08-03 C3)";
+    Real h_o_v "h_o × fan_ratio^0.6 [W/m2K] — Colburn j∝Re^-0.4";
+    Real m_as_v "m_air_seg × fan_ratio [kg_da/s]";
     replaceable package Medium = R290Medium "냉매 물성 (P4'-5, 2026-08-02)";
     HPWD.RefPort port_a "냉매 입구 (과열증기)";
     HPWD.RefPort port_b "냉매 출구 (2상/과냉)";
@@ -624,6 +627,8 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
       dp_lag=0.0;
     end if;
   equation
+    h_o_v = h_o*fan_ratio^0.6;
+    m_as_v = m_air_seg*fan_ratio;
       cp_a_dry=HXCorr.cp_air_mix(Wi) "입구 습도에 따른 습공기 cp (혼합물 기준 — m_air_seg가 습공기 질량유량)";
     P=port_a.p;
     M_tot=sum(M_c) "HX 총 질량";
@@ -666,8 +671,8 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
     end for;
     for p in 1:Nr loop
       for s in 1:Nsc loop
-        Q_air[kOf[p,s] + 1]=eta_o_dry*h_o*A_o_seg*(T_w[kOf[p,s] + 1] - T_aen[p,s]);
-        T_aen[p + 1,s]=T_aen[p,s] + Q_air[kOf[p,s] + 1]/(m_air_seg*cp_a_dry);
+        Q_air[kOf[p,s] + 1]=eta_o_dry*h_o_v*A_o_seg*(T_w[kOf[p,s] + 1] - T_aen[p,s]);
+        T_aen[p + 1,s]=T_aen[p,s] + Q_air[kOf[p,s] + 1]/(m_as_v*cp_a_dry);
       end for;
     end for;
     // 벽 동특성 (냉매에서 받고 공기로 버림)
@@ -717,6 +722,9 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
   end TestCondOnDyn;
 
   model Evap_On_Dyn "L3 증발기 — 동적 유한체적 (냉매 엔탈피 h_ref + 벽온도 T_w 상태), 습코일. 폐루프/콜드스타트용."
+    input Real fan_ratio "팬 공기측 배율 (운전점=1.0; 2026-08-03 C3)";
+    Real h_o_v "h_o × fan_ratio^0.6 [W/m2K] — Colburn j∝Re^-0.4";
+    Real m_as_v "m_air_seg × fan_ratio [kg_da/s]";
     replaceable package Medium = R290Medium "냉매 물성 (P4'-3 시범 전환, 2026-08-02)";
     HPWD.RefPort port_a "냉매 입구";
     HPWD.RefPort port_b "냉매 출구";
@@ -861,6 +869,8 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
       if use_momentum then m_ref_col=0.0; end if;
     end if;
   equation
+    h_o_v = h_o*fan_ratio^0.6;
+    m_as_v = m_air_seg*fan_ratio;
     P=port_a.p;
     M_tot=sum(M_c) "HX 총 질량";
     der(M_tot)=m_ref_col - m_out "집중 질량보존 — HX 가 냉매를 저장/방출";
@@ -885,23 +895,23 @@ package HPWDevap "L3 증발기 2D 컬럼 (Nr×N_seg, 동적 습/건, 공기 행�
         w_wet[p,s]=0.5*(1.0 + tanh((T_dp - T_w[kOf[p,s] + 1])/dT_wet)) "습윤 가중 — 계단 대신 연속 전이";
         cp_a[p,s]=HXCorr.cp_air_moist(W_aen[p,s]);
         h_air_c[p,s]=HXCorr.h_moist(T_aen[p,s], W_aen[p,s]);
-        h_i_c[p,s]=HPWDon.hi_dispatch_evap(xq_c[p,s], G_ref, Di, abs(T_aen[p,s] - T_w[kOf[p,s] + 1])*h_o,
+        h_i_c[p,s]=HPWDon.hi_dispatch_evap(xq_c[p,s], G_ref, Di, abs(T_aen[p,s] - T_w[kOf[p,s] + 1])*h_o_v,
                                            mu_l, k_l, Pr_l, rho_l, rho_v, mu_v, P_r, M_mol, h_v_gni)*(EF_sgl + (EF_2ph - EF_sgl)*(0.25*(1.0 + tanh(xq_c[p,s]/0.03))*(1.0 + tanh((1.0 - xq_c[p,s])/0.03))));
         // ★ 습핀 b를 T_fin 대신 T_w(상태)에서 평가 → 루프 차단, eta_o 명시화
         b[p,s]=1.0 + w_wet[p,s]*(HPWDon.hfgWater(T_w[kOf[p,s] + 1])*HPWDon.dWsdT(T_w[kOf[p,s] + 1], Patm)/cp_a[p,s]) "w→0이면 b=1 → eta_o=eta_o_dry 정확 일치";
-        eta_o[p,s]=HPWDon.finEffWet(h_o, b[p,s], Dc, Xm, XL, k_fin, fin_t, A_fin_ratio);
+        eta_o[p,s]=HPWDon.finEffWet(h_o_v, b[p,s], Dc, Xm, XL, k_fin, fin_t, A_fin_ratio);
         T_fin[p,s]=T_aen[p,s] - eta_o[p,s]*(T_aen[p,s] - T_w[kOf[p,s] + 1]) "진단용";
         // 공기→벽 열전달 (습: 엔탈피 포텐셜 총열량 / 건: 현열 — w_wet로 블렌딩)
-        Q_sens_c[p,s]=eta_o[p,s]*h_o*A_o_seg*(T_aen[p,s] - T_w[kOf[p,s] + 1]) "현열";
-        Q_air_c[p,s]=w_wet[p,s]*(eta_o[p,s]*h_o*A_o_seg/cp_a[p,s]*(h_air_c[p,s] - HXCorr.h_air_sat(T_w[kOf[p,s] + 1], Patm)))
+        Q_sens_c[p,s]=eta_o[p,s]*h_o_v*A_o_seg*(T_aen[p,s] - T_w[kOf[p,s] + 1]) "현열";
+        Q_air_c[p,s]=w_wet[p,s]*(eta_o[p,s]*h_o_v*A_o_seg/cp_a[p,s]*(h_air_c[p,s] - HXCorr.h_air_sat(T_w[kOf[p,s] + 1], Patm)))
                      + (1.0 - w_wet[p,s])*Q_sens_c[p,s];
         // 벽→냉매 열전달
         Q_ref_c[p,s]=h_i_c[p,s]*A_i_seg*(T_w[kOf[p,s] + 1] - T_ref_c[p,s]);
         // 잠열 = 총열량 − 현열 (smooth max로 음수 클립, max() 이벤트 제거)
         Q_lat_c[p,s]=w_wet[p,s]*0.5*((Q_air_c[p,s] - Q_sens_c[p,s]) + sqrt((Q_air_c[p,s] - Q_sens_c[p,s])^2 + eps_Q^2));
         // 공기 march
-        W_aen[p + 1,s]=W_aen[p,s] - Q_lat_c[p,s]/(m_air_seg*HPWDon.hfgWater(T_aen[p,s])) "Q_lat_c>=0 → 단조감소, max 불필요(OMC 역산 가능)";
-        T_aen[p + 1,s]=(h_air_c[p,s] - Q_air_c[p,s]/m_air_seg - W_aen[p + 1,s]*2501e3)/(1006.0 + 1860.0*W_aen[p + 1,s]);
+        W_aen[p + 1,s]=W_aen[p,s] - Q_lat_c[p,s]/(m_as_v*HPWDon.hfgWater(T_aen[p,s])) "Q_lat_c>=0 → 단조감소, max 불필요(OMC 역산 가능)";
+        T_aen[p + 1,s]=(h_air_c[p,s] - Q_air_c[p,s]/m_as_v - W_aen[p + 1,s]*2501e3)/(1006.0 + 1860.0*W_aen[p + 1,s]);
       end for;
     end for;
     // path-order Q_ref 조립 + 벽 동특성

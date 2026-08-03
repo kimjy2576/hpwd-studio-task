@@ -112,6 +112,7 @@ package CmpParts "부품 단독 충실도 비교 — 동일 BC에서 L1/L2/L3 �
     parameter Real T_air_bc = 14.474 "공기 입구온도 [degC]";
     parameter Real W_air_bc = 0.010176 "공기 입구 절대습도 [kg/kg]";
   equation
+    cond.fan_ratio = 1.0;
     cond.T_air_in = T_air_bc;
     cond.Wi       = W_air_bc;
     connect(src.port, cond.port_a);
@@ -142,6 +143,7 @@ package CmpParts "부품 단독 충실도 비교 — 동일 BC에서 L1/L2/L3 �
     HPWDevap.Evap_On_Dyn evap(use_momentum = false, T_air_in = 20.0, RH_in = 0.8, h_ref_start = 480e3, T_w_start = 10.0);
     HPWDevap.OpenSink snk(h = 600e3);
   equation
+    evap.fan_ratio = 1.0;
     connect(src.port, evap.port_a);
     connect(evap.port_b, snk.port);
   end Evap_L3;

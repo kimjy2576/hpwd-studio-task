@@ -470,6 +470,8 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     Modelica.Blocks.Sources.Constant opsig(k=eev_opening);
     Real Pc_bar, Pe_bar, mdot, SH, Q_evap, Q_cond, W_comp;
   equation
+    evap.fan_ratio = 1.0;
+    cond.fan_ratio = 1.0;
     // ── 공기 폐루프: 증발기 출구 → 응축기 입구 (온도·습도) ──
     cond.T_air_in = evap.T_air_out;
     cond.Wi       = evap.W_air_out;
@@ -538,6 +540,7 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     HPWDon.EEV_On eev(D_seat=1.0e-3, stroke_max=1.0e-3);
     Volume_L3 vol3(V=V_n3, p_start=p3_0, h_start=h3_0, fixedState=true);
     HPWDevap.Evap_On_Dyn evap(Nseg=3, h_ref_start=h_rest, T_w_start=20.0);
+    HPWDctrl.FanSequencer fanseq "팬 시퀀서 (2026-08-03 C3)";
     Accumulator_L3 vol4(V=V_n4, p_start=p4_0, h_start=h4_0, fixedState=true);
     parameter Real open_init = 30.0 "적분기 초기값 [%]. Kp=1,err=-6 이므로 초기개도=open_init-6.
       12 이면 초기개도가 곧바로 최소 6%% 라 콜드스타트 트랩. 설계개도 23.586%% 근처를 주려면 30.";
@@ -593,6 +596,8 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
         500.0,  N_final]);
     Real Pc_bar, Pe_bar, mdot, SH, Q_evap, Q_cond, W_comp, opening;
   equation
+    evap.fan_ratio = fanseq.ratio;
+    cond.fan_ratio = fanseq.ratio;
     // ── 공기 폐루프: 증발기 출구 → 응축기 입구 (온도·습도) ──
     // 오일 섬프 입력 — 고압쉘이므로 섬프 압력 = 토출압
     oil.P_dis = vshell.p "고압쉘 — 오일 섬프는 쉘 안";

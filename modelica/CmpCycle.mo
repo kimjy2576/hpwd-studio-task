@@ -59,6 +59,8 @@ package CmpCycle "혼합 충실도 사이클 비교 — HX는 L3(Cond_On_Dyn/Eva
         0.0,0.0; 1.0,300.0; 11.0,500.0; 21.0,500.0; 31.0,1500.0; 41.0,1500.0; 51.0,N_final; 500.0,N_final]);
     Real Pc_bar, Pe_bar, mdot, SH, Q_evap, Q_cond, W_comp, opening;
   equation
+    evap.fan_ratio = 1.0;
+    cond.fan_ratio = 1.0;
     cond.T_air_in = evap.T_air_out;
     cond.Wi       = evap.W_air_out;
     // L1 압축기는 N이 파라미터 → Nsig 미사용(ramp 없이 정속). 콜드스타트 대신 정속기동.
@@ -97,6 +99,8 @@ package CmpCycle "혼합 충실도 사이클 비교 — HX는 L3(Cond_On_Dyn/Eva
         0.0,0.0; 1.0,300.0; 11.0,500.0; 21.0,500.0; 31.0,1500.0; 41.0,1500.0; 51.0,N_final; 500.0,N_final]);
     Real Pc_bar, Pe_bar, mdot, SH, Q_evap, Q_cond, W_comp, opening;
   equation
+    evap.fan_ratio = 1.0;
+    cond.fan_ratio = 1.0;
     cond.T_air_in = evap.T_air_out;
     cond.Wi       = evap.W_air_out;
     connect(comp.port_b, vol1.port_a);
@@ -132,6 +136,8 @@ package CmpCycle "혼합 충실도 사이클 비교 — HX는 L3(Cond_On_Dyn/Eva
         0.0,0.0; 1.0,300.0; 11.0,500.0; 21.0,500.0; 31.0,1500.0; 41.0,1500.0; 51.0,N_final; 500.0,N_final]);
     Real Pc_bar, Pe_bar, mdot, SH, Q_evap, Q_cond, W_comp, opening;
   equation
+    evap.fan_ratio = 1.0;
+    cond.fan_ratio = 1.0;
     cond.T_air_in = evap.T_air_out;
     cond.Wi       = evap.W_air_out;
     connect(comp.port_b, vol1.port_a);

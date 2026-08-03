@@ -45,6 +45,7 @@ package HPWDctrl "제어 컴포넌트"
     TimeTable 로는 조건부 유지를 표현할 수 없어 상태기계로 구현한다.
     상태는 이산이지만 f 는 연속이므로 적분기가 다루기 쉽다.
   "
+    parameter Real t_start = 30.0 "기동 시각 [s] (2026-08-03: 팬 5000RPM 기동 30초 후)";
     parameter Real f_target = 60.0 "목표 주파수 [Hz]";
     parameter Real f_min    = 30.0 "최소 주파수 [Hz]";
     parameter Real f_hold   = 35.0 "기동 강제 유지 주파수 [Hz]";
@@ -68,7 +69,8 @@ package HPWDctrl "제어 컴포넌트"
     //   35Hz 강제 유지 후 목표가 30Hz 이면 내려가야 하는데
     //   기존 der(f)=if f>=f_target then 0 은 35Hz 에 머물렀다.
     //   상승·하강 모두 rate_slow 로 움직인다(유지 중에는 0).
-    rate = if time < t_hold_end then 0.0
+    rate = if time < t_start then 0.0        // 2026-08-03: 팬 기동 후 30초 대기
+           elseif time < t_hold_end then 0.0
            elseif f < f_min then rate_fast
            else rate_slow;
     // 2026-07-31: 35Hz 강제 유지는 설정 Hz 와 무관하다.
@@ -107,10 +109,13 @@ package HPWDctrl "제어 컴포넌트"
     1단계 초기 450 pulse (완전 개방)
     2단계 압축기 기동 기점 hold_init(2분) 유지
     3단계 SH <= sh_close(5K) 가 될 때마다 dt_close(10s) 주기로 d_close(50) 감소
-    4단계 마지막 100 pulse 구간에서는 n_min(75) 으로 감소
-    5단계 n_min 도달 후 SH >= sh_open(15K) 이면 dt_open(30s)마다 d_open(4) 증가,
-          n_max5(300) 상한
-    6단계 기동 후 hold_init 경과 && SH < sh_open -> 정상제어
+          — 하한 n_min(150). 도달하면 5단계. [2026-08-03: 구 4단계(마지막
+          100 pulse 일괄 n_min 점프) 삭제, n_min 75→150]
+    5단계 n_min(150) 레벨에서 SH 기준 양방향 미세 조정:
+          SH >= sh_open(15K) → dt_open(30s)마다 d_open(4) 증가, n_max5(300) 상한
+          SH <  sh_open      → dt_open(30s)마다 d_open(4) 감소 [2026-08-03 신설]
+          n_exit5(75) 이하 도달 → 6단계 즉시 진입
+    6단계 기동 후 hold_init 경과 && (5단계 감소로 n_exit5 도달) -> 정상제어
           rate_norm(5 pulse/s), 목표 sh_set(4K)
           데드밴드 비대칭: SH >= sh_hi(6K) 면 열고, SH <= sh_lo(3K) 면 닫는다
 
@@ -121,8 +126,11 @@ package HPWDctrl "제어 컴포넌트"
   "
     parameter Real n_full   = 450.0 "전체 스트로크 [pulse]";
     parameter Real n_init   = 450.0 "초기 개도 [pulse]";
-    parameter Real n_min    =  75.0
-      "3~4단계 하한 [pulse]. 여기 도달하면 5단계 판정으로 넘어간다";
+    parameter Real n_min    = 150.0
+      "3단계 하한 [pulse] (2026-08-03: 75→150). 여기 도달하면 5단계로 넘어간다";
+    parameter Real n_exit5  =  75.0
+      "5단계→6단계 진입 문턱 [pulse] (2026-08-03 신설). 5단계 감소로 여기
+       이하가 되면 정상제어로 즉시 전환한다";
     parameter Real n_valve_min = 30.0
       "밸브 물리 최소 개도 [pulse] (2026-07-31). 정상제어는 여기까지 닫을 수 있다";
     parameter Real n_max5   = 300.0 "5단계 상한 [pulse]";
@@ -151,7 +159,7 @@ package HPWDctrl "제어 컴포넌트"
       "지령 추종 시상수 [s] (2026-07-31). 작을수록 속도제한에 바로 붙는다";
     parameter Real db_smooth = 0.3
       "데드밴드 경계 완화폭 [K] (2026-07-31). 0 에 가까울수록 계단에 가깝다";
-    parameter Real t_comp_on =  0.0 "압축기 기동 시각 [s]";
+    parameter Real t_comp_on = 30.0 "압축기 기동 시각 [s] (2026-08-03: 팬 기동 30초 후)";
 
     Modelica.Blocks.Interfaces.RealInput SH "측정 과열도 [K]";
     Modelica.Blocks.Interfaces.RealOutput opening "개도 [%]";
@@ -243,9 +251,8 @@ package HPWDctrl "제어 컴포넌트"
     // 3~4단계: 기동 유지가 끝난 뒤, SH 가 낮으면 주기적으로 조인다
     when sample(t_comp_on + hold_init, dt_close) then
       if (not at_min) and (not normal) and SH <= sh_close then
-        // 마지막 100 pulse 구간은 한 번에 n_min 으로 (4단계)
-        n_step := if n_step - d_close <= n_min + d_close
-                  then n_min else n_step - d_close;
+        // 2026-08-03: 구 4단계(일괄 점프) 삭제 — 균일 감소, 하한 n_min 클램프
+        n_step := max(n_step - d_close, n_min);
       end if;
       if n_step <= n_min and not at_min then
         at_min := true;
@@ -253,10 +260,19 @@ package HPWDctrl "제어 컴포넌트"
       end if;
     end when;
 
-    // 5단계: n_min 도달 후 과열도가 높으면 조금씩 연다
+    // 5단계: n_min 레벨에서 SH 기준 양방향 미세 조정 (2026-08-03 개정)
+    //   SH >= sh_open: d_open 증가 (기존). SH < sh_open: d_open 감소 (신설).
+    //   감소로 n_exit5 이하 도달 시 6단계 즉시 진입.
     when sample(t_comp_on + hold_init, dt_open) then
-      if at_min and (not normal) and SH >= sh_open then
-        n_step := min(n_step + d_open, n_max5);
+      if at_min and (not normal) then
+        if SH >= sh_open then
+          n_step := min(n_step + d_open, n_max5);
+        else
+          n_step := n_step - d_open;
+          if n_step <= n_exit5 then
+            normal := true;
+          end if;
+        end if;
       end if;
     end when;
 
@@ -274,16 +290,9 @@ package HPWDctrl "제어 컴포넌트"
       act := 0;
     end when;
 
-    // 6단계 진입: 기동 유지 경과 && 과열도가 5단계 기준 아래
-    //   reinit 은 algorithm 에서 쓸 수 없으므로 진입 시점의 n_step 을
-    //   기준값으로 잡고 n_cont 는 그로부터의 변화량으로 둔다.
-    //   at_min 도달과 동시에 진입하면 5단계를 건너뛴다.
-    //   사양은 '75 pulse 도달 시 SH>=15K 이면 5단계, 그 판정을 거친 뒤
-    //   SH<15K 이면 정상제어' 이므로 최소 한 주기(dt_open)는 5단계에 머문다.
-    when at_min and (time > t_min_reached + dt_open)
-         and (time > t_comp_on + hold_init) and SH < sh_open then
-      normal := true;
-    end when;
+    // 6단계 진입 (2026-08-03 개정): 5단계 감소 경로가 n_exit5 에 도달하는
+    //   순간 위 when 절에서 normal := true 로 즉시 전환한다. 시간·SH 조건의
+    //   구 진입식은 삭제 — 진입은 오직 n_exit5 도달로만.
   end EEV_Sequencer;
 
 
@@ -299,4 +308,24 @@ package HPWDctrl "제어 컴포넌트"
     eev.SH = SH_in;
   end EEV_Test;
 
+
+  model FanSequencer "팬 기동 시퀀서 (2026-08-03 신설)
+    물청소 수막 제거: 기동~t_hi(600s)까지 N_hi(5000RPM) 고정,
+    이후 ramp_dn(30s) 램프로 운전 RPM(N_run)으로 내려 가변 운전.
+    출력 ratio = N_fan/N_run — HX 공기측 배율(운전점=1.0).
+    ⚠ N_run 기본 2500 은 가정치(사양 확인 필요). 현행 HX 공기유량
+    파라미터는 운전 RPM 기준으로 간주한다(2026-08-03 합의)."
+    parameter Real N_hi   = 5000.0 "수막 제거 회전수 [RPM]";
+    parameter Real N_run  = 2500.0 "운전 회전수 [RPM] — 사양 확인 필요";
+    parameter Real t_hi   = 600.0  "고속 유지 시간 [s]";
+    parameter Real ramp_dn=  30.0  "전환 램프 [s] (스텝 금지 — 이벤트·강성 회피)";
+    Real N_fan "팬 회전수 [RPM]";
+    Real ratio "공기측 배율 = N_fan/N_run";
+  equation
+    N_fan = if time < t_hi then N_hi
+            elseif time < t_hi + ramp_dn
+              then N_hi + (N_run - N_hi)*(time - t_hi)/ramp_dn
+            else N_run;
+    ratio = N_fan/N_run;
+  end FanSequencer;
 end HPWDctrl;
