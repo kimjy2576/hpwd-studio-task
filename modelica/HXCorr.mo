@@ -391,7 +391,11 @@ package HXCorr "HX Moving-Boundary correlation 함수 라이브러리 (Python �
       x_hi := x_in + (x_out - x_in)*(i + 1)/N_sub;
       x_mid := max(0.0, min(1.0, (x_lo + x_hi)/2.0));
       G_M := Acoef + 2.0*(Bcoef - Acoef)*x_mid;
-      dpdz := G_M*(1.0 - x_mid)^(1.0/3.0) + Bcoef*x_mid^3;
+      // 2026-08-03 PH4-A: (1-x)^(1/3) 의 도함수는 x→1 에서 (1-x)^(-2/3) 특이 —
+      //   기호 야코비안이 이슬점 정좌 궤적에서 0나눗셈으로 사망(실측).
+      //   값 보존 가드: 밑만 5e-3 하한 (상류 클램프 0.999 와 겹치는
+      //   x∈(0.995,0.999] 극소구간에서만 값 미세 변화, 도함수 유계).
+      dpdz := G_M*(max(1.0 - x_mid, 5.0e-3))^(1.0/3.0) + Bcoef*x_mid^3;
       dP_total := dP_total + dpdz*L_per_sub;
     end for;
     dP := max(dP_total, 0.0);

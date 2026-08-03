@@ -2,6 +2,9 @@ within ;
 package HPWDevapC "PH4-A 보존형 staggered HX — 병행 모델 (S3: Dyn 공기측 전체 이식)"
 
   model Evap_On_DynC "PH4-A 보존형 staggered — 공기측은 Dyn 텍스트 동일, 냉매측만 보존형 (2026-08-02 S3)"
+    input Real fan_ratio "팬 공기측 배율 (운전점=1.0; 2026-08-03 C3)";
+    Real h_o_v "h_o × fan_ratio^0.6 [W/m2K] — Colburn j∝Re^-0.4";
+    Real m_as_v "m_air_seg × fan_ratio [kg_da/s]";
     replaceable package Medium = R290Medium "냉매 물성 (P4'-3 시범 전환, 2026-08-02)";
     HPWD.RefPort port_a "냉매 입구";
     HPWD.RefPort port_b "냉매 출구";
@@ -119,7 +122,6 @@ package HPWDevapC "PH4-A 보존형 staggered HX — 병행 모델 (S3: Dyn 공�
     Real G_ref, h_in;
     parameter Real m_eps=1.0e-4 "면 upwind 전환 폭 [kg/s] (D3, noEvent 성격)";
     Real mdot[M + 1](each nominal=1.0e-2) "면 질량유량 [kg/s]";
-    Real h_face[M + 1] "면 upwind 엔탈피 [J/kg]";
     Real drdp[M], drdh[M] "EOS 편도함수 (해석 rho_ph_der)";
     // 유량 관성 (momentum dynamics) — 2026-07-24.
     // 기존 port_b.p = P - dp_total 은 "Δp 를 주고 ṁ 을 푸는" 역산 방정식이라
@@ -156,6 +158,8 @@ package HPWDevapC "PH4-A 보존형 staggered HX — 병행 모델 (S3: Dyn 공�
       if use_momentum then m_ref_col=0.0; end if;
     end if;
   equation
+    h_o_v = h_o*fan_ratio^0.6;
+    m_as_v = m_air_seg*fan_ratio;
     P=port_a.p;
     M_tot=sum(M_c) "HX 총 질량 (장부 출력 — 보존은 셀 단위로 성립)";
     m_out=mdot[M + 1];
@@ -180,23 +184,23 @@ package HPWDevapC "PH4-A 보존형 staggered HX — 병행 모델 (S3: Dyn 공�
         w_wet[p,s]=0.5*(1.0 + tanh((T_dp - T_w[kOf[p,s] + 1])/dT_wet)) "습윤 가중 — 계단 대신 연속 전이";
         cp_a[p,s]=HXCorr.cp_air_moist(W_aen[p,s]);
         h_air_c[p,s]=HXCorr.h_moist(T_aen[p,s], W_aen[p,s]);
-        h_i_c[p,s]=HPWDon.hi_dispatch_evap(xq_c[p,s], G_ref, Di, abs(T_aen[p,s] - T_w[kOf[p,s] + 1])*h_o,
+        h_i_c[p,s]=HPWDon.hi_dispatch_evap(xq_c[p,s], G_ref, Di, abs(T_aen[p,s] - T_w[kOf[p,s] + 1])*h_o_v,
                                            mu_l, k_l, Pr_l, rho_l, rho_v, mu_v, P_r, M_mol, h_v_gni)*(EF_sgl + (EF_2ph - EF_sgl)*(0.25*(1.0 + tanh(xq_c[p,s]/0.03))*(1.0 + tanh((1.0 - xq_c[p,s])/0.03))));
         // ★ 습핀 b를 T_fin 대신 T_w(상태)에서 평가 → 루프 차단, eta_o 명시화
         b[p,s]=1.0 + w_wet[p,s]*(HPWDon.hfgWater(T_w[kOf[p,s] + 1])*HPWDon.dWsdT(T_w[kOf[p,s] + 1], Patm)/cp_a[p,s]) "w→0이면 b=1 → eta_o=eta_o_dry 정확 일치";
-        eta_o[p,s]=HPWDon.finEffWet(h_o, b[p,s], Dc, Xm, XL, k_fin, fin_t, A_fin_ratio);
+        eta_o[p,s]=HPWDon.finEffWet(h_o_v, b[p,s], Dc, Xm, XL, k_fin, fin_t, A_fin_ratio);
         T_fin[p,s]=T_aen[p,s] - eta_o[p,s]*(T_aen[p,s] - T_w[kOf[p,s] + 1]) "진단용";
         // 공기→벽 열전달 (습: 엔탈피 포텐셜 총열량 / 건: 현열 — w_wet로 블렌딩)
-        Q_sens_c[p,s]=eta_o[p,s]*h_o*A_o_seg*(T_aen[p,s] - T_w[kOf[p,s] + 1]) "현열";
-        Q_air_c[p,s]=w_wet[p,s]*(eta_o[p,s]*h_o*A_o_seg/cp_a[p,s]*(h_air_c[p,s] - HXCorr.h_air_sat(T_w[kOf[p,s] + 1], Patm)))
+        Q_sens_c[p,s]=eta_o[p,s]*h_o_v*A_o_seg*(T_aen[p,s] - T_w[kOf[p,s] + 1]) "현열";
+        Q_air_c[p,s]=w_wet[p,s]*(eta_o[p,s]*h_o_v*A_o_seg/cp_a[p,s]*(h_air_c[p,s] - HXCorr.h_air_sat(T_w[kOf[p,s] + 1], Patm)))
                      + (1.0 - w_wet[p,s])*Q_sens_c[p,s];
         // 벽→냉매 열전달
         Q_ref_c[p,s]=h_i_c[p,s]*A_i_seg*(T_w[kOf[p,s] + 1] - T_ref_c[p,s]);
         // 잠열 = 총열량 − 현열 (smooth max로 음수 클립, max() 이벤트 제거)
         Q_lat_c[p,s]=w_wet[p,s]*0.5*((Q_air_c[p,s] - Q_sens_c[p,s]) + sqrt((Q_air_c[p,s] - Q_sens_c[p,s])^2 + eps_Q^2));
         // 공기 march
-        W_aen[p + 1,s]=W_aen[p,s] - Q_lat_c[p,s]/(m_air_seg*HPWDon.hfgWater(T_aen[p,s])) "Q_lat_c>=0 → 단조감소, max 불필요(OMC 역산 가능)";
-        T_aen[p + 1,s]=(h_air_c[p,s] - Q_air_c[p,s]/m_air_seg - W_aen[p + 1,s]*2501e3)/(1006.0 + 1860.0*W_aen[p + 1,s]);
+        W_aen[p + 1,s]=W_aen[p,s] - Q_lat_c[p,s]/(m_as_v*HPWDon.hfgWater(T_aen[p,s])) "Q_lat_c>=0 → 단조감소, max 불필요(OMC 역산 가능)";
+        T_aen[p + 1,s]=(h_air_c[p,s] - Q_air_c[p,s]/m_as_v - W_aen[p + 1,s]*2501e3)/(1006.0 + 1860.0*W_aen[p + 1,s]);
       end for;
     end for;
     // path-order Q_ref 조립 + 벽 동특성
@@ -206,22 +210,20 @@ package HPWDevapC "PH4-A 보존형 staggered HX — 병행 모델 (S3: Dyn 공�
     end for;
     // 냉매 엔탈피 동특성 (upwind, path 순서; 증발기 흡열 → +Q_ref)
     // ── PH4-A 보존형 냉매측: 면 upwind + 질량 EOS 전개 + 에너지 V·dP/dt 항 ──
-    h_face[1]=(0.5*(1.0 + tanh(mdot[1]/m_eps)))*h_in
-            + (1.0 - 0.5*(1.0 + tanh(mdot[1]/m_eps)))*h_ref[1];
-    for k in 2:M loop
-      h_face[k]=(0.5*(1.0 + tanh(mdot[k]/m_eps)))*h_ref[k - 1]
-              + (1.0 - 0.5*(1.0 + tanh(mdot[k]/m_eps)))*h_ref[k];
-    end for;
-    h_face[M + 1]=(0.5*(1.0 + tanh(mdot[M + 1]/m_eps)))*h_ref[M]
-                + (1.0 - 0.5*(1.0 + tanh(mdot[M + 1]/m_eps)))*inStream(port_b.h_outflow);
     for k in 1:M loop
       M_c[k]=Medium.rho_ph(P, h_ref[k])*V_cell;
       drdp[k]=Medium.rho_ph_der(P, h_ref[k], 1.0, 0.0);
       drdh[k]=Medium.rho_ph_der(P, h_ref[k], 0.0, 1.0);
       V_cell*(drdp[k]*der(P) + drdh[k]*der(h_ref[k]))=mdot[k] - mdot[k + 1] "질량 (EOS 전개형)";
       M_c[k]*der(h_ref[k]) - V_cell*der(P)
-        =mdot[k]*(h_face[k] - h_ref[k]) - mdot[k + 1]*(h_face[k + 1] - h_ref[k]) + Q_ref[k]
-        "에너지 d(U)/dt, U=M·h−p·V — V·dP/dt 항이 Dyn 대비 신규";
+        =(if k == 1 then semiLinear(mdot[1], h_in, h_ref[1])
+          else semiLinear(mdot[k], h_ref[k - 1], h_ref[k]))
+        -(if k == M then semiLinear(mdot[M + 1], h_ref[M], inStream(port_b.h_outflow))
+          else semiLinear(mdot[k + 1], h_ref[k], h_ref[k + 1]))
+        - h_ref[k]*(mdot[k] - mdot[k + 1]) + Q_ref[k]
+        "에너지 d(U)/dt, U=M*h-p*V. 플럭스 semiLinear (2026-08-03 D3 정정 —
+         tanh 블렌드가 무유량 경계에서 원거리 엔탈피를 섞어 M_c 와 동차수
+         계수 상쇄 → 퇴화 스칼라 NLS, GB 실측)";
     end for;
     mdot[1]=m_ref_col "입구 면 = 회로 유량 (운동량 상태 또는 포트 BC)";
     Q_total=Ncirc*sum(Q_ref); Q_lat_total=Ncirc*sum(Q_lat_c);
@@ -279,7 +281,7 @@ gbode의 bi-rate 적분이 유효한 것으로 보이나 기전은 미확정.</p
   end PlugC;
 
   model G0_Sealed "G0-P1 게이트 — 밀폐 + 가열 전이 (2상→과열 통과), 질량 폐합 검사"
-    Evap_On_DynC hx(h_ref_start=5.0e5, T_w_start=5.0, T_air_in=45.0,
+    Evap_On_DynC hx(Nseg=3, h_ref_start=5.0e5, T_w_start=5.0, T_air_in=45.0,
                     fix_P_init=true, use_momentum=false);
     Real drift_rel;
   protected
@@ -287,6 +289,7 @@ gbode의 bi-rate 적분이 유효한 것으로 보이나 기전은 미확정.</p
   initial equation
     M0 = hx.M_tot;
   equation
+    hx.fan_ratio = 1.0;
     connect(hx.port_a, capA.port);
     connect(hx.port_b, capB.port);
     drift_rel = (hx.M_tot - M0)/M0;
@@ -298,10 +301,12 @@ gbode의 bi-rate 적분이 유효한 것으로 보이나 기전은 미확정.</p
     parameter Real p_in = 5.6e5, h_in = 4.10e5, p_out = 5.5e5;
     HPWD.Source srcA(p=p_in, h=h_in), srcB(p=p_in, h=h_in);
     HPWD.Sink   snkA(p=p_out), snkB(p=p_out);
-    HPWDevap.Evap_On_Dyn  hxA(h_ref_start=4.3e5, T_w_start=20.0, use_momentum=true);
-    Evap_On_DynC          hxB(h_ref_start=4.3e5, T_w_start=20.0, use_momentum=true);
+    HPWDevap.Evap_On_Dyn  hxA(Nseg=3, h_ref_start=4.3e5, T_w_start=20.0, use_momentum=true);
+    Evap_On_DynC          hxB(Nseg=3, h_ref_start=4.3e5, T_w_start=20.0, use_momentum=true);
     Real dQ_rel, dSH_abs, dM_rel, dmf_rel "A/B 상대 편차 (판정 변수)";
   equation
+    hxA.fan_ratio = 1.0;
+    hxB.fan_ratio = 1.0;
     connect(srcA.port, hxA.port_a); connect(hxA.port_b, snkA.port);
     connect(srcB.port, hxB.port_a); connect(hxB.port_b, snkB.port);
     dQ_rel  = (hxB.Q_total - hxA.Q_total)/max(abs(hxA.Q_total), 1.0);
@@ -309,4 +314,288 @@ gbode의 bi-rate 적분이 유효한 것으로 보이나 기전은 미확정.</p
     dM_rel  = (hxB.M_tot - hxA.M_tot)/max(hxA.M_tot, 1.0e-6);
     dmf_rel = (hxB.m_ref_col - hxA.m_ref_col)/max(abs(hxA.m_ref_col), 1.0e-6);
   end G1_AB;
+  model Cond_On_DynC "PH4-A 보존형 staggered 응축기 — 공기측 Dyn 동일, 냉매측만 보존형 (2026-08-02 S4)"
+    input Real fan_ratio "팬 공기측 배율 (운전점=1.0; 2026-08-03 C3)";
+    Real h_o_v "h_o × fan_ratio^0.6 [W/m2K] — Colburn j∝Re^-0.4";
+    Real m_as_v "m_air_seg × fan_ratio [kg_da/s]";
+    replaceable package Medium = R290Medium "냉매 물성 (P4'-5, 2026-08-02)";
+    HPWD.RefPort port_a "냉매 입구 (과열증기)";
+    HPWD.RefPort port_b "냉매 출구 (2상/과냉)";
+    // ── 공기 입구: 폐루프 연결용 입력 (증발기 출구 → 응축기 입구) ──
+    input Real T_air_in "공기 입구온도 [degC] (증발기 출구와 연결)";
+    input Real Wi "공기 입구 절대습도 [kg/kg] (증발기 출구, 제습 반영)";
+    parameter Boolean steadyInit = false "true: 정상상태 초기화 der(x)=0. false: start 값 고정 (2026-07-26)";
+    parameter Integer initOpt = 0 "0=legacy 1=noInit 2=fixedState 3=steadyState";
+    parameter Real w_nom = 2.06e-3 "공칭 회로당 냉매유량 [kg/s] — homotopy 단순화 모델용 (ThermoPower wnom 대응)";
+    parameter Real dp_nom = 14437.0 "공칭 압력강하 [Pa] — 단순화 모델의 선형 저항 dp_nom/w_nom*w";
+    parameter Real T_air_in_start=25.0 "T_air_in 초기추정 [degC] (standalone/초기화용)" annotation(Evaluate=false);
+    // 공기유량 단일 소스 — 팬 체적유량에서 열전달 march와 h_o가 같은 질량유량을 씀.
+    // (2026-07-23까지는 m_air_seg 하드코딩 0.00119464(rho 1.1848 상당)과
+    //  V_air_CMM의 h_o 체인(HXCorr rho 1.1957)이 0.92% 어긋나 있었음.
+    //  Python GT(CoolProp Vha, rho 1.19622)와 대조 결과 h_o 체인 쪽이 맞아 그쪽으로 통일.)
+    parameter Real m_air_total=m_air_ho "코일 전체 공기유량 [kg/s]
+      기본값은 V_air_CMM × 해당 HX 입구조건 밀도 (단품 검증 BC 규약, Python GT와 0.05% 일치).
+      ※ 직렬 덕트(증발기→응축기)로 결합할 때는 건공기 질량이 보존돼야 하므로
+        상류에서 계산된 질량유량을 직접 지정할 것.";
+    final parameter Real m_air_seg=m_air_total/(Ncirc*Nsc) "(col,seg)당 공기유량 [kg/s]";
+    // ── 1차 형상 (임의 구성 비교의 입력; 파생량은 HXGeom이 산출) ──
+    parameter Real W_coil=0.24 "튜브 길이 = 코일 폭 [m]";
+    parameter Real H_coil=Nt*P_t "코일 높이 [m] — 기본 Nt·P_t (튜브 열 수 바꾸면 자동 추종)";
+    parameter Real D_coil=Nr*P_l "코일 깊이 [m] — 기본 Nr·P_l (응축기 6행 → 0.06, 자동 추종)";
+    parameter Real Do=0.005 "튜브 외경 [m]";
+    // ── 공기측 h_o — 하드코딩(302.17, BC 불일치 오류) 제거, 형상·유동서 산출 ──
+    parameter Real P_t=14.14e-3, P_l=10e-3 "튜브 피치 (transverse/longitudinal) [m]";
+    parameter Real FPI=20.0 "핀 밀도 [fins/inch]";
+    final parameter Real A_o_face=HXGeom.A_face(W_coil, H_coil) "공기측 전면적 [m2]";
+    parameter Real V_air_CMM=2.42 "공기 체적유량 [CMM] — 열전달·h_o 공통 단일 소스";
+    parameter Real RH_ho=0.99 "h_o 산출용 공기 상대습도";
+    final parameter Real P_fin_ho=0.0254/FPI;
+    final parameter Real gap_ho=P_fin_ho - fin_t;
+    final parameter Real sig_c_ho=max((P_t - Dc)*gap_ho/(P_t*P_fin_ho), 0.1);
+    final parameter Real A_c_ho=sig_c_ho*A_o_face "최소 유로면적 [m2]";
+    final parameter Real W_ho=HXCorr.W_humid(T_air_in_start, RH_ho, Patm);
+    final parameter Real m_air_ho=HXCorr.rho_humid_air(T_air_in_start, W_ho, Patm)*(V_air_CMM/60.0);
+    final parameter Real G_air_ho=m_air_ho/A_c_ho "공기 질량속도 [kg/m2s]";
+    final parameter Real mu_a_ho=HXCorr.mu_air(T_air_in_start+273.15);
+    final parameter Real Pr_a_ho=HXCorr.Pr_air(T_air_in_start+273.15);
+    final parameter Real cp_a_ho=HXCorr.cp_air_mix(W_ho);
+    final parameter Real Re_Dc_ho=G_air_ho*Dc/mu_a_ho;
+    final parameter Real j_air_ho=HXCorr.j_wang2000_plain(Re_Dc_ho, Nr, Dc, P_t, P_l, FPI, fin_t);
+    // Colburn: h_o = j·G·cp/Pr^(2/3). 하드코딩 302.17(BC 불일치 오류) 대체.
+    final parameter Real h_o=j_air_ho*G_air_ho*cp_a_ho/Pr_a_ho^(2.0/3.0) "공기측 HTC [W/m2K] (형상·유동서 산출)";
+    parameter Integer Nr=6, Nseg=10, Nt=4;
+    parameter Integer Ncol=Nt "한 회로에 묶는 컬럼 수 (1=row_parallel, Nt=single).
+      실물 응축기는 6R4C 단일 회로이므로 기본값 Nt (2026-07-24 사양 확인).";
+    final parameter Integer Ncirc=div(Nt, Ncol) "병렬 회로 수";
+    final parameter Integer Nsc=Nseg*Ncol "회로당 공기 스트림 수";
+    parameter Real Di=0.0046 "튜브 내경 [m]";
+    parameter Real k_fin=200.0 "핀 열전도율 [W/mK]";
+    parameter Real fin_t=0.11e-3 "핀 두께 [m]";
+    // ── 파생 형상 (HXGeom 산출 — 하드코딩 제거) ──
+    // 기존 하드코딩 대비 검증: A_i_seg 0.0003468318 / A_o_seg 0.0053482610 /
+    //   Dc 0.005220 / Xm 0.007070 / XL 0.00612342 / A_fin_ratio 0.9333809461 재현
+    final parameter Real Dc=HXGeom.collarD(Do, fin_t) "핀 칼라 외경 [m]";
+    final parameter Real Xm=HXGeom.Xm_schmidt(P_t);
+    final parameter Real XL=HXGeom.XL_schmidt(P_t, P_l);
+    final parameter Real A_i_seg=HXGeom.A_i_seg(Di, W_coil, Nseg) "세그당 냉매측 면적 [m2]";
+    final parameter Real A_o_seg=HXGeom.A_o_seg(W_coil, H_coil, D_coil, Nr, Nt, Nseg, FPI, Do, fin_t)
+      "(행,세그)당 공기측 면적 [m2]";
+    final parameter Real A_fin_ratio=HXGeom.finRatio(W_coil, H_coil, D_coil, Nr, Nt, FPI, Do, fin_t);
+    parameter Real Patm=101325.0, Pcrit=4.2512e6, M_mol=44.0956;
+    parameter Real A_cs=Modelica.Constants.pi*Di^2/4.0;
+    parameter Real K_bend=0.75, L_seg=A_i_seg/(Modelica.Constants.pi*Di);
+    // 리턴밴드 길이 — 컬럼 내 행간 U밴드(R=P_l/2) + 컬럼 전환 밴드(R=P_t/2).
+    // 2026-07-24: 기존 L_path=Nr*Nseg*L_seg 는 Ncol 누락으로 단일회로에서 경로가
+    // 1/4 (1.44m vs 5.76m) -> 마찰 dp 1/4 과소평가. 밴드분(+6.6%)도 미포함이었음.
+    parameter Real L_bend=(Nr - 1)*Ncol*Modelica.Constants.pi*P_l/2.0
+                          + (Ncol - 1)*Modelica.Constants.pi*P_t/2.0 "리턴밴드 총길이 [m]";
+    parameter Real L_path=M*L_seg + L_bend "회로 냉매경로 길이 [m] (직관 + 리턴밴드)";
+    parameter Real L_inert=L_path/A_cs "유량 관성계수 [1/m]";
+    Real cp_a_dry "습공기 cp (Wi 의존)";
+    parameter Real eta_o_dry=HPWDon.finEffWet(h_o, 1.0, Dc, Xm, XL, k_fin, fin_t, A_fin_ratio);
+    parameter Integer M=Nr*Nsc;
+    parameter Integer rowOf[M]={HPWDevap.pathCellP(k - 1, Nr, Nseg, Ncol) for k in 1:M};
+    parameter Integer segOf[M]={HPWDevap.pathCellS(k - 1, Nr, Nseg, Ncol) for k in 1:M} "공기 스트림 sc";
+    parameter Integer kOf[Nr,Nsc]=HPWDevap.buildKOf(Nr, Nseg, Ncol);
+    // micro-fin 내부강화 (EF, 기하만 의존 → parameter). smooth면 ψ=1 → EF=1.
+    parameter String tube_type="microfin" "튜브 내면: smooth / microfin";
+    parameter Integer n_microfin=54 "(microfin) 내부 핀 개수";
+    parameter Real e_microfin=0.15e-3 "(microfin) 핀 높이 [m]";
+    parameter Real helix_angle=15.0 "(microfin) 나선각 [deg]";
+    parameter Real psi_mf=if tube_type=="microfin" then HXCorr.microfin_area_ratio(n_microfin, e_microfin, helix_angle, Di) else 1.0;
+    parameter Real EF_2ph=HXCorr.microfin_ef("cond", psi_mf, helix_angle);
+    parameter Real EF_sgl=HXCorr.microfin_ef("single", psi_mf, helix_angle);
+    // ── 동특성 파라미터 ──
+    parameter Real rho_ref_nom=300.0 "냉매 공칭밀도 [kg/m3] (셀 홀드업 산정용)";
+    parameter Real C_wall_cell=5.0 "셀당 벽(튜브+핀) 열용량 [J/K]";
+    parameter Real K_lam=1.0e5 "저유량 층류 정규화 [Pa·s/kg] (flow=0 야코비안 특이점 회피)";
+    parameter Real V_cell=A_cs*L_seg "셀 냉매 체적 [m3]";
+    // ── 셀 질량 저장 (2026-07-24) ──
+    // 기존에는 M_cell 이 상수라 HX 가 질량을 저장하지 않았음(유입=유출 강제).
+    // 실제로는 냉매 100g 중 ~38g 이 HX 안에 있고(체적의 39%), 기동 시 재분배의
+    // 주된 완충이 HX 다. 완충이 없으니 모든 과도를 작은 체적노드(vol3 3.66cc)가
+    // 받아 계가 뻣뻣해졌음. rho_ph 는 derivative=rho_ph_d 어노테이션이 있어
+    // 심볼릭 미분 가능.
+    parameter Real M_cell_nom=rho_ref_nom*V_cell "셀 질량 초기추정 [kg]";
+    Real M_c[M](each start=M_cell_nom) "셀 냉매 질량 [kg]";
+    Real M_tot(start=M*M_cell_nom) "회로 총 냉매 질량 [kg]";
+    Real m_out "회로 출구 유량 [kg/s]";
+    // 콜드스타트 초기조건 (rest)
+    parameter Real h_ref_start=270e3 "냉매 엔탈피 초기값 [J/kg]" annotation(Evaluate=false);
+    parameter Real T_w_start=T_air_in_start "벽온도 초기값 [degC]" annotation(Evaluate=false);
+    // ── 상태 (fixed=true → init 비선형계 제거) ──
+    Real h_ref[M](each start=h_ref_start, each fixed=false) "냉매 엔탈피/셀 [J/kg]";
+    Real T_w[M](each start=T_w_start, each fixed=false, each min=-40.0, each max=160.0) "벽온도/셀 [degC]";
+    // ── 대수 ──
+    parameter Real p_start=1.9e6 "P 초기값 [Pa]" annotation(Evaluate=false);
+    parameter Boolean fix_P_init=false "true: 초기에 P=p_start 고정 (밀폐/무압력경계 전용)";
+    Real P(start=p_start, fixed=false, nominal=1.0e6) "HX 압력 [Pa] — 보존형 상태";
+    Real G_ref, h_in;
+    parameter Real m_eps=1.0e-4 "면 upwind 전환 폭 [kg/s]";
+    Real mdot[M + 1](each nominal=1.0e-2) "면 질량유량 [kg/s]";
+    Real drdp[M], drdh[M];
+    // 유량 관성 (momentum dynamics) — 2026-07-24.
+    // 기존 port_b.p = P - dp_total 은 "Δp 를 주고 ṁ 을 푸는" 역산 방정식이라
+    // 저유량(기동 직후)에서 dp~ṁ² 이 평탄해져 조건수가 발산했음.
+    // ṁ 을 상태로 두면 역산이 사라지고 명시적 ODE 가 된다.
+    //   L_inert·d(ṁ)/dt = Δp − dp_total(ṁ),  L_inert = L_path/A_cs [1/m]
+    parameter Boolean use_momentum=true
+      "true: ṁ 을 상태로(운동량, 사이클용) / false: 대수 dp(유량 BC 고정 단품 검증용)";
+    Real m_ref_col(start=w_nom, fixed=false) "회로당 냉매유량 [kg/s]. 정지초기화는 initial equation 에서 처리 (2026-07-26: fixed=true 로 0 고정돼 정상초기화 시 0=-Q_ref 모순 -> h_ref[1] 발산)";
+    Real T_satC, hl, hv, h_fg, mu_l, k_l, cp_l, Pr_l, rho_l, rho_v, mu_v, k_v, cp_v, Pr_v, P_r;
+    Real T_ref[M], xq[M], h_i[M], Q_ref[M], Q_air[M];
+    Real w2p[M] "2상 가중 (0=단상, 1=2상)";
+    Real dp_lag(start=0.0, fixed=false) "dp_total 지연 [Pa] — 대수 루프 차단용";
+    Real xc[M] "클램프된 quality (noEvent — 이벤트 생성 회피)";
+    Real T_aen[Nr + 1,Nsc](each start=27.0);
+    Real Q_total, h_out, x_out, T_air_out, x_in_q, dp_fric, dp_bend, dp_total, rho_mix, x_mid;
+  initial equation
+    // 정상상태 초기화: der(x)=0. 폐루프 사이클을 정상해에서 출발시킬 때 사용.
+    // 기존 방식(start 고정)은 콜드스타트 전용.
+    // initOpt: 0=legacy(steadyInit 따름) 1=noInit 2=fixedState 3=steadyState
+    if initOpt == 1 then
+      // 초기방정식 없음 (-iif 로 상태를 받을 때)
+    elseif initOpt == 3 or (initOpt == 0 and steadyInit) then
+      for k in 1:M loop der(h_ref[k])=0; der(T_w[k])=0; end for;
+      der(P)=0;
+      if use_momentum then der(m_ref_col)=0; end if;
+      der(dp_lag)=0;
+    else
+      for k in 1:M loop h_ref[k]=h_ref_start; T_w[k]=T_w_start; end for;
+      if fix_P_init then P=p_start; end if;
+      if use_momentum then m_ref_col=0.0; end if;
+      dp_lag=0.0;
+    end if;
+  equation
+    h_o_v = h_o*fan_ratio^0.6;
+    m_as_v = m_air_seg*fan_ratio;
+      cp_a_dry=HXCorr.cp_air_mix(Wi) "입구 습도에 따른 습공기 cp (혼합물 기준 — m_air_seg가 습공기 질량유량)";
+    P=port_a.p;
+    M_tot=sum(M_c) "HX 총 질량 (장부 출력)";
+    m_out=mdot[M + 1];
+    port_b.m_flow=-Ncirc*m_out;
+
+    G_ref=m_ref_col/A_cs;
+    h_in=inStream(port_a.h_outflow);
+    T_satC=Medium.Tsat(P) - 273.15; hl=Medium.hl(P); hv=Medium.hv(P); h_fg=hv - hl;
+    mu_l=Medium.mul(P); k_l=Medium.kl(P); cp_l=Medium.cpl(P); Pr_l=cp_l*mu_l/k_l;
+    rho_l=Medium.rhol(P); rho_v=Medium.rhov(P); mu_v=Medium.muv(P); P_r=P/Pcrit;
+    k_v=Medium.kv(P); cp_v=Medium.cpv(P); Pr_v=cp_v*mu_v/k_v;
+    // 셀별 냉매 상태/열전달 (상태 h_ref,T_w 로부터 전부 명시적)
+    for k in 1:M loop
+      // 국소 압력 효과는 T_sat 1차 보정으로 반영 (T_ph 는 상수 P 로 호출해
+      // 2D 보간 활성화를 피함 — 셀별 P 를 T_ph 에 넣으면 240셀 보간이 매 스텝
+      // 살아남아 시뮬이 2.5s -> 분 단위로 폭증함, 2026-07-24 실측).
+      // 2상 가중 — 압력 하강의 온도 효과는 포화 구간에서만 유효.
+      // 과열/과냉에서는 T 가 P 에 거의 무관하므로 보정을 끈다(tanh 로 연속 전이).
+      w2p[k]=0.25*(1.0 + tanh(xq[k]/0.03))*(1.0 + tanh((1.0 - xq[k])/0.03));
+      T_ref[k]=Medium.T_ph(P, h_ref[k]) - 273.15
+               - w2p[k]*Medium.Tsat_d(P, dp_lag*k/M);
+      xq[k]=(h_ref[k] - hl)/h_fg;
+      h_i[k]=HPWDon.hi_dispatch_cond(xq[k], G_ref, Di, mu_l, k_l, Pr_l, mu_v, k_v, Pr_v, P_r)*(EF_sgl + (EF_2ph - EF_sgl)*(0.25*(1.0 + tanh(xq[k]/0.03))*(1.0 + tanh((1.0 - xq[k])/0.03))));
+      Q_ref[k]=h_i[k]*A_i_seg*(T_ref[k] - T_w[k]);
+      // ⚠ max/min 은 상태이벤트 생성기 — 셀마다 쓰면 이벤트 폭발(오전 is_wet 사례와 동형).
+      //   noEvent 로 감싸 이벤트 없이 클램프만 적용.
+      xc[k]=noEvent(max(min(xq[k], 0.999), 0.001));
+    end for;
+    // 냉매 엔탈피 동특성 (upwind, path 순서; 응축기 방열 → −Q_ref)
+    // ── PH4-A 보존형 냉매측 (응축: 방열 −Q_ref) ──
+    for k in 1:M loop
+      M_c[k]=Medium.rho_ph(P, h_ref[k])*V_cell;
+      drdp[k]=Medium.rho_ph_der(P, h_ref[k], 1.0, 0.0);
+      drdh[k]=Medium.rho_ph_der(P, h_ref[k], 0.0, 1.0);
+      V_cell*(drdp[k]*der(P) + drdh[k]*der(h_ref[k]))=mdot[k] - mdot[k + 1] "질량";
+      M_c[k]*der(h_ref[k]) - V_cell*der(P)
+        =(if k == 1 then semiLinear(mdot[1], h_in, h_ref[1])
+          else semiLinear(mdot[k], h_ref[k - 1], h_ref[k]))
+        -(if k == M then semiLinear(mdot[M + 1], h_ref[M], inStream(port_b.h_outflow))
+          else semiLinear(mdot[k + 1], h_ref[k], h_ref[k + 1]))
+        - h_ref[k]*(mdot[k] - mdot[k + 1]) - Q_ref[k]
+        "에너지 d(U)/dt, U=M*h-p*V. 플럭스 semiLinear (2026-08-03 D3 정정 —
+         tanh 블렌드가 무유량 경계에서 원거리 엔탈피를 섞어 M_c 와 동차수
+         계수 상쇄 → 퇴화 스칼라 NLS, GB 실측)";
+    end for;
+    mdot[1]=m_ref_col;
+    // 공기측 march (행 방향) + Q_air (벽→공기)
+    for s in 1:Nsc loop
+      T_aen[1,s]=T_air_in;
+    end for;
+    for p in 1:Nr loop
+      for s in 1:Nsc loop
+        Q_air[kOf[p,s] + 1]=eta_o_dry*h_o_v*A_o_seg*(T_w[kOf[p,s] + 1] - T_aen[p,s]);
+        T_aen[p + 1,s]=T_aen[p,s] + Q_air[kOf[p,s] + 1]/(m_as_v*cp_a_dry);
+      end for;
+    end for;
+    // 벽 동특성 (냉매에서 받고 공기로 버림)
+    for k in 1:M loop
+      C_wall_cell*der(T_w[k])=Q_ref[k] - Q_air[k];
+    end for;
+    Q_total=Ncirc*sum(Q_ref);
+    h_out=h_ref[M];
+    x_out=(h_out - hl)/h_fg;
+    T_air_out=sum(T_aen[Nr + 1,s] for s in 1:Nsc)/Nsc;
+    // dp (명시적 — 미분 불필요)
+    x_in_q=(h_in - hl)/h_fg;
+    dp_fric=HXCorr.msh_2phase(rho_l, mu_l, rho_v, mu_v, max(x_out, 0.001), min(x_in_q, 0.999), m_ref_col, Di, L_path, 40);
+    x_mid=(min(x_in_q, 1.0) + max(x_out, 0.0))/2.0;
+    rho_mix=1.0/(x_mid/rho_v + (1.0 - x_mid)/rho_l);
+    dp_bend=(Nr*Ncol - 1)*K_bend*G_ref^2/(2.0*rho_mix);
+    dp_total=dp_fric + dp_bend + K_lam*m_ref_col "셀 누적";
+    // dp 를 한 칸 지연 — T_ref[k] 가 m_flow 대수 루프에서 빠지게 함.
+    // (사이클에서 dp_total 은 m_flow 에 의존하므로, T_ref[k] 가 직접 참조하면
+    //  240개 셀이 통째로 비선형계에 들어가 폭증함. 2026-07-24 실측)
+    0.1*der(dp_lag)=dp_total - dp_lag;
+    if use_momentum then
+      port_a.m_flow=Ncirc*m_ref_col;
+      L_inert*der(m_ref_col)=homotopy((port_a.p - port_b.p) - dp_total,
+        (port_a.p - port_b.p) - dp_nom/w_nom*m_ref_col)
+        "운동량. 단순화 모델은 선형 저항 (ThermoPower Water.mo:662 패턴)";
+    else
+      m_ref_col=port_a.m_flow/Ncirc;
+      port_b.p=P - dp_total "준정상 (유량 BC 고정 시)";
+    end if;
+    port_b.h_outflow=h_out;
+    port_a.h_outflow=h_in;
+  end Cond_On_DynC;
+
+  model G0c_Sealed "응축측 G0-P1 — 밀폐 + 냉각 (과열→2상 하향 통과)"
+    Cond_On_DynC hx(Nseg=3, h_ref_start=6.3e5, T_w_start=70.0,
+                    fix_P_init=true, use_momentum=false);
+    PlugC capA, capB;
+    Real drift_rel;
+  protected
+    parameter Real M0(fixed=false);
+  initial equation
+    M0 = hx.M_tot;
+  equation
+    hx.fan_ratio = 1.0;
+    connect(hx.port_a, capA.port);
+    connect(hx.port_b, capB.port);
+    hx.T_air_in = 15.0;
+    hx.Wi = 0.010;
+    drift_rel = (hx.M_tot - M0)/M0;
+  end G0c_Sealed;
+
+  model G1c_AB "응축측 G1 — 동일 경계 Dyn vs DynC 준정상 대조"
+    parameter Real p_in = 1.95e6, h_src = 6.30e5, p_out = 1.90e6;
+    HPWD.Source srcA(p=p_in, h=h_src), srcB(p=p_in, h=h_src);
+    HPWD.Sink   snkA(p=p_out), snkB(p=p_out);
+    HPWDevap.Cond_On_Dyn hxA(Nseg=3, h_ref_start=5.0e5, T_w_start=40.0, use_momentum=true);
+    Cond_On_DynC         hxB(Nseg=3, h_ref_start=5.0e5, T_w_start=40.0, use_momentum=true);
+    Real dQ_rel, dSC_abs, dM_rel, dmf_rel;
+  equation
+    hxA.fan_ratio = 1.0;
+    hxB.fan_ratio = 1.0;
+    connect(srcA.port, hxA.port_a); connect(hxA.port_b, snkA.port);
+    connect(srcB.port, hxB.port_a); connect(hxB.port_b, snkB.port);
+    hxA.T_air_in = 25.0;
+    hxA.Wi = 0.012;
+    hxB.T_air_in = 25.0;
+    hxB.Wi = 0.012;
+    dQ_rel  = (hxB.Q_total - hxA.Q_total)/max(abs(hxA.Q_total), 1.0);
+    dSC_abs = (hxB.h_out - hxA.h_out)/1.0e3 "출구 엔탈피 차 [kJ/kg] (과냉 대리)";
+    dM_rel  = (hxB.M_tot - hxA.M_tot)/max(hxA.M_tot, 1.0e-6);
+    dmf_rel = (hxB.m_ref_col - hxA.m_ref_col)/max(abs(hxA.m_ref_col), 1.0e-6);
+  end G1c_AB;
 end HPWDevapC;
+
