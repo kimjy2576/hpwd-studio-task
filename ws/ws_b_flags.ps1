@@ -1,4 +1,4 @@
-# WS-B 플래그 매트릭스 — Windows PowerShell 판 (G2 위임, 2026-08-04)
+﻿# WS-B 플래그 매트릭스 — Windows PowerShell 판 (G2 위임, 2026-08-04)
 # 사용:  레포 루트에서   powershell -ExecutionPolicy Bypass -File ws\ws_b_flags.ps1
 # 전제:  omc 가 PATH 에 있음 (OpenModelica 설치 시 기본).  python 도 PATH.
 # 산출:  $env:TEMP\wsb_flags\summary.txt
@@ -28,6 +28,7 @@ if (-not $OMC) {
   Write-Host "미설치라면 https://openmodelica.org/download → Windows 64bit 설치 후 재실행."
   exit 1 }
 Write-Host "[omc] $OMC"
+$env:Path = (Split-Path $OMC) + ";" + $env:Path   # 시뮬 exe 가 OM 런타임 DLL 을 찾도록
 
 # ── 1회 빌드 ──────────────────────────────────────────────────────
 $mos = @"
@@ -94,8 +95,8 @@ while ($procs | Where-Object { -not $_.P.HasExited }) {
   }
 }
 foreach ($j in $procs) {
-  $w = [int]((Get-Date) - $j.T0).TotalSeconds
-  Set-Content "$($j.Dir)\done.txt" "RC=$($j.P.ExitCode) WALL=${w}s"
+  $sec = [int]((Get-Date) - $j.T0).TotalSeconds
+  Set-Content "$($j.Dir)\done.txt" "RC=$($j.P.ExitCode) WALL=${sec}s"
 }
 Write-Host "[run] 전 조합 종료"
 
@@ -109,7 +110,10 @@ foreach ($j in $procs) {
   if (Test-Path $csv) {
     $te = ((Get-Content $csv -Tail 1) -split ',')[0]
     $jg = (& $PY "$REPO/ws/judge.py" $csv 2>$null | Select-Object -First 1)
-  } else { $te = "-" ; $jg = "CSV 없음" }
+  } else { $te = "-"
+    $e1 = if (Test-Path "$($j.Dir)\err.log") { (Get-Content "$($j.Dir)\err.log" -TotalCount 1) } else { "" }
+    $r1 = if (Test-Path "$($j.Dir)\run.log") { (Get-Content "$($j.Dir)\run.log" -Tail 1) } else { "" }
+    $jg = "CSV 없음 | err: $e1 | run: $r1" }
   $out += "$($j.Name) | $rcw | t=$te | $jg"
 }
 $out | Tee-Object -FilePath "$W\summary.txt"
