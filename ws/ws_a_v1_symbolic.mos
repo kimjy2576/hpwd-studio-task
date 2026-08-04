@@ -1,0 +1,16 @@
+setCommandLineOptions("--generateDynamicJacobian=symbolic"); getErrorString();
+REPO := "/path/to/hpwd-v1";
+loadModel(Modelica); getErrorString();
+loadFile(REPO + "/modelica/R290Tab.mo"); getErrorString();
+loadFile(REPO + "/modelica/R290Medium.mo"); getErrorString();
+loadFile(REPO + "/modelica/HXGeom.mo"); getErrorString();
+loadFile(REPO + "/modelica/HXCorr.mo"); getErrorString();
+loadFile(REPO + "/modelica/HPWD.mo"); getErrorString();
+loadFile(REPO + "/modelica/HPWDon.mo"); getErrorString();
+loadFile(REPO + "/modelica/HPWDevap.mo"); getErrorString();
+loadFile(REPO + "/modelica/Control.mo"); getErrorString();
+loadFile(REPO + "/modelica/HPWDcycle.mo"); getErrorString();
+b := buildModel(HPWDcycle.Cycle_L3_coldstart_charge, stopTime=600, tolerance=1e-3, method="dassl",
+  outputFormat="csv",
+  variableFilter="time|M_total|Pc_bar|Pe_bar|SH|eevctl.n_pulse|seq.f|comp.h_dis");
+print("EXE=" + b[1] + "|\n"); print(getErrorString());
