@@ -30,7 +30,9 @@ feat/analytic-medium HEAD(73a7b24)에 PH1·PH6·PH6b(Kp_eev=1.0 기본)가
 feat/ph4a-staggered 최신 pull (차기 세션이 comp.h_dis 시드 패치를 커밋할
 수 있음 — 있으면 포함, 없어도 웍스 성능이면 크롤 회피 가능성 높음.
 크롤 재현 시: HPWDcycle.mo 의 Cycle_L3C_coldstart_PI 에서
-comp(..., h_dis(start=4.5e5, nominal=4.0e5)) 추가 후 재빌드).
+comp 수정자에 h_dis(start=<rest 정합 유도값>, nominal=4.0e5) 추가 후 재빌드.
+start 는 기동 전 무유량 정합이 목적 — charge h0 start(3.0e5)·h_rest 계열에서 유도,
+임의 수치(구판 4.5e5, 토출 스케일) 금지).
 
     omc ws_b_l3c.mos                    # 수치 빌드
     ./HPWDcycle.Cycle_L3C_coldstart_charge -s dassl -stopTime=600 \
