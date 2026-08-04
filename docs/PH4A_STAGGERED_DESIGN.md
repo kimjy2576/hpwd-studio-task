@@ -156,6 +156,7 @@ S6 G3 + 판정 문서화 → 병합·역할분담 논의 (semi-empirical 티어�
 | 역류 경계 상쇄대역 | 출구면 역류 시 (h_cell−h_sink) 지렛대가 M_c 와 동차수 상쇄 → 퇴화 NLS. 하네스는 경계 h 근방 정합으로 회피. 사이클급 완화 후보: 면 미소 관성(mdot 상태화, Phase 1.5) — S5 전 결정 |
 | vol3 노드 기능 재해석 (S5 실측) | vol3 삭제판은 EEV↔evap.P 직결 대수 사슬이 der(eev.dP_eff) 랭크0 특이를 만들어 초기화 불능 — 관성·200Pa 오프셋 무효, charge/PI 이분으로 구조 확정. vol3 의 기능은 저장이 아니라 **노드 상태 분리(EEV 대수 사슬 절단)** 이며 3.66cc 실재 배관 체적. → **vol3 유지 채택**, L3C 수술은 타입 교체·레거시 ctrl 제거·if-방정식 3건으로 수렴 |
 | L3C 크롤 병리 (G2 B측, 2026-08-04) | 스텝 붕괴(중앙값 1e-6s, 최소 5e-14, 6376행/t=0.46) + comp.h_dis inf/nan 23회. 기동 전 무유량(f=0) comp.h_dis NLS 시드 오염 → 운빨 이중안정(순항/기어감 오감). 처방 후보: comp(h_dis(start,nominal)) 시드 고정 |
+| L3C 이벤트 라이브록 (G2, 2026-08-04) | 크롤 정체 = 스텝붕괴 아닌 semiLinear 면 이벤트(evap/cond.mdot[k]=0) 반복 라이브록. 무로그 결정론 락 t=0.1635/t=30.04, 로깅·noEquidistantTimeGrid 시 통과(경로 민감 복권). h_dis 시드+무유량 가드(026deae, cb481fb)로 inf/nan 소멸·드리프트 +1.016%→-0.395~+0.003%(런4 전항목 통과). -noRootFinding 은 초기화 직후 전면 정지로 기각. tanh 블렌드는 D3 기각 유지. 잔여: 플래그 매트릭스 웍스 위임(ws_b_flags.sh) |
 | OMC 침묵사 3표본 | buildModel 이 오류 문자열 없이 {"",""} 반환: ① connect 없는 스트림 포트 외부 대입 ② (기록만) ③ 파라미터에 식 대입(evap T_air_in). 침묵사 시 checkModel/loadString 최소 리그로 우회 진단 |
 
 ## 3. 미결(승인 필요) 항목
