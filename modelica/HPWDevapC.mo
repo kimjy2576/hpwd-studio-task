@@ -216,14 +216,21 @@ package HPWDevapC "PH4-A 보존형 staggered HX — 병행 모델 (S3: Dyn 공�
       drdh[k]=Medium.rho_ph_der(P, h_ref[k], 0.0, 1.0);
       V_cell*(drdp[k]*der(P) + drdh[k]*der(h_ref[k]))=mdot[k] - mdot[k + 1] "질량 (EOS 전개형)";
       M_c[k]*der(h_ref[k]) - V_cell*der(P)
-        =(if k == 1 then semiLinear(mdot[1], h_in, h_ref[1])
-          else semiLinear(mdot[k], h_ref[k - 1], h_ref[k]))
-        -(if k == M then semiLinear(mdot[M + 1], h_ref[M], inStream(port_b.h_outflow))
-          else semiLinear(mdot[k + 1], h_ref[k], h_ref[k + 1]))
+        =noEvent(
+           if k == 1 then (if mdot[1] >= 0 then mdot[1]*h_in else mdot[1]*h_ref[1])
+           else (if mdot[k] >= 0 then mdot[k]*h_ref[k - 1] else mdot[k]*h_ref[k]))
+        -noEvent(
+           if k == M then (if mdot[M + 1] >= 0 then mdot[M + 1]*h_ref[M]
+                           else mdot[M + 1]*inStream(port_b.h_outflow))
+           else (if mdot[k + 1] >= 0 then mdot[k + 1]*h_ref[k]
+                 else mdot[k + 1]*h_ref[k + 1]))
         - h_ref[k]*(mdot[k] - mdot[k + 1]) + Q_ref[k]
-        "에너지 d(U)/dt, U=M*h-p*V. 플럭스 semiLinear (2026-08-03 D3 정정 —
-         tanh 블렌드가 무유량 경계에서 원거리 엔탈피를 섞어 M_c 와 동차수
-         계수 상쇄 → 퇴화 스칼라 NLS, GB 실측)";
+        "에너지 d(U)/dt, U=M*h-p*V. 플럭스 noEvent 정확 upwind (2026-08-04 G2 —
+         semiLinear 는 조각별로 동일하나 셀 면마다 제로크로싱 이벤트를 만들어
+         기동 유량반전 구간 이벤트 라이브록 유발: 락 t=0.1635/0.778/30.04/175
+         환경별 실측, 어떤 런타임 플래그도 양환경 동시 통과 실패.
+         noEvent 는 동일 함수에서 이벤트 기계만 제거 — 혼합 없음, m=0 플럭스 0.
+         tanh 블렌드는 D3(2026-08-03) 기각 유지: 원거리 엔탈피 혼합→퇴화 NLS)";
     end for;
     mdot[1]=m_ref_col "입구 면 = 회로 유량 (운동량 상태 또는 포트 BC)";
     Q_total=Ncirc*sum(Q_ref); Q_lat_total=Ncirc*sum(Q_lat_c);
@@ -506,14 +513,21 @@ gbode의 bi-rate 적분이 유효한 것으로 보이나 기전은 미확정.</p
       drdh[k]=Medium.rho_ph_der(P, h_ref[k], 0.0, 1.0);
       V_cell*(drdp[k]*der(P) + drdh[k]*der(h_ref[k]))=mdot[k] - mdot[k + 1] "질량";
       M_c[k]*der(h_ref[k]) - V_cell*der(P)
-        =(if k == 1 then semiLinear(mdot[1], h_in, h_ref[1])
-          else semiLinear(mdot[k], h_ref[k - 1], h_ref[k]))
-        -(if k == M then semiLinear(mdot[M + 1], h_ref[M], inStream(port_b.h_outflow))
-          else semiLinear(mdot[k + 1], h_ref[k], h_ref[k + 1]))
+        =noEvent(
+           if k == 1 then (if mdot[1] >= 0 then mdot[1]*h_in else mdot[1]*h_ref[1])
+           else (if mdot[k] >= 0 then mdot[k]*h_ref[k - 1] else mdot[k]*h_ref[k]))
+        -noEvent(
+           if k == M then (if mdot[M + 1] >= 0 then mdot[M + 1]*h_ref[M]
+                           else mdot[M + 1]*inStream(port_b.h_outflow))
+           else (if mdot[k + 1] >= 0 then mdot[k + 1]*h_ref[k]
+                 else mdot[k + 1]*h_ref[k + 1]))
         - h_ref[k]*(mdot[k] - mdot[k + 1]) - Q_ref[k]
-        "에너지 d(U)/dt, U=M*h-p*V. 플럭스 semiLinear (2026-08-03 D3 정정 —
-         tanh 블렌드가 무유량 경계에서 원거리 엔탈피를 섞어 M_c 와 동차수
-         계수 상쇄 → 퇴화 스칼라 NLS, GB 실측)";
+        "에너지 d(U)/dt, U=M*h-p*V. 플럭스 noEvent 정확 upwind (2026-08-04 G2 —
+         semiLinear 는 조각별로 동일하나 셀 면마다 제로크로싱 이벤트를 만들어
+         기동 유량반전 구간 이벤트 라이브록 유발: 락 t=0.1635/0.778/30.04/175
+         환경별 실측, 어떤 런타임 플래그도 양환경 동시 통과 실패.
+         noEvent 는 동일 함수에서 이벤트 기계만 제거 — 혼합 없음, m=0 플럭스 0.
+         tanh 블렌드는 D3(2026-08-03) 기각 유지: 원거리 엔탈피 혼합→퇴화 NLS)";
     end for;
     mdot[1]=m_ref_col;
     // 공기측 march (행 방향) + Q_air (벽→공기)
