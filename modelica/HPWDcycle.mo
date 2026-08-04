@@ -794,7 +794,7 @@ package HPWDcycle "L3 사이클 조립 (Comp_Chamber + Cond_On + EEV_On + Evap_O
     parameter Real T_air_cond = 20.0 "응축기 공기 입구온도 [degC] (air_series=false)";
     parameter Real RH_air_cond = 0.8 "응축기 공기 입구 상대습도 (air_series=false)";
     final parameter Real W_air_cond = HXCorr.W_humid(T_air_cond, RH_air_cond, 101325.0);
-    HPWDon.Comp_Chamber comp(V_disp_cm3=7.5);
+    HPWDon.Comp_Chamber comp(V_disp_cm3=7.5, h_dis(start=3.0e5, nominal=4.0e5));
     // ── 압축기 쉘 가스 체적 (2026-07-26 신설) ──
     // 고압쉘이므로 쉘 내부는 토출압 가스로 채워지고, 오일 섬프도 그 안에 있다.
     // 기존에는 이 체적이 인벤토리에 아예 없었고(체크리스트 414.1cc = HX+배관+어큐),
