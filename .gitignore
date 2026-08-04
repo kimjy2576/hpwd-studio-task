@@ -14,3 +14,6 @@ Thumbs.db
 # 수렴 테스트 실행 기록·작업 디렉터리 (2026-07-30)
 backend/_convergence_history.json
 backend/_omc_work/
+
+# 로컬 진단 스크래치
+modelica/diag_*.mos

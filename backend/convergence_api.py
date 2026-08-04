@@ -737,3 +737,63 @@ def get_log(rid: str, tail: int = 120) -> Dict[str, Any]:
             "tail": "\n".join(lines[-tail:]),
             "mos_head": (m.read_text(encoding="utf-8", errors="replace")[:400]
                          if m.exists() else None)}
+
+
+@app.get("/api/convergence/series/{rid}")
+def get_series(rid: str, max_pts: int = 1200) -> Dict[str, Any]:
+    """실행 결과 CSV 를 시계열 JSON 으로 돌려준다 (궤적/실시간 관제용).
+
+    live: CSV 가 10초 내 갱신 중이면 True — 프론트는 폴링으로 갱신한다.
+    residual 등가물: dt(연속 출력 간격) — 스텝붕괴 시 바닥으로 꺼진다.
+    """
+    import time as _time
+    w = BACKEND / "_omc_work" / rid
+    fs = sorted(w.glob("*_res.csv")) if w.exists() else []
+    if not fs:
+        return {"id": rid, "exists": False, "note": f"결과 CSV 없음: {w}"}
+    f = fs[-1]
+    try:
+        txt = f.read_text(errors="replace").strip().split("\n")
+        head = [c.strip('"') for c in txt[0].split(",")]
+        data = []
+        for l in txt[1:]:
+            r = l.split(",")
+            if len(r) == len(head):
+                try:
+                    data.append([float(x) for x in r])
+                except ValueError:
+                    pass
+    except Exception as e:
+        return {"id": rid, "exists": False, "note": f"파싱 실패: {e}"}
+    if not data:
+        return {"id": rid, "exists": False, "note": "데이터 0행"}
+
+    def col(n: str):
+        for i, h in enumerate(head):
+            if h == n or h.endswith("." + n):
+                return i
+        return None
+
+    it_ = 0
+    dts = [(data[k + 1][it_] - data[k][it_]) for k in range(len(data) - 1)]
+    dts = [d if d > 0 else None for d in dts] + [None]
+    keep = max(1, len(data) // max_pts)
+    idx = list(range(0, len(data), keep))
+    if idx[-1] != len(data) - 1:
+        idx.append(len(data) - 1)
+    im = col("M_total")
+    out_cols = {"t": it_, "M_total": im, "Pc_bar": col("Pc_bar"),
+                "Pe_bar": col("Pe_bar"), "SH": col("SH"),
+                "eev": col("n_pulse") if col("n_pulse") is not None
+                       else col("n_act"),
+                "f": col("f")}
+    series = {k: ([data[i][c] for i in idx] if c is not None else None)
+              for k, c in out_cols.items()}
+    series["dt"] = [dts[i] for i in idx]
+    m0 = data[0][im] if im is not None else None
+    series["drift_pct"] = ([ (data[i][im] / m0 - 1) * 100 for i in idx]
+                           if im is not None and m0 else None)
+    age = _time.time() - f.stat().st_mtime
+    return {"id": rid, "exists": True, "rows": len(data),
+            "t_end": data[-1][0], "live": age < 10.0,
+            "file": f.name, "series": series}
