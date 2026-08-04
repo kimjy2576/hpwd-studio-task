@@ -224,8 +224,15 @@ package HPWDon "HPWD 냉매 사이클 컴포넌트 (L3 On-Design) — needle-con
     //   에너지가 복제됐다. 그 결과 고압이 19.5 bar 로 치솟았다(정상 10~11).
     //   토출가스가 쉘을 데우면 그만큼 자신은 식어야 한다.
     Q_shell     = AU_dis*(T_dis - T_w);
-    h_dis       = h_su + w_chamber + (W_valve_in + W_valve_out)/m_dot
-                  - Q_shell/max(m_dot, 1e-9);
+    // 2026-08-04 G2: 무유량(f=0) 가드 — 크롤 이중안정 근원 제거.
+    //   (1) 밸브항 (W_valve_in+W_valve_out)/m_dot 은 0/0 → 대수 동치
+    //       dP_in/rho_su + dP_out/rho_dis_est 로 치환 (물리 변경 없음).
+    //   (2) Q_shell/max(m_dot,1e-9) 는 정지에서 이득 1e9 증폭기가 되어
+    //       h_dis→T_dis→Q_shell→h_dis 루프 폭주 유발 → 정칙화
+    //       Q_shell*m_dot/(m_dot^2+1e-12): 유량 시 Q_shell/m_dot 동일,
+    //       정지 시 →0 (p_dis=p_su, w_chamber≈0 이므로 h_dis→h_su 연속화).
+    h_dis       = h_su + w_chamber + dP_in/rho_su + dP_out/rho_dis_est
+                  - Q_shell*m_dot/(m_dot^2 + 1e-12);
     T_dis       = R290Tab.T_ph(p_dis, h_dis);
     // 등엔트로피 효율
     eta_is = max(0.05, min(0.99, w_is/w_chamber));
