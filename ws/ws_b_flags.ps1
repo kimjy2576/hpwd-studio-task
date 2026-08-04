@@ -13,6 +13,22 @@ $REPS  = 2
 New-Item -ItemType Directory -Force -Path $W | Out-Null
 Set-Location $W
 
+# ── omc 탐지 (PATH → OPENMODELICAHOME → Program Files) ────────────
+$OMC = (Get-Command omc -ErrorAction SilentlyContinue).Source
+if (-not $OMC -and $env:OPENMODELICAHOME) {
+  $c = Join-Path $env:OPENMODELICAHOME "bin\omc.exe"
+  if (Test-Path $c) { $OMC = $c } }
+if (-not $OMC) {
+  $c = Get-ChildItem "C:\Program Files\OpenModelica*\bin\omc.exe" -ErrorAction SilentlyContinue |
+       Sort-Object FullName -Descending | Select-Object -First 1
+  if ($c) { $OMC = $c.FullName } }
+if (-not $OMC) {
+  Write-Host "omc 를 찾지 못했습니다. OpenModelica(1.27 권장)가 설치되어 있습니까?"
+  Write-Host "설치되어 있다면 PowerShell 에서  \$env:OPENMODELICAHOME  경로를 알려주십시오."
+  Write-Host "미설치라면 https://openmodelica.org/download → Windows 64bit 설치 후 재실행."
+  exit 1 }
+Write-Host "[omc] $OMC"
+
 # ── 1회 빌드 ──────────────────────────────────────────────────────
 $mos = @"
 loadModel(Modelica); getErrorString();
@@ -34,10 +50,12 @@ print("EXE=" + b[1] + "|\n"); print(getErrorString());
 "@
 Set-Content -Path "$W\build.mos" -Value $mos -Encoding UTF8
 if (-not (Test-Path "$W\$MODEL.exe")) {
-  Write-Host "[build] omc..." ; omc build.mos *> build.log
-  if (-not (Select-String -Path build.log -Pattern "EXE=" -Quiet)) {
-    Write-Host "빌드 실패 — $W\build.log 확인" ; exit 1 }
+  Write-Host "[build] omc..." ; & $OMC build.mos *> build.log
 }
+if (-not (Test-Path "$W\$MODEL.exe")) {
+  Write-Host "빌드 실패 — $W\build.log 마지막 20줄:"
+  if (Test-Path "$W\build.log") { Get-Content "$W\build.log" -Tail 20 }
+  exit 1 }
 
 # ── 조합 ──────────────────────────────────────────────────────────
 $CFGS = [ordered]@{
@@ -56,9 +74,12 @@ foreach ($name in $CFGS.Keys) {
     $d = "$W\$name.r$r"
     New-Item -ItemType Directory -Force -Path $d | Out-Null
     Copy-Item "$W\$MODEL*" $d -Force -ErrorAction SilentlyContinue
-    $p = Start-Process -FilePath "$d\$MODEL.exe" -ArgumentList $CFGS[$name] `
-         -WorkingDirectory $d -WindowStyle Hidden -PassThru `
-         -RedirectStandardOutput "$d\run.log" -RedirectStandardError "$d\err.log"
+    $sp = @{ FilePath = "$d\$MODEL.exe"; WorkingDirectory = $d
+             WindowStyle = "Hidden"; PassThru = $true
+             RedirectStandardOutput = "$d\run.log"
+             RedirectStandardError  = "$d\err.log" }
+    if ($CFGS[$name].Count -gt 0) { $sp.ArgumentList = $CFGS[$name] }
+    $p = Start-Process @sp
     $procs += [pscustomobject]@{ P=$p; Dir=$d; Name="$name.r$r"; T0=Get-Date }
     Write-Host ("발사  {0,-14}  PID {1}" -f "$name.r$r", $p.Id)
   }
@@ -79,6 +100,7 @@ foreach ($j in $procs) {
 Write-Host "[run] 전 조합 종료"
 
 # ── 판정 집계 ─────────────────────────────────────────────────────
+$PY = if (Get-Command python -ErrorAction SilentlyContinue) { "python" } else { "py" }
 $out = @("=== WS-B 플래그 매트릭스 $(Get-Date -Format 'yyyy-MM-dd HH:mm') ===",
          "조합 | RC/wall | t_end | judge")
 foreach ($j in $procs) {
@@ -86,7 +108,7 @@ foreach ($j in $procs) {
   $rcw = if (Test-Path "$($j.Dir)\done.txt") { Get-Content "$($j.Dir)\done.txt" } else { "?" }
   if (Test-Path $csv) {
     $te = ((Get-Content $csv -Tail 1) -split ',')[0]
-    $jg = (& python "$REPO/ws/judge.py" $csv 2>$null | Select-Object -First 1)
+    $jg = (& $PY "$REPO/ws/judge.py" $csv 2>$null | Select-Object -First 1)
   } else { $te = "-" ; $jg = "CSV 없음" }
   $out += "$($j.Name) | $rcw | t=$te | $jg"
 }
