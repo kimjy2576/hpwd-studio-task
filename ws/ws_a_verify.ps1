@@ -59,6 +59,7 @@ if (-not (Test-Path "$W\$MODEL.exe")) {
 
 # ── 런 정의 ───────────────────────────────────────────────────────
 $RUNS = [ordered]@{
+  "num.r1"     = @()
   "sym.r1"     = @("-jacobian=coloredSymbolical")
   "sym.r2"     = @("-jacobian=coloredSymbolical")
   "symT16.r1"  = @("-jacobian=coloredSymbolical","-jacobianThreads=16")
