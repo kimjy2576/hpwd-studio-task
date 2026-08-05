@@ -37,6 +37,7 @@ setCommandLineOptions("--generateDynamicJacobian=symbolic"); getErrorString();
 loadModel(Modelica); getErrorString();
 loadFile("$REPO/modelica/R290Tab.mo"); getErrorString();
 loadFile("$REPO/modelica/R290Medium.mo"); getErrorString();
+loadFile("$REPO/modelica/R290Oil.mo"); getErrorString();
 loadFile("$REPO/modelica/HXGeom.mo"); getErrorString();
 loadFile("$REPO/modelica/HXCorr.mo"); getErrorString();
 loadFile("$REPO/modelica/HPWD.mo"); getErrorString();
