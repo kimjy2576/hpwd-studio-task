@@ -1,4 +1,4 @@
-# WS-A — feat/analytic-medium v1 (73a7b24 동결) 600s symbolic 검증
+﻿# WS-A — feat/analytic-medium v1 (73a7b24 동결) 600s symbolic 검증
 # 사용:  powershell -ExecutionPolicy Bypass -File ws\ws_a_verify.ps1
 # 런 3개: sym.r1 / sym.r2 (재현성) / symT16.r1 (-jacobianThreads=16 이득 측정)
 # 기대: 드리프트 ±0.04% (기호 야코비안), 야코비안이 런타임 85% 였으므로 wall 대폭 단축 기대
