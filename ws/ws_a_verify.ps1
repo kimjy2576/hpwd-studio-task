@@ -85,7 +85,8 @@ while ($procs | Where-Object { -not $_.P.HasExited }) {
     if (((Get-Date) - $j.T0).TotalSeconds -gt $TMO) { $j.P.Kill(); Write-Host "타임아웃 kill: $($j.Name)" } }
 }
 foreach ($j in $procs) {
-  $sec = [int]((if ($j.P.ExitTime) { $j.P.ExitTime } else { Get-Date }) - $j.T0).TotalSeconds
+  $et = if ($j.P.ExitTime) { $j.P.ExitTime } else { Get-Date }
+  $sec = [int](($et - $j.T0).TotalSeconds)
   Set-Content "$($j.Dir)\done.txt" "RC=$($j.P.ExitCode) WALL=${sec}s" }
 Write-Host "[run] 종료"
 
@@ -102,7 +103,8 @@ foreach ($j in $procs) {
   } else {
     $te = "-"
     $e1 = if (Test-Path "$($j.Dir)\err.log") { Get-Content "$($j.Dir)\err.log" -TotalCount 1 } else { "" }
-    $jg = "CSV 없음 | err: $e1" }
+    $r1 = if (Test-Path "$($j.Dir)\run.log") { (Get-Content "$($j.Dir)\run.log" | Select-Object -First 3) -join " / " } else { "" }
+    $jg = "CSV 없음 | err: $e1 | run: $r1" }
   $out += "--- $($j.Name) | $rcw | t=$te"
   $out += $jg
 }

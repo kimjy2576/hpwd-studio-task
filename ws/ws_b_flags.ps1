@@ -95,7 +95,8 @@ while ($procs | Where-Object { -not $_.P.HasExited }) {
   }
 }
 foreach ($j in $procs) {
-  $sec = [int]((if ($j.P.ExitTime) { $j.P.ExitTime } else { Get-Date }) - $j.T0).TotalSeconds
+  $et = if ($j.P.ExitTime) { $j.P.ExitTime } else { Get-Date }
+  $sec = [int](($et - $j.T0).TotalSeconds)
   Set-Content "$($j.Dir)\done.txt" "RC=$($j.P.ExitCode) WALL=${sec}s"
 }
 Write-Host "[run] 전 조합 종료"
