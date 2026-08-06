@@ -88,7 +88,11 @@ package HPWDctrl "제어 컴포넌트"
     // 2026-08-06 G2: abs(f-f_cmd)<1e-6 연속 관계식 제거 — 무이벤트 연착륙.
     //   원거리 ±rate 정확 램프 동일, 마지막 ~rate*tau_snap 폭만 지수 도착
     //   (인버터 soft-landing 과 정합). 유지 중 rate=0 → der=0 자동 성립.
-    der(f) = noEvent(max(min((f_cmd - f)/tau_snap, rate), -rate));
+    //   v2 (2026-08-06): max/min 클램프의 symbolic 미분이 불연속 야코비안을
+    //   만들어 symbolic 빌드에서 t~0 크롤 유발 (WS 실측) → C∞ softsign 연착륙.
+    //   원거리 der→±rate(오차<0.1%), 근거리 der→(f_cmd-f)/tau, 유지(rate=0) der=0.
+    der(f) = rate*((f_cmd - f)/tau_snap)
+             / sqrt(((f_cmd - f)/tau_snap)^2 + rate^2 + 1e-6);
     N = f*60.0;
 
   algorithm
