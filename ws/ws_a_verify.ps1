@@ -48,23 +48,22 @@ loadFile("$REPO/modelica/HPWDon.mo"); getErrorString();
 loadFile("$REPO/modelica/HPWDevap.mo"); getErrorString();
 loadFile("$REPO/modelica/Control.mo"); getErrorString();
 loadFile("$REPO/modelica/HPWDcycle.mo"); getErrorString();
-b := buildModel($MODEL, stopTime=600, tolerance=1e-3, method="dassl",
+b := buildModel($MODEL, stopTime=600, tolerance=1e-4, method="dassl",
   outputFormat="csv",
   variableFilter="time|M_total|Pc_bar|Pe_bar|SH|eevctl.n_pulse|seq.f|comp.h_dis");
 print("EXE=" + b[1] + "|\n"); print(getErrorString());
 "@
 Set-Content -Path "$W\build.mos" -Value $mos -Encoding UTF8
-if (-not (Test-Path "$W\$MODEL.exe")) {
-  Write-Host "[build] omc (symbolic)..."
-  & $OMC build.mos *> build.log }
+Remove-Item "$W\$MODEL.exe" -ErrorAction SilentlyContinue
+Write-Host "[build] omc (symbolic, tol=1e-4)..."
+& $OMC build.mos *> build.log
 if (-not (Test-Path "$W\$MODEL.exe")) {
   Write-Host "빌드 실패 — build.log 마지막 20줄:"; Get-Content "$W\build.log" -Tail 20; exit 1 }
 
 # ── 런 정의 ───────────────────────────────────────────────────────
 $RUNS = [ordered]@{
-  "tol4.r1" = @("-jacobian=coloredNumerical","-override=tolerance=1e-4")
-  "tol4.r2" = @("-jacobian=coloredNumerical","-override=tolerance=1e-4")
-  "tol5.r1" = @("-jacobian=coloredNumerical","-override=tolerance=1e-5")   # 정밀 상한 탐색
+  "t4.r1" = @("-jacobian=coloredNumerical")   # tolerance=1e-4 (빌드 내장)
+  "t4.r2" = @("-jacobian=coloredNumerical")
 }
 
 # ── 병렬 발사 ─────────────────────────────────────────────────────
