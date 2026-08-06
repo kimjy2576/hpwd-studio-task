@@ -59,6 +59,8 @@ package HPWDctrl "제어 컴포넌트"
     Real f(start=0, fixed=true) "주파수 [Hz]";
     discrete Real t_hold_end(start=-1, fixed=true) "현재 유지 종료 시각 [s]";
     discrete Boolean done_start(start=false, fixed=true) "35Hz 유지 완료";
+    discrete Boolean past_min(start=false, fixed=true) "f_min 통과 래치 (G2)";
+    parameter Real tau_snap = 0.5 "도착 연착륙 시상수 [s] (G2)";
     discrete Boolean done_mid1(start=false, fixed=true) "중간1 유지 완료";
     Real rate "현재 상승률 [Hz/s] (rps=Hz)";
     Real f_cmd "실효 목표 주파수 [Hz]. 35Hz 유지 전에는 f_hold 이상";
@@ -68,8 +70,10 @@ package HPWDctrl "제어 컴포넌트"
     //   35Hz 강제 유지 후 목표가 30Hz 이면 내려가야 하는데
     //   기존 der(f)=if f>=f_target then 0 은 35Hz 에 머물렀다.
     //   상승·하강 모두 rate_slow 로 움직인다(유지 중에는 0).
+    // 2026-08-06 G2: f<f_min 연속 관계식이 t=15(f_min 도달) 라이브록 유발
+    //   (WS-A 실측: 4/4 결정론 락). 물리상 기동 중 재하강 없음 → when 래치화.
     rate = if time < t_hold_end then 0.0
-           elseif f < f_min then rate_fast
+           elseif not past_min then rate_fast
            else rate_slow;
     // 2026-07-31: 35Hz 강제 유지는 설정 Hz 와 무관하다.
     //   목표가 30Hz 여도 일단 f_hold(35Hz)까지 올라가 2분 유지한 뒤
@@ -81,13 +85,17 @@ package HPWDctrl "제어 컴포넌트"
     f_cmd = if done_start then f_target else max(f_target, f_hold) + 0.01;
     //   감속에도 유지(rate=0)가 적용돼야 한다. rate 는 유지 중 0 이므로
     //   부호만 바꿔 쓴다. -rate_slow 를 직접 쓰면 유지 중에도 내려간다.
-    der(f) = if abs(f - f_cmd) < 1e-6 then 0.0
-             elseif f < f_cmd then rate
-             else -rate;
+    // 2026-08-06 G2: abs(f-f_cmd)<1e-6 연속 관계식 제거 — 무이벤트 연착륙.
+    //   원거리 ±rate 정확 램프 동일, 마지막 ~rate*tau_snap 폭만 지수 도착
+    //   (인버터 soft-landing 과 정합). 유지 중 rate=0 → der=0 자동 성립.
+    der(f) = noEvent(max(min((f_cmd - f)/tau_snap, rate), -rate));
     N = f*60.0;
 
   algorithm
     // 35Hz 강제 유지 — 다른 어떤 단계보다 우선한다
+    when f >= f_min then
+      past_min := true;
+    end when;
     when (not done_start) and f >= f_hold then
       t_hold_end := time + hold_start;
       done_start := true;
