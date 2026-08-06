@@ -7,13 +7,16 @@ $MAINREPO = (Resolve-Path "$PSScriptRoot\..").Path
 $TREE = Join-Path $env:TEMP "wsa_tree"
 $W    = Join-Path $env:TEMP "wsa_verify"
 $MODEL = "HPWDcycle.Cycle_L3_coldstart_charge"
-$REF  = "73a7b24"
+$REF  = "origin/feat/analytic-medium-g2"   # G2 seq 처방판
 $TMO  = 2400
 New-Item -ItemType Directory -Force -Path $W | Out-Null
 
 # ── v1 동결 스냅샷 워크트리 ───────────────────────────────────────
 Set-Location $MAINREPO
-if (-not (Test-Path "$TREE\modelica")) {
+if (Test-Path "$TREE\modelica") {
+  Set-Location $TREE ; git fetch origin feat/analytic-medium-g2 ; git checkout -q origin/feat/analytic-medium-g2 ; Set-Location $MAINREPO
+} else {
+  git fetch origin feat/analytic-medium-g2
   git worktree add --detach $TREE $REF
   if (-not (Test-Path "$TREE\modelica")) { Write-Host "worktree 실패 — git fetch 후 재시도"; exit 1 } }
 $REPO = $TREE -replace '\\','/'
