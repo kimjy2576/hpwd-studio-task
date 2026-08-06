@@ -62,10 +62,9 @@ if (-not (Test-Path "$W\$MODEL.exe")) {
 
 # ── 런 정의 ───────────────────────────────────────────────────────
 $RUNS = [ordered]@{
-  "num.r1"     = @()
-  "sym.r1"     = @("-jacobian=coloredSymbolical")
-  "sym.r2"     = @("-jacobian=coloredSymbolical")
-  "symT16.r1"  = @("-jacobian=coloredSymbolical","-jacobianThreads=16")
+  "cnum.r1" = @("-jacobian=coloredNumerical")   # 확정 후보 구성
+  "cnum.r2" = @("-jacobian=coloredNumerical")   # 재현성
+  "num.r1"  = @()                                # wall 대조군
 }
 
 # ── 병렬 발사 ─────────────────────────────────────────────────────
