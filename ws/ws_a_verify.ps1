@@ -54,17 +54,17 @@ b := buildModel($MODEL, stopTime=600, tolerance=1e-3, method="dassl",
 print("EXE=" + b[1] + "|\n"); print(getErrorString());
 "@
 Set-Content -Path "$W\build.mos" -Value $mos -Encoding UTF8
-Remove-Item "$W\$MODEL.exe" -ErrorAction SilentlyContinue
-Write-Host "[build] omc (symbolic)..."
-& $OMC build.mos *> build.log
+if (-not (Test-Path "$W\$MODEL.exe")) {
+  Write-Host "[build] omc (symbolic)..."
+  & $OMC build.mos *> build.log }
 if (-not (Test-Path "$W\$MODEL.exe")) {
   Write-Host "빌드 실패 — build.log 마지막 20줄:"; Get-Content "$W\build.log" -Tail 20; exit 1 }
 
 # ── 런 정의 ───────────────────────────────────────────────────────
 $RUNS = [ordered]@{
-  "cnum.r1" = @("-jacobian=coloredNumerical")   # 확정 후보 구성
-  "cnum.r2" = @("-jacobian=coloredNumerical")   # 재현성
-  "num.r1"  = @()                                # wall 대조군
+  "tol4.r1" = @("-jacobian=coloredNumerical","-override=tolerance=1e-4")
+  "tol4.r2" = @("-jacobian=coloredNumerical","-override=tolerance=1e-4")
+  "tol5.r1" = @("-jacobian=coloredNumerical","-override=tolerance=1e-5")   # 정밀 상한 탐색
 }
 
 # ── 병렬 발사 ─────────────────────────────────────────────────────
